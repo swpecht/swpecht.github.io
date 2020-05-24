@@ -6,11 +6,11 @@ categories: project-log
 ---
 This post gives a summary of what I did to get my dev environment set up. Main goals:
 *  Hold myself accountable to not spend too much time tuning the colors of my terminal
-*  Document in case I need to do it again
-*  Better learn VIM to write this
+*  Document, in case I need to do it again
+*  Better learn Vim to write this
 
 # Dev environment
-I wanted a Linux environment for development. But I only have access to a machine running windows and ChromeOS. Dualbooting -- or something like cygwin -- is possible but it seemed like a hassle to setup. And would add another barrier to writing or working on side projects.
+I wanted a Linux environment for development. But I only have access to a machine running windows and ChromeOS. Dual-booting -- or something like cygwin -- is possible but it seemed like a hassle to setup. And would add another barrier to writing or working on side projects.
 
 I ended up going with a Digital Ocean machine. It had a few added benefits for me:
 *  easy backups I could turn on with a click
@@ -19,7 +19,7 @@ I ended up going with a Digital Ocean machine. It had a few added benefits for m
 
 I'm sure any cloud provider would have worked, but I had a good experience using digital ocean in the past -- it's reasonably priced and reasonably simple.
 
-Next, I setup tmux and putty. This ended up being a bigger waste of time than expected. I had foolishly gotten my Vim and terminal color scheme set up with out tmux. running things through tmux immediately reverted me to the previous, ugly colors :(
+Next, I setup tmux and putty. This ended up being a bigger waste of time than expected. I had foolishly gotten my Vim and terminal color scheme set up with out tmux. Running things through tmux immediately reverted me to the previous, ugly colors :(
 
 I eventually realized I needed to start tmux with the `-2` argument to enable 256 colors:
 ```
@@ -29,7 +29,7 @@ tmux -2 a -t base || tmux -2 new -s base
 I was able to get Putty set up with minimal configuration.
 
 # Editor
-For my editor, I went with Vim. I'd always heard great things. And the flexbility it provides seemed valuabe to support both coding and blog writing in a single platform. I also appreciated the flexibility of moving around a `.vimrc` file to set up a new editor.
+For my editor, I went with Vim. I'd always heard great things. And the flexibility it provides seemed valuable to support both coding and blog writing in a single platform. I also appreciated the flexibility of moving around a `.vimrc` file to set up a new editor.
 
 I used [amix's .vimrc](https://github.com/amix/vimrc) as a starting point. And removed most of the configuration that didn't make sense to me -- my goal was to end with something simple.
 
