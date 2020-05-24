@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  "Yak shaving I did to get set up"
-date:   2020-05-20 02:00:43 +0000
+date:   2020-05-23 02:00:43 +0000
 categories: project-log
 ---
 This post gives a summary of what I did to get my dev environment set up. Main goals:
