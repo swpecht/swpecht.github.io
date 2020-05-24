@@ -21,7 +21,7 @@
 title: Few word do trick
 # email: your-email@example.com
 description: >- # this means to ignore newlines until "baseurl:"
-    A silly reminder to keep posts short.
+    A silly reminder to keep posts short. And a place to keep a diary of projects.
 baseurl: "" # the subpath of your site, e.g. /blog
 url: "" # the base hostname & protocol for your site, e.g. http://example.com
 github_username:  swpecht
