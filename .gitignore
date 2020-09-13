@@ -24,3 +24,6 @@ vendor
 ### Go Patch ###
 /vendor/
 /Godeps/
+
+### WASM ###
+*.wasm
