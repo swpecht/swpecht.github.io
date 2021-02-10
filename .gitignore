@@ -27,3 +27,6 @@ vendor
 
 ### WASM ###
 *.wasm
+
+### Node ###
+node_modules/

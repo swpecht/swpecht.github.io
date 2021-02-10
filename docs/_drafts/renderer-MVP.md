@@ -13,4 +13,5 @@ Goal: Paint pixels to a canvas using rust-wasm.
 
 *  Get WASM toolchain set up using the [Mozilla docs](https://developer.mozilla.org/en-US/docs/WebAssembly/Rust_to_wasm)
   *  Needed to first do: `sudo apt-get install libssl-dev`
-* Got the 'hello world' example up and running
+* Got the 'hello world' example up and running (commit f3dd62c89c68c44b04c7502d5c5a76944383661c)
+* Complete Canvas hello world from [wasm-bindgen tutorial](https://rustwasm.github.io/wasm-bindgen/examples/2d-canvas.html)
