@@ -17,7 +17,7 @@ Goal: Paint pixels to a canvas using rust-wasm.
 * Got the 'hello world' example up and running (commit f3dd62c89c68c44b04c7502d5c5a76944383661c)
 * Complete Canvas hello world from [wasm-bindgen tutorial](https://rustwasm.github.io/wasm-bindgen/examples/2d-canvas.html)
 * Create a gradient on the screen: [example](https://developer.mozilla.org/en-US/docs/Web/API/ImageData/data)
-* Render 3 spheres
+* Render 3 spheres, [guide](https://bheisler.github.io/post/writing-raytracer-in-rust-part-1/)
 
 -- Old docs
 

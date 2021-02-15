@@ -2,6 +2,9 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::Clamped;
 use wasm_bindgen::JsCast;
 
+extern crate nalgebra as na;
+use na::{Point3, Vector3};
+
 use web_sys::ImageData;
 
 #[wasm_bindgen]
@@ -20,18 +23,46 @@ struct Color {
     a: u8,
 }
 
+struct Ray {
+    origin: Point3<f64>,
+    direction: Vector3<f64>,
+}
+
 #[derive(Copy, Clone)]
 struct Sphere {
-    x: f32,
-    y: f32,
-    z: f32,
-    radius: f32,
+    center: Point3<f64>,
+    radius: f64,
     color: Color,
 }
 
-fn is_intersect(x: f32, y: f32, sphere: &Sphere) -> bool {
-    let distance = ((x - sphere.x).powi(2) + (y - sphere.y).powi(2)).sqrt();
-    return distance <= sphere.radius;
+struct Scene {
+    width: u32,
+    height: u32,
+}
+
+fn create_prime(x: u32, y: u32, scene: &Scene) -> Ray {
+    // Adapted from: https://bheisler.github.io/post/writing-raytracer-in-rust-part-1/
+    let sensor_x = ((x as f64 + 0.5) / scene.width as f64) * 2.0 - 1.0;
+    let sensor_y = 1.0 - ((y as f64 + 0.5) / scene.height as f64) * 2.0;
+
+    Ray {
+        origin: Point3::new(0.0, 0.0, 0.0),
+        direction: Vector3::new(sensor_x, sensor_y, -1.0).normalize(),
+    }
+}
+
+fn is_intersect(ray: &Ray, sphere: &Sphere) -> bool {
+    // Adapted from: https://bheisler.github.io/post/writing-raytracer-in-rust-part-1/
+
+    //Create a line segment between the ray origin and the center of the sphere
+    let l: Vector3<f64> = sphere.center - ray.origin;
+    //Use l as a hypotenuse and find the length of the adjacent side
+    let adj = l.dot(&ray.direction);
+    //Find the length-squared of the opposite side
+    //This is equivalent to (but faster than) (l.length() * l.length()) - (adj * adj)
+    let d2 = l.dot(&l) - (adj * adj);
+    //If that length-squared is less than radius squared, the ray intersects the sphere
+    return d2 <= (sphere.radius * sphere.radius);
 }
 
 #[wasm_bindgen(start)]
@@ -72,42 +103,40 @@ pub fn start() {
     };
 
     let sphere1 = Sphere {
-        x: 0.0,
-        y: 0.0,
-        z: 50.0,
-        radius: 50.0,
+        center: Point3::new(0.0, 0.0, -4.0),
+        radius: 0.5,
         color: red,
     };
 
     let sphere2 = Sphere {
-        x: -125.0,
-        z: 75.0,
+        center: Point3::new(-1.0, 0.0, -5.0),
         color: green,
         ..sphere1
     };
 
     let sphere3 = Sphere {
-        x: 125.0,
-        z: 100.0,
+        center: Point3::new(1.0, 0.0, -6.0),
         color: blue,
         ..sphere1
     };
 
     let objects = [sphere1, sphere2, sphere3];
 
-    // Create Canvas, centered at (0, 0, 0)
-    let width: u32 = 500;
-    let height: u32 = 500;
+    let scene = Scene {
+        width: 500,
+        height: 500,
+    };
     // Array for RGBA values
-    let mut pixels = vec![0u8; (width * height * 4) as usize];
+    let mut pixels = vec![0u8; (scene.width * scene.height * 4) as usize];
 
-    for x_offset in 0..width {
-        for y_offset in 0..height {
-            let x = -255 + x_offset as i32;
-            let y = -255 + y_offset as i32;
+    for x in 0..scene.width {
+        for y in 0..scene.height {
+            // TODO: update to support a moving camera / screen
+            let ray = create_prime(x, y, &scene);
+            let index = (x + y * scene.width) as usize;
+            pixels[4 * index + 3] = 255; // Set background to not be transparent
             for sphere in objects.iter() {
-                if is_intersect(x as f32, y as f32, &sphere) {
-                    let index = (x_offset + y_offset * width) as usize;
+                if is_intersect(&ray, &sphere) {
                     let color = &sphere.color;
                     pixels[4 * index] = color.r;
                     pixels[4 * index + 1] = color.g;
@@ -119,8 +148,12 @@ pub fn start() {
         }
     }
 
-    let image_data =
-        ImageData::new_with_u8_clamped_array_and_sh(Clamped(&mut pixels), width, height).unwrap();
+    let image_data = ImageData::new_with_u8_clamped_array_and_sh(
+        Clamped(&mut pixels),
+        scene.width,
+        scene.height,
+    )
+    .unwrap();
 
     context.put_image_data(&image_data, 0.0, 0.0).unwrap();
 }
