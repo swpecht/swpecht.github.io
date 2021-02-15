@@ -20,7 +20,16 @@ struct Color {
     r: u8,
     g: u8,
     b: u8,
-    a: u8,
+}
+
+impl Color {
+    pub fn clamp(&self) -> Color {
+        Color {
+            r: self.r.min(255).max(0),
+            b: self.b.min(255).max(0),
+            g: self.g.min(255).max(0),
+        }
+    }
 }
 
 struct Ray {
@@ -35,9 +44,15 @@ struct Sphere {
     color: Color,
 }
 
+struct Light {
+    direction: Vector3<f64>,
+    intensity: f32,
+}
+
 struct Scene {
     width: u32,
     height: u32,
+    light: Light,
 }
 
 fn create_prime(x: u32, y: u32, scene: &Scene) -> Ray {
@@ -51,7 +66,8 @@ fn create_prime(x: u32, y: u32, scene: &Scene) -> Ray {
     }
 }
 
-fn is_intersect(ray: &Ray, sphere: &Sphere) -> bool {
+/// Returns distance to closest point of intersection.
+fn intersect(ray: &Ray, sphere: &Sphere) -> Option<f64> {
     // Adapted from: https://bheisler.github.io/post/writing-raytracer-in-rust-part-1/
 
     //Create a line segment between the ray origin and the center of the sphere
@@ -61,8 +77,42 @@ fn is_intersect(ray: &Ray, sphere: &Sphere) -> bool {
     //Find the length-squared of the opposite side
     //This is equivalent to (but faster than) (l.length() * l.length()) - (adj * adj)
     let d2 = l.dot(&l) - (adj * adj);
+    let radius2 = sphere.radius * sphere.radius;
     //If that length-squared is less than radius squared, the ray intersects the sphere
-    return d2 <= (sphere.radius * sphere.radius);
+    if d2 > radius2 {
+        return None;
+    }
+    let thc = (radius2 - d2).sqrt();
+    let t0 = adj - thc;
+    let t1 = adj + thc;
+
+    if t0 < 0.0 && t1 < 0.0 {
+        return None;
+    }
+
+    let distance = if t0 < t1 { t0 } else { t1 };
+    Some(distance)
+}
+
+fn surface_normal(sphere: &Sphere, hit_point: &Point3<f64>) -> Vector3<f64> {
+    (*hit_point - sphere.center).normalize()
+}
+
+fn get_color(scene: &Scene, ray: &Ray, distance: f64, sphere: &Sphere) -> Color {
+    let hit_point = ray.origin + (ray.direction * distance);
+    let surface_normal = surface_normal(sphere, &hit_point);
+    let direction_to_light = -scene.light.direction.normalize();
+    let light_power =
+        (surface_normal.dot(&direction_to_light) as f32).max(0.0) * scene.light.intensity;
+    const ALBEDO: f32 = 3.0; // placeholder
+    let light_reflected = ALBEDO / std::f32::consts::PI;
+
+    let color = Color {
+        r: (sphere.color.r as f32 * light_power * 1.0) as u8,
+        g: (sphere.color.g as f32 * light_power * light_reflected) as u8,
+        b: (sphere.color.b as f32 * light_power * light_reflected) as u8,
+    };
+    color.clamp()
 }
 
 #[wasm_bindgen(start)]
@@ -81,41 +131,26 @@ pub fn start() {
         .dyn_into::<web_sys::CanvasRenderingContext2d>()
         .unwrap();
 
-    let red = Color {
-        r: 200,
-        g: 0,
-        b: 0,
-        a: 255,
-    };
+    let red = Color { r: 200, g: 0, b: 0 };
 
-    let green = Color {
-        r: 0,
-        g: 200,
-        b: 0,
-        a: 255,
-    };
+    let green = Color { r: 0, g: 200, b: 0 };
 
-    let blue = Color {
-        r: 0,
-        g: 0,
-        b: 200,
-        a: 255,
-    };
+    let blue = Color { r: 0, g: 0, b: 200 };
 
     let sphere1 = Sphere {
-        center: Point3::new(0.0, 0.0, -4.0),
+        center: Point3::new(0.0, 0.0, -2.0),
         radius: 0.5,
         color: red,
     };
 
     let sphere2 = Sphere {
-        center: Point3::new(-1.0, 0.0, -5.0),
+        center: Point3::new(-1.0, 0.0, -3.0),
         color: green,
         ..sphere1
     };
 
     let sphere3 = Sphere {
-        center: Point3::new(1.0, 0.0, -6.0),
+        center: Point3::new(1.0, 0.0, -4.0),
         color: blue,
         ..sphere1
     };
@@ -125,6 +160,10 @@ pub fn start() {
     let scene = Scene {
         width: 500,
         height: 500,
+        light: Light {
+            direction: Vector3::new(1.0, -1.0, 0.0),
+            intensity: 1.0,
+        },
     };
     // Array for RGBA values
     let mut pixels = vec![0u8; (scene.width * scene.height * 4) as usize];
@@ -136,12 +175,13 @@ pub fn start() {
             let index = (x + y * scene.width) as usize;
             pixels[4 * index + 3] = 255; // Set background to not be transparent
             for sphere in objects.iter() {
-                if is_intersect(&ray, &sphere) {
-                    let color = &sphere.color;
+                let distance = intersect(&ray, &sphere);
+                if !distance.is_none() {
+                    let color = get_color(&scene, &ray, distance.unwrap(), sphere);
                     pixels[4 * index] = color.r;
                     pixels[4 * index + 1] = color.g;
                     pixels[4 * index + 2] = color.b;
-                    pixels[4 * index + 3] = color.a;
+                    pixels[4 * index + 3] = 255; // no transparency
                     break;
                 }
             }
