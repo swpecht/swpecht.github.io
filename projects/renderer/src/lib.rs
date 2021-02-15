@@ -12,6 +12,26 @@ extern "C" {
     fn log_u8(a: u8);
 }
 
+struct Color {
+    r: u8,
+    g: u8,
+    b: u8,
+    a: u8,
+}
+
+struct Sphere {
+    x: f32,
+    y: f32,
+    z: f32,
+    radius: f32,
+    color: Color,
+}
+
+fn is_intersect(x: f32, y: f32, sphere: &Sphere) -> bool {
+    let distance = ((x - sphere.x).powi(2) + (y - sphere.y).powi(2)).sqrt();
+    return distance <= sphere.radius;
+}
+
 #[wasm_bindgen(start)]
 pub fn start() {
     let document = web_sys::window().unwrap().document().unwrap();
@@ -28,19 +48,38 @@ pub fn start() {
         .dyn_into::<web_sys::CanvasRenderingContext2d>()
         .unwrap();
 
-    let width: u32 = 255;
-    let height: u32 = 255;
-    // Array for RGBA values
-    let mut pixels = vec![100u8; (width * height * 4) as usize];
+    let color = Color {
+        r: 100,
+        g: 50,
+        b: 100,
+        a: 255,
+    };
+    let sphere = Sphere {
+        x: 0.0,
+        y: 0.0,
+        z: 50.0,
+        radius: 50.0,
+        color: color,
+    };
 
-    // https://developer.mozilla.org/en-US/docs/Web/API/ImageData/data
-    for x in 0..width {
-        for y in 0..height {
-            let index = (x + y * width) as usize;
-            pixels[4 * index] = x as u8;
-            pixels[4 * index + 1] = y as u8;
-            pixels[4 * index + 2] = 255 - (x as u8);
-            pixels[4 * index + 3] = 255;
+    // Create Canvas, centered at (0, 0, 0)
+    let width: u32 = 500;
+    let height: u32 = 500;
+    // Array for RGBA values
+    let mut pixels = vec![0u8; (width * height * 4) as usize];
+
+    for x_offset in 0..width {
+        for y_offset in 0..height {
+            let x = -255 + x_offset as i32;
+            let y = -255 + y_offset as i32;
+            if is_intersect(x as f32, y as f32, &sphere) {
+                let index = (x_offset + y_offset * width) as usize;
+                let color = &sphere.color;
+                pixels[4 * index] = color.r;
+                pixels[4 * index + 1] = color.g;
+                pixels[4 * index + 2] = color.b;
+                pixels[4 * index + 3] = color.a;
+            }
         }
     }
 
