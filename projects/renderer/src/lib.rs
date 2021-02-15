@@ -1,7 +1,16 @@
-
-use std::f64;
 use wasm_bindgen::prelude::*;
+use wasm_bindgen::Clamped;
 use wasm_bindgen::JsCast;
+
+use web_sys::ImageData;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = console)]
+    fn log(s: &str);
+    #[wasm_bindgen(js_namespace = console, js_name = log)]
+    fn log_u8(a: u8);
+}
 
 #[wasm_bindgen(start)]
 pub fn start() {
@@ -19,34 +28,24 @@ pub fn start() {
         .dyn_into::<web_sys::CanvasRenderingContext2d>()
         .unwrap();
 
-    context.begin_path();
+    let width: u32 = 255;
+    let height: u32 = 255;
+    // Array for RGBA values
+    let mut pixels = vec![100u8; (width * height * 4) as usize];
 
-    // Draw the outer circle.
-    context
-        .arc(75.0, 75.0, 50.0, 0.0, f64::consts::PI * 2.0)
-        .unwrap();
+    // https://developer.mozilla.org/en-US/docs/Web/API/ImageData/data
+    for x in 0..width {
+        for y in 0..height {
+            let index = (x + y * width) as usize;
+            pixels[4 * index] = x as u8;
+            pixels[4 * index + 1] = y as u8;
+            pixels[4 * index + 2] = 255 - (x as u8);
+            pixels[4 * index + 3] = 255;
+        }
+    }
 
-    // Draw the mouth.
-    context.move_to(110.0, 75.0);
-    context.arc(75.0, 75.0, 35.0, 0.0, f64::consts::PI).unwrap();
+    let image_data =
+        ImageData::new_with_u8_clamped_array_and_sh(Clamped(&mut pixels), width, height).unwrap();
 
-    // Draw the left eye.
-    context.move_to(65.0, 65.0);
-    context
-        .arc(60.0, 65.0, 5.0, 0.0, f64::consts::PI * 2.0)
-        .unwrap();
-
-    // Draw the right eye.
-    context.move_to(95.0, 65.0);
-    context
-        .arc(90.0, 65.0, 5.0, 0.0, f64::consts::PI * 2.0)
-        .unwrap();
-
-    // Draw the nose-like thing eye.
-    context.move_to(77.0, 75.0);
-    context
-        .arc(72.0, 77.0, 5.0, 0.0, f64::consts::PI * 2.0)
-        .unwrap();
-
-    context.stroke();
+    context.put_image_data(&image_data, 0.0, 0.0).unwrap();
 }
