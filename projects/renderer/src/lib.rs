@@ -12,6 +12,7 @@ extern "C" {
     fn log_u8(a: u8);
 }
 
+#[derive(Copy, Clone)]
 struct Color {
     r: u8,
     g: u8,
@@ -19,6 +20,7 @@ struct Color {
     a: u8,
 }
 
+#[derive(Copy, Clone)]
 struct Sphere {
     x: f32,
     y: f32,
@@ -48,19 +50,50 @@ pub fn start() {
         .dyn_into::<web_sys::CanvasRenderingContext2d>()
         .unwrap();
 
-    let color = Color {
-        r: 100,
-        g: 50,
-        b: 100,
+    let red = Color {
+        r: 200,
+        g: 0,
+        b: 0,
         a: 255,
     };
-    let sphere = Sphere {
+
+    let green = Color {
+        r: 0,
+        g: 200,
+        b: 0,
+        a: 255,
+    };
+
+    let blue = Color {
+        r: 0,
+        g: 0,
+        b: 200,
+        a: 255,
+    };
+
+    let sphere1 = Sphere {
         x: 0.0,
         y: 0.0,
         z: 50.0,
         radius: 50.0,
-        color: color,
+        color: red,
     };
+
+    let sphere2 = Sphere {
+        x: -125.0,
+        z: 75.0,
+        color: green,
+        ..sphere1
+    };
+
+    let sphere3 = Sphere {
+        x: 125.0,
+        z: 100.0,
+        color: blue,
+        ..sphere1
+    };
+
+    let objects = [sphere1, sphere2, sphere3];
 
     // Create Canvas, centered at (0, 0, 0)
     let width: u32 = 500;
@@ -72,13 +105,16 @@ pub fn start() {
         for y_offset in 0..height {
             let x = -255 + x_offset as i32;
             let y = -255 + y_offset as i32;
-            if is_intersect(x as f32, y as f32, &sphere) {
-                let index = (x_offset + y_offset * width) as usize;
-                let color = &sphere.color;
-                pixels[4 * index] = color.r;
-                pixels[4 * index + 1] = color.g;
-                pixels[4 * index + 2] = color.b;
-                pixels[4 * index + 3] = color.a;
+            for sphere in objects.iter() {
+                if is_intersect(x as f32, y as f32, &sphere) {
+                    let index = (x_offset + y_offset * width) as usize;
+                    let color = &sphere.color;
+                    pixels[4 * index] = color.r;
+                    pixels[4 * index + 1] = color.g;
+                    pixels[4 * index + 2] = color.b;
+                    pixels[4 * index + 3] = color.a;
+                    break;
+                }
             }
         }
     }
