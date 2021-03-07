@@ -53,6 +53,25 @@ struct Scene {
     width: u32,
     height: u32,
     light: Light,
+    spheres: Vec<Sphere>,
+    camera_direction: Vector3<f64>,
+    camera_location: Point3<f64>,
+}
+
+#[wasm_bindgen]
+pub struct TestStruct {
+    x: f32,
+}
+
+#[wasm_bindgen]
+impl TestStruct {
+    pub fn new() -> TestStruct {
+        TestStruct { x: 42.0 }
+    }
+
+    pub fn get(&self) -> f32 {
+        return self.x;
+    }
 }
 
 fn create_prime(x: u32, y: u32, scene: &Scene) -> Ray {
@@ -61,8 +80,9 @@ fn create_prime(x: u32, y: u32, scene: &Scene) -> Ray {
     let sensor_y = 1.0 - ((y as f64 + 0.5) / scene.height as f64) * 2.0;
 
     Ray {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        direction: Vector3::new(sensor_x, sensor_y, -1.0).normalize(),
+        origin: scene.camera_location,
+        // TODO: Update to handle moving camera
+        direction: Vector3::new(sensor_x, sensor_y, scene.camera_direction.z).normalize(),
     }
 }
 
@@ -104,32 +124,20 @@ fn get_color(scene: &Scene, ray: &Ray, distance: f64, sphere: &Sphere) -> Color 
     let direction_to_light = -scene.light.direction.normalize();
     let light_power =
         (surface_normal.dot(&direction_to_light) as f32).max(0.0) * scene.light.intensity;
-    const ALBEDO: f32 = 3.0; // placeholder
+    const ALBEDO: f32 = 0.18; // placeholder
     let light_reflected = ALBEDO / std::f32::consts::PI;
 
     let color = Color {
-        r: (sphere.color.r as f32 * light_power * 1.0) as u8,
+        r: (sphere.color.r as f32 * light_power * light_reflected) as u8,
         g: (sphere.color.g as f32 * light_power * light_reflected) as u8,
         b: (sphere.color.b as f32 * light_power * light_reflected) as u8,
     };
     color.clamp()
 }
 
-#[wasm_bindgen(start)]
-pub fn start() {
-    let document = web_sys::window().unwrap().document().unwrap();
-    let canvas = document.get_element_by_id("canvas").unwrap();
-    let canvas: web_sys::HtmlCanvasElement = canvas
-        .dyn_into::<web_sys::HtmlCanvasElement>()
-        .map_err(|_| ())
-        .unwrap();
-
-    let context = canvas
-        .get_context("2d")
-        .unwrap()
-        .unwrap()
-        .dyn_into::<web_sys::CanvasRenderingContext2d>()
-        .unwrap();
+#[wasm_bindgen]
+pub fn render() {
+    log("Starting render...");
 
     let red = Color { r: 200, g: 0, b: 0 };
 
@@ -150,21 +158,23 @@ pub fn start() {
     };
 
     let sphere3 = Sphere {
-        center: Point3::new(1.0, 0.0, -4.0),
+        center: Point3::new(1.5, 0.0, -4.0),
         color: blue,
         ..sphere1
     };
-
-    let objects = [sphere1, sphere2, sphere3];
 
     let scene = Scene {
         width: 500,
         height: 500,
         light: Light {
             direction: Vector3::new(1.0, -1.0, 0.0),
-            intensity: 1.0,
+            intensity: 30.0,
         },
+        spheres: vec![sphere1, sphere2, sphere3],
+        camera_direction: Vector3::new(0.0, 0.0, -1.0),
+        camera_location: Point3::new(0.0, 0.0, 0.0),
     };
+
     // Array for RGBA values
     let mut pixels = vec![0u8; (scene.width * scene.height * 4) as usize];
 
@@ -174,7 +184,7 @@ pub fn start() {
             let ray = create_prime(x, y, &scene);
             let index = (x + y * scene.width) as usize;
             pixels[4 * index + 3] = 255; // Set background to not be transparent
-            for sphere in objects.iter() {
+            for sphere in scene.spheres.iter() {
                 let distance = intersect(&ray, &sphere);
                 if !distance.is_none() {
                     let color = get_color(&scene, &ray, distance.unwrap(), sphere);
@@ -188,12 +198,30 @@ pub fn start() {
         }
     }
 
-    let image_data = ImageData::new_with_u8_clamped_array_and_sh(
-        Clamped(&mut pixels),
-        scene.width,
-        scene.height,
-    )
-    .unwrap();
+    paint(&mut pixels, scene);
+}
+
+/// Paint pixels to canvas
+fn paint(pixels: &mut Vec<u8>, scene: Scene) {
+    log("Starting paint...");
+
+    let document = web_sys::window().unwrap().document().unwrap();
+    let canvas = document.get_element_by_id("canvas").unwrap();
+    let canvas: web_sys::HtmlCanvasElement = canvas
+        .dyn_into::<web_sys::HtmlCanvasElement>()
+        .map_err(|_| ())
+        .unwrap();
+
+    let context = canvas
+        .get_context("2d")
+        .unwrap()
+        .unwrap()
+        .dyn_into::<web_sys::CanvasRenderingContext2d>()
+        .unwrap();
+
+    let image_data =
+        ImageData::new_with_u8_clamped_array_and_sh(Clamped(pixels), scene.width, scene.height)
+            .unwrap();
 
     context.put_image_data(&image_data, 0.0, 0.0).unwrap();
 }
