@@ -139,6 +139,60 @@ fn get_color(scene: &Scene, ray: &Ray, distance: f64, sphere: &Sphere) -> Color 
 pub fn render() {
     log("Starting render...");
 
+    let scene = create_scene();
+
+    // Array for RGBA values
+    let mut pixels = vec![0u8; (scene.width * scene.height * 4) as usize];
+
+    for x in 0..scene.width {
+        for y in 0..scene.height {
+            // TODO: update to support a moving camera / screen
+            let ray = create_prime(x, y, &scene);
+            let index = (x + y * scene.width) as usize;
+            pixels[4 * index + 3] = 255; // Set background to not be transparent
+            for sphere in scene.spheres.iter() {
+                let distance = intersect(&ray, &sphere);
+                if !distance.is_none() {
+                    let color = get_color(&scene, &ray, distance.unwrap(), sphere);
+                    pixels[4 * index] = color.r;
+                    pixels[4 * index + 1] = color.g;
+                    pixels[4 * index + 2] = color.b;
+                    pixels[4 * index + 3] = 255; // no transparency
+                    break;
+                }
+            }
+        }
+    }
+
+    paint(Clamped(&pixels), scene);
+}
+
+/// Paint pixels to canvas
+fn paint(pixels: wasm_bindgen::Clamped<&[u8]>, scene: Scene) {
+    log("Starting paint...");
+
+    let document = web_sys::window().unwrap().document().unwrap();
+    let canvas = document.get_element_by_id("canvas").unwrap();
+    let canvas: web_sys::HtmlCanvasElement = canvas
+        .dyn_into::<web_sys::HtmlCanvasElement>()
+        .map_err(|_| ())
+        .unwrap();
+
+    let context = canvas
+        .get_context("2d")
+        .unwrap()
+        .unwrap()
+        .dyn_into::<web_sys::CanvasRenderingContext2d>()
+        .unwrap();
+
+    let image_data =
+        ImageData::new_with_u8_clamped_array_and_sh(pixels, scene.width, scene.height).unwrap();
+
+    context.put_image_data(&image_data, 0.0, 0.0).unwrap();
+}
+
+/// Create a basic scene with a few objects and some lighting.
+fn create_scene() -> Scene {
     let red = Color { r: 200, g: 0, b: 0 };
 
     let green = Color { r: 0, g: 200, b: 0 };
@@ -175,53 +229,5 @@ pub fn render() {
         camera_location: Point3::new(0.0, 0.0, 0.0),
     };
 
-    // Array for RGBA values
-    let mut pixels = vec![0u8; (scene.width * scene.height * 4) as usize];
-
-    for x in 0..scene.width {
-        for y in 0..scene.height {
-            // TODO: update to support a moving camera / screen
-            let ray = create_prime(x, y, &scene);
-            let index = (x + y * scene.width) as usize;
-            pixels[4 * index + 3] = 255; // Set background to not be transparent
-            for sphere in scene.spheres.iter() {
-                let distance = intersect(&ray, &sphere);
-                if !distance.is_none() {
-                    let color = get_color(&scene, &ray, distance.unwrap(), sphere);
-                    pixels[4 * index] = color.r;
-                    pixels[4 * index + 1] = color.g;
-                    pixels[4 * index + 2] = color.b;
-                    pixels[4 * index + 3] = 255; // no transparency
-                    break;
-                }
-            }
-        }
-    }
-
-    paint(&mut pixels, scene);
-}
-
-/// Paint pixels to canvas
-fn paint(pixels: &mut Vec<u8>, scene: Scene) {
-    log("Starting paint...");
-
-    let document = web_sys::window().unwrap().document().unwrap();
-    let canvas = document.get_element_by_id("canvas").unwrap();
-    let canvas: web_sys::HtmlCanvasElement = canvas
-        .dyn_into::<web_sys::HtmlCanvasElement>()
-        .map_err(|_| ())
-        .unwrap();
-
-    let context = canvas
-        .get_context("2d")
-        .unwrap()
-        .unwrap()
-        .dyn_into::<web_sys::CanvasRenderingContext2d>()
-        .unwrap();
-
-    let image_data =
-        ImageData::new_with_u8_clamped_array_and_sh(Clamped(pixels), scene.width, scene.height)
-            .unwrap();
-
-    context.put_image_data(&image_data, 0.0, 0.0).unwrap();
+    return scene;
 }
