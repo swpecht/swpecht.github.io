@@ -55,6 +55,8 @@ struct Scene {
     light: Light,
     spheres: Vec<Sphere>,
     camera_direction: Vector3<f64>,
+    camera_up: Vector3<f64>,
+    camera_right: Vector3<f64>,
     camera_location: Point3<f64>,
 }
 
@@ -74,15 +76,18 @@ impl TestStruct {
     }
 }
 
+/// Create primes
+/// And https://stackoverflow.com/questions/13078243/how-to-move-a-camera-using-in-a-ray-tracer
 fn create_prime(x: u32, y: u32, scene: &Scene) -> Ray {
-    // Adapted from: https://bheisler.github.io/post/writing-raytracer-in-rust-part-1/
-    let sensor_x = ((x as f64 + 0.5) / scene.width as f64) * 2.0 - 1.0;
-    let sensor_y = 1.0 - ((y as f64 + 0.5) / scene.height as f64) * 2.0;
+    let normalized_x = 1.0 - (x as f64 / scene.width as f64) - 0.5;
+    let normalized_y = (y as f64 / scene.height as f64) - 0.5;
+
+    let direction: Vector3<f64> =
+        normalized_x * scene.camera_right + normalized_y * scene.camera_up + scene.camera_direction;
 
     Ray {
         origin: scene.camera_location,
-        // TODO: Update to handle moving camera
-        direction: Vector3::new(sensor_x, sensor_y, scene.camera_direction.z).normalize(),
+        direction: direction.normalize(),
     }
 }
 
@@ -146,7 +151,6 @@ pub fn render() {
 
     for x in 0..scene.width {
         for y in 0..scene.height {
-            // TODO: update to support a moving camera / screen
             let ray = create_prime(x, y, &scene);
             let index = (x + y * scene.width) as usize;
             pixels[4 * index + 3] = 255; // Set background to not be transparent
@@ -217,6 +221,12 @@ fn create_scene() -> Scene {
         ..sphere1
     };
 
+    // From: https://stackoverflow.com/questions/13078243/how-to-move-a-camera-using-in-a-ray-tracer
+    let camera_direction = Vector3::new(0.0, 0.0, -1.0).normalize();
+    let initial_camera_up = Vector3::new(0.0, 1.0, 0.0);
+    let camera_right = initial_camera_up.cross(&camera_direction);
+    let camera_up = camera_right.cross(&camera_direction);
+
     let scene = Scene {
         width: 500,
         height: 500,
@@ -225,8 +235,10 @@ fn create_scene() -> Scene {
             intensity: 30.0,
         },
         spheres: vec![sphere1, sphere2, sphere3],
-        camera_direction: Vector3::new(0.0, 0.0, -1.0),
-        camera_location: Point3::new(0.0, 0.0, 0.0),
+        camera_direction: camera_direction,
+        camera_location: Point3::new(0.0, 0.0, 2.0),
+        camera_right: camera_right,
+        camera_up: camera_up,
     };
 
     return scene;
