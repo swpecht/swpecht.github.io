@@ -43,9 +43,12 @@ import("./node_modules/renderer/renderer.js").then((js) => {
     }
   };
 
+  var pos = 0.0;
+
   const renderLoop = () => {
     fps.render();
-    js.render()
+    js.render(pos);
+    pos += 0.005;
 
     requestAnimationFrame(renderLoop);
   };

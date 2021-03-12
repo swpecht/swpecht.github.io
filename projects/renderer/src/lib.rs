@@ -140,11 +140,10 @@ fn get_color(scene: &Scene, ray: &Ray, distance: f64, sphere: &Sphere) -> Color 
     color.clamp()
 }
 
+/// Renders frame with camera at specied point arount a circle
 #[wasm_bindgen]
-pub fn render() {
-    log("Starting render...");
-
-    let scene = create_scene();
+pub fn render(angle: f64) {
+    let scene = create_scene(angle);
 
     // Array for RGBA values
     let mut pixels = vec![0u8; (scene.width * scene.height * 4) as usize];
@@ -173,8 +172,6 @@ pub fn render() {
 
 /// Paint pixels to canvas
 fn paint(pixels: wasm_bindgen::Clamped<&[u8]>, scene: Scene) {
-    log("Starting paint...");
-
     let document = web_sys::window().unwrap().document().unwrap();
     let canvas = document.get_element_by_id("canvas").unwrap();
     let canvas: web_sys::HtmlCanvasElement = canvas
@@ -196,7 +193,7 @@ fn paint(pixels: wasm_bindgen::Clamped<&[u8]>, scene: Scene) {
 }
 
 /// Create a basic scene with a few objects and some lighting.
-fn create_scene() -> Scene {
+fn create_scene(angle: f64) -> Scene {
     let red = Color { r: 200, g: 0, b: 0 };
 
     let green = Color { r: 0, g: 200, b: 0 };
@@ -221,8 +218,26 @@ fn create_scene() -> Scene {
         ..sphere1
     };
 
+    // Calculate camera postion as point on a circle
+    // Adapted from: https://stackoverflow.com/questions/839899/how-do-i-calculate-a-point-on-a-circle-s-circumference
+    let radius = 5.0; // Radius of orbit
+    let orbit_center = Point3::new(0.0, 0.0, -3.0);
+    let x = orbit_center.x + radius * angle.cos();
+    let z = orbit_center.z + radius * angle.sin();
+    let camera_location = Point3::new(x, 0.0, z);
+    log(&format!("x={}, z={}", x, z));
+
     // From: https://stackoverflow.com/questions/13078243/how-to-move-a-camera-using-in-a-ray-tracer
-    let camera_direction = Vector3::new(0.0, 0.0, -1.0).normalize();
+    let camera_direction = Vector3::new(
+        orbit_center.x - camera_location.x,
+        orbit_center.y - camera_location.y,
+        orbit_center.z - camera_location.z,
+    )
+    .normalize();
+    log(&format!(
+        "direction: {}, {}",
+        camera_direction.x, camera_direction.z
+    ));
     let initial_camera_up = Vector3::new(0.0, 1.0, 0.0);
     let camera_right = initial_camera_up.cross(&camera_direction);
     let camera_up = camera_right.cross(&camera_direction);
@@ -236,7 +251,7 @@ fn create_scene() -> Scene {
         },
         spheres: vec![sphere1, sphere2, sphere3],
         camera_direction: camera_direction,
-        camera_location: Point3::new(0.0, 0.0, 2.0),
+        camera_location: camera_location,
         camera_right: camera_right,
         camera_up: camera_up,
     };
