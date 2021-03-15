@@ -153,16 +153,30 @@ pub fn render(angle: f64) {
             let ray = create_prime(x, y, &scene);
             let index = (x + y * scene.width) as usize;
             pixels[4 * index + 3] = 255; // Set background to not be transparent
+
+            let mut closest_sphere: Option<Sphere> = None;
+            let mut closest_distance: Option<f64> = None;
             for sphere in scene.spheres.iter() {
                 let distance = intersect(&ray, &sphere);
-                if !distance.is_none() {
-                    let color = get_color(&scene, &ray, distance.unwrap(), sphere);
-                    pixels[4 * index] = color.r;
-                    pixels[4 * index + 1] = color.g;
-                    pixels[4 * index + 2] = color.b;
-                    pixels[4 * index + 3] = 255; // no transparency
-                    break;
+                if !distance.is_none()
+                    && (closest_distance.is_none() || distance < closest_distance)
+                {
+                    closest_distance = distance;
+                    closest_sphere = Some(*sphere);
                 }
+            }
+
+            if !closest_sphere.is_none() {
+                let color = get_color(
+                    &scene,
+                    &ray,
+                    closest_distance.unwrap(),
+                    &closest_sphere.unwrap(),
+                );
+                pixels[4 * index] = color.r;
+                pixels[4 * index + 1] = color.g;
+                pixels[4 * index + 2] = color.b;
+                pixels[4 * index + 3] = 255; // no transparency
             }
         }
     }
@@ -228,12 +242,7 @@ fn create_scene(angle: f64) -> Scene {
     log(&format!("x={}, z={}", x, z));
 
     // From: https://stackoverflow.com/questions/13078243/how-to-move-a-camera-using-in-a-ray-tracer
-    let camera_direction = Vector3::new(
-        orbit_center.x - camera_location.x,
-        orbit_center.y - camera_location.y,
-        orbit_center.z - camera_location.z,
-    )
-    .normalize();
+    let camera_direction: Vector3<f64> = (orbit_center - camera_location).normalize();
     log(&format!(
         "direction: {}, {}",
         camera_direction.x, camera_direction.z
