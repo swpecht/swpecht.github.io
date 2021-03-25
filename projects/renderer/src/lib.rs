@@ -37,11 +37,76 @@ struct Ray {
     direction: Vector3<f64>,
 }
 
+enum Element {
+    Sphere(Sphere),
+}
+
+impl Element {
+    fn color(&self) -> &Color {
+        match *self {
+            Element::Sphere(ref s) => &s.color,
+        }
+    }
+}
+
+trait Intersectable {
+    /// Returns distance to closest point of intersection.
+    fn intersect(&self, ray: &Ray) -> Option<f64>;
+    fn surface_normal(&self, hit_point: &Point3<f64>) -> Vector3<f64>;
+}
+
+impl Intersectable for Element {
+    fn intersect(&self, ray: &Ray) -> Option<f64> {
+        match *self {
+            Element::Sphere(ref s) => s.intersect(ray),
+        }
+    }
+
+    fn surface_normal(&self, hit_point: &Point3<f64>) -> Vector3<f64> {
+        match *self {
+            Element::Sphere(ref s) => s.surface_normal(hit_point),
+        }
+    }
+}
+
 #[derive(Copy, Clone)]
 struct Sphere {
     center: Point3<f64>,
     radius: f64,
     color: Color,
+}
+
+impl Intersectable for Sphere {
+    fn intersect(&self, ray: &Ray) -> Option<f64> {
+        // Adapted from: https://bheisler.github.io/post/writing-raytracer-in-rust-part-1/
+
+        //Create a line segment between the ray origin and the center of the sphere
+        let l: Vector3<f64> = self.center - ray.origin;
+        //Use l as a hypotenuse and find the length of the adjacent side
+        let adj = l.dot(&ray.direction);
+        //Find the length-squared of the opposite side
+        //This is equivalent to (but faster than) (l.length() * l.length()) - (adj * adj)
+        let d2 = l.dot(&l) - (adj * adj);
+        let radius2 = self.radius * self.radius;
+        //If that length-squared is less than radius squared, the ray intersects the sphere
+        if d2 > radius2 {
+            return None;
+        }
+        let thc = (radius2 - d2).sqrt();
+        let t0 = adj - thc;
+        let t1 = adj + thc;
+
+        if t0 < 0.0 && t1 < 0.0 {
+            return None;
+        }
+
+        let distance = if t0 < t1 { t0 } else { t1 };
+        Some(distance)
+    }
+
+    fn surface_normal(&self, hit_point: &Point3<f64>) -> Vector3<f64> {
+        (*hit_point - self.center).normalize()
+    }
 }
 
 struct Light {
@@ -53,27 +118,11 @@ struct Scene {
     width: u32,
     height: u32,
     light: Light,
-    spheres: Vec<Sphere>,
+    elements: Vec<Element>,
     camera_direction: Vector3<f64>,
     camera_up: Vector3<f64>,
     camera_right: Vector3<f64>,
     camera_location: Point3<f64>,
-}
-
-#[wasm_bindgen]
-pub struct TestStruct {
-    x: f32,
-}
-
-#[wasm_bindgen]
-impl TestStruct {
-    pub fn new() -> TestStruct {
-        TestStruct { x: 42.0 }
-    }
-
-    pub fn get(&self) -> f32 {
-        return self.x;
-    }
 }
 
 /// Create primes
@@ -91,55 +140,6 @@ fn create_prime(x: u32, y: u32, scene: &Scene) -> Ray {
     }
 }
 
-/// Returns distance to closest point of intersection.
-fn intersect(ray: &Ray, sphere: &Sphere) -> Option<f64> {
-    // Adapted from: https://bheisler.github.io/post/writing-raytracer-in-rust-part-1/
-
-    //Create a line segment between the ray origin and the center of the sphere
-    let l: Vector3<f64> = sphere.center - ray.origin;
-    //Use l as a hypotenuse and find the length of the adjacent side
-    let adj = l.dot(&ray.direction);
-    //Find the length-squared of the opposite side
-    //This is equivalent to (but faster than) (l.length() * l.length()) - (adj * adj)
-    let d2 = l.dot(&l) - (adj * adj);
-    let radius2 = sphere.radius * sphere.radius;
-    //If that length-squared is less than radius squared, the ray intersects the sphere
-    if d2 > radius2 {
-        return None;
-    }
-    let thc = (radius2 - d2).sqrt();
-    let t0 = adj - thc;
-    let t1 = adj + thc;
-
-    if t0 < 0.0 && t1 < 0.0 {
-        return None;
-    }
-
-    let distance = if t0 < t1 { t0 } else { t1 };
-    Some(distance)
-}
-
-fn surface_normal(sphere: &Sphere, hit_point: &Point3<f64>) -> Vector3<f64> {
-    (*hit_point - sphere.center).normalize()
-}
-
-fn get_color(scene: &Scene, ray: &Ray, distance: f64, sphere: &Sphere) -> Color {
-    let hit_point = ray.origin + (ray.direction * distance);
-    let surface_normal = surface_normal(sphere, &hit_point);
-    let direction_to_light = -scene.light.direction.normalize();
-    let light_power =
-        (surface_normal.dot(&direction_to_light) as f32).max(0.0) * scene.light.intensity;
-    const ALBEDO: f32 = 0.18; // placeholder
-    let light_reflected = ALBEDO / std::f32::consts::PI;
-
-    let color = Color {
-        r: (sphere.color.r as f32 * light_power * light_reflected) as u8,
-        g: (sphere.color.g as f32 * light_power * light_reflected) as u8,
-        b: (sphere.color.b as f32 * light_power * light_reflected) as u8,
-    };
-    color.clamp()
-}
-
 /// Renders frame with camera at specied point arount a circle
 #[wasm_bindgen]
 pub fn render(angle: f64) {
@@ -154,24 +154,24 @@ pub fn render(angle: f64) {
             let index = (x + y * scene.width) as usize;
             pixels[4 * index + 3] = 255; // Set background to not be transparent
 
-            let mut closest_sphere: Option<Sphere> = None;
+            let mut closest_element: Option<&Element> = None;
             let mut closest_distance: Option<f64> = None;
-            for sphere in scene.spheres.iter() {
-                let distance = intersect(&ray, &sphere);
+            for element in scene.elements.iter() {
+                let distance = element.intersect(&ray);
                 if !distance.is_none()
                     && (closest_distance.is_none() || distance < closest_distance)
                 {
                     closest_distance = distance;
-                    closest_sphere = Some(*sphere);
+                    closest_element = Some(element);
                 }
             }
 
-            if !closest_sphere.is_none() {
+            if !closest_element.is_none() {
                 let color = get_color(
                     &scene,
                     &ray,
                     closest_distance.unwrap(),
-                    &closest_sphere.unwrap(),
+                    closest_element.unwrap(),
                 );
                 pixels[4 * index] = color.r;
                 pixels[4 * index + 1] = color.g;
@@ -182,6 +182,23 @@ pub fn render(angle: f64) {
     }
 
     paint(Clamped(&pixels), scene);
+}
+
+fn get_color(scene: &Scene, ray: &Ray, distance: f64, element: &Element) -> Color {
+    let hit_point = ray.origin + (ray.direction * distance);
+    let surface_normal = element.surface_normal(&hit_point);
+    let direction_to_light = -scene.light.direction.normalize();
+    let light_power =
+        (surface_normal.dot(&direction_to_light) as f32).max(0.0) * scene.light.intensity;
+    const ALBEDO: f32 = 0.18; // placeholder
+    let light_reflected = ALBEDO / std::f32::consts::PI;
+
+    let color = Color {
+        r: (element.color().r as f32 * light_power * light_reflected) as u8,
+        g: (element.color().g as f32 * light_power * light_reflected) as u8,
+        b: (element.color().b as f32 * light_power * light_reflected) as u8,
+    };
+    color.clamp()
 }
 
 /// Paint pixels to canvas
@@ -214,23 +231,23 @@ fn create_scene(angle: f64) -> Scene {
 
     let blue = Color { r: 0, g: 0, b: 200 };
 
-    let sphere1 = Sphere {
+    let sphere1 = Element::Sphere(Sphere {
         center: Point3::new(0.0, 0.0, -2.0),
         radius: 0.5,
         color: red,
-    };
+    });
 
-    let sphere2 = Sphere {
+    let sphere2 = Element::Sphere(Sphere {
         center: Point3::new(-1.0, 0.0, -3.0),
+        radius: 0.5,
         color: green,
-        ..sphere1
-    };
+    });
 
-    let sphere3 = Sphere {
+    let sphere3 = Element::Sphere(Sphere {
         center: Point3::new(1.5, 0.0, -4.0),
+        radius: 0.5,
         color: blue,
-        ..sphere1
-    };
+    });
 
     // Calculate camera postion as point on a circle
     // Adapted from: https://stackoverflow.com/questions/839899/how-do-i-calculate-a-point-on-a-circle-s-circumference
@@ -258,7 +275,7 @@ fn create_scene(angle: f64) -> Scene {
             direction: Vector3::new(1.0, -1.0, 0.0),
             intensity: 30.0,
         },
-        spheres: vec![sphere1, sphere2, sphere3],
+        elements: vec![sphere1, sphere2, sphere3],
         camera_direction: camera_direction,
         camera_location: camera_location,
         camera_right: camera_right,
