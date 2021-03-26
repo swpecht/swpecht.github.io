@@ -1,4 +1,4 @@
-use wasm_bindgen::prelude::*;
+// use wasm_bindgen::prelude::*;
 use wasm_bindgen::Clamped;
 use wasm_bindgen::JsCast;
 
@@ -12,40 +12,72 @@ mod scene;
 use rendering::{Camera, Element, Ray};
 use scene::{Color, Light, Scene, Sphere};
 
-#[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(js_namespace = console)]
-    fn log(s: &str);
-    #[wasm_bindgen(js_namespace = console, js_name = log)]
-    fn log_u8(a: u8);
+// #[wasm_bindgen]
+// extern "C" {
+//     #[wasm_bindgen(js_namespace = console)]
+//     fn log(s: &str);
+//     #[wasm_bindgen(js_namespace = console, js_name = log)]
+//     fn log_u8(a: u8);
+// }
+
+// #[wasm_bindgen]
+pub struct Universe {
+    scene: Scene,
+    canvas: Option<web_sys::CanvasRenderingContext2d>,
+    pixels: std::vec::Vec<u8>,
 }
 
-/// Renders frame with camera at specied point arount a circle
-#[wasm_bindgen]
-pub fn render(angle: f64) {
-    let scene = create_scene();
-    let camera = create_camera(angle);
+// #[wasm_bindgen]
+impl Universe {
+    pub fn new() -> Universe {
+        let scene = create_scene();
+        let pixels = vec![0u8; (scene.width * scene.height * 4) as usize];
+        return Universe {
+            scene: scene,
+            canvas: None,
+            pixels: pixels,
+        };
+    }
 
-    // Array for RGBA values
-    let mut pixels = vec![0u8; (scene.width * scene.height * 4) as usize];
+    pub fn set_canvas(&mut self) {
+        self.canvas = Some(get_canvas());
+    }
 
-    for x in 0..scene.width {
-        for y in 0..scene.height {
-            let ray = Ray::create_prime(x, y, &scene, &camera);
-            let index = (x + y * scene.width) as usize;
-            let color = rendering::cast_ray(&scene, &ray);
-            pixels[4 * index] = color.r;
-            pixels[4 * index + 1] = color.g;
-            pixels[4 * index + 2] = color.b;
-            pixels[4 * index + 3] = 255; // no transparency
+    /// Renders frame with camera at specied point arount a circle
+    pub fn render(&mut self, angle: f64) {
+        let camera = create_camera(angle);
+
+        for x in 0..self.scene.width {
+            for y in 0..self.scene.height {
+                let ray = Ray::create_prime(x, y, &self.scene, &camera);
+                let index = (x + y * self.scene.width) as usize;
+                let color = rendering::cast_ray(&self.scene, &ray);
+                self.pixels[4 * index] = color.r;
+                self.pixels[4 * index + 1] = color.g;
+                self.pixels[4 * index + 2] = color.b;
+                self.pixels[4 * index + 3] = 255; // no transparency
+            }
         }
     }
 
-    paint(Clamped(&pixels), scene);
+    /// Paint pixels to canvas
+    pub fn paint(&self) {
+        let image_data = ImageData::new_with_u8_clamped_array_and_sh(
+            Clamped(&self.pixels),
+            self.scene.width,
+            self.scene.height,
+        )
+        .unwrap();
+
+        self.canvas
+            .as_ref()
+            .unwrap()
+            .put_image_data(&image_data, 0.0, 0.0)
+            .unwrap();
+    }
 }
 
-/// Paint pixels to canvas
-fn paint(pixels: wasm_bindgen::Clamped<&[u8]>, scene: Scene) {
+fn get_canvas() -> web_sys::CanvasRenderingContext2d {
     let document = web_sys::window().unwrap().document().unwrap();
     let canvas = document.get_element_by_id("canvas").unwrap();
     let canvas: web_sys::HtmlCanvasElement = canvas
@@ -53,17 +85,12 @@ fn paint(pixels: wasm_bindgen::Clamped<&[u8]>, scene: Scene) {
         .map_err(|_| ())
         .unwrap();
 
-    let context = canvas
+    return canvas
         .get_context("2d")
         .unwrap()
         .unwrap()
         .dyn_into::<web_sys::CanvasRenderingContext2d>()
         .unwrap();
-
-    let image_data =
-        ImageData::new_with_u8_clamped_array_and_sh(pixels, scene.width, scene.height).unwrap();
-
-    context.put_image_data(&image_data, 0.0, 0.0).unwrap();
 }
 
 /// Create a basic scene with a few objects and some lighting.
@@ -113,14 +140,9 @@ fn create_camera(angle: f64) -> Camera {
     let x = orbit_center.x + radius * angle.cos();
     let z = orbit_center.z + radius * angle.sin();
     let camera_location = Point3::new(x, 0.0, z);
-    log(&format!("x={}, z={}", x, z));
 
     // From: https://stackoverflow.com/questions/13078243/how-to-move-a-camera-using-in-a-ray-tracer
     let camera_direction: Vector3<f64> = (orbit_center - camera_location).normalize();
-    log(&format!(
-        "direction: {}, {}",
-        camera_direction.x, camera_direction.z
-    ));
     let initial_camera_up = Vector3::new(0.0, 1.0, 0.0);
     let camera_right = initial_camera_up.cross(&camera_direction);
     let camera_up = camera_right.cross(&camera_direction);
