@@ -9,6 +9,11 @@ fn universe_renders(b: &mut test::Bencher) {
     let mut universe = Universe::new();
 
     b.iter(|| {
-        universe.render(0.0);
+        let mut i = 0.0;
+
+        while i < 1.0 {
+            universe.render(i);
+            i += 0.1;
+        }
     });
 }

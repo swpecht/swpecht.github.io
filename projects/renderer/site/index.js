@@ -44,14 +44,17 @@ import("./node_modules/renderer/renderer.js").then((js) => {
   };
 
   var pos = 0.0;
+  const Universe = js.Universe.new();
+  const Painter = js.Painter.new();
 
   const renderLoop = () => {
     fps.render();
-    js.render(pos);
+    Universe.render(pos);
+    Painter.paint(Universe);
     pos += 0.005;
 
     requestAnimationFrame(renderLoop);
   };
 
-  renderLoop()
+  renderLoop();
 });

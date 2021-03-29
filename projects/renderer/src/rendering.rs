@@ -1,6 +1,5 @@
-use na::{Point3, Vector3};
-
 use crate::scene::{Color, Scene, Sphere};
+use na::{Point3, Vector3};
 
 pub struct Ray {
     pub origin: Point3<f64>,
@@ -118,11 +117,11 @@ const BLACK: Color = Color { r: 0, g: 0, b: 0 };
 pub fn cast_ray(scene: &Scene, ray: &Ray) -> Color {
     let mut closest_element: Option<&Element> = None;
     let mut closest_distance: Option<f64> = None;
-    for element in scene.elements.iter() {
+    for element in &scene.elements {
         let distance = element.intersect(&ray);
         if !distance.is_none() && (closest_distance.is_none() || distance < closest_distance) {
             closest_distance = distance;
-            closest_element = Some(element);
+            closest_element = Some(&element);
         }
     }
 

@@ -1,4 +1,4 @@
-// use wasm_bindgen::prelude::*;
+use wasm_bindgen::prelude::*;
 use wasm_bindgen::Clamped;
 use wasm_bindgen::JsCast;
 
@@ -20,27 +20,21 @@ use scene::{Color, Light, Scene, Sphere};
 //     fn log_u8(a: u8);
 // }
 
-// #[wasm_bindgen]
+#[wasm_bindgen]
 pub struct Universe {
     scene: Scene,
-    canvas: Option<web_sys::CanvasRenderingContext2d>,
     pixels: std::vec::Vec<u8>,
 }
 
-// #[wasm_bindgen]
+#[wasm_bindgen]
 impl Universe {
     pub fn new() -> Universe {
         let scene = create_scene();
         let pixels = vec![0u8; (scene.width * scene.height * 4) as usize];
         return Universe {
             scene: scene,
-            canvas: None,
             pixels: pixels,
         };
-    }
-
-    pub fn set_canvas(&mut self) {
-        self.canvas = Some(get_canvas());
     }
 
     /// Renders frame with camera at specied point arount a circle
@@ -59,21 +53,30 @@ impl Universe {
             }
         }
     }
+}
 
-    /// Paint pixels to canvas
-    pub fn paint(&self) {
-        let image_data = ImageData::new_with_u8_clamped_array_and_sh(
-            Clamped(&self.pixels),
-            self.scene.width,
-            self.scene.height,
-        )
-        .unwrap();
+/// Paint pixels to a canvas
+#[wasm_bindgen]
+pub struct Painter {
+    canvas: web_sys::CanvasRenderingContext2d,
+}
 
-        self.canvas
-            .as_ref()
-            .unwrap()
-            .put_image_data(&image_data, 0.0, 0.0)
-            .unwrap();
+#[wasm_bindgen]
+impl Painter {
+    pub fn new() -> Painter {
+        Painter {
+            canvas: get_canvas(),
+        }
+    }
+
+    pub fn paint(&self, universe: &Universe) {
+        let pixels = &universe.pixels;
+        let scene = &universe.scene;
+        let image_data =
+            ImageData::new_with_u8_clamped_array_and_sh(Clamped(pixels), scene.width, scene.height)
+                .unwrap();
+
+        self.canvas.put_image_data(&image_data, 0.0, 0.0).unwrap();
     }
 }
 
