@@ -6,8 +6,6 @@ extern crate nalgebra as na;
 use na::{Point3, Vector3};
 use web_sys::ImageData;
 
-use rayon::prelude::*;
-
 mod rendering;
 mod scene;
 
@@ -58,13 +56,8 @@ impl Universe {
                 render_pixel(x as u32, y, chunk, &self.scene, &camera);
             }
 
-            // Look into using self in a closure -- may need to separate pixel buffer to another struct
-            // https://stackoverflow.com/questions/48717833/how-to-use-struct-self-in-member-method-closure
-            // Need to implement the closure for
-            // TODO can test with par_chunks_mut, is it faster? Can it work in wASM?
-            // This is slower if using rayon -- may be the overhead of creating the threads? Or it may be well vectorized by the compiler
             pixel_column
-                .par_chunks_mut(4)
+                .chunks_mut(4)
                 .enumerate()
                 .for_each(|(x, chunk)| render_pixel(x as u32, y, chunk, &self.scene, &camera));
         }
