@@ -1,14 +1,15 @@
-#![feature(test)]
-extern crate test;
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 use renderer::{PixelBuffer, Universe};
 
-#[bench]
-fn universe_renders(b: &mut test::Bencher) {
+pub fn criterion_benchmark(c: &mut Criterion) {
     let mut universe = Universe::new();
     let mut pixel_buffer = PixelBuffer::new(&universe);
 
-    b.iter(|| {
-        universe.render(0.1, &mut pixel_buffer);
+    c.bench_function("render", |b| {
+        b.iter(|| universe.render(black_box(0.1), &mut pixel_buffer))
     });
 }
+
+criterion_group!(benches, criterion_benchmark);
+criterion_main!(benches);
