@@ -6,53 +6,78 @@ extern crate nalgebra as na;
 use na::{Point3, Vector3};
 use web_sys::ImageData;
 
+use rayon::prelude::*;
+
 mod rendering;
 mod scene;
 
 use rendering::{Camera, Element, Ray};
 use scene::{Color, Light, Scene, Sphere};
 
-// #[wasm_bindgen]
-// extern "C" {
-//     #[wasm_bindgen(js_namespace = console)]
-//     fn log(s: &str);
-//     #[wasm_bindgen(js_namespace = console, js_name = log)]
-//     fn log_u8(a: u8);
-// }
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = console)]
+    fn log(s: &str);
+    #[wasm_bindgen(js_namespace = console, js_name = log)]
+    fn log_u8(a: u8);
+}
+
+#[wasm_bindgen]
+pub struct PixelBuffer {
+    pixels: std::vec::Vec<u8>,
+}
+
+#[wasm_bindgen]
+impl PixelBuffer {
+    pub fn new(universe: &Universe) -> PixelBuffer {
+        let pixels = vec![0u8; (universe.scene.width * universe.scene.height * 4) as usize];
+        return PixelBuffer { pixels: pixels };
+    }
+}
 
 #[wasm_bindgen]
 pub struct Universe {
     scene: Scene,
-    pixels: std::vec::Vec<u8>,
 }
 
 #[wasm_bindgen]
 impl Universe {
     pub fn new() -> Universe {
         let scene = create_scene();
-        let pixels = vec![0u8; (scene.width * scene.height * 4) as usize];
-        return Universe {
-            scene: scene,
-            pixels: pixels,
-        };
+        return Universe { scene: scene };
     }
 
     /// Renders frame with camera at specied point arount a circle
-    pub fn render(&mut self, angle: f64) {
+    pub fn render(&mut self, angle: f64, pixel_buffer: &mut PixelBuffer) {
         let camera = create_camera(angle);
-
-        for x in 0..self.scene.width {
-            for y in 0..self.scene.height {
-                let ray = Ray::create_prime(x, y, &self.scene, &camera);
-                let index = (x + y * self.scene.width) as usize;
-                let color = rendering::cast_ray(&self.scene, &ray);
-                self.pixels[4 * index] = color.r;
-                self.pixels[4 * index + 1] = color.g;
-                self.pixels[4 * index + 2] = color.b;
-                self.pixels[4 * index + 3] = 255; // no transparency
+        for y in 0..self.scene.height {
+            let start_index = (y * self.scene.width * 4) as usize;
+            let end_index = ((y + 1) * self.scene.width * 4) as usize;
+            let pixel_column = &mut pixel_buffer.pixels[start_index..end_index];
+            for (x, chunk) in pixel_column.chunks_mut(4).enumerate() {
+                render_pixel(x as u32, y, chunk, &self.scene, &camera);
             }
+
+            // Look into using self in a closure -- may need to separate pixel buffer to another struct
+            // https://stackoverflow.com/questions/48717833/how-to-use-struct-self-in-member-method-closure
+            // Need to implement the closure for
+            // TODO can test with par_chunks_mut, is it faster? Can it work in wASM?
+            // This is slower if using rayon -- may be the overhead of creating the threads? Or it may be well vectorized by the compiler
+            pixel_column
+                .par_chunks_mut(4)
+                .enumerate()
+                .for_each(|(x, chunk)| render_pixel(x as u32, y, chunk, &self.scene, &camera));
         }
     }
+}
+
+fn render_pixel(x: u32, y: u32, pixel_chunk: &mut [u8], scene: &Scene, camera: &Camera) {
+    let ray = Ray::create_prime(x, y, scene, camera);
+    let color = rendering::cast_ray(scene, &ray);
+    pixel_chunk[0] = color.r;
+    pixel_chunk[1] = color.g;
+    pixel_chunk[2] = color.b;
+    pixel_chunk[3] = 255u8; // no transparency
 }
 
 /// Paint pixels to a canvas
@@ -69,8 +94,8 @@ impl Painter {
         }
     }
 
-    pub fn paint(&self, universe: &Universe) {
-        let pixels = &universe.pixels;
+    pub fn paint(&self, universe: &Universe, pixel_buffer: &mut PixelBuffer) {
+        let pixels = &pixel_buffer.pixels;
         let scene = &universe.scene;
         let image_data =
             ImageData::new_with_u8_clamped_array_and_sh(Clamped(pixels), scene.width, scene.height)

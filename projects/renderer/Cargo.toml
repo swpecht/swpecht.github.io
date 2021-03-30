@@ -4,9 +4,6 @@ version = "0.1.0"
 authors = ["swpecht <steven.pecht@gmail.com>"]
 edition = "2018"
 
-[profile.release]
-debug = 1 # To enable profiling
-
 [profile.bench]
 debug = 1
 
@@ -17,6 +14,7 @@ crate-type =  ["lib", "cdylib"] # lib for benchmarks, cdylib for wasm
 js-sys = "0.3.47"
 wasm-bindgen = "0.2"
 nalgebra = "0.24.1"
+rayon = "1.5"
 
 [dependencies.web-sys]
 version = "0.3.4"

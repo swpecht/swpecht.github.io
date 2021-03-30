@@ -1,19 +1,14 @@
 #![feature(test)]
-extern crate renderer;
 extern crate test;
 
-use renderer::Universe;
+use renderer::{PixelBuffer, Universe};
 
 #[bench]
 fn universe_renders(b: &mut test::Bencher) {
     let mut universe = Universe::new();
+    let mut pixel_buffer = PixelBuffer::new(&universe);
 
     b.iter(|| {
-        let mut i = 0.0;
-
-        while i < 1.0 {
-            universe.render(i);
-            i += 0.1;
-        }
+        universe.render(0.1, &mut pixel_buffer);
     });
 }

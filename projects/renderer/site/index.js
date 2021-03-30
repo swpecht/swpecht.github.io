@@ -46,11 +46,12 @@ import("./node_modules/renderer/renderer.js").then((js) => {
   var pos = 0.0;
   const Universe = js.Universe.new();
   const Painter = js.Painter.new();
+  const PixelBuffer = js.PixelBuffer.new(Universe);
 
   const renderLoop = () => {
     fps.render();
-    Universe.render(pos);
-    Painter.paint(Universe);
+    Universe.render(pos, PixelBuffer);
+    Painter.paint(Universe, PixelBuffer);
     pos += 0.005;
 
     requestAnimationFrame(renderLoop);
