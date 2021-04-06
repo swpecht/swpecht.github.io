@@ -4,7 +4,7 @@ use wasm_bindgen::JsCast;
 
 extern crate nalgebra as na;
 use na::{Point3, Vector3};
-use web_sys::ImageData;
+use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
 
 mod rendering;
 mod scene;
@@ -76,7 +76,7 @@ fn render_pixel(x: u32, y: u32, pixel_chunk: &mut [u8], scene: &Scene, camera: &
 /// Paint pixels to a canvas
 #[wasm_bindgen]
 pub struct Painter {
-    canvas: web_sys::CanvasRenderingContext2d,
+    canvas: CanvasRenderingContext2d,
 }
 
 #[wasm_bindgen]
@@ -98,11 +98,11 @@ impl Painter {
     }
 }
 
-fn get_canvas() -> web_sys::CanvasRenderingContext2d {
+fn get_canvas() -> CanvasRenderingContext2d {
     let document = web_sys::window().unwrap().document().unwrap();
     let canvas = document.get_element_by_id("canvas").unwrap();
-    let canvas: web_sys::HtmlCanvasElement = canvas
-        .dyn_into::<web_sys::HtmlCanvasElement>()
+    let canvas: HtmlCanvasElement = canvas
+        .dyn_into::<HtmlCanvasElement>()
         .map_err(|_| ())
         .unwrap();
 
@@ -110,7 +110,7 @@ fn get_canvas() -> web_sys::CanvasRenderingContext2d {
         .get_context("2d")
         .unwrap()
         .unwrap()
-        .dyn_into::<web_sys::CanvasRenderingContext2d>()
+        .dyn_into::<CanvasRenderingContext2d>()
         .unwrap();
 }
 
