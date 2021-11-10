@@ -1,4 +1,4 @@
-use std::{collections::{VecDeque}, hash::Hash};
+use std::{collections::{HashMap, VecDeque}, hash::Hash};
 
 const WORLD_SIZE: usize = 15;
 
@@ -9,7 +9,7 @@ struct World {
     goal: Point,
 }
 
-#[derive(PartialEq, Clone, Copy, Hash, Eq)]
+#[derive(PartialEq, Clone, Copy, Hash, Eq, Debug)]
 struct Point {
     x: usize,
     y: usize
@@ -24,7 +24,27 @@ fn main() {
 
     print_world(world);
     println!("");
-    find_path_bfs(world);
+    let path = find_path_bfs(world);
+    print_path(world.start, world.goal, &path);
+
+}
+
+fn print_path(start: Point, goal: Point, path: &Vec<Point>) {
+    for y in 0..WORLD_SIZE {
+        for x in 0..WORLD_SIZE {
+            let p = Point { x: x, y: y};
+            if p == start {
+                print!("S")
+            } else if p == goal {
+                print!("G")
+            } else if path.contains(&p) {
+                print!("#")
+            } else {
+                print!{"."}
+            }
+        }
+        println!("")
+    }
 }
 
 fn print_world(world: World) {
@@ -47,17 +67,25 @@ fn print_world(world: World) {
 
 /// Returns a vector of Points for the shortest path to the goal
 fn find_path_bfs(world: World) -> Vec<Point> {
-    let dmatrix = get_distance_matrix(world);
+    let (dmatrix, parents) = get_distance_matrix(world);
     let dist_world = World{costs: dmatrix, ..world};
     print_world(dist_world);
 
-    return vec![world.start]
+    let mut path = vec![world.goal];
+    while path.last().unwrap().clone() != world.start {
+        let p = parents[path.last().unwrap()];
+        path.push(p);
+    }
+
+    path.reverse();
+    return path
 }
 
 /// Return the distance to get to each point in the world from the starting point
-fn get_distance_matrix(world: World) -> [Option<i8>; WORLD_SIZE * WORLD_SIZE] {
+fn get_distance_matrix(world: World) -> ([Option<i8>; WORLD_SIZE * WORLD_SIZE], HashMap<Point, Point>) {
     let mut dmatrix: [Option<i8>; WORLD_SIZE * WORLD_SIZE] = [None; WORLD_SIZE * WORLD_SIZE];
     let mut queue: VecDeque<Point> = VecDeque::new();
+    let mut parents: HashMap<Point, Point> = HashMap::new();
 
     queue.push_back(world.start);
     let start = world.start;
@@ -75,12 +103,13 @@ fn get_distance_matrix(world: World) -> [Option<i8>; WORLD_SIZE * WORLD_SIZE] {
             if dmatrix[n.y * WORLD_SIZE + n.x].is_none() {      
                 dmatrix[n.y * WORLD_SIZE + n.x] = Some(d+1);
                 queue.push_back(n);
+                parents.insert(n, node);
             }
         }
         
     }
 
-    return dmatrix
+    return (dmatrix, parents)
     
 }
 
