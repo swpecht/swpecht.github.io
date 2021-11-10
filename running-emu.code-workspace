@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"path": "./docs"
+		},
+		{
+			"path": "./projects/running-emu"
+		}
+	],
+	"settings": {
+		"rust-analyzer
+	}
+}
