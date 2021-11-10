@@ -1,8 +1,9 @@
-use std::{collections::{HashMap, VecDeque}, hash::Hash};
+use std::{cmp::Reverse, hash::Hash};
+use priority_queue::PriorityQueue;
 
 #[derive(Clone)]
 pub struct World {
-    costs: Vec<Option<i8>>,
+    costs: Vec<i8>,
     width: usize,
     start: Point,
     goal: Point,
@@ -17,11 +18,11 @@ pub struct Point {
 
 impl World {
     pub fn new() -> World {
-        World { costs: vec![Some(0); 225], start: Point {x: 0, y: 0}, goal: Point{x: 9, y: 9}, width: 15 }
+        World { costs: vec![0; 225], start: Point {x: 0, y: 0}, goal: Point{x: 9, y: 9}, width: 15 }
     }
 
     pub fn from_map(str_map: &str) -> World {
-        let mut costs: Vec<Option<i8>> = vec![];
+        let mut costs: Vec<i8> = vec![];
         let mut x = 0;
         let mut y = 0;
         let mut start = None;
@@ -30,9 +31,11 @@ impl World {
 
         for c in str_map.chars() {
             match c {
-                '.' => {costs.push(Some(0)); x+=1},
-                'S' => {costs.push(Some(0)); start = Some(Point{x: x, y: y}); x+=1}
-                'G' => {costs.push(Some(0)); goal = Some(Point{x: x, y: y}); x+=1}
+                '.' => {costs.push(0); x+=1},
+                'S' => {costs.push(0); start = Some(Point{x: x, y: y}); x+=1}
+                'G' => {costs.push(0); goal = Some(Point{x: x, y: y}); x+=1}
+                'W' => {costs.push(10); goal = Some(Point{x: x, y: y}); x+=1} // Walls have cost of 10
+                ' ' => {} // ignore white spaces
                 '\n' => {if !width.is_none() && width.unwrap() != x {panic!("Error parsing map, rows vary in width")}; width = Some(x); x = 0; y += 1}
                 _ => panic!("Error parsing map, invalid character: {}", c)
             }
@@ -76,7 +79,25 @@ pub fn print_world(world: &World) {
             } else if p == world.goal {
                 print!("G")
             } else {
-                print!("{}", world.costs[y * world.width + x].unwrap_or(-1))
+                print!("{}", world.costs[y * world.width + x])
+            }
+            print!("\t")            
+        }
+        println!("");
+    }
+}
+
+pub fn print_cost_matrix(world: &World, cmatrix: &Vec<Option<i8>>) {
+    for y in 0.. (world.costs.len() / world.width) {
+        for x in 0..world.width {
+            let p = Point{x: x, y: y};
+
+            if p == world.start {
+                print!("S")
+            } else if p == world.goal {
+                print!("G")
+            } else {
+                print!("{}", cmatrix[y * world.width + x].unwrap_or(-1))
             }
             print!("\t")            
         }
@@ -95,6 +116,17 @@ mod tests {
         let world = World::from_map(map);
         let path = find_path_bfs(&world);
         assert_eq!(path, vec![Point{x: 0, y: 0}, Point{x:1, y:1}, Point{x:2, y:2}])
+    }
+
+    #[test]
+    fn find_path_bfs_walls() {
+        let map = 
+        "S..
+         WW.
+         ..G";
+        let world = World::from_map(map);
+        let path = find_path_bfs(&world);
+        assert_eq!(path, vec![Point{x: 0, y: 0}, Point{x:1, y:0}, Point{x:2, y:1}, Point{x:2, y:2}])
     }
 
     #[test]
@@ -126,12 +158,18 @@ pub fn create_map(size: usize) -> String {
 
 /// Returns a vector of Points for the shortest path to the goal
 pub fn find_path_bfs(world: &World) -> Vec<Point> {
-    let (_, parents) = get_distance_matrix(&world);
+    let cmatrix = get_distance_matrix(&world);
+    print_cost_matrix(world, &cmatrix);
+
+    // Given the cost matrix, we can start at the goal and greedily follow the lowest cost
+    // path back to the starting point to get an optimal path.
 
     let mut path = vec![world.goal];
     while path.last().unwrap().clone() != world.start {
-        let p = parents[path.last().unwrap()];
-        path.push(p);
+        let p = path.last().unwrap();
+        let neighbors = get_neighbors(world, *p);
+        let (_, min) = neighbors.iter().enumerate().min_by(|a, b| cmatrix[a.1.x + a.1.y * world.width].cmp(&cmatrix[b.1.x + b.1.y * world.width])).unwrap();
+        path.push(*min);
     }
 
     path.reverse();
@@ -139,34 +177,37 @@ pub fn find_path_bfs(world: &World) -> Vec<Point> {
 }
 
 /// Return the distance to get to each point in the world from the starting point
-fn get_distance_matrix(world: &World) -> (Vec<Option<i8>>, HashMap<Point, Point>) {
+/// 
+/// The lowest cost space is always explored next rather than traditional breadth first search.
+/// This ensures that tiles costs always represent the 'cheapest' way to get to the tile.
+fn get_distance_matrix(world: &World) -> Vec<Option<i8>> {
     let mut dmatrix = vec![None; world.costs.len()];
-    let mut queue: VecDeque<Point> = VecDeque::new();
-    let mut parents: HashMap<Point, Point> = HashMap::new();
+    let mut queue: PriorityQueue<Point, Reverse<i8>> = PriorityQueue::new();
 
-    queue.push_back(world.start);
+    // Initialize starting cost to 0
+    queue.push(world.start, Reverse(0));
     let start = world.start;
     dmatrix[start.y * world.width + start.x] = Some(0);
 
     while !queue.is_empty() {
-        let node = queue.pop_front().unwrap();
+        let (node, cost) = queue.pop().unwrap();
         if node == world.goal {
             break
         }
 
         let neighors = get_neighbors(world, node);
-        let d = dmatrix[node.y * world.width + node.x].unwrap();
         for n in neighors {
-            if dmatrix[n.y * world.width + n.x].is_none() {      
-                dmatrix[n.y * world.width + n.x] = Some(d+1);
-                queue.push_back(n);
-                parents.insert(n, node);
+            let index = n.y * world.width + n.x;
+            if dmatrix[index].is_none() {
+                let new_cost = cost.0 + 1 + world.costs[index]; // Cost always increases by minimum of 1     
+                dmatrix[index] = Some(new_cost);
+                queue.push(n, Reverse(new_cost));
             }
         }
         
     }
 
-    return (dmatrix, parents)
+    return dmatrix
     
 }
 
