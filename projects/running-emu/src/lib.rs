@@ -1,0 +1,187 @@
+use std::{collections::{HashMap, VecDeque}, hash::Hash};
+
+#[derive(Clone)]
+pub struct World {
+    costs: Vec<Option<i8>>,
+    width: usize,
+    start: Point,
+    goal: Point,
+}
+
+#[derive(PartialEq, Clone, Copy, Hash, Eq, Debug)]
+pub struct Point {
+    x: usize,
+    y: usize
+}
+
+
+impl World {
+    pub fn new() -> World {
+        World { costs: vec![Some(0); 225], start: Point {x: 0, y: 0}, goal: Point{x: 9, y: 9}, width: 15 }
+    }
+
+    pub fn from_map(str_map: &str) -> World {
+        let mut costs: Vec<Option<i8>> = vec![];
+        let mut x = 0;
+        let mut y = 0;
+        let mut start = None;
+        let mut goal = None;
+        let mut width = None;
+
+        for c in str_map.chars() {
+            match c {
+                '.' => {costs.push(Some(0)); x+=1},
+                'S' => {costs.push(Some(0)); start = Some(Point{x: x, y: y}); x+=1}
+                'G' => {costs.push(Some(0)); goal = Some(Point{x: x, y: y}); x+=1}
+                '\n' => {if !width.is_none() && width.unwrap() != x {panic!("Error parsing map, rows vary in width")}; width = Some(x); x = 0; y += 1}
+                _ => panic!("Error parsing map, invalid character: {}", c)
+            }
+        }
+        
+        if start.is_none() || goal.is_none() || width.is_none() {
+            panic!("Error parsing map, S and G must be defined");
+        }
+
+        return World { costs: costs, start: start.unwrap(), goal: goal.unwrap(), width: width.unwrap()};
+    }
+
+    
+}
+
+pub fn print_path(path: &Vec<Point>, world: World) {
+    for y in 0.. (world.costs.len() / world.width) {
+        for x in 0..world.width {
+            let p = Point { x: x, y: y};
+            if p == world.start {
+                print!("S")
+            } else if p == world.goal {
+                print!("G")
+            } else if path.contains(&p) {
+                print!("#")
+            } else {
+                print!{"."}
+            }
+        }
+        println!("")
+    }
+}
+
+pub fn print_world(world: &World) {
+    for y in 0.. (world.costs.len() / world.width) {
+        for x in 0..world.width {
+            let p = Point{x: x, y: y};
+
+            if p == world.start {
+                print!("S")
+            } else if p == world.goal {
+                print!("G")
+            } else {
+                print!("{}", world.costs[y * world.width + x].unwrap_or(-1))
+            }
+            print!("\t")            
+        }
+        println!("");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{Point, World, create_map, find_path_bfs};
+
+    #[test]
+    fn find_path_bfs_simple() {
+        let map = 
+        "S..\n...\n..G";
+        let world = World::from_map(map);
+        let path = find_path_bfs(&world);
+        assert_eq!(path, vec![Point{x: 0, y: 0}, Point{x:1, y:1}, Point{x:2, y:2}])
+    }
+
+    #[test]
+    fn create_map_empty() {
+        let map = create_map(3);
+        assert_eq!(map, "S..\n...\n..G")
+    }
+}
+
+pub fn create_map(size: usize) -> String {
+    let mut map = String::from("");
+
+    for y in 0..size{
+        for x in 0..size {
+            let c = match (x, y) {
+                (0, 0) => 'S',
+                (x, y) if x == size - 1 && y == size - 1 => 'G',
+                _ => '.'
+            };
+            map.push(c);
+        }
+        if y < size - 1 {
+            map.push('\n')
+        }    
+    }
+    
+    return map;
+}
+
+/// Returns a vector of Points for the shortest path to the goal
+pub fn find_path_bfs(world: &World) -> Vec<Point> {
+    let (_, parents) = get_distance_matrix(&world);
+
+    let mut path = vec![world.goal];
+    while path.last().unwrap().clone() != world.start {
+        let p = parents[path.last().unwrap()];
+        path.push(p);
+    }
+
+    path.reverse();
+    return path
+}
+
+/// Return the distance to get to each point in the world from the starting point
+fn get_distance_matrix(world: &World) -> (Vec<Option<i8>>, HashMap<Point, Point>) {
+    let mut dmatrix = vec![None; world.costs.len()];
+    let mut queue: VecDeque<Point> = VecDeque::new();
+    let mut parents: HashMap<Point, Point> = HashMap::new();
+
+    queue.push_back(world.start);
+    let start = world.start;
+    dmatrix[start.y * world.width + start.x] = Some(0);
+
+    while !queue.is_empty() {
+        let node = queue.pop_front().unwrap();
+        if node == world.goal {
+            break
+        }
+
+        let neighors = get_neighbors(world, node);
+        let d = dmatrix[node.y * world.width + node.x].unwrap();
+        for n in neighors {
+            if dmatrix[n.y * world.width + n.x].is_none() {      
+                dmatrix[n.y * world.width + n.x] = Some(d+1);
+                queue.push_back(n);
+                parents.insert(n, node);
+            }
+        }
+        
+    }
+
+    return (dmatrix, parents)
+    
+}
+
+fn get_neighbors(world: &World, point: Point) -> Vec<Point> {
+    // Allow adjacent and diagonal movement
+    let directions = [(-1, 0), (1, 0), (0, -1), (0, 1), (1, 1), (-1, -1), (1, -1), (-1, 1)];
+    let mut neighbors: Vec<Point> = Vec::new();
+
+
+    for d in directions {
+        let candidate = Point {x: (point.x as i32 + d.0) as usize, y: (point.y as i32 + d.1) as usize};
+        if candidate.x < world.width && candidate.y < (world.costs.len() / world.width) {
+            neighbors.push(candidate);
+        }
+    }
+
+    return neighbors
+}
