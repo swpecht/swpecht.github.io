@@ -34,7 +34,7 @@ impl World {
                 '.' => {costs.push(0); x+=1},
                 'S' => {costs.push(0); start = Some(Point{x: x, y: y}); x+=1}
                 'G' => {costs.push(0); goal = Some(Point{x: x, y: y}); x+=1}
-                'W' => {costs.push(10); goal = Some(Point{x: x, y: y}); x+=1} // Walls have cost of 10
+                'W' => {costs.push(10); x+=1} // Walls have cost of 10
                 ' ' => {} // ignore white spaces
                 '\n' => {if !width.is_none() && width.unwrap() != x {panic!("Error parsing map, rows vary in width")}; width = Some(x); x = 0; y += 1}
                 _ => panic!("Error parsing map, invalid character: {}", c)
@@ -115,7 +115,7 @@ mod tests {
         "S..\n...\n..G";
         let world = World::from_map(map);
         let path = find_path_bfs(&world);
-        assert_eq!(path, vec![Point{x: 0, y: 0}, Point{x:1, y:1}, Point{x:2, y:2}])
+        assert_eq!(path, vec![Point { x: 0, y: 0 }, Point { x: 0, y: 1 }, Point { x: 0, y: 2 }, Point { x: 1, y: 2 }, Point { x: 2, y: 2 }])
     }
 
     #[test]
@@ -126,7 +126,7 @@ mod tests {
          ..G";
         let world = World::from_map(map);
         let path = find_path_bfs(&world);
-        assert_eq!(path, vec![Point{x: 0, y: 0}, Point{x:1, y:0}, Point{x:2, y:1}, Point{x:2, y:2}])
+        assert_eq!(path, vec![Point { x: 0, y: 0 }, Point { x: 1, y: 0 }, Point { x: 2, y: 0 }, Point { x: 2, y: 1 }, Point { x: 2, y: 2 }])
     }
 
     #[test]
@@ -168,7 +168,7 @@ pub fn find_path_bfs(world: &World) -> Vec<Point> {
     while path.last().unwrap().clone() != world.start {
         let p = path.last().unwrap();
         let neighbors = get_neighbors(world, *p);
-        let (_, min) = neighbors.iter().enumerate().min_by(|a, b| cmatrix[a.1.x + a.1.y * world.width].cmp(&cmatrix[b.1.x + b.1.y * world.width])).unwrap();
+        let (_, min) = neighbors.iter().filter(|p| !cmatrix[p.x + p.y * world.width].is_none()).enumerate().min_by(|a, b| cmatrix[a.1.x + a.1.y * world.width].cmp(&cmatrix[b.1.x + b.1.y * world.width])).unwrap();
         path.push(*min);
     }
 
@@ -213,7 +213,8 @@ fn get_distance_matrix(world: &World) -> Vec<Option<i8>> {
 
 fn get_neighbors(world: &World, point: Point) -> Vec<Point> {
     // Allow adjacent and diagonal movement
-    let directions = [(-1, 0), (1, 0), (0, -1), (0, 1), (1, 1), (-1, -1), (1, -1), (-1, 1)];
+    // let directions = [(-1, 0), (1, 0), (0, -1), (0, 1), (1, 1), (-1, -1), (1, -1), (-1, 1)];
+    let directions = [(-1, 0), (1, 0), (0, -1), (0, 1)];
     let mut neighbors: Vec<Point> = Vec::new();
 
 
