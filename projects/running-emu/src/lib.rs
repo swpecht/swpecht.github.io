@@ -22,6 +22,15 @@ impl World {
         return World::from_map("S..\n...\n..G")
     }
 
+    /// Create a world from a string representation of a map.
+    /// 
+    /// Maps are a series of characters with \\n representing new lines.
+    /// All of the rows on a map must have the same number of characters.
+    /// As an example, a simple map would be:
+    /// S..
+    /// .W.
+    /// ..G
+    /// Where S represents the start, W a wall, and G the goal.
     pub fn from_map(str_map: &str) -> World {
         let mut costs: Vec<i8> = vec![];
         let mut x = 0;
