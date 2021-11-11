@@ -4,6 +4,7 @@ use priority_queue::PriorityQueue;
 #[derive(Clone)]
 pub struct World {
     costs: Vec<i8>,
+    map: String,
     width: usize,
     start: Point,
     goal: Point,
@@ -18,7 +19,7 @@ pub struct Point {
 
 impl World {
     pub fn new() -> World {
-        World { costs: vec![0; 225], start: Point {x: 0, y: 0}, goal: Point{x: 9, y: 9}, width: 15 }
+        return World::from_map("S..\n...\n..G")
     }
 
     pub fn from_map(str_map: &str) -> World {
@@ -45,13 +46,18 @@ impl World {
             panic!("Error parsing map, S and G must be defined");
         }
 
-        return World { costs: costs, start: start.unwrap(), goal: goal.unwrap(), width: width.unwrap()};
+        let cleaned_map = str_map.to_string().replace(" ", "");
+        return World { costs: costs, start: start.unwrap(), goal: goal.unwrap(), width: width.unwrap(), map: cleaned_map};
     }
 
     
 }
 
-pub fn print_path(path: &Vec<Point>, world: World) {
+pub fn print_map(world: &World) {
+    println!("{}", world.map)
+}
+
+pub fn print_path(path: &Vec<Point>, world: &World) {
     for y in 0.. (world.costs.len() / world.width) {
         for x in 0..world.width {
             let p = Point { x: x, y: y};
