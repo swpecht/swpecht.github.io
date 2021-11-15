@@ -1,4 +1,4 @@
-use running_emu::{World, find_path_bfs, print_map, print_path, print_world};
+use running_emu::{AttackerAgent, World, find_path_bfs, print_path};
 
 fn main() {
     let map = 
@@ -8,17 +8,16 @@ fn main() {
     ..........
     ..........
     ....WWW...
-    ....WGW...
+    ....WGWWWW
     ....W.W...
     ..........";
 
     let world = World::from_map(map);
+    let mut agent = AttackerAgent::new(&world);
 
-    print_world(&world);
-    println!("");
-    let path = find_path_bfs(&world);
+    println!("{}", world);
+    let path = find_path_bfs(&world, &mut agent);
     print_path(&path, &world);
     println!("");
-    print_map(&world)
 
 }

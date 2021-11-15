@@ -1,19 +1,47 @@
-use std::{cmp::Reverse, hash::Hash};
+
+use std::{cmp::Reverse, hash::Hash, fmt};
 use priority_queue::PriorityQueue;
 
+/// Represents the game world
 #[derive(Clone)]
 pub struct World {
-    costs: Vec<i8>,
-    map: String,
+    tiles: Vec<Vec<char>>,
     width: usize,
+    height: usize,
     start: Point,
     goal: Point,
 }
 
+/// Point in the game world
 #[derive(PartialEq, Clone, Copy, Hash, Eq, Debug)]
 pub struct Point {
     x: usize,
     y: usize
+}
+
+/// Manages a view of the game world to explore given different policies.
+pub struct AttackerAgent {
+    cur_map: Vec<Vec<char>>,
+    cur_costs: Vec<Vec<i8>>,
+    queue: PriorityQueue<Point, Reverse<i8>>,
+}
+
+impl AttackerAgent {
+    pub fn new(world: &World) -> AttackerAgent {
+        let map_size = world.width * world.height;
+ 
+        let mut agent = AttackerAgent {cur_costs: vec![0; map_size],
+             cur_map: vec![vec!['?'; world.height]; world.width],
+            queue: PriorityQueue::new()};
+        agent.update_map(world.goal, 'G');
+        agent.update_map(world.start, 'S');
+        
+        return agent
+    }
+
+    fn update_map(&mut self, loc: Point, tile: char) {
+        self.cur_map[loc.y][loc.x] = tile
+    }
 }
 
 
@@ -32,22 +60,27 @@ impl World {
     /// ..G
     /// Where S represents the start, W a wall, and G the goal.
     pub fn from_map(str_map: &str) -> World {
-        let mut costs: Vec<i8> = vec![];
         let mut x = 0;
         let mut y = 0;
         let mut start = None;
         let mut goal = None;
         let mut width = None;
+        let mut tiles = vec![vec![]];
 
         for c in str_map.chars() {
             match c {
-                '.' => {costs.push(0); x+=1},
-                'S' => {costs.push(0); start = Some(Point{x: x, y: y}); x+=1}
-                'G' => {costs.push(0); goal = Some(Point{x: x, y: y}); x+=1}
-                'W' => {costs.push(10); x+=1} // Walls have cost of 10
+                '.' | 'W' => {x+=1},
+                'S' => {start = Some(Point{x: x, y: y}); x+=1}
+                'G' => {goal = Some(Point{x: x, y: y}); x+=1}
                 ' ' => {} // ignore white spaces
-                '\n' => {if !width.is_none() && width.unwrap() != x {panic!("Error parsing map, rows vary in width")}; width = Some(x); x = 0; y += 1}
+                '\n' => {if !width.is_none() && width.unwrap() != x {panic!("Error parsing map, rows vary in width")}; width = Some(x); x = 0; y += 1; tiles.push(vec![])}
                 _ => panic!("Error parsing map, invalid character: {}", c)
+            }
+
+            // populate tiles
+            match c {
+                '.' | 'W' | 'S' | 'G' => tiles[y].push(c),
+                _ => {} // ignore all other characters
             }
         }
         
@@ -55,19 +88,40 @@ impl World {
             panic!("Error parsing map, S and G must be defined");
         }
 
-        let cleaned_map = str_map.to_string().replace(" ", "");
-        return World { costs: costs, start: start.unwrap(), goal: goal.unwrap(), width: width.unwrap(), map: cleaned_map};
+        return World {tiles: tiles, width: width.unwrap(), height: y+1, start: start.unwrap(), goal: goal.unwrap()};
     }
 
+    pub fn get_tile(&self, p: Point) -> char {
+        self.tiles[p.y][p.x]
+    }
     
 }
 
-pub fn print_map(world: &World) {
-    println!("{}", world.map)
+impl fmt::Display for World {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for y in 0.. (self.height) {
+            for x in 0..self.width {
+                write!(f, "{}", self.get_tile(Point{x: x, y:y}))?;
+            }
+            writeln!(f, "")?;
+        }
+
+        Ok(())
+    }
+}
+
+fn get_tile_cost(tile: char) -> i8 {
+    match tile {
+        '.' => 0,
+        'S' => 0,
+        'G' => 0,
+        'W' => 10, // Walls have cost of 10
+        _ => panic!("Error parsing map, invalid character: {}", &tile)
+    }
 }
 
 pub fn print_path(path: &Vec<Point>, world: &World) {
-    for y in 0.. (world.costs.len() / world.width) {
+    for y in 0.. (world.height) {
         for x in 0..world.width {
             let p = Point { x: x, y: y};
             if p == world.start {
@@ -84,26 +138,8 @@ pub fn print_path(path: &Vec<Point>, world: &World) {
     }
 }
 
-pub fn print_world(world: &World) {
-    for y in 0.. (world.costs.len() / world.width) {
-        for x in 0..world.width {
-            let p = Point{x: x, y: y};
-
-            if p == world.start {
-                print!("S")
-            } else if p == world.goal {
-                print!("G")
-            } else {
-                print!("{}", world.costs[y * world.width + x])
-            }
-            print!("\t")            
-        }
-        println!("");
-    }
-}
-
 pub fn print_cost_matrix(world: &World, cmatrix: &Vec<Option<i8>>) {
-    for y in 0.. (world.costs.len() / world.width) {
+    for y in 0.. (world.height) {
         for x in 0..world.width {
             let p = Point{x: x, y: y};
 
@@ -122,14 +158,15 @@ pub fn print_cost_matrix(world: &World, cmatrix: &Vec<Option<i8>>) {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Point, World, create_map, find_path_bfs};
+    use crate::{AttackerAgent, Point, World, create_map, find_path_bfs};
 
     #[test]
     fn find_path_bfs_simple() {
         let map = 
         "S..\n...\n..G";
         let world = World::from_map(map);
-        let path = find_path_bfs(&world);
+        let mut agent = AttackerAgent::new(&world);
+        let path = find_path_bfs(&world, &mut agent);
         assert_eq!(path, vec![Point { x: 0, y: 0 }, Point { x: 0, y: 1 }, Point { x: 0, y: 2 }, Point { x: 1, y: 2 }, Point { x: 2, y: 2 }])
     }
 
@@ -140,7 +177,8 @@ mod tests {
          WW.
          ..G";
         let world = World::from_map(map);
-        let path = find_path_bfs(&world);
+        let mut agent = AttackerAgent::new(&world);
+        let path = find_path_bfs(&world, &mut agent);
         assert_eq!(path, vec![Point { x: 0, y: 0 }, Point { x: 1, y: 0 }, Point { x: 2, y: 0 }, Point { x: 2, y: 1 }, Point { x: 2, y: 2 }])
     }
 
@@ -172,8 +210,8 @@ pub fn create_map(size: usize) -> String {
 }
 
 /// Returns a vector of Points for the shortest path to the goal
-pub fn find_path_bfs(world: &World) -> Vec<Point> {
-    let cmatrix = get_distance_matrix(&world);
+pub fn find_path_bfs(world: &World, agent: &mut AttackerAgent) -> Vec<Point> {
+    let cmatrix = get_distance_matrix(&world, agent);
     print_cost_matrix(world, &cmatrix);
 
     // Given the cost matrix, we can start at the goal and greedily follow the lowest cost
@@ -195,17 +233,16 @@ pub fn find_path_bfs(world: &World) -> Vec<Point> {
 /// 
 /// The lowest cost space is always explored next rather than traditional breadth first search.
 /// This ensures that tiles costs always represent the 'cheapest' way to get to the tile.
-fn get_distance_matrix(world: &World) -> Vec<Option<i8>> {
-    let mut dmatrix = vec![None; world.costs.len()];
-    let mut queue: PriorityQueue<Point, Reverse<i8>> = PriorityQueue::new();
-
+fn get_distance_matrix(world: &World, agent: &mut AttackerAgent) -> Vec<Option<i8>> {
+    let mut dmatrix = vec![None; world.width * world.height];
     // Initialize starting cost to 0
-    queue.push(world.start, Reverse(0));
+    agent.queue.push(world.start, Reverse(0));
     let start = world.start;
     dmatrix[start.y * world.width + start.x] = Some(0);
+    let mut num_steps = 0;
 
-    while !queue.is_empty() {
-        let (node, cost) = queue.pop().unwrap();
+    while !agent.queue.is_empty() {
+        let (node, cost) = agent.queue.pop().unwrap();
         if node == world.goal {
             break
         }
@@ -213,15 +250,16 @@ fn get_distance_matrix(world: &World) -> Vec<Option<i8>> {
         let neighors = get_neighbors(world, node);
         for n in neighors {
             let index = n.y * world.width + n.x;
-            if dmatrix[index].is_none() {
-                let new_cost = cost.0 + 1 + world.costs[index]; // Cost always increases by minimum of 1     
+            if dmatrix[index].is_none() {     
+                let new_cost = cost.0 + 1 + get_tile_cost(world.get_tile(n)); // Cost always increases by minimum of 1     
                 dmatrix[index] = Some(new_cost);
-                queue.push(n, Reverse(new_cost));
+                agent.queue.push(n, Reverse(new_cost));
             }
         }
-        
+        num_steps += 1;
     }
 
+    println!("{}", num_steps);
     return dmatrix
     
 }
@@ -235,7 +273,7 @@ fn get_neighbors(world: &World, point: Point) -> Vec<Point> {
 
     for d in directions {
         let candidate = Point {x: (point.x as i32 + d.0) as usize, y: (point.y as i32 + d.1) as usize};
-        if candidate.x < world.width && candidate.y < (world.costs.len() / world.width) {
+        if candidate.x < world.width && candidate.y < (world.height) {
             neighbors.push(candidate);
         }
     }
