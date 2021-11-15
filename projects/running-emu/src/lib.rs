@@ -22,15 +22,14 @@ pub struct Point {
 /// Manages a view of the game world to explore given different policies.
 pub struct AttackerAgent {
     cur_map: Vec<Vec<char>>,
-    cur_costs: Vec<Vec<i8>>,
+    cur_costs: Vec<Vec<Option<i8>>>,
     queue: PriorityQueue<Point, Reverse<i8>>,
 }
 
 impl AttackerAgent {
     pub fn new(world: &World) -> AttackerAgent {
-        let map_size = world.width * world.height;
  
-        let mut agent = AttackerAgent {cur_costs: vec![0; map_size],
+        let mut agent = AttackerAgent {cur_costs: vec![vec![None; world.width]; world.height],
              cur_map: vec![vec!['?'; world.height]; world.width],
             queue: PriorityQueue::new()};
         agent.update_map(world.goal, 'G');
@@ -39,8 +38,16 @@ impl AttackerAgent {
         return agent
     }
 
-    fn update_map(&mut self, loc: Point, tile: char) {
-        self.cur_map[loc.y][loc.x] = tile
+    fn update_map(&mut self, p: Point, tile: char) {
+        self.cur_map[p.y][p.x] = tile
+    }
+
+    fn update_cost(&mut self, p: Point, cost: i8) {
+        self.cur_costs[p.y][p.x] = Some(cost)
+    }
+
+    fn get_cost(&self, p: Point) -> Option<i8> {
+        self.cur_costs[p.y][p.x]
     }
 }
 
@@ -138,7 +145,7 @@ pub fn print_path(path: &Vec<Point>, world: &World) {
     }
 }
 
-pub fn print_cost_matrix(world: &World, cmatrix: &Vec<Option<i8>>) {
+pub fn print_cost_matrix(world: &World, agent: &AttackerAgent) {
     for y in 0.. (world.height) {
         for x in 0..world.width {
             let p = Point{x: x, y: y};
@@ -148,7 +155,7 @@ pub fn print_cost_matrix(world: &World, cmatrix: &Vec<Option<i8>>) {
             } else if p == world.goal {
                 print!("G")
             } else {
-                print!("{}", cmatrix[y * world.width + x].unwrap_or(-1))
+                print!("{}", agent.get_cost(p).unwrap_or(-1))
             }
             print!("\t")            
         }
@@ -211,17 +218,15 @@ pub fn create_map(size: usize) -> String {
 
 /// Returns a vector of Points for the shortest path to the goal
 pub fn find_path_bfs(world: &World, agent: &mut AttackerAgent) -> Vec<Point> {
-    let cmatrix = get_distance_matrix(&world, agent);
-    print_cost_matrix(world, &cmatrix);
+    populate_cost_matrix(&world, agent);
 
     // Given the cost matrix, we can start at the goal and greedily follow the lowest cost
     // path back to the starting point to get an optimal path.
-
     let mut path = vec![world.goal];
     while path.last().unwrap().clone() != world.start {
         let p = path.last().unwrap();
         let neighbors = get_neighbors(world, *p);
-        let (_, min) = neighbors.iter().filter(|p| !cmatrix[p.x + p.y * world.width].is_none()).enumerate().min_by(|a, b| cmatrix[a.1.x + a.1.y * world.width].cmp(&cmatrix[b.1.x + b.1.y * world.width])).unwrap();
+        let (_, min) = neighbors.iter().filter(|p| !agent.get_cost(**p).is_none()).enumerate().min_by(|a, b| agent.get_cost(*a.1).cmp(&agent.get_cost(*b.1))).unwrap();
         path.push(*min);
     }
 
@@ -233,12 +238,12 @@ pub fn find_path_bfs(world: &World, agent: &mut AttackerAgent) -> Vec<Point> {
 /// 
 /// The lowest cost space is always explored next rather than traditional breadth first search.
 /// This ensures that tiles costs always represent the 'cheapest' way to get to the tile.
-fn get_distance_matrix(world: &World, agent: &mut AttackerAgent) -> Vec<Option<i8>> {
-    let mut dmatrix = vec![None; world.width * world.height];
+fn populate_cost_matrix(world: &World, agent: &mut AttackerAgent) {
     // Initialize starting cost to 0
     agent.queue.push(world.start, Reverse(0));
     let start = world.start;
-    dmatrix[start.y * world.width + start.x] = Some(0);
+    agent.update_cost(start, 0);
+
     let mut num_steps = 0;
 
     while !agent.queue.is_empty() {
@@ -249,19 +254,17 @@ fn get_distance_matrix(world: &World, agent: &mut AttackerAgent) -> Vec<Option<i
 
         let neighors = get_neighbors(world, node);
         for n in neighors {
-            let index = n.y * world.width + n.x;
-            if dmatrix[index].is_none() {     
+            let c = agent.get_cost(n);
+            if c.is_none() {     
                 let new_cost = cost.0 + 1 + get_tile_cost(world.get_tile(n)); // Cost always increases by minimum of 1     
-                dmatrix[index] = Some(new_cost);
+                agent.update_cost(n, new_cost);
                 agent.queue.push(n, Reverse(new_cost));
             }
         }
         num_steps += 1;
     }
 
-    println!("{}", num_steps);
-    return dmatrix
-    
+    println!("{}", num_steps);    
 }
 
 fn get_neighbors(world: &World, point: Point) -> Vec<Point> {

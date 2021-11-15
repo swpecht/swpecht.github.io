@@ -1,4 +1,4 @@
-use running_emu::{AttackerAgent, World, find_path_bfs, print_path};
+use running_emu::{AttackerAgent, World, find_path_bfs, print_cost_matrix, print_path};
 
 fn main() {
     let map = 
@@ -19,5 +19,7 @@ fn main() {
     let path = find_path_bfs(&world, &mut agent);
     print_path(&path, &world);
     println!("");
+
+    print_cost_matrix(&world, &agent);
 
 }
