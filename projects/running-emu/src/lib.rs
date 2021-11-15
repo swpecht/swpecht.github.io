@@ -22,15 +22,15 @@ pub struct Point {
 /// Manages a view of the game world to explore given different policies.
 pub struct AttackerAgent {
     cur_map: Vec<Vec<char>>,
-    cur_costs: Vec<Vec<Option<i8>>>,
-    queue: PriorityQueue<Point, Reverse<i8>>,
+    cur_costs: Vec<Vec<Option<i32>>>,
+    queue: PriorityQueue<Point, Reverse<i32>>,
 }
 
 impl AttackerAgent {
     pub fn new(world: &World) -> AttackerAgent {
  
         let mut agent = AttackerAgent {cur_costs: vec![vec![None; world.width]; world.height],
-             cur_map: vec![vec!['?'; world.height]; world.width],
+             cur_map: vec![vec!['?'; world.width]; world.height],
             queue: PriorityQueue::new()};
         agent.update_map(world.goal, 'G');
         agent.update_map(world.start, 'S');
@@ -42,11 +42,11 @@ impl AttackerAgent {
         self.cur_map[p.y][p.x] = tile
     }
 
-    fn update_cost(&mut self, p: Point, cost: i8) {
+    fn update_cost(&mut self, p: Point, cost: i32) {
         self.cur_costs[p.y][p.x] = Some(cost)
     }
 
-    fn get_cost(&self, p: Point) -> Option<i8> {
+    fn get_cost(&self, p: Point) -> Option<i32> {
         self.cur_costs[p.y][p.x]
     }
 }
@@ -117,7 +117,7 @@ impl fmt::Display for World {
     }
 }
 
-fn get_tile_cost(tile: char) -> i8 {
+fn get_tile_cost(tile: char) -> i32 {
     match tile {
         '.' => 0,
         'S' => 0,
@@ -249,7 +249,8 @@ fn populate_cost_matrix(world: &World, agent: &mut AttackerAgent) -> i32 {
     let mut num_steps = 0;
 
     while !agent.queue.is_empty() {
-        let (node, cost) = agent.queue.pop().unwrap();
+        let (node, _) = agent.queue.pop().unwrap();
+        let cost = agent.get_cost(node).unwrap();
         if node == world.goal {
             break
         }
@@ -258,9 +259,11 @@ fn populate_cost_matrix(world: &World, agent: &mut AttackerAgent) -> i32 {
         for n in neighors {
             let c = agent.get_cost(n);
             if c.is_none() {     
-                let new_cost = cost.0 + 1 + get_tile_cost(world.get_tile(n)); // Cost always increases by minimum of 1     
+                let new_cost = cost + 1 + get_tile_cost(world.get_tile(n)); // Cost always increases by minimum of 1     
                 agent.update_cost(n, new_cost);
-                agent.queue.push(n, Reverse(new_cost));
+                // Distance heuristic for A*
+                let dist_heuristic = (world.goal.x as i32 - n.x as i32).abs() + (world.goal.y as i32 - n.y as i32).abs();
+                agent.queue.push(n, Reverse(dist_heuristic + new_cost));
             }
         }
         num_steps += 1;
