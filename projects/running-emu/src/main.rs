@@ -16,10 +16,10 @@ fn main() {
     let mut agent = AttackerAgent::new(&world);
 
     println!("{}", world);
-    let path = find_path_bfs(&world, &mut agent);
+    let (path, steps) = find_path_bfs(&world, &mut agent);
     print_path(&path, &world);
     println!("");
-
     print_cost_matrix(&world, &agent);
 
+    println!("Found in {} steps", steps);
 }

@@ -1,4 +1,5 @@
 
+use core::num;
 use std::{cmp::Reverse, hash::Hash, fmt};
 use priority_queue::PriorityQueue;
 
@@ -173,7 +174,7 @@ mod tests {
         "S..\n...\n..G";
         let world = World::from_map(map);
         let mut agent = AttackerAgent::new(&world);
-        let path = find_path_bfs(&world, &mut agent);
+        let (path, _) = find_path_bfs(&world, &mut agent);
         assert_eq!(path, vec![Point { x: 0, y: 0 }, Point { x: 0, y: 1 }, Point { x: 0, y: 2 }, Point { x: 1, y: 2 }, Point { x: 2, y: 2 }])
     }
 
@@ -185,7 +186,7 @@ mod tests {
          ..G";
         let world = World::from_map(map);
         let mut agent = AttackerAgent::new(&world);
-        let path = find_path_bfs(&world, &mut agent);
+        let (path, _) = find_path_bfs(&world, &mut agent);
         assert_eq!(path, vec![Point { x: 0, y: 0 }, Point { x: 1, y: 0 }, Point { x: 2, y: 0 }, Point { x: 2, y: 1 }, Point { x: 2, y: 2 }])
     }
 
@@ -216,9 +217,9 @@ pub fn create_map(size: usize) -> String {
     return map;
 }
 
-/// Returns a vector of Points for the shortest path to the goal
-pub fn find_path_bfs(world: &World, agent: &mut AttackerAgent) -> Vec<Point> {
-    populate_cost_matrix(&world, agent);
+/// Returns a vector of Points for the shortest path to the goal and the number of steps to calculate
+pub fn find_path_bfs(world: &World, agent: &mut AttackerAgent) -> (Vec<Point>, i32) {
+    let steps = populate_cost_matrix(&world, agent);
 
     // Given the cost matrix, we can start at the goal and greedily follow the lowest cost
     // path back to the starting point to get an optimal path.
@@ -231,14 +232,16 @@ pub fn find_path_bfs(world: &World, agent: &mut AttackerAgent) -> Vec<Point> {
     }
 
     path.reverse();
-    return path
+    return (path, steps)
 }
 
-/// Return the distance to get to each point in the world from the starting point
+/// Populate the cost matrix for a given attacher agent with the distance from each point in the world to the start.
+/// 
+/// Return the number of steps to populate the matrix.
 /// 
 /// The lowest cost space is always explored next rather than traditional breadth first search.
 /// This ensures that tiles costs always represent the 'cheapest' way to get to the tile.
-fn populate_cost_matrix(world: &World, agent: &mut AttackerAgent) {
+fn populate_cost_matrix(world: &World, agent: &mut AttackerAgent) -> i32 {
     // Initialize starting cost to 0
     agent.queue.push(world.start, Reverse(0));
     let start = world.start;
@@ -264,7 +267,7 @@ fn populate_cost_matrix(world: &World, agent: &mut AttackerAgent) {
         num_steps += 1;
     }
 
-    println!("{}", num_steps);    
+    return num_steps;    
 }
 
 fn get_neighbors(world: &World, point: Point) -> Vec<Point> {
