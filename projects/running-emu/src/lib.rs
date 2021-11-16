@@ -1,17 +1,15 @@
 
 use std::{cmp::Reverse, hash::Hash};
+use itertools::izip;
 use priority_queue::PriorityQueue;
 
 /// Represents the game world
-#[derive(Clone)]
 pub struct World {
     entities: Vec<Vec<Option<usize>>>, // helper data structure to keep track of entities with position
     entities_count: usize,
     pub width: usize,
     pub height: usize,
-    pub position_components: Vec<Option<Point>>,
-    pub sprite_components: Vec<Option<char>>,
-    pub vis_components: Vec<Option<bool>>,
+    component_vecs: Vec<Box<dyn ComponentVec>>,
 }
 
 impl World {
@@ -45,7 +43,7 @@ impl World {
         }
 
 
-        let mut w = Self {entities_count: 0, entities: vec![vec![None; width.unwrap()]; y+1], width: width.unwrap(), height: y+1, position_components: Vec::new(), sprite_components: Vec::new(), vis_components: Vec::new()};
+        let mut w = Self {entities_count: 0, entities: vec![vec![None; width.unwrap()]; y+1], width: width.unwrap(), height: y+1, component_vecs: Vec::new()};
 
         for y in 0..tiles.len() {
             for x in 0.. tiles[0].len() {
@@ -62,45 +60,108 @@ impl World {
     }
 
     fn parse_entities(&mut self, c: char, p: Point) {
+        let id = self.new_entity();
+        self.add_component_to_entity(id, Position(p));
+        self.add_component_to_entity(id, Sprite(c));
         match c {
-            'G' | 'S' => self.new_entity(Some(p), Some(c), Some(true)), // Goal and Start are visible to begin
-            _ => self.new_entity(Some(p), Some(c), None), // All others must be found
+            'G' | 'S' => self.add_component_to_entity(id, Visibility(true)), // Goal and Start are visible to begin
+            _ => {} // All others must be found
         }
+
+        // Add to entity tracker for easy lookup
+        self.entities[p.y][p.x] = Some(id);
     }
 
     /// Returns tile at a given location or '.' if no entities present
     pub fn get_tile(&self, p: Point) -> char {
         let id = self.entities[p.y][p.x];
-        
-        match id {
-            Some(id) => self.sprite_components[id].unwrap_or('.'),
+        let data = self.borrow_component_vec::<Sprite>();
+
+        match (id, data) {
+            (Some(id), Some(data)) => data[id].as_ref().unwrap_or(&Sprite('.')).0,
             _ => '.',
         }
     }
     
-    pub fn new_entity(&mut self, position: Option<Point>, sprite: Option<char>, vis: Option<bool>) {
-        self.position_components.push(position);
-        self.sprite_components.push(sprite);
-        self.vis_components.push(vis);
+    /// Return the id of the new entity
+    pub fn new_entity(&mut self) -> usize {
+        let entity_id = self.entities_count;
+        for component_vec in self.component_vecs.iter_mut() {
+            component_vec.push_none();
+        }
+        self.entities_count += 1;
+        entity_id
+    }
 
-
-        match position {
-            Some(p) => self.entities[p.y][p.x] = Some(self.entities_count),
-            _ => {}
+    pub fn add_component_to_entity<ComponentType: 'static>(&mut self, entity: usize, component: ComponentType) {
+        for component_vec in self.component_vecs.iter_mut() {
+            if let Some(component_vec) = component_vec
+                .as_any_mut()
+                .downcast_mut::<Vec<Option<ComponentType>>>()
+            {
+                component_vec[entity] = Some(component);
+                return;
+            }
         }
 
-        self.entities_count += 1;
+        // No matching component storage exists yet, so we have to make one.
+        let mut new_component_vec: Vec<Option<ComponentType>> = Vec::with_capacity(self.entities_count);
+
+        // All existing entities don't have this component, so we give them `None`
+        for _ in 0..self.entities_count {
+            new_component_vec.push(None);
+        }
+
+        // Give this Entity the Component.
+        new_component_vec[entity] = Some(component);
+        self.component_vecs.push(Box::new(new_component_vec));
+    }
+
+    pub fn borrow_component_vec<ComponentType: 'static>(&self) -> Option<&Vec<Option<ComponentType>>> {
+        for component_vec in self.component_vecs.iter() {
+            if let Some(component_vec) = component_vec
+                .as_any()
+                .downcast_ref::<Vec<Option<ComponentType>>>()
+            {
+                return Some(component_vec);
+            }
+        }
+        None
     }
 
     pub fn set_visible(&mut self, p: Point, vis: bool) {
         let id = self.entities[p.y][p.x];
-
+        
         match id {
-            Some(id) => self.vis_components[id] = Some(vis),
+            Some(id) => self.add_component_to_entity(id, Visibility(vis)),
             _ => {},
-        }        
+        }              
     }
 }
+
+trait ComponentVec {
+    fn push_none(&mut self);
+    fn as_any(&self) -> &dyn std::any::Any;
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
+}
+
+impl <T: 'static> ComponentVec for Vec<Option<T>> {
+    fn push_none(&mut self) {
+        self.push(None);
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self as &dyn std::any::Any
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self as &mut dyn std::any::Any
+    }
+}
+
+pub struct Position(pub Point);
+pub struct Sprite(pub char);
+pub struct Visibility(pub bool);
 
 /// Point in the game world
 #[derive(PartialEq, Clone, Copy, Hash, Eq, Debug)]
@@ -125,22 +186,22 @@ impl AttackerAgent {
         let mut goal = None;
 
         // Find the proper entities and components for goal and start and update the map.
-        let zip = world.position_components.iter().zip(world.sprite_components.iter());
-        let pos_and_sprite = zip.filter_map(|(p, c): (&Option<Point>, &Option<char>)| {Some((p.as_ref()?, c.as_ref()?))});
+        let zip = izip![world.borrow_component_vec::<Position>().unwrap(), world.borrow_component_vec::<Sprite>().unwrap()];
+        let pos_and_sprite = zip.filter_map(|(p, c): (&Option<Position>, &Option<Sprite>)| {Some((p.as_ref()?, c.as_ref()?))});
         for (p, c) in pos_and_sprite {
-            match c {
-                'G' => goal = Some(p),
-                'S' => start = Some(p),
+            match c.0 {
+                'G' => goal = Some(p.0),
+                'S' => start = Some(p.0),
                 _ => {},
             }
         }
 
         let mut agent = AttackerAgent {cur_costs: vec![vec![None; world.width]; world.height],
             cur_map: vec![vec!['?'; world.width]; world.height],
-            queue: PriorityQueue::new(), start: *start.unwrap(), goal: *goal.unwrap()};
+            queue: PriorityQueue::new(), start: start.unwrap(), goal: goal.unwrap()};
         
-        agent.update_map(*start.unwrap(), 'S');
-        agent.update_map(*goal.unwrap(), 'G');
+        agent.update_map(start.unwrap(), 'S');
+        agent.update_map(goal.unwrap(), 'G');
         
         
         return agent
@@ -222,7 +283,7 @@ mod tests {
         let mut world = World::from_map(map);
         let mut agent = AttackerAgent::new(&world);
         let (path, _) = find_path_bfs(&mut world, &mut agent);
-        assert_eq!(path, vec![Point { x: 0, y: 0 }, Point { x: 1, y: 0 }, Point { x: 2, y: 0 }, Point { x: 2, y: 1 }, Point { x: 2, y: 2 }])
+        assert_eq!(path, vec![Point { x: 0, y: 0 }, Point { x: 0, y: 1 }, Point { x: 0, y: 2 }, Point { x: 1, y: 2 }, Point { x: 2, y: 2 }])
     }
 
     #[test]
