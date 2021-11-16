@@ -4,26 +4,32 @@ use running_emu::{AttackerAgent, Position, Sprite, Visibility, World, attacker_s
 use std::io::stdout;
 
 fn main() {
+//     let map = 
+//    "....S@.........
+//     ............WWW
+//     ...............
+//     ............WWW
+//     ...............
+//     ....WWW........
+//     .WWW.......WWW.
+//     .WGW.......W.W.
+//     ...............";
+
     let map = 
-   "....S..........
-    ............WWW
-    ...............
-    ............WWW
-    ...............
-    ....WWW........
-    .WWW.......WWW.
-    .WGW.......W.W.
-    ...............";
+   "S@.
+    ...
+    ..G";
 
     let mut world = World::from_map(map);    
     let mut agent = AttackerAgent::new(&world);
 
     loop {
+        render_system_update(&world);
         if attacker_system_update(&mut world, &mut agent) {
             break;
         }
-        render_system_update(&world);
-        block_on_input(); // Only progress system updates on input
+        
+        // block_on_input(); // Only progress system updates on input
     }
 
     let path = get_path_from_agent(&world, &mut agent);
@@ -36,7 +42,7 @@ fn main() {
 
 /// Update the render of the player visible map
 fn render_system_update(world: &World) {
-    execute!(stdout(), Clear(ClearType::FromCursorDown)).unwrap();
+    // execute!(stdout(), Clear(ClearType::FromCursorDown)).unwrap();
 
     // Populate base layer
     let mut output = vec![vec!['?'; world.width]; world.height];
@@ -46,7 +52,12 @@ fn render_system_update(world: &World) {
     let drawable = zip.filter_map(|(p, c, v): (&Option<Position>, &Option<Sprite>, &Option<Visibility>)| {Some((p.as_ref()?, c.as_ref()?, v.as_ref()?))});
     for (p, c, v) in drawable {
         if v.0 {
-            output[p.0.y][p.0.x] = c.0;
+            // Handle special case for '.' only draw if nothing else present
+            if c.0 == '.' && output[p.0.y][p.0.x] != '?' {
+                // Do nothing, '.' can be in background
+            } else {
+                output[p.0.y][p.0.x] = c.0;
+            }
         }        
     }
 
@@ -57,8 +68,9 @@ fn render_system_update(world: &World) {
         }
         println!("");
     }
+    println!("");
 
-    execute!(stdout(), MoveUp(10)).unwrap();
+    // execute!(stdout(), MoveUp(10)).unwrap();
 }
 
 /// Blocks until user input

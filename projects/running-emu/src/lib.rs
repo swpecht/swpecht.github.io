@@ -5,7 +5,6 @@ use priority_queue::PriorityQueue;
 
 /// Represents the game world
 pub struct World {
-    entities: Vec<Vec<Option<usize>>>, // helper data structure to keep track of entities with position
     entities_count: usize,
     pub width: usize,
     pub height: usize,
@@ -35,7 +34,7 @@ impl World {
         // calculate width
         for c in str_map.chars() {
             match c {
-                '.' | 'W' | 'S' | 'G' => {tiles[y].push(c); x+=1},
+                '.' | 'W' | 'S' | 'G' | '@' => {tiles[y].push(c); x+=1},
                 ' ' => {}
                 '\n' => {if !width.is_none() && width.unwrap() != x {panic!("Error parsing map, rows vary in width")}; width = Some(x); x = 0; y += 1; tiles.push(vec![])}
                 _ => panic!("Error parsing map, invalid character: {}", c)
@@ -43,16 +42,12 @@ impl World {
         }
 
 
-        let mut w = Self {entities_count: 0, entities: vec![vec![None; width.unwrap()]; y+1], width: width.unwrap(), height: y+1, component_vecs: Vec::new()};
+        let mut w = Self {entities_count: 0, width: width.unwrap(), height: y+1, component_vecs: Vec::new()};
 
         for y in 0..tiles.len() {
             for x in 0.. tiles[0].len() {
                 let c = tiles[y][x];
-                match c {
-                    '.' | 'W' | 'S' | 'G' => {w.parse_entities(c, Point{ x: x, y: y})},
-                    ' ' | '\n' => {} // ignore white spaces and line breaks
-                    _ => panic!("Error parsing map, invalid character: {}", c)
-                }
+                w.parse_entities(c, Point{ x: x, y: y});
             }
         }
 
@@ -64,17 +59,22 @@ impl World {
         self.add_component_to_entity(id, Position(p));
         self.add_component_to_entity(id, Sprite(c));
         match c {
-            'G' | 'S' => self.add_component_to_entity(id, Visibility(true)), // Goal and Start are visible to begin
+            'G' | 'S' | '@' => self.add_component_to_entity(id, Visibility(true)), // Goal and Start are visible to begin
             _ => {} // All others must be found
         }
 
-        // Add to entity tracker for easy lookup
-        self.entities[p.y][p.x] = Some(id);
+        if c == '@' {
+            // Create a background entity to represent the tile
+            let bg = self.new_entity();
+            self.add_component_to_entity(bg, Position(p));
+            self.add_component_to_entity(bg, Sprite('.'));
+            self.set_visible(p, true);
+        }        
     }
 
     /// Returns tile at a given location or '.' if no entities present
     pub fn get_tile(&self, p: Point) -> char {
-        let id = self.entities[p.y][p.x];
+        let id = self.get_entity(p);
         let data = self.borrow_component_vec::<Sprite>();
 
         match (id, data) {
@@ -130,12 +130,25 @@ impl World {
     }
 
     pub fn set_visible(&mut self, p: Point, vis: bool) {
-        let id = self.entities[p.y][p.x];
+        let id = self.get_entity(p);
         
         match id {
             Some(id) => self.add_component_to_entity(id, Visibility(vis)),
             _ => {},
         }              
+    }
+
+    /// Return the entity at a given point if one exists
+    pub fn get_entity(&self, p: Point) -> Option<usize> {
+        let positions = self.borrow_component_vec::<Position>().unwrap();
+        for i in 0..positions.len() {
+            match &positions[i] {
+                Some(candidate) if candidate.0 == p => return Some(i),
+                _ => {},
+            }
+        }
+        
+        return None;
     }
 }
 
@@ -177,6 +190,7 @@ pub struct AttackerAgent {
     queue: PriorityQueue<Point, Reverse<i32>>,
     start: Point,
     goal: Point,
+    agend_id: Option<usize>, // Entity id for the movable agent
 }
 
 impl AttackerAgent {
@@ -184,6 +198,7 @@ impl AttackerAgent {
  
         let mut start = None;
         let mut goal = None;
+        let mut agent_id = None;
 
         // Find the proper entities and components for goal and start and update the map.
         let zip = izip![world.borrow_component_vec::<Position>().unwrap(), world.borrow_component_vec::<Sprite>().unwrap()];
@@ -192,13 +207,14 @@ impl AttackerAgent {
             match c.0 {
                 'G' => goal = Some(p.0),
                 'S' => start = Some(p.0),
+                '@' => agent_id = world.get_entity(p.0),
                 _ => {},
             }
         }
 
         let mut agent = AttackerAgent {cur_costs: vec![vec![None; world.width]; world.height],
             cur_map: vec![vec!['?'; world.width]; world.height],
-            queue: PriorityQueue::new(), start: start.unwrap(), goal: goal.unwrap()};
+            queue: PriorityQueue::new(), start: start.unwrap(), goal: goal.unwrap(), agend_id: agent_id};
         
         agent.update_map(start.unwrap(), 'S');
         agent.update_map(goal.unwrap(), 'G');
@@ -230,6 +246,7 @@ fn get_tile_cost(tile: char) -> i32 {
         '.' => 0,
         'S' => 0,
         'G' => 0,
+        '@' => 0,
         'W' => 10, // Walls have cost of 10
         _ => panic!("Error parsing map, invalid character: {}", &tile)
     }
@@ -283,7 +300,7 @@ mod tests {
         let mut world = World::from_map(map);
         let mut agent = AttackerAgent::new(&world);
         let (path, _) = find_path_bfs(&mut world, &mut agent);
-        assert_eq!(path, vec![Point { x: 0, y: 0 }, Point { x: 0, y: 1 }, Point { x: 0, y: 2 }, Point { x: 1, y: 2 }, Point { x: 2, y: 2 }])
+        assert_eq!(path, vec![Point { x: 0, y: 0 }, Point { x: 1, y: 0 }, Point { x: 2, y: 0 }, Point { x: 2, y: 1 }, Point { x: 2, y: 2 }])
     }
 
     #[test]
@@ -361,18 +378,25 @@ pub fn attacker_system_update(world: &mut World, agent: &mut AttackerAgent) -> b
             return true
         }
 
+        // Move the explorer '@'
+        match agent.agend_id {
+            Some(id) => world.add_component_to_entity(id, Position(node)),
+            _ => {}
+        }       
+
         let neighors = get_neighbors(world, node);
         for n in neighors {
             let c = agent.get_cost(n);
+
+            world.set_visible(n, true); // Set tile as visible
+
             if c.is_none() {     
                 let new_cost = cost + 1 + get_tile_cost(world.get_tile(n)); // Cost always increases by minimum of 1     
                 agent.update_cost(n, new_cost);
                 // Distance heuristic for A*
                 let dist_heuristic = (agent.goal.x as i32 - n.x as i32).abs() + (agent.goal.y as i32 - n.y as i32).abs();
                 agent.queue.push(n, Reverse(dist_heuristic + new_cost));
-                agent.update_map(n, world.get_tile(n));
-
-                world.set_visible(n, true); // Set tile as visible
+                agent.update_map(n, world.get_tile(n));           
             }
         }
 
