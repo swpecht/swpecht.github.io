@@ -7,6 +7,7 @@ edition = "2018"
 
 [dependencies]
 priority-queue = "1.2"
+crossterm = "0.22"
 
 [dev-dependencies]
 criterion = "0.3"

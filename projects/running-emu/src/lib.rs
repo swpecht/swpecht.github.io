@@ -218,10 +218,20 @@ pub fn create_map(size: usize) -> String {
 
 /// Returns a vector of Points for the shortest path to the goal and the number of steps to calculate
 pub fn find_path_bfs(world: &World, agent: &mut AttackerAgent) -> (Vec<Point>, i32) {
-    let steps = populate_cost_matrix(&world, agent);
+    let mut steps = 0;
+    while !attacker_system_update(&world, agent) {
+        steps += 1;
+    }
 
-    // Given the cost matrix, we can start at the goal and greedily follow the lowest cost
-    // path back to the starting point to get an optimal path.
+    let path = get_path_from_agent(world, agent);
+    return (path, steps)
+}
+
+/// Return the path to the goal. Requires a fully populated cost matrix.
+/// 
+/// Given the cost matrix, we can start at the goal and greedily follow the lowest cost
+///  path back to the starting point to get an optimal path.
+pub fn get_path_from_agent(world: &World, agent: &AttackerAgent) -> Vec<Point> {
     let mut path = vec![world.goal];
     while path.last().unwrap().clone() != world.start {
         let p = path.last().unwrap();
@@ -231,28 +241,27 @@ pub fn find_path_bfs(world: &World, agent: &mut AttackerAgent) -> (Vec<Point>, i
     }
 
     path.reverse();
-    return (path, steps)
+    return path;
 }
 
-/// Populate the cost matrix for a given attacher agent with the distance from each point in the world to the start.
+/// Update the attacker AI system. Returns True if have reached the goal.
 /// 
-/// Return the number of steps to populate the matrix.
+/// Populate the cost matrix for a given attacher agent with the distance from each point in the world to the start.
 /// 
 /// The lowest cost space is always explored next rather than traditional breadth first search.
 /// This ensures that tiles costs always represent the 'cheapest' way to get to the tile.
-fn populate_cost_matrix(world: &World, agent: &mut AttackerAgent) -> i32 {
-    // Initialize starting cost to 0
-    agent.queue.push(world.start, Reverse(0));
-    let start = world.start;
-    agent.update_cost(start, 0);
+pub fn attacker_system_update(world: &World, agent: &mut AttackerAgent) -> bool {
+    if agent.queue.is_empty() {
+        // Initialize starting cost to 0
+        agent.queue.push(world.start, Reverse(0));
+        let start = world.start;
+        agent.update_cost(start, 0);
+    }
 
-    let mut num_steps = 0;
-
-    while !agent.queue.is_empty() {
-        let (node, _) = agent.queue.pop().unwrap();
+    let (node, _) = agent.queue.pop().unwrap();
         let cost = agent.get_cost(node).unwrap();
         if node == world.goal {
-            break
+            return true
         }
 
         let neighors = get_neighbors(world, node);
@@ -264,12 +273,21 @@ fn populate_cost_matrix(world: &World, agent: &mut AttackerAgent) -> i32 {
                 // Distance heuristic for A*
                 let dist_heuristic = (world.goal.x as i32 - n.x as i32).abs() + (world.goal.y as i32 - n.y as i32).abs();
                 agent.queue.push(n, Reverse(dist_heuristic + new_cost));
+                agent.update_map(n, world.get_tile(n));
             }
         }
-        num_steps += 1;
+
+    return false
+}
+
+pub fn print_agent_world(agent: &AttackerAgent) {
+    for y in 0.. agent.cur_map.len() {
+        for x in 0..agent.cur_map[0].len() {
+            print!("{}", agent.cur_map[y][x]);
+        }
+        println!("");
     }
 
-    return num_steps;    
 }
 
 fn get_neighbors(world: &World, point: Point) -> Vec<Point> {
