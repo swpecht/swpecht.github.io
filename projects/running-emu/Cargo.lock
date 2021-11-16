@@ -509,6 +509,7 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "crossterm",
+ "itertools",
  "priority-queue",
 ]
 

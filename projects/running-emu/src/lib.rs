@@ -1,56 +1,18 @@
 
-use std::{cmp::Reverse, hash::Hash, fmt};
+use std::{cmp::Reverse, hash::Hash};
 use priority_queue::PriorityQueue;
 
 /// Represents the game world
 #[derive(Clone)]
 pub struct World {
-    tiles: Vec<Vec<char>>,
-    width: usize,
-    height: usize,
-    start: Point,
-    goal: Point,
+    entities: Vec<Vec<Option<usize>>>, // helper data structure to keep track of entities with position
+    entities_count: usize,
+    pub width: usize,
+    pub height: usize,
+    pub position_components: Vec<Option<Point>>,
+    pub sprite_components: Vec<Option<char>>,
+    pub vis_components: Vec<Option<bool>>,
 }
-
-/// Point in the game world
-#[derive(PartialEq, Clone, Copy, Hash, Eq, Debug)]
-pub struct Point {
-    x: usize,
-    y: usize
-}
-
-/// Manages a view of the game world to explore given different policies.
-pub struct AttackerAgent {
-    cur_map: Vec<Vec<char>>,
-    cur_costs: Vec<Vec<Option<i32>>>,
-    queue: PriorityQueue<Point, Reverse<i32>>,
-}
-
-impl AttackerAgent {
-    pub fn new(world: &World) -> AttackerAgent {
- 
-        let mut agent = AttackerAgent {cur_costs: vec![vec![None; world.width]; world.height],
-             cur_map: vec![vec!['?'; world.width]; world.height],
-            queue: PriorityQueue::new()};
-        agent.update_map(world.goal, 'G');
-        agent.update_map(world.start, 'S');
-        
-        return agent
-    }
-
-    fn update_map(&mut self, p: Point, tile: char) {
-        self.cur_map[p.y][p.x] = tile
-    }
-
-    fn update_cost(&mut self, p: Point, cost: i32) {
-        self.cur_costs[p.y][p.x] = Some(cost)
-    }
-
-    fn get_cost(&self, p: Point) -> Option<i32> {
-        self.cur_costs[p.y][p.x]
-    }
-}
-
 
 impl World {
     pub fn new() -> World {
@@ -69,53 +31,138 @@ impl World {
     pub fn from_map(str_map: &str) -> World {
         let mut x = 0;
         let mut y = 0;
-        let mut start = None;
-        let mut goal = None;
         let mut width = None;
         let mut tiles = vec![vec![]];
 
+        // calculate width
         for c in str_map.chars() {
             match c {
-                '.' | 'W' => {x+=1},
-                'S' => {start = Some(Point{x: x, y: y}); x+=1}
-                'G' => {goal = Some(Point{x: x, y: y}); x+=1}
-                ' ' => {} // ignore white spaces
+                '.' | 'W' | 'S' | 'G' => {tiles[y].push(c); x+=1},
+                ' ' => {}
                 '\n' => {if !width.is_none() && width.unwrap() != x {panic!("Error parsing map, rows vary in width")}; width = Some(x); x = 0; y += 1; tiles.push(vec![])}
                 _ => panic!("Error parsing map, invalid character: {}", c)
             }
+        }
 
-            // populate tiles
-            match c {
-                '.' | 'W' | 'S' | 'G' => tiles[y].push(c),
-                _ => {} // ignore all other characters
+
+        let mut w = Self {entities_count: 0, entities: vec![vec![None; width.unwrap()]; y+1], width: width.unwrap(), height: y+1, position_components: Vec::new(), sprite_components: Vec::new(), vis_components: Vec::new()};
+
+        for y in 0..tiles.len() {
+            for x in 0.. tiles[0].len() {
+                let c = tiles[y][x];
+                match c {
+                    '.' | 'W' | 'S' | 'G' => {w.parse_entities(c, Point{ x: x, y: y})},
+                    ' ' | '\n' => {} // ignore white spaces and line breaks
+                    _ => panic!("Error parsing map, invalid character: {}", c)
+                }
             }
         }
-        
-        if start.is_none() || goal.is_none() || width.is_none() {
-            panic!("Error parsing map, S and G must be defined");
-        }
 
-        return World {tiles: tiles, width: width.unwrap(), height: y+1, start: start.unwrap(), goal: goal.unwrap()};
+         return w
     }
 
+    fn parse_entities(&mut self, c: char, p: Point) {
+        match c {
+            'G' | 'S' => self.new_entity(Some(p), Some(c), Some(true)), // Goal and Start are visible to begin
+            _ => self.new_entity(Some(p), Some(c), None), // All others must be found
+        }
+    }
+
+    /// Returns tile at a given location or '.' if no entities present
     pub fn get_tile(&self, p: Point) -> char {
-        self.tiles[p.y][p.x]
+        let id = self.entities[p.y][p.x];
+        
+        match id {
+            Some(id) => self.sprite_components[id].unwrap_or('.'),
+            _ => '.',
+        }
     }
     
-}
+    pub fn new_entity(&mut self, position: Option<Point>, sprite: Option<char>, vis: Option<bool>) {
+        self.position_components.push(position);
+        self.sprite_components.push(sprite);
+        self.vis_components.push(vis);
 
-impl fmt::Display for World {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for y in 0.. (self.height) {
-            for x in 0..self.width {
-                write!(f, "{}", self.get_tile(Point{x: x, y:y}))?;
-            }
-            writeln!(f, "")?;
+
+        match position {
+            Some(p) => self.entities[p.y][p.x] = Some(self.entities_count),
+            _ => {}
         }
 
-        Ok(())
+        self.entities_count += 1;
+    }
+
+    pub fn set_visible(&mut self, p: Point, vis: bool) {
+        let id = self.entities[p.y][p.x];
+
+        match id {
+            Some(id) => self.vis_components[id] = Some(vis),
+            _ => {},
+        }        
     }
 }
+
+/// Point in the game world
+#[derive(PartialEq, Clone, Copy, Hash, Eq, Debug)]
+pub struct Point {
+    pub x: usize,
+    pub y: usize
+}
+
+/// Manages a view of the game world to explore given different policies.
+pub struct AttackerAgent {
+    cur_map: Vec<Vec<char>>,
+    cur_costs: Vec<Vec<Option<i32>>>,
+    queue: PriorityQueue<Point, Reverse<i32>>,
+    start: Point,
+    goal: Point,
+}
+
+impl AttackerAgent {
+    pub fn new(world: &World) -> AttackerAgent {
+ 
+        let mut start = None;
+        let mut goal = None;
+
+        // Find the proper entities and components for goal and start and update the map.
+        let zip = world.position_components.iter().zip(world.sprite_components.iter());
+        let pos_and_sprite = zip.filter_map(|(p, c): (&Option<Point>, &Option<char>)| {Some((p.as_ref()?, c.as_ref()?))});
+        for (p, c) in pos_and_sprite {
+            match c {
+                'G' => goal = Some(p),
+                'S' => start = Some(p),
+                _ => {},
+            }
+        }
+
+        let mut agent = AttackerAgent {cur_costs: vec![vec![None; world.width]; world.height],
+            cur_map: vec![vec!['?'; world.width]; world.height],
+            queue: PriorityQueue::new(), start: *start.unwrap(), goal: *goal.unwrap()};
+        
+        agent.update_map(*start.unwrap(), 'S');
+        agent.update_map(*goal.unwrap(), 'G');
+        
+        
+        return agent
+    }
+
+    fn update_map(&mut self, p: Point, tile: char) {
+        self.cur_map[p.y][p.x] = tile
+    }
+
+    fn update_cost(&mut self, p: Point, cost: i32) {
+        self.cur_costs[p.y][p.x] = Some(cost)
+    }
+
+    fn get_cost(&self, p: Point) -> Option<i32> {
+        self.cur_costs[p.y][p.x]
+    }
+
+    pub fn get_tile(&self, p: Point) ->char {
+        self.cur_map[p.y][p.x]
+    }
+}
+
 
 fn get_tile_cost(tile: char) -> i32 {
     match tile {
@@ -131,11 +178,7 @@ pub fn print_path(path: &Vec<Point>, world: &World) {
     for y in 0.. (world.height) {
         for x in 0..world.width {
             let p = Point { x: x, y: y};
-            if p == world.start {
-                print!("S")
-            } else if p == world.goal {
-                print!("G")
-            } else if path.contains(&p) {
+            if path.contains(&p) {
                 print!("#")
             } else {
                 print!{"."}
@@ -149,14 +192,7 @@ pub fn print_cost_matrix(world: &World, agent: &AttackerAgent) {
     for y in 0.. (world.height) {
         for x in 0..world.width {
             let p = Point{x: x, y: y};
-
-            if p == world.start {
-                print!("S")
-            } else if p == world.goal {
-                print!("G")
-            } else {
-                print!("{}", agent.get_cost(p).unwrap_or(-1))
-            }
+            print!("{}", agent.get_cost(p).unwrap_or(-1));
             print!("\t")            
         }
         println!("");
@@ -171,9 +207,9 @@ mod tests {
     fn find_path_bfs_simple() {
         let map = 
         "S..\n...\n..G";
-        let world = World::from_map(map);
+        let mut world = World::from_map(map);
         let mut agent = AttackerAgent::new(&world);
-        let (path, _) = find_path_bfs(&world, &mut agent);
+        let (path, _) = find_path_bfs(&mut world, &mut agent);
         assert_eq!(path, vec![Point { x: 0, y: 0 }, Point { x: 0, y: 1 }, Point { x: 0, y: 2 }, Point { x: 1, y: 2 }, Point { x: 2, y: 2 }])
     }
 
@@ -183,9 +219,9 @@ mod tests {
         "S..
          WW.
          ..G";
-        let world = World::from_map(map);
+        let mut world = World::from_map(map);
         let mut agent = AttackerAgent::new(&world);
-        let (path, _) = find_path_bfs(&world, &mut agent);
+        let (path, _) = find_path_bfs(&mut world, &mut agent);
         assert_eq!(path, vec![Point { x: 0, y: 0 }, Point { x: 1, y: 0 }, Point { x: 2, y: 0 }, Point { x: 2, y: 1 }, Point { x: 2, y: 2 }])
     }
 
@@ -217,9 +253,9 @@ pub fn create_map(size: usize) -> String {
 }
 
 /// Returns a vector of Points for the shortest path to the goal and the number of steps to calculate
-pub fn find_path_bfs(world: &World, agent: &mut AttackerAgent) -> (Vec<Point>, i32) {
+pub fn find_path_bfs(world: &mut World, agent: &mut AttackerAgent) -> (Vec<Point>, i32) {
     let mut steps = 0;
-    while !attacker_system_update(&world, agent) {
+    while !attacker_system_update(world, agent) {
         steps += 1;
     }
 
@@ -232,8 +268,8 @@ pub fn find_path_bfs(world: &World, agent: &mut AttackerAgent) -> (Vec<Point>, i
 /// Given the cost matrix, we can start at the goal and greedily follow the lowest cost
 ///  path back to the starting point to get an optimal path.
 pub fn get_path_from_agent(world: &World, agent: &AttackerAgent) -> Vec<Point> {
-    let mut path = vec![world.goal];
-    while path.last().unwrap().clone() != world.start {
+    let mut path = vec![agent.goal];
+    while path.last().unwrap().clone() != agent.start {
         let p = path.last().unwrap();
         let neighbors = get_neighbors(world, *p);
         let (_, min) = neighbors.iter().filter(|p| !agent.get_cost(**p).is_none()).enumerate().min_by(|a, b| agent.get_cost(*a.1).cmp(&agent.get_cost(*b.1))).unwrap();
@@ -250,17 +286,17 @@ pub fn get_path_from_agent(world: &World, agent: &AttackerAgent) -> Vec<Point> {
 /// 
 /// The lowest cost space is always explored next rather than traditional breadth first search.
 /// This ensures that tiles costs always represent the 'cheapest' way to get to the tile.
-pub fn attacker_system_update(world: &World, agent: &mut AttackerAgent) -> bool {
+pub fn attacker_system_update(world: &mut World, agent: &mut AttackerAgent) -> bool {
     if agent.queue.is_empty() {
         // Initialize starting cost to 0
-        agent.queue.push(world.start, Reverse(0));
-        let start = world.start;
+        agent.queue.push(agent.start, Reverse(0));
+        let start = agent.start;
         agent.update_cost(start, 0);
     }
 
     let (node, _) = agent.queue.pop().unwrap();
         let cost = agent.get_cost(node).unwrap();
-        if node == world.goal {
+        if node == agent.goal {
             return true
         }
 
@@ -271,23 +307,15 @@ pub fn attacker_system_update(world: &World, agent: &mut AttackerAgent) -> bool 
                 let new_cost = cost + 1 + get_tile_cost(world.get_tile(n)); // Cost always increases by minimum of 1     
                 agent.update_cost(n, new_cost);
                 // Distance heuristic for A*
-                let dist_heuristic = (world.goal.x as i32 - n.x as i32).abs() + (world.goal.y as i32 - n.y as i32).abs();
+                let dist_heuristic = (agent.goal.x as i32 - n.x as i32).abs() + (agent.goal.y as i32 - n.y as i32).abs();
                 agent.queue.push(n, Reverse(dist_heuristic + new_cost));
                 agent.update_map(n, world.get_tile(n));
+
+                world.set_visible(n, true); // Set tile as visible
             }
         }
 
     return false
-}
-
-pub fn print_agent_world(agent: &AttackerAgent) {
-    for y in 0.. agent.cur_map.len() {
-        for x in 0..agent.cur_map[0].len() {
-            print!("{}", agent.cur_map[y][x]);
-        }
-        println!("");
-    }
-
 }
 
 fn get_neighbors(world: &World, point: Point) -> Vec<Point> {
