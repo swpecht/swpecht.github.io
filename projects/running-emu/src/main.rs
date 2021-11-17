@@ -1,30 +1,32 @@
 use crossterm::{cursor::{MoveUp}, event::{Event, read}, execute, style::{Color, ResetColor, SetBackgroundColor}, terminal::{Clear, ClearType}};
 use itertools::izip;
 use running_emu::{AttackerAgent, BackgroundHighlight, Point, Position, Sprite, Visibility, World, attacker_system_update, print_cost_matrix};
-use std::io::stdout;
+use std::{io::stdout, ptr::NonNull};
 
 fn main() {
-//     let map = 
-//    "....S@.........
-//     ............WWW
-//     ...............
-//     ............WWW
-//     ...............
-//     ....WWW........
-//     .WWW.......WWW.
-//     .WGW.......W.W.
-//     ...............";
-
     let map = 
-   "S@..
-    .WWW
-    .WGW
-    ....";
+   "....S@.........
+    ............WWW
+    ...............
+    ............WWW
+    ...............
+    ....WWW........
+    .WWW.......WWW.
+    .WGW.......W.W.
+    ...............";
+
+//     let map = 
+//    "S@..
+//     .WWW
+//     .WGW
+//     ....";
 
     let mut world = World::from_map(map);    
     let mut agent = AttackerAgent::new(&world);
+    let mut num_steps = 0;
 
     loop {
+        num_steps += 1;
         render_system_update(&world);
         if attacker_system_update(&mut world, &mut agent) {
             break;
@@ -34,6 +36,7 @@ fn main() {
 
     println!("");
     print_cost_matrix(&world, &agent);
+    println!("Completed in {} steps", num_steps);
 
     // println!("Found in {} steps", steps);
 }
@@ -70,7 +73,7 @@ fn render_system_update(world: &World) {
             if id.is_some() && highlights.as_ref().is_some() && highlights.as_ref().unwrap()[id.unwrap()].as_ref().is_some() {
                 let color = highlights.as_ref().unwrap()[id.unwrap()].as_ref().unwrap().0;
                 execute!(stdout(), SetBackgroundColor(color));
-                highlights.as_mut().unwrap()[id.unwrap()] = Some(BackgroundHighlight(Color::Black));                
+                highlights.as_mut().unwrap()[id.unwrap()] = None;                
             }
 
             print!("{}", output[y][x]);

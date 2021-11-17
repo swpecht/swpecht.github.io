@@ -75,7 +75,7 @@ impl World {
     /// Returns tile at a given location or '.' if no entities present
     pub fn get_tile(&self, p: Point) -> char {
         let id = self.get_entity(p);
-        let data = self.borrow_mut_component_vec::<Sprite>();
+        let data = self.borrow_component_vec::<Sprite>();
 
         match (id, data) {
             (Some(id), Some(data)) => data[id].as_ref().unwrap_or(&Sprite('.')).0,
@@ -358,7 +358,7 @@ fn get_tile_cost(tile: char) -> i32 {
         'S' => 0,
         'G' => 0,
         '@' => 0,
-        'W' => 10, // Walls have cost of 10
+        'W' => 50, // Walls have cost of 10
         _ => panic!("Error parsing map, invalid character: {}", &tile)
     }
 }
@@ -391,11 +391,14 @@ pub fn attacker_system_update(world: &mut World, agent: &mut AttackerAgent) -> b
     if agent.next_target.is_none() || cur_loc == agent.next_target.unwrap() {    
         let (node, _) = agent.queue.pop().unwrap();
         agent.next_target = Some(node);
+        if node == (Point{x: 0, y: 8}) {
+            println!("Stop")
+        }
         println!("{:?}", node);
     }    
 
     if cur_loc != agent.next_target.unwrap() {
-        let path = get_path(cur_loc, agent.next_target.unwrap(), &agent.cur_costs).unwrap();
+        let path = get_path(cur_loc, agent.next_target.unwrap(), &get_cost_matrix(world)).unwrap();
         // Move the explorer '@'
         match agent.agend_id {
         Some(id) => {world.add_component_to_entity(id, Position(path[1])); cur_loc = path[1]},
@@ -416,6 +419,24 @@ pub fn attacker_system_update(world: &mut World, agent: &mut AttackerAgent) -> b
     return false
 }
 
+/// Returns a cost matrix representing the cost of visible tiles.
+fn get_cost_matrix(world: &World) -> Vec<Vec<Option<i32>>> {
+    let mut costs = vec![vec![None; world.width]; world.height];
+
+    let positions = world.borrow_component_vec::<Position>().unwrap();
+    let sprites = world.borrow_component_vec::<Sprite>().unwrap();
+    let visibility = world.borrow_component_vec::<Visibility>().unwrap();
+    let zip = positions.iter().zip(sprites.iter()).zip(visibility.iter()).map(|((p, s), v): ((&Option<Position>, &Option<Sprite>), &Option<Visibility>)| {(p, s, v)});
+    let world_info = zip.filter_map(|(p, c, v): (&Option<Position>, &Option<Sprite>, &Option<Visibility>)| {Some((p.as_ref()?, c.as_ref()?, v.as_ref()?))});
+    for (p, c, v) in world_info {
+        if v.0 {
+            costs[p.0.y][p.0.x] = Some(get_tile_cost(c.0));
+        }        
+    }
+
+    return costs;
+}
+
 // Explore a given point for the agent, and update the move state
 pub fn explore(world: &mut World, agent: &mut AttackerAgent, p: Point) {
     let neighors = get_neighbors(p, world.width, world.height);
@@ -433,8 +454,8 @@ pub fn explore(world: &mut World, agent: &mut AttackerAgent, p: Point) {
                 agent.queue.push(n, Reverse(0)); // Go here next, is the goal.
             } else { // calcuate the heuristics
                 // Distance heuristic for A*
-                let dist_heuristic = (agent.goal.x as i32 - n.x as i32).abs() + (agent.goal.y as i32 - n.y as i32).abs();
-                agent.queue.push(n, Reverse(dist_heuristic + new_cost));
+                let goal_dist = (agent.goal.x as i32 - n.x as i32).abs() + (agent.goal.y as i32 - n.y as i32).abs();
+                agent.queue.push(n, Reverse(goal_dist + new_cost));
             }                     
         }
     }
@@ -451,7 +472,7 @@ fn get_path(start: Point, end: Point, cost_matrix: &Vec<Vec<Option<i32>>>) -> Op
 
     while !queue.is_empty(){
         let (node, _) = queue.pop().unwrap();
-        let cost = distance_matrix[node.y][node.x].unwrap();
+        let distance = distance_matrix[node.y][node.x].unwrap();
         if node == end {
             break; // found the goal
         }
@@ -463,11 +484,11 @@ fn get_path(start: Point, end: Point, cost_matrix: &Vec<Vec<Option<i32>>>) -> Op
 
             // Only path over areas where we have cost data
             if d.is_none() && cost_matrix[n.y][n.x].is_some() {     
-                let new_cost = cost + 1 + cost_matrix[n.y][n.x].unwrap(); // Cost always increases by minimum of 1     
+                let new_cost = distance + 1 + cost_matrix[n.y][n.x].unwrap(); // Cost always increases by minimum of 1     
                 distance_matrix[n.y][n.x] = Some(new_cost);
                 // Distance heuristic for A*
-                let dist_heuristic = (end.x as i32 - n.x as i32).abs() + (end.y as i32 - n.y as i32).abs();
-                queue.push(n, Reverse(dist_heuristic + new_cost));           
+                let goal_dist = (end.x as i32 - n.x as i32).abs() + (end.y as i32 - n.y as i32).abs();
+                queue.push(n, Reverse(goal_dist + new_cost));           
             }
         }
     }
