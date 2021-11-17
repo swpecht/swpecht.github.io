@@ -483,7 +483,8 @@ pub fn attacker_system_update(world: &mut World, agent: &mut AttackerAgent) -> b
                 let p = Point { x: x, y: y };
                 match agent.get_cost(p) {
                     Some(c) => {
-                        candidate_matrix[x + y * world.width] = Some(c + p.dist(&agent.goal))
+                        candidate_matrix[x + y * world.width] =
+                            Some(c + p.dist(&agent.goal) + p.dist(&cur_loc))
                     }
                     _ => {}
                 };
