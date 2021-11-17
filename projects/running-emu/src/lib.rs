@@ -1,7 +1,6 @@
 
-use std::{cmp::Reverse, hash::Hash};
+use std::{cell::{Ref, RefCell, RefMut}, cmp::Reverse, hash::Hash};
 use crossterm::style::Color;
-use itertools::izip;
 use priority_queue::PriorityQueue;
 
 /// Represents the game world
@@ -76,7 +75,7 @@ impl World {
     /// Returns tile at a given location or '.' if no entities present
     pub fn get_tile(&self, p: Point) -> char {
         let id = self.get_entity(p);
-        let data = self.borrow_component_vec::<Sprite>();
+        let data = self.borrow_mut_component_vec::<Sprite>();
 
         match (id, data) {
             (Some(id), Some(data)) => data[id].as_ref().unwrap_or(&Sprite('.')).0,
@@ -96,35 +95,52 @@ impl World {
 
     pub fn add_component_to_entity<ComponentType: 'static>(&mut self, entity: usize, component: ComponentType) {
         for component_vec in self.component_vecs.iter_mut() {
+            // The `downcast_mut` type here is changed to `RefCell<Vec<Option<ComponentType>>`
             if let Some(component_vec) = component_vec
                 .as_any_mut()
-                .downcast_mut::<Vec<Option<ComponentType>>>()
+                .downcast_mut::<RefCell<Vec<Option<ComponentType>>>>()
             {
-                component_vec[entity] = Some(component);
+                // add a `get_mut` here. Once again `get_mut` bypasses
+                // `RefCell`'s runtime checks if accessing through a `&mut` reference.
+                component_vec.get_mut()[entity] = Some(component);
                 return;
             }
         }
 
-        // No matching component storage exists yet, so we have to make one.
-        let mut new_component_vec: Vec<Option<ComponentType>> = Vec::with_capacity(self.entities_count);
+        let mut new_component_vec: Vec<Option<ComponentType>> =
+            Vec::with_capacity(self.entities_count);
 
-        // All existing entities don't have this component, so we give them `None`
         for _ in 0..self.entities_count {
             new_component_vec.push(None);
         }
 
-        // Give this Entity the Component.
         new_component_vec[entity] = Some(component);
-        self.component_vecs.push(Box::new(new_component_vec));
+
+        // Here we create a `RefCell` before inserting into `component_vecs`
+        self.component_vecs.push(Box::new(RefCell::new(new_component_vec)));
     }
 
-    pub fn borrow_component_vec<ComponentType: 'static>(&self) -> Option<&Vec<Option<ComponentType>>> {
+    pub fn borrow_mut_component_vec<ComponentType: 'static>(&self) -> Option<RefMut<Vec<Option<ComponentType>>>> {
         for component_vec in self.component_vecs.iter() {
             if let Some(component_vec) = component_vec
                 .as_any()
-                .downcast_ref::<Vec<Option<ComponentType>>>()
+                .downcast_ref::<RefCell<Vec<Option<ComponentType>>>>()
             {
-                return Some(component_vec);
+                // Here we use `borrow_mut`. 
+                // If this `RefCell` is already borrowed from this will panic.
+                return Some(component_vec.borrow_mut());
+            }
+        }
+        None
+    }
+
+    pub fn borrow_component_vec<ComponentType: 'static>(&self) -> Option<Ref<Vec<Option<ComponentType>>>> {
+        for component_vec in self.component_vecs.iter() {
+            if let Some(component_vec) = component_vec
+                .as_any()
+                .downcast_ref::<RefCell<Vec<Option<ComponentType>>>>()
+            {
+                return Some(component_vec.borrow());
             }
         }
         None
@@ -159,9 +175,9 @@ trait ComponentVec {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 }
 
-impl <T: 'static> ComponentVec for Vec<Option<T>> {
+impl <T: 'static> ComponentVec for RefCell<Vec<Option<T>>> {
     fn push_none(&mut self) {
-        self.push(None);
+        self.get_mut().push(None);
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -304,8 +320,11 @@ impl AttackerAgent {
         let mut goal = None;
         let mut agent_id = None;
 
+        {
         // Find the proper entities and components for goal and start and update the map.
-        let zip = izip![world.borrow_component_vec::<Position>().unwrap(), world.borrow_component_vec::<Sprite>().unwrap()];
+        let positions = world.borrow_component_vec::<Position>().unwrap();
+        let sprites = world.borrow_component_vec::<Sprite>().unwrap();
+        let zip = positions.iter().zip(sprites.iter());
         let pos_and_sprite = zip.filter_map(|(p, c): (&Option<Position>, &Option<Sprite>)| {Some((p.as_ref()?, c.as_ref()?))});
         for (p, c) in pos_and_sprite {
             match c.0 {
@@ -315,6 +334,7 @@ impl AttackerAgent {
                 _ => {},
             }
         }
+    }
 
         let agent = AttackerAgent {cur_costs: vec![vec![None; world.width]; world.height],
             queue: PriorityQueue::new(), start: start.unwrap(), goal: goal.unwrap(), agend_id: agent_id, next_target: None};
@@ -355,7 +375,7 @@ fn get_tile_cost(tile: char) -> i32 {
 /// The lowest cost space is always explored next rather than traditional breadth first search.
 /// This ensures that tiles costs always represent the 'cheapest' way to get to the tile.
 pub fn attacker_system_update(world: &mut World, agent: &mut AttackerAgent) -> bool {
-    let mut cur_loc = world.borrow_component_vec::<Position>().unwrap()[agent.agend_id.unwrap()].as_ref().unwrap().0;
+    let mut cur_loc = world.borrow_mut_component_vec::<Position>().unwrap()[agent.agend_id.unwrap()].as_ref().unwrap().0;
 
     if cur_loc == agent.goal {
         return true // Found the goal

@@ -46,7 +46,10 @@ fn render_system_update(world: &World) {
     let mut output = vec![vec!['?'; world.width]; world.height];
 
     // Draw over top with entities
-    let zip = izip!(world.borrow_component_vec::<Position>().unwrap(), world.borrow_component_vec::<Sprite>().unwrap(), world.borrow_component_vec::<Visibility>().unwrap());
+    let positions = world.borrow_component_vec::<Position>().unwrap();
+    let sprites = world.borrow_component_vec::<Sprite>().unwrap();
+    let visibility = world.borrow_component_vec::<Visibility>().unwrap();
+    let zip = positions.iter().zip(sprites.iter()).zip(visibility.iter()).map(|((p, s), v): ((&Option<Position>, &Option<Sprite>), &Option<Visibility>)| {(p, s, v)});
     let drawable = zip.filter_map(|(p, c, v): (&Option<Position>, &Option<Sprite>, &Option<Visibility>)| {Some((p.as_ref()?, c.as_ref()?, v.as_ref()?))});
     for (p, c, v) in drawable {
         if v.0 {
@@ -59,14 +62,15 @@ fn render_system_update(world: &World) {
         }        
     }
 
-    let highlights = world.borrow_component_vec::<BackgroundHighlight>();
+    let mut highlights = world.borrow_mut_component_vec::<BackgroundHighlight>();
     for y in 0..world.height {
         output.push(Vec::new());
         for x in 0..world.width {
             let id = world.get_entity(Point{x: x, y: y});
-            if id.is_some() && highlights.is_some() && highlights.unwrap()[id.unwrap()].as_ref().is_some() {
-                let color = highlights.unwrap()[id.unwrap()].as_ref().unwrap().0;
-                execute!(stdout(), SetBackgroundColor(color));                
+            if id.is_some() && highlights.as_ref().is_some() && highlights.as_ref().unwrap()[id.unwrap()].as_ref().is_some() {
+                let color = highlights.as_ref().unwrap()[id.unwrap()].as_ref().unwrap().0;
+                execute!(stdout(), SetBackgroundColor(color));
+                highlights.as_mut().unwrap()[id.unwrap()] = Some(BackgroundHighlight(Color::Black));                
             }
 
             print!("{}", output[y][x]);
