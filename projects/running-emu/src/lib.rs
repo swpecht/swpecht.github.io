@@ -38,7 +38,7 @@ impl World {
         // calculate width
         for c in str_map.chars() {
             match c {
-                '.' | 'W' | 'S' | 'G' | '@' => {
+                '.' | 'W' | 'G' | '@' => {
                     tiles[y].push(c);
                     x += 1
                 }
@@ -78,15 +78,15 @@ impl World {
         self.add_component_to_entity(id, Position(p));
         self.add_component_to_entity(id, Sprite(c));
         match c {
-            'G' | 'S' | '@' => self.add_component_to_entity(id, Visibility(true)), // Goal and Start are visible to begin
+            'G' | '@' => self.add_component_to_entity(id, Visibility(true)), // Goal and Start are visible to begin
             _ => {} // All others must be found
         }
 
         if c == '@' {
-            // Create a background entity to represent the tile
+            // Create a Start entity where agent started
             let bg = self.new_entity();
             self.add_component_to_entity(bg, Position(p));
-            self.add_component_to_entity(bg, Sprite('.'));
+            self.add_component_to_entity(bg, Sprite('S'));
             self.set_visible(p, true);
         }
     }

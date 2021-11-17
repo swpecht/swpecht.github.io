@@ -10,7 +10,7 @@ use running_emu::{
 use std::io::stdout;
 
 fn main() {
-    let map = "....S@.........
+    let map = ".....@.........
         ............WWW
         ...............
         ............WWW
@@ -20,7 +20,7 @@ fn main() {
         .WGW.......W.W.
         ...............";
 
-    // let map = "S@..
+    // let map = ".@..
     // .WWW
     // .WGW
     // ....";
