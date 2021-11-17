@@ -1,27 +1,31 @@
-use crossterm::{cursor::{MoveUp}, event::{Event, read}, execute, style::{Color, ResetColor, SetBackgroundColor}, terminal::{Clear, ClearType}};
-use itertools::izip;
-use running_emu::{AttackerAgent, BackgroundHighlight, Point, Position, Sprite, Visibility, World, attacker_system_update, print_cost_matrix};
-use std::{io::stdout, ptr::NonNull};
+use crossterm::{
+    event::{read, Event},
+    execute,
+    style::{ResetColor, SetBackgroundColor},
+};
+use running_emu::{
+    attacker_system_update, print_cost_matrix, AttackerAgent, BackgroundHighlight, Point, Position,
+    Sprite, Visibility, World,
+};
+use std::io::stdout;
 
 fn main() {
-    let map = 
-   "....S@.........
-    ............WWW
-    ...............
-    ............WWW
-    ...............
-    ....WWW........
-    .WWW.......WWW.
-    .WGW.......W.W.
-    ...............";
+    let map = "....S@.........
+        ............WWW
+        ...............
+        ............WWW
+        ...............
+        ....WWW........
+        .WWW.......WWW.
+        .WGW.......W.W.
+        ...............";
 
-//     let map = 
-//    "S@..
-//     .WWW
-//     .WGW
-//     ....";
+    // let map = "S@..
+    // .WWW
+    // .WGW
+    // ....";
 
-    let mut world = World::from_map(map);    
+    let mut world = World::from_map(map);
     let mut agent = AttackerAgent::new(&world);
     let mut num_steps = 0;
 
@@ -52,8 +56,16 @@ fn render_system_update(world: &World) {
     let positions = world.borrow_component_vec::<Position>().unwrap();
     let sprites = world.borrow_component_vec::<Sprite>().unwrap();
     let visibility = world.borrow_component_vec::<Visibility>().unwrap();
-    let zip = positions.iter().zip(sprites.iter()).zip(visibility.iter()).map(|((p, s), v): ((&Option<Position>, &Option<Sprite>), &Option<Visibility>)| {(p, s, v)});
-    let drawable = zip.filter_map(|(p, c, v): (&Option<Position>, &Option<Sprite>, &Option<Visibility>)| {Some((p.as_ref()?, c.as_ref()?, v.as_ref()?))});
+    let zip = positions
+        .iter()
+        .zip(sprites.iter())
+        .zip(visibility.iter())
+        .map(|((p, s), v): ((&Option<Position>, &Option<Sprite>), &Option<Visibility>)| (p, s, v));
+    let drawable = zip.filter_map(
+        |(p, c, v): (&Option<Position>, &Option<Sprite>, &Option<Visibility>)| {
+            Some((p.as_ref()?, c.as_ref()?, v.as_ref()?))
+        },
+    );
     for (p, c, v) in drawable {
         if v.0 {
             // Handle special case for '.' only draw if nothing else present
@@ -62,22 +74,34 @@ fn render_system_update(world: &World) {
             } else {
                 output[p.0.y][p.0.x] = c.0;
             }
-        }        
+        }
     }
 
     let mut highlights = world.borrow_mut_component_vec::<BackgroundHighlight>();
     for y in 0..world.height {
         output.push(Vec::new());
         for x in 0..world.width {
-            let id = world.get_entity(Point{x: x, y: y});
-            if id.is_some() && highlights.as_ref().is_some() && highlights.as_ref().unwrap()[id.unwrap()].as_ref().is_some() {
-                let color = highlights.as_ref().unwrap()[id.unwrap()].as_ref().unwrap().0;
-                execute!(stdout(), SetBackgroundColor(color));
-                highlights.as_mut().unwrap()[id.unwrap()] = None;                
+            let id = world.get_entity(Point { x: x, y: y });
+            if id.is_some()
+                && highlights.as_ref().is_some()
+                && highlights.as_ref().unwrap()[id.unwrap()].as_ref().is_some()
+            {
+                let color = highlights.as_ref().unwrap()[id.unwrap()]
+                    .as_ref()
+                    .unwrap()
+                    .0;
+                match execute!(stdout(), SetBackgroundColor(color)) {
+                    Err(_) => panic!("error setting background color"),
+                    _ => {}
+                };
+                highlights.as_mut().unwrap()[id.unwrap()] = None;
             }
 
             print!("{}", output[y][x]);
-            execute!(stdout(), ResetColor);
+            match execute!(stdout(), ResetColor) {
+                Err(_) => panic!("error reseting background color"),
+                _ => {}
+            };
         }
         println!("");
     }
@@ -95,7 +119,9 @@ fn block_on_input() {
                 Event::Key(_event) => break,
                 _ => {}
             },
-            _ => {panic!("Error reading input")}
+            _ => {
+                panic!("Error reading input")
+            }
         }
     }
 }
