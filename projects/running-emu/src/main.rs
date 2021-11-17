@@ -1,6 +1,6 @@
-use crossterm::{cursor::{MoveUp}, event::{Event, read}, execute, terminal::{Clear, ClearType}};
+use crossterm::{cursor::{MoveUp}, event::{Event, read}, execute, style::{Color, ResetColor, SetBackgroundColor}, terminal::{Clear, ClearType}};
 use itertools::izip;
-use running_emu::{AttackerAgent, Position, Sprite, Visibility, World, attacker_system_update, get_path_from_agent, print_cost_matrix, print_path};
+use running_emu::{AttackerAgent, BackgroundHighlight, Point, Position, Sprite, Visibility, World, attacker_system_update, print_cost_matrix};
 use std::io::stdout;
 
 fn main() {
@@ -16,9 +16,10 @@ fn main() {
 //     ...............";
 
     let map = 
-   "S@.
-    ...
-    ..G";
+   "S@..
+    .WWW
+    .WGW
+    ....";
 
     let mut world = World::from_map(map);    
     let mut agent = AttackerAgent::new(&world);
@@ -28,12 +29,9 @@ fn main() {
         if attacker_system_update(&mut world, &mut agent) {
             break;
         }
-        
         // block_on_input(); // Only progress system updates on input
     }
 
-    let path = get_path_from_agent(&world, &mut agent);
-    print_path(&path, &world);
     println!("");
     print_cost_matrix(&world, &agent);
 
@@ -61,10 +59,18 @@ fn render_system_update(world: &World) {
         }        
     }
 
+    let highlights = world.borrow_component_vec::<BackgroundHighlight>();
     for y in 0..world.height {
         output.push(Vec::new());
         for x in 0..world.width {
+            let id = world.get_entity(Point{x: x, y: y});
+            if id.is_some() && highlights.is_some() && highlights.unwrap()[id.unwrap()].as_ref().is_some() {
+                let color = highlights.unwrap()[id.unwrap()].as_ref().unwrap().0;
+                execute!(stdout(), SetBackgroundColor(color));                
+            }
+
             print!("{}", output[y][x]);
+            execute!(stdout(), ResetColor);
         }
         println!("");
     }
