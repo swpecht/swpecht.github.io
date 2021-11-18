@@ -5,6 +5,7 @@ use std::{
     cmp::Reverse,
     collections::HashMap,
     hash::Hash,
+    vec,
 };
 
 /// Represents the game world
@@ -475,16 +476,32 @@ pub fn attacker_system_update(world: &mut World, agent: &mut AttackerAgent) -> b
         return true; // Found the goal
     }
 
-    // Generate the next target if we're there or don't have a goal
+    // Generate the next target if we're there or don't have a goal.
+    //
+    // The next target is chosen by constructing a matrix of scores for all possible explored locations and choosing the minimum
+    // An explored location will not be chosen. The scores for squares have the following form:
+    //  Score(point) = cost to get there from start + distance from the agent + cost to get to goal assuming un-explored squares have only travel cost
     if agent.next_target.is_none() || cur_loc == agent.next_target.unwrap() {
         let mut candidate_matrix = vec![None; world.width * world.height];
+
+        // Create a cost matrix where unknown tiles have a cost of 1
+        let mut goal_dist_costs =
+            vec![vec![Some(1); agent.cur_costs[0].len()]; agent.cur_costs.len()];
+        for y in 0..agent.cur_costs.len() {
+            for x in 0..agent.cur_costs[0].len() {
+                goal_dist_costs[y][x] = Some(agent.cur_costs[y][x].unwrap_or(0))
+            }
+        }
+
         for y in 0..world.height {
             for x in 0..world.width {
                 let p = Point { x: x, y: y };
                 match agent.get_cost(p) {
-                    Some(c) => {
-                        candidate_matrix[x + y * world.width] =
-                            Some(c + p.dist(&agent.goal) + p.dist(&cur_loc))
+                    Some(cost) => {
+                        let goal_dist =
+                            get_path(p, agent.goal, &goal_dist_costs).unwrap().len() as i32;
+                        let agent_dist = p.dist(&cur_loc);
+                        candidate_matrix[x + y * world.width] = Some(cost + goal_dist + agent_dist)
                     }
                     _ => {}
                 };
@@ -583,7 +600,9 @@ pub fn explore(world: &mut World, agent: &mut AttackerAgent, p: Point) {
     }
 }
 
-// Find a path between 2 arbitraty points
+/// Find a path between 2 arbitraty points if it exists
+///
+/// Only navigates through known costs
 fn get_path(start: Point, end: Point, cost_matrix: &Vec<Vec<Option<i32>>>) -> Option<Vec<Point>> {
     let mut queue: PriorityQueue<Point, Reverse<i32>> = PriorityQueue::new();
     queue.push(start, Reverse(0));
