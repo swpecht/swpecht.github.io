@@ -483,13 +483,13 @@ pub fn attacker_system_update(world: &mut World, agent: &mut AttackerAgent) -> b
     //  Score(point) = cost to get there from start + distance from the agent + cost to get to goal assuming un-explored squares have only travel cost
     if agent.next_target.is_none() || cur_loc == agent.next_target.unwrap() {
         let mut candidate_matrix = vec![None; world.width * world.height];
-
         // Create a cost matrix where unknown tiles have a cost of 1
+        let tile_costs = get_cost_matrix(world);
         let mut goal_dist_costs =
             vec![vec![Some(1); agent.cur_costs[0].len()]; agent.cur_costs.len()];
         for y in 0..agent.cur_costs.len() {
             for x in 0..agent.cur_costs[0].len() {
-                goal_dist_costs[y][x] = Some(agent.cur_costs[y][x].unwrap_or(0))
+                goal_dist_costs[y][x] = Some(tile_costs[y][x].unwrap_or(0))
             }
         }
 
@@ -527,6 +527,9 @@ pub fn attacker_system_update(world: &mut World, agent: &mut AttackerAgent) -> b
             }
         }
         println!("{:?}", min_p);
+        if min_p == (Point { x: 3, y: 8 }) {
+            println!("STOP")
+        }
         agent.next_target = Some(min_p);
     }
 
