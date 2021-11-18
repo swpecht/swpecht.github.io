@@ -596,8 +596,9 @@ pub fn explore(world: &mut World, agent: &mut AttackerAgent, p: Point) {
     for n in neighors {
         let c = agent.get_cost(n);
         world.set_visible(n, true); // Set tile as visible
-        if c.is_none() {
-            let new_cost = cost + 1 + get_tile_cost(world.get_tile(n)); // Cost always increases by minimum of 1
+        let new_cost = cost + 1 + get_tile_cost(world.get_tile(n)); // Cost always increases by minimum of 1
+        // Update if we have no cost or found a lower cost way to get here
+        if c.is_none() || c.unwrap() > new_cost {
             agent.update_cost(n, new_cost);
         }
     }
