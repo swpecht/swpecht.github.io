@@ -4,21 +4,21 @@ use crossterm::{
     style::{ResetColor, SetBackgroundColor},
 };
 use running_emu::{
-    attacker_system_update, print_cost_matrix, AttackerAgent, BackgroundHighlight, Point, Position,
-    Sprite, Visibility, World,
+    attacker_system_update, ecs::BackgroundHighlight, ecs::Point, ecs::Position, ecs::Sprite,
+    ecs::Visibility, ecs::World, print_cost_matrix, AttackerAgent,
 };
 use std::io::stdout;
 
 fn main() {
-    let map = ".....@.........
-        ............WWW
-        ...............
-        ............WWW
-        ...............
-        ....WWW........
-        WWWW.......WWW.
-        .WGW.......W.W.
-        ...............";
+    let map = "@..............
+    .WWWWWWWWWWWWW.
+    .W...........W.
+    .W.WWWWWWWWW.W.
+    .W.W.......W.W.
+    .W.WWWWWWW.W.W.
+    .W......GW.W.W.
+    .WWWWWWWWW.W.W.
+    ...........W...";
 
     // let map = ".@..
     // .WWW
