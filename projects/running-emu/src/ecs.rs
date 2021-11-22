@@ -1,9 +1,7 @@
 use crossterm::style::Color;
 use std::{
-    borrow::Borrow,
     cell::{Ref, RefCell, RefMut},
     hash::Hash,
-    sync::Arc,
     vec,
 };
 
@@ -17,7 +15,7 @@ pub struct World {
 
 impl World {
     pub fn new() -> World {
-        return World::from_map("@..\n...\n..G");
+        return World::from_map("S..\n...\n..G");
     }
 
     /// Create a world from a string representation of a map.
@@ -144,7 +142,6 @@ impl World {
             .push(Box::new(RefCell::new(new_component_vec)));
     }
 
-    // TODO: Make private
     pub fn borrow_mut_component_vec<ComponentType: 'static>(
         &self,
     ) -> Option<RefMut<Vec<Option<ComponentType>>>> {
@@ -161,7 +158,6 @@ impl World {
         None
     }
 
-    // TODO: Make private
     pub fn borrow_component_vec<ComponentType: 'static>(
         &self,
     ) -> Option<Ref<Vec<Option<ComponentType>>>> {
@@ -197,85 +193,6 @@ impl World {
 
         return None;
     }
-
-    /// Returns an iterator over component vecs of the specified type
-    ///
-    /// Designed based on Flecs: https://github.com/SanderMertens/flecs/blob/master/docs/Quickstart.md#filter
-    pub fn filter(&mut self, types: Vec<ComponentType>) -> ComponentIterator {
-        return ComponentIterator {
-            count: 1,
-            archetypes: vec![Archetype {
-                length: self.entities_count,
-                component_vecs: &mut self.component_vecs,
-            }],
-        };
-    }
-}
-
-pub struct ComponentIterator<'a> {
-    pub count: usize,
-    pub archetypes: Vec<Archetype<'a>>,
-}
-
-pub struct Archetype<'a> {
-    pub length: usize, // number of entities
-    component_vecs: &'a mut Vec<Box<dyn ComponentVec>>,
-}
-
-impl Archetype<'_> {
-    pub fn borrow_mut_component_vec<ComponentType: 'static>(
-        &self,
-    ) -> Option<RefMut<Vec<Option<ComponentType>>>> {
-        for component_vec in self.component_vecs.iter() {
-            if let Some(component_vec) = component_vec
-                .as_any()
-                .downcast_ref::<RefCell<Vec<Option<ComponentType>>>>()
-            {
-                // Here we use `borrow_mut`.
-                // If this `RefCell` is already borrowed from this will panic.
-                return Some(component_vec.borrow_mut());
-            }
-        }
-        None
-    }
-
-    pub fn borrow_component_vec<ComponentType: 'static>(
-        &self,
-    ) -> Option<Ref<Vec<Option<ComponentType>>>> {
-        for component_vec in self.component_vecs.iter() {
-            if let Some(component_vec) = component_vec
-                .as_any()
-                .downcast_ref::<RefCell<Vec<Option<ComponentType>>>>()
-            {
-                return Some(component_vec.borrow());
-            }
-        }
-        None
-    }
-}
-
-mod tests {
-    use crate::ecs::{Position, World};
-
-    #[test]
-    fn test_component_iterator() {
-        let mut world = World::new();
-        let it = world.filter(vec![]);
-
-        for a in it.archetypes {
-            let pos = a.borrow_mut_component_vec::<Position>().unwrap();
-            for i in 0..a.length {
-                println!("{:?}", pos[i].as_ref().unwrap().0);
-            }
-        }
-    }
-}
-
-pub enum ComponentType {
-    Position,
-    Sprite,
-    Visibility,
-    BackgroundHighlight,
 }
 
 trait ComponentVec {
