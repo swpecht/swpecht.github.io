@@ -15,7 +15,12 @@ pub struct World {
 
 impl World {
     pub fn new() -> World {
-        return World::from_map("S..\n...\n..G");
+        return Self {
+            entities_count: 0,
+            width: 0,
+            height: 0,
+            component_vecs: Vec::new(),
+        };
     }
 
     /// Create a world from a string representation of a map.
@@ -246,5 +251,49 @@ pub fn print_path(path: &Vec<Point>, world: &World) {
             }
         }
         println!("")
+    }
+}
+
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_add_entity() {
+        let mut world = World::new();
+        world.new_entity();
+        world.new_entity();
+        world.new_entity();
+
+        assert_eq!(world.entities_count, 3);
+    }
+
+    #[test]
+    fn test_add_components() {
+        let mut world = World::new();
+
+        let a = world.new_entity();
+        world.add_component_to_entity(a, Sprite('X'));
+        world.add_component_to_entity(a, Visibility(true));
+
+        let b = world.new_entity();
+        world.add_component_to_entity(b, Sprite('X'));
+        world.add_component_to_entity(b, Visibility(false));
+
+        let c = world.new_entity();
+        world.add_component_to_entity(c, Sprite('X'));
+
+        let sprites = world.borrow_component_vec::<Sprite>().unwrap();
+        let num_sprites = sprites
+            .iter()
+            .filter_map(|a: &Option<Sprite>| Some(a.as_ref()?))
+            .count();
+        assert_eq!(num_sprites, 3);
+
+        let vis = world.borrow_component_vec::<Visibility>().unwrap();
+        let num_vis = vis
+            .iter()
+            .filter_map(|a: &Option<Visibility>| Some(a.as_ref()?))
+            .count();
+        assert_eq!(num_vis, 2);
     }
 }
