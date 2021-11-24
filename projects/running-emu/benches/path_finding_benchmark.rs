@@ -1,19 +1,18 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use hecs::World;
-use running_emu::{create_map, map::Map, find_path_bfs, AttackerAgent};
+use running_emu::{create_map, find_path_bfs, spatial::parse_map, AttackerAgent};
 
 fn criterion_benchmark(c: &mut Criterion) {
-    let str_map = create_map(1000);
+    let map = create_map(1000);
     let mut world = World::new();
-
-    let mut map = Map::new(&str_map, &mut world);
+    parse_map(&mut world, &map);
 
     c.bench_function("find path 1000x1000", |b| {
-        b.iter(|| find_path(black_box(&mut map)))
+        b.iter(|| find_path(black_box(&mut world)))
     });
 }
 
-fn find_path(world: &mut Map) {
+fn find_path(world: &mut World) {
     let mut agent = AttackerAgent::new(&world);
     find_path_bfs(world, &mut agent);
 }

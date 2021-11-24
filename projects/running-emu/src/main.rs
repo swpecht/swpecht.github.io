@@ -2,9 +2,15 @@ use crossterm::{
     execute,
     style::{ResetColor, SetBackgroundColor},
 };
+use hecs::World;
 use running_emu::{
-    attacker_system_update, map::BackgroundHighlight, map::Map, map::Point, map::Position,
-    map::Sprite, map::Visibility, print_cost_matrix, AttackerAgent,
+    attacker_system_update, get_max_point,
+    spatial::BackgroundHighlight,
+    spatial::Sprite,
+    spatial::Visibility,
+    spatial::{get_entity, Position},
+    spatial::{parse_map, Point},
+    print_cost_matrix, AttackerAgent,
 };
 use std::io::stdout;
 
@@ -25,40 +31,36 @@ fn main() {
     // ....";
 
     let mut world = hecs::World::new();
+    parse_map(&mut world, map);
 
-    let mut map = Map::new(map, &mut world);
-    let mut agent = AttackerAgent::new(&map);
+    let mut agent = AttackerAgent::new(&world);
     let mut num_steps = 0;
 
     loop {
         num_steps += 1;
-        render_system_update(&mut map);
-        if attacker_system_update(&mut map, &mut agent) {
+        system_render(&mut world);
+        if attacker_system_update(&mut world, &mut agent) {
             break;
         }
         // block_on_input(); // Only progress system updates on input
     }
 
     println!("");
-    print_cost_matrix(&map, &agent);
+    print_cost_matrix(&world, &agent);
     println!("Completed in {} steps", num_steps);
 
     // println!("Found in {} steps", steps);
 }
 
 /// Update the render of the player visible map
-fn render_system_update(map: &mut Map) {
-    // execute!(stdout(), Clear(ClearType::FromCursorDown)).unwrap();
+fn system_render(world: &mut World) {
+    let max_p = get_max_point(world);
 
     // Populate base layer
-    let mut output = vec![vec!['?'; map.width]; map.height];
+    let mut output = vec![vec!['?'; max_p.x]; max_p.y];
 
     // Draw over top with entities
-    for (_, (p, c, v)) in map
-        .world
-        .query::<(&Position, &Sprite, &Visibility)>()
-        .iter()
-    {
+    for (_, (p, c, v)) in world.query::<(&Position, &Sprite, &Visibility)>().iter() {
         if v.0 {
             // Handle special case for '.' only draw if nothing else present
             if c.0 == '.' && output[p.0.y][p.0.x] != '?' {
@@ -69,18 +71,18 @@ fn render_system_update(map: &mut Map) {
         }
     }
 
-    for y in 0..map.height {
+    for y in 0..max_p.y {
         output.push(Vec::new());
-        for x in 0..map.width {
-            let id = map.get_entity(Point { x: x, y: y });
-            let highlight = map.world.get::<BackgroundHighlight>(id.unwrap());
+        for x in 0..max_p.x {
+            let id = get_entity(world, Point { x: x, y: y });
+            let highlight = world.get::<BackgroundHighlight>(id.unwrap());
             if id.is_some() && highlight.is_ok() {
                 let color = highlight.unwrap().0;
                 match execute!(stdout(), SetBackgroundColor(color)) {
                     Err(_) => panic!("error setting background color"),
                     _ => {}
                 };
-                map.world
+                world
                     .remove_one::<BackgroundHighlight>(id.unwrap())
                     .unwrap();
             }
