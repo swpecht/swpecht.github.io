@@ -4,8 +4,8 @@ use crossterm::{
     style::{ResetColor, SetBackgroundColor},
 };
 use running_emu::{
-    attacker_system_update, ecs::BackgroundHighlight, ecs::Point, ecs::Position, ecs::Sprite,
-    ecs::Visibility, ecs::World, print_cost_matrix, AttackerAgent,
+    attacker_system_update, map::BackgroundHighlight, map::Map, map::Point, map::Position,
+    map::Sprite, map::Visibility, print_cost_matrix, AttackerAgent,
 };
 use std::io::stdout;
 
@@ -25,48 +25,41 @@ fn main() {
     // .WGW
     // ....";
 
-    let mut world = World::from_map(map);
-    let mut agent = AttackerAgent::new(&world);
+    let mut world = hecs::World::new();
+
+    let mut map = Map::new(map, &mut world);
+    let mut agent = AttackerAgent::new(&map);
     let mut num_steps = 0;
 
     loop {
         num_steps += 1;
-        render_system_update(&world);
-        if attacker_system_update(&mut world, &mut agent) {
+        render_system_update(&mut map);
+        if attacker_system_update(&mut map, &mut agent) {
             break;
         }
         // block_on_input(); // Only progress system updates on input
     }
 
     println!("");
-    print_cost_matrix(&world, &agent);
+    print_cost_matrix(&map, &agent);
     println!("Completed in {} steps", num_steps);
 
     // println!("Found in {} steps", steps);
 }
 
 /// Update the render of the player visible map
-fn render_system_update(world: &World) {
+fn render_system_update(map: &mut Map) {
     // execute!(stdout(), Clear(ClearType::FromCursorDown)).unwrap();
 
     // Populate base layer
-    let mut output = vec![vec!['?'; world.width]; world.height];
+    let mut output = vec![vec!['?'; map.width]; map.height];
 
     // Draw over top with entities
-    let positions = world.borrow_component_vec::<Position>().unwrap();
-    let sprites = world.borrow_component_vec::<Sprite>().unwrap();
-    let visibility = world.borrow_component_vec::<Visibility>().unwrap();
-    let zip = positions
+    for (_, (p, c, v)) in map
+        .world
+        .query::<(&Position, &Sprite, &Visibility)>()
         .iter()
-        .zip(sprites.iter())
-        .zip(visibility.iter())
-        .map(|((p, s), v): ((&Option<Position>, &Option<Sprite>), &Option<Visibility>)| (p, s, v));
-    let drawable = zip.filter_map(
-        |(p, c, v): (&Option<Position>, &Option<Sprite>, &Option<Visibility>)| {
-            Some((p.as_ref()?, c.as_ref()?, v.as_ref()?))
-        },
-    );
-    for (p, c, v) in drawable {
+    {
         if v.0 {
             // Handle special case for '.' only draw if nothing else present
             if c.0 == '.' && output[p.0.y][p.0.x] != '?' {
@@ -77,24 +70,18 @@ fn render_system_update(world: &World) {
         }
     }
 
-    let mut highlights = world.borrow_mut_component_vec::<BackgroundHighlight>();
-    for y in 0..world.height {
+    for y in 0..map.height {
         output.push(Vec::new());
-        for x in 0..world.width {
-            let id = world.get_entity(Point { x: x, y: y });
-            if id.is_some()
-                && highlights.as_ref().is_some()
-                && highlights.as_ref().unwrap()[id.unwrap()].as_ref().is_some()
-            {
-                let color = highlights.as_ref().unwrap()[id.unwrap()]
-                    .as_ref()
-                    .unwrap()
-                    .0;
+        for x in 0..map.width {
+            let id = map.get_entity(Point { x: x, y: y });
+            let highlight = map.world.get::<BackgroundHighlight>(id.unwrap());
+            if id.is_some() && highlight.is_ok() {
+                let color = highlight.unwrap().0;
                 match execute!(stdout(), SetBackgroundColor(color)) {
                     Err(_) => panic!("error setting background color"),
                     _ => {}
                 };
-                highlights.as_mut().unwrap()[id.unwrap()] = None;
+                map.world.remove_one::<BackgroundHighlight>(id.unwrap());
             }
 
             print!("{}", output[y][x]);
