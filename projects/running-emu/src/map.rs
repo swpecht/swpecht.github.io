@@ -63,13 +63,12 @@ impl<'a> Map<'a> {
     }
 
     fn parse_entities(&mut self, c: char, p: Point) {
-        let id = self.world.spawn((Position(p), Sprite(c)));
-        match c {
-            'G' | '@' => {
-                self.world.insert_one(id, Visibility(true));
-            } // Goal and Start are visible to begin
-            _ => {} // All others must be found
-        }
+        let _ = match c {
+            'G' | '@' => self.world.spawn((Position(p), Sprite(c), Visibility(true))), // Goal and Start are visible to begin
+            _ => self
+                .world
+                .spawn((Position(p), Sprite(c), Visibility(false))), // All others must be found
+        };
 
         if c == '@' {
             // Create a Start entity where agent started
@@ -93,7 +92,7 @@ impl<'a> Map<'a> {
 
         match id {
             Some(id) => {
-                self.world.insert_one(id, Visibility(vis));
+                self.world.insert_one(id, Visibility(vis)).unwrap();
             }
             _ => {}
         }
@@ -147,10 +146,21 @@ pub fn print_path(path: &Vec<Point>, world: &Map) {
 }
 
 mod test {
+    #[allow(unused_imports)]
     use super::*;
+    #[allow(unused_imports)]
+    use hecs::World;
 
     #[test]
     fn test_simple_map_parse() {
-        assert!(false)
+        let map = "@..
+        ...
+        ...
+        ..G";
+
+        let mut world = World::new();
+        let map = Map::new(map, &mut world);
+        assert_eq!(map.width, 3);
+        assert_eq!(map.height, 4);
     }
 }

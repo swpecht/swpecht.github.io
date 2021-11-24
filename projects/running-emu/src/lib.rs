@@ -1,8 +1,8 @@
 use std::{cmp::Reverse, collections::HashMap};
 
 use crossterm::style::Color;
-use map::{BackgroundHighlight, Map};
 use hecs::Entity;
+use map::{BackgroundHighlight, Map};
 use priority_queue::PriorityQueue;
 
 use crate::map::{Point, Position, Sprite, Visibility};
@@ -289,7 +289,7 @@ pub fn attacker_system_update(map: &mut Map, agent: &mut AttackerAgent) -> bool 
         // Move the explorer '@'
         match agent.agend_id {
             Some(id) => {
-                map.world.insert_one(id, Position(path[1]));
+                map.world.insert_one(id, Position(path[1])).unwrap();
                 cur_loc = path[1]
             }
             _ => {}
@@ -304,7 +304,7 @@ pub fn attacker_system_update(map: &mut Map, agent: &mut AttackerAgent) -> bool 
 
             match e {
                 Some(e) => {
-                    map.world.insert_one(e, BackgroundHighlight(color));
+                    map.world.insert_one(e, BackgroundHighlight(color)).unwrap();
                 }
                 _ => {}
             }

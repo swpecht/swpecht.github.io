@@ -1,5 +1,4 @@
 use crossterm::{
-    event::{read, Event},
     execute,
     style::{ResetColor, SetBackgroundColor},
 };
@@ -81,7 +80,9 @@ fn render_system_update(map: &mut Map) {
                     Err(_) => panic!("error setting background color"),
                     _ => {}
                 };
-                map.world.remove_one::<BackgroundHighlight>(id.unwrap());
+                map.world
+                    .remove_one::<BackgroundHighlight>(id.unwrap())
+                    .unwrap();
             }
 
             print!("{}", output[y][x]);
@@ -95,20 +96,4 @@ fn render_system_update(map: &mut Map) {
     println!("");
 
     // execute!(stdout(), MoveUp(10)).unwrap();
-}
-
-/// Blocks until user input
-fn block_on_input() {
-    loop {
-        // `read()` blocks until an `Event` is available
-        match read() {
-            Ok(event) => match event {
-                Event::Key(_event) => break,
-                _ => {}
-            },
-            _ => {
-                panic!("Error reading input")
-            }
-        }
-    }
 }
