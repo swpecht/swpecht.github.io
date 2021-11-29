@@ -25,24 +25,31 @@ Status:
   * Finish refactoring to ECS, e.g. entity for tiles, and eventually controlled character.
     * Implement render system on top of ECS (done)
     * Switch AI to move around a unit '@', e.g. only valid moves are those within range of the unit (done)
-    * Refactor ECS to handle dynamic component addition, e.g. https://ianjk.com/ecs-in-rust/ (done)
+    * Refactor ECS to handle dynamic component addition, e.g. <https://ianjk.com/ecs-in-rust/> (done)
     * Add highlighting for planned path of @, implement as component? (done)
+* Clean up ECS
+  * Add test cases to ECS (done)
+  * Clean up iteration patter for systems over ECS. implement a `filter` type call? (abandoned, too complicated)
+  * Port to hecs (<https://github.com/Ralith/hecs>) (done)
+    * Add some parsing tests (done)
+  * Remove `Map` concept, instead do everything on world and normal functions (done)
+    * Remove need for width and height (done)
+  * Add vision system
+  * Add movement system with velocity
+
 * Do some performance benchmarks on large maps
   * Fix bug where not properly accounting for cost when doing pathing to intermediate goal (done)
   * Fix issue with backtracking while exploring the map, add heuristic to explore spaces close to the agent (done)
     * Fix bug where S and the first position for @ aren't the same, only specify the @ in maps and then have start be shown from there (done)
-  * Finish back tracking exploration, see below
-    * Fix bug to update cost of tiles when re-visited
-
-
-
+  * Finish back tracking exploration, see below (done)
+    * Fix bug to update cost of tiles when re-visited (done)
   * Add ability to read map from file, create a benchmark suite of maps to run through, test both time and number of steps
   * Create 100x100 map and benchmark
 
 * Concept of sending units that give "life" to explore? And "steps" of the exploration.
   * Then could add in destructable walls? For future units to make it easier?
 * Improve ECS and add querying, possibly switch to an Archetype ECS
-  * https://github.com/SanderMertens/flecs/blob/master/docs/Quickstart.md
+  * <https://github.com/SanderMertens/flecs/blob/master/docs/Quickstart.md>
 
 ## A* impact
 
@@ -103,7 +110,7 @@ Need to use something more complicated for a goal distance function that takes i
 
 We update the goal_distance function to use the actual cost of navigating squares with an assumption of no incremental cost for navigating unexplored squares.
 
-Can explore this in 17 steps, commit: d168648
+Can explore this in 17 steps, commit: 06882d5f60f3f2fcfe00c19e7881d55ad673fccb
 
 ????.S.????????
 ????...????????
@@ -114,32 +121,3 @@ Can explore this in 17 steps, commit: d168648
 .WWW???????????
 .WGW???????????
 ....???????????
-
-### Bug when needing to back track
-
-Take the following map:
-.....@.........
-............WWW
-...............
-............WWW
-...............
-....WWW........
-WWWW.......WWW.
-.WGW.......W.W.
-...............
-
-Current implementation needs 83 steps to solve this, commit: d168648
-
-The agent get here, and then decides to navidate to 1. Why?
-
-????.S.????????
-????...????????
-????...????????
-....1...???????
-.........??????
-....WWW..??????
-WWWW.....??????
-??GW.....??????
-??.@....???????
-
-Can now solve in 29 steps, was previously using the incorrect cost matrix.
