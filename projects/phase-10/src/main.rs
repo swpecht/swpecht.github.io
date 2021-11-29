@@ -64,14 +64,29 @@ fn main() {
     env_logger::init();
 
     let mut rng = thread_rng();
+    const NUM_PLAYS: i32 = 10000;
+    let mut total_turns = 0;
+
+    for _ in 0..NUM_PLAYS {
+        total_turns += play_game(&mut rng);
+    }
+
+    println!(
+        "Average number of turns: {}",
+        total_turns as f64 / NUM_PLAYS as f64
+    )
+}
+
+/// Return the number of turns to get phase
+fn play_game(rng: &mut ThreadRng) -> i32 {
     let mut draw_pile = create_deck();
     let mut discard_pile = Vec::new();
-    draw_pile.shuffle(&mut rng);
+    draw_pile.shuffle(rng);
 
     // Deal 10 cards
     let mut hand = Vec::new();
     for _ in 0..10 {
-        hand.push(draw_card(&mut draw_pile, &mut discard_pile, &mut rng));
+        hand.push(draw_card(&mut draw_pile, &mut discard_pile, rng));
     }
     info!("{:?}", hand);
 
@@ -80,12 +95,12 @@ fn main() {
     loop {
         turn_count += 1;
 
-        let candidate = draw_card(&mut draw_pile, &mut discard_pile, &mut rng);
+        let candidate = draw_card(&mut draw_pile, &mut discard_pile, rng);
         match take_or_draw(&hand, candidate) {
             Action::Take => discard_pile.push(discard(&mut hand, candidate)),
             Action::Draw => {
                 // Draw before the discard
-                let c = draw_card(&mut draw_pile, &mut discard_pile, &mut rng);
+                let c = draw_card(&mut draw_pile, &mut discard_pile, rng);
                 discard_pile.push(candidate);
                 discard_pile.push(discard(&mut hand, c))
             }
@@ -95,9 +110,9 @@ fn main() {
             break;
         }
     }
+    info!("{:?}", hand);
 
-    println!("{}", turn_count);
-    println!("{:?}", hand);
+    return turn_count;
 }
 
 /// Determine if should take face up card or draw
