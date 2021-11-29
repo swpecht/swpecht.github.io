@@ -64,11 +64,12 @@ fn main() {
     env_logger::init();
 
     let mut rng = thread_rng();
-    const NUM_PLAYS: i32 = 10000;
+    const NUM_PLAYS: i32 = 100000;
     let mut total_turns = 0;
+    let policy = take_if_no_n_of_kind;
 
     for _ in 0..NUM_PLAYS {
-        total_turns += play_game(&mut rng, take_if_pair);
+        total_turns += play_game(&mut rng, policy);
     }
 
     println!(
@@ -121,12 +122,58 @@ where
     return turn_count;
 }
 
-/// Determine if should take face up card or draw
+/// Take a card if a copy exists in the hand, otherwise, draw
 fn take_if_pair(hand: &Vec<Card>, candidate_card: Card) -> Action {
-    match hand.contains(&candidate_card) {
+    match hand.contains(&candidate_card) || candidate_card == Card::Wild {
         true => Action::Take,
         _ => Action::Draw,
     }
+}
+
+/// Two phases:
+/// * If no n of a kind in hand, take if pair
+/// * If n of a kind or more, draw card
+fn take_if_no_n_of_kind(hand: &Vec<Card>, candidate_card: Card) -> Action {
+    let counts = get_counts(&hand);
+    let (mcard, mcount) = counts[counts.len() - 1];
+
+    if mcount < 3 {
+        return take_if_pair(hand, candidate_card);
+    }
+
+    // If it's part of the max set or wild, take it
+    return match candidate_card {
+        x if x == mcard => Action::Take,
+        Card::Wild => Action::Take,
+        _ => Action::Draw,
+    };
+}
+
+/// Returns a sorted list from lowest to highest by frequency of cards.
+///
+/// Exclude wild cards
+fn get_counts(cards: &Vec<Card>) -> Vec<(Card, i32)> {
+    let mut counts = HashMap::new();
+    for c in cards {
+        if *c == Card::Wild {
+            // Don't get counts for wildcards
+            continue;
+        }
+        if let Some(&count) = counts.get(c) {
+            counts.insert(*c, count + 1)
+        } else {
+            counts.insert(*c, 1)
+        };
+    }
+
+    let mut result = Vec::new();
+    for (k, v) in counts {
+        result.push((k, v));
+    }
+
+    result.sort_by(|&a, &b| a.1.cmp(&b.1));
+
+    return result;
 }
 
 /// Returns the discarded card.
