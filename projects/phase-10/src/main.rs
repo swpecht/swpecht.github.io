@@ -68,7 +68,7 @@ fn main() {
     let mut total_turns = 0;
 
     for _ in 0..NUM_PLAYS {
-        total_turns += play_game(&mut rng);
+        total_turns += play_game(&mut rng, take_if_pair);
     }
 
     println!(
@@ -78,7 +78,10 @@ fn main() {
 }
 
 /// Return the number of turns to get phase
-fn play_game(rng: &mut ThreadRng) -> i32 {
+fn play_game<F>(rng: &mut ThreadRng, take_policy: F) -> i32
+where
+    F: Fn(&Vec<Card>, Card) -> Action,
+{
     let mut draw_pile = create_deck();
     let mut discard_pile = Vec::new();
     draw_pile.shuffle(rng);
@@ -96,16 +99,19 @@ fn play_game(rng: &mut ThreadRng) -> i32 {
         turn_count += 1;
 
         let candidate = draw_card(&mut draw_pile, &mut discard_pile, rng);
-        match take_or_draw(&hand, candidate) {
-            Action::Take => discard_pile.push(discard(&mut hand, candidate)),
+        match take_policy(&hand, candidate) {
+            Action::Take => hand.push(candidate),
             Action::Draw => {
                 // Draw before the discard
                 let c = draw_card(&mut draw_pile, &mut discard_pile, rng);
                 discard_pile.push(candidate);
-                discard_pile.push(discard(&mut hand, c))
+                hand.push(c);
             }
         }
 
+        discard_pile.push(discard(&mut hand));
+
+        assert_eq!(hand.len(), 10);
         if evaluate(&hand) {
             break;
         }
@@ -116,24 +122,42 @@ fn play_game(rng: &mut ThreadRng) -> i32 {
 }
 
 /// Determine if should take face up card or draw
-fn take_or_draw(hand: &Vec<Card>, candidate_card: Card) -> Action {
+fn take_if_pair(hand: &Vec<Card>, candidate_card: Card) -> Action {
     match hand.contains(&candidate_card) {
         true => Action::Take,
         _ => Action::Draw,
     }
 }
 
-/// Returns the discarded card
-fn discard(hand: &mut Vec<Card>, candidate_card: Card) -> Card {
-    if hand.contains(&candidate_card) || candidate_card == Card::Wild {
-        hand.push(candidate_card);
-        for i in 0..hand.len() {
-            if hand[i] != candidate_card {
-                return hand.remove(i);
-            }
+/// Returns the discarded card.
+///
+/// Discards the least common non-wild card in the hand
+fn discard(hand: &mut Vec<Card>) -> Card {
+    let mut counts: HashMap<Card, usize> = HashMap::new();
+    let hand_size = hand.len();
+
+    for c in hand.into_iter() {
+        if *c == Card::Wild {
+            // Don't get counts for wildcards
+            continue;
+        }
+        if let Some(&count) = counts.get(&c) {
+            counts.insert(*c, count + 1)
+        } else {
+            counts.insert(*c, 1)
+        };
+    }
+
+    let min_count = *counts.values().min().unwrap();
+    for i in 0..hand_size {
+        let count = *counts.get(&hand[i]).unwrap_or(&1);
+        if count == min_count {
+            return hand.remove(i);
         }
     }
-    return candidate_card;
+
+    assert!(false); // Should never get here
+    return hand.remove(0);
 }
 
 /// Return true if the game is over, evaluating a hand for
