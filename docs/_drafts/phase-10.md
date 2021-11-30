@@ -7,7 +7,9 @@ categories: project-log
 
 ## Context
 
-Phase 10 is a rummy-like cardgame where the player needs to accomplish various goals (or phases) to progress. For example, the player may need to get 2 sets of 3 cards or a 7 card straight. Wikipedia gives a good overview of [the rules](https://en.wikipedia.org/wiki/Phase_10).
+Phase 10 is a rummy-like cardgame where the player needs to accomplish various goals (or phases) to progress. For example, the player may need to get 2 sets of 3 cards or a 7 card straight. In each turn, the player must decide between 1) taking the faceup card discarded by the player to their right or 2) drawing an unknown card from the deck.
+
+Wikipedia gives a good overview of [the rules](https://en.wikipedia.org/wiki/Phase_10).
 
 ## Problem
 
@@ -24,9 +26,11 @@ What is the best policy for determining when to take the face up card or to draw
 
 I built a simulation for Phase 10 in Rust ([code on Github](https://github.com/swpecht/swpecht.github.io/tree/master/projects/phase-10)). I chose Rust for fun.
 
-The main area of interest in the 'take-policy' -- the set or rules that determine when to take the face-up discarded card or to draw an unknown card\[0\].
+The main area of interest is the 'take-policy' -- the set or rules that determine when to take the face-up discarded card or to draw an unknown card\[0\].
 
-For each take-policy, I run 100k simulations and compare the median and average turns to win. See below for an overview of the policies.
+For each take-policy, I run 100k simulations and compare the median and average turns to win. To start, we're modeling the discarded cards as random from the deck.
+
+See below for an overview of the policies.
 
 ### Baseline policy
 
@@ -75,7 +79,7 @@ fn greedy_5_after_n(hand: &Vec<Card>, candidate_card: Card, target_n: i32) -> Ac
 
 ### Hide intentions until N of a kind
 
-Always draw a card unless picking up a card completes a set of N. The goal is to hide what cards you're going for from opponents as discarded cards come from the player to your left.
+Always draw a card unless picking up a card completes a set of N. The goal is to hide what cards you're going for from opponents as discarded cards come from the player to your right.
 
 ```rust
 fn hide_until_n(hand: &Vec<Card>, candidate_card: Card, target_n: i32) -> Action {
@@ -100,7 +104,7 @@ fn hide_until_n(hand: &Vec<Card>, candidate_card: Card, target_n: i32) -> Action
 
 ## Initial results: Greedy pairs wins
 
-|Policy |Num turns (median)  | Num turns (average)  |
+|Policy |Turns to win (median)  | Turns to win (average)  |
 |-------|-----------|-----------|
 Greedy pairs                |10 |10.1   |
 Greedy 5 of a kind after 4  |10 |10.3   |
@@ -114,9 +118,9 @@ Do things change if we account for other player behavior? For example, if a play
 
 ## Results with anatagonistic discard pile
 
-To test this, we build an anatagonistic discard pile, essentially, we never let the discard pile show a card we've taken in the past. This would model the person next to you playing perfectly (a tough sell after a day of eating and drinking). With this constraint:
+To test this, we build an anatagonistic discard pile: we never let the discard pile show a card we've taken in the past. This would model the person next to you playing perfectly (a tough sell after a Thanksgiving of eating and drinking). With this constraint:
 
-|Policy |Num turns (median)  | Num turns (average)  |
+|Policy |Turns to win (median)  | Turns to win (average)  |
 |-------|-----------|-----------|
 Greedy pairs                |11     |11.7   |
 Greedy 5 of a kind after 4  |11     |11.9   |
@@ -124,9 +128,11 @@ Greedy 5 of a kind after 3  |11     |12.3   |
 Hide until 4 of a kind      |14     |15.1   |
 Hide until 3 of a kind      |14     |14.7   |
 
-As expected, there isn't much impact on the `hide until n` strategies -- the whole point is to hide what cards you're going after.
+As expected, there isn't much impact on the `hide until n` strategies -- the whole point is to hide what cards we're going after.
 
-The `greedy pairs` strategy is negatviely impacted. But it's still the best strategy. And it's the simplest, if you have the discard card in your hand, take it. Turns out I was way over thinking this.
+The `greedy pairs` strategy is negatviely impacted. But it's still the best strategy. And it's the simplest, if you have the discard card in your hand, take it.
+
+Turns out I was way over thinking this.
 
 ## Possible future ideas
 
