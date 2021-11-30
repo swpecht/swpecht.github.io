@@ -74,8 +74,8 @@ fn main() {
     let mut rng = thread_rng();
     const NUM_PLAYS: i32 = 100000;
     let mut total_turns = 0;
-    let policy = take_if_no_n_of_kind;
-    // let policy = take_if_pair;
+    // let policy = take_if_no_n_of_kind;
+    let policy = take_if_pair;
 
     for _ in 0..NUM_PLAYS {
         let stats = play_game(&mut rng, policy);
@@ -110,14 +110,18 @@ where
         turn_count += 1;
 
         let candidate = draw_card(&mut draw_pile, &mut discard_pile, rng);
-        match take_policy(&hand, candidate) {
-            Action::Take => hand.push(candidate),
-            Action::Draw => {
+        // Includes some baseline policy decisions:
+        // * Always take a wild card
+        // * Always draw when a skip card comes up
+        match (candidate, take_policy(&hand, candidate)) {
+            (Card::Wild, _) => hand.push(candidate),
+            (Card::Skip, _) | (_, Action::Draw) => {
                 // Draw before the discard
                 let c = draw_card(&mut draw_pile, &mut discard_pile, rng);
                 discard_pile.push(candidate);
                 hand.push(c);
             }
+            (_, Action::Take) => hand.push(candidate),
         }
 
         discard_pile.push(discard(&mut hand));
@@ -126,6 +130,10 @@ where
         if evaluate(&hand) {
             break;
         }
+
+        // Cycle the cards as if another player went
+        let c = draw_card(&mut draw_pile, &mut discard_pile, rng);
+        discard_pile.push(c);
     }
     info!("{:?}", hand);
 
@@ -136,7 +144,7 @@ where
 
 /// Take a card if a copy exists in the hand, otherwise, draw
 fn take_if_pair(hand: &Vec<Card>, candidate_card: Card) -> Action {
-    match hand.contains(&candidate_card) || candidate_card == Card::Wild {
+    match hand.contains(&candidate_card) {
         true => Action::Take,
         _ => Action::Draw,
     }
@@ -156,7 +164,6 @@ fn take_if_no_n_of_kind(hand: &Vec<Card>, candidate_card: Card) -> Action {
     // If it's part of the max set or wild, take it
     return match candidate_card {
         x if x == mcard => Action::Take,
-        Card::Wild => Action::Take,
         _ => Action::Draw,
     };
 }
