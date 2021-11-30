@@ -40,59 +40,35 @@ enum Action {
 /// Store results of a game run
 struct RunStats {
     turns_to_win: i32,
-    turns_to_5: i32,
-    // num_takes: i32, // Number of times taking the discard card
 }
 
-/// Deck overview: 108 cards
-/// 96 numbered: 2 of each value from 1-12 in each of the four colors
-/// 8 wild
-/// 4 skip cards
-///
-/// Looking at:
-/// * Phase 7: 2 sets of 4
-/// * Phase 9: 1 set of 5, 1 set of 2
-/// * Phase 10: 1 set of 5, 1 set of 3
-///
-/// Ref: https://en.wikipedia.org/wiki/Phase_10
-///
-/// Strategies:
-/// * Greedily make pairs
-/// * Greedily take cards going for larger set
-/// * ...
-///
-/// Design:
-/// * Store cards as list
-/// * Each card is the index, state is the value
-///
-///
-/// Starting with a hardcoded policy and score. Could we do this with ML and instead not have to write this?
-///
 fn main() {
     env_logger::init();
 
     let mut rng = thread_rng();
-    const NUM_PLAYS: usize = 10000;
+    const NUM_PLAYS: usize = 100000;
+    const ENABLE_ANTAG_DISCARD: bool = true;
     // let policy = greedy_5_after_n;
     // let policy = take_if_pair;
     let runs: Vec<(&str, for<'r> fn(&'r Vec<Card>, Card) -> Action)> = vec![
-        ("Hide until 3", hide_until_3),
-        ("Hide until 4", hide_until_4),
         ("Greedy pairs", greedy_pairs),
-        ("Greedy 5 after 3", greedy_5_after_3),
         ("Greedy 5 after 4", greedy_5_after_4),
+        ("Greedy 5 after 3", greedy_5_after_3),
+        ("Hide until 4", hide_until_4),
+        ("Hide until 3", hide_until_3),
     ];
 
     for r in runs {
         println!("{}", r.0);
         let mut run_tape = Vec::with_capacity(NUM_PLAYS);
         for _ in 0..NUM_PLAYS {
-            let stats = play_game(&mut rng, r.1);
+            let stats = play_game(&mut rng, r.1, ENABLE_ANTAG_DISCARD);
             run_tape.push(stats.turns_to_win);
         }
 
         println!("Average number of turns: {}", mean(&run_tape));
         println!("Median turns: {}", median(&mut run_tape));
+        println!();
     }
 }
 
@@ -113,7 +89,7 @@ fn mean(array: &Vec<i32>) -> f64 {
 }
 
 /// Return the number of turns to get phase
-fn play_game<F>(rng: &mut ThreadRng, take_policy: F) -> RunStats
+fn play_game<F>(rng: &mut ThreadRng, take_policy: F, antagonistic_discard: bool) -> RunStats
 where
     F: Fn(&Vec<Card>, Card) -> Action,
 {
@@ -130,11 +106,17 @@ where
 
     // Main gameplay loop
     let mut turn_count = 0;
-    let mut turns_to_5 = None;
+    let mut taken_cards = Vec::new();
+
     loop {
         turn_count += 1;
 
-        let candidate = draw_card(&mut draw_pile, &mut discard_pile, rng);
+        // Keep drawing new cards until we get to one we haven't taken before
+        let mut candidate = draw_card(&mut draw_pile, &mut discard_pile, rng);
+        while taken_cards.contains(&candidate) && antagonistic_discard {
+            candidate = draw_card(&mut draw_pile, &mut discard_pile, rng);
+        }
+
         // Includes some baseline policy decisions:
         // * Always take a wild card
         // * Always draw when a skip card comes up
@@ -146,15 +128,13 @@ where
                 discard_pile.push(candidate);
                 hand.push(c);
             }
-            (_, Action::Take) => hand.push(candidate),
+            (_, Action::Take) => {
+                hand.push(candidate);
+                taken_cards.push(candidate)
+            }
         }
 
         discard_pile.push(discard(&mut hand));
-
-        let count = get_counts(&hand);
-        if turns_to_5.is_none() && count[count.len() - 1].1 >= 5 {
-            turns_to_5 = Some(turn_count);
-        }
 
         // Cycle the cards as if another player went
         let c = draw_card(&mut draw_pile, &mut discard_pile, rng);
@@ -169,7 +149,6 @@ where
 
     return RunStats {
         turns_to_win: turn_count,
-        turns_to_5: turns_to_5.unwrap_or(turn_count),
     };
 }
 
