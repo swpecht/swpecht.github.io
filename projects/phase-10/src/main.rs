@@ -40,8 +40,8 @@ enum Action {
 /// Store results of a game run
 struct RunStats {
     turns_to_win: i32,
-    // turns_to_5: i32,
-    // turns_to_2: i32,
+    turns_to_5: i32,
+    num_takes: i32, // Number of times taking the discard card
 }
 
 /// Deck overview: 108 cards
@@ -72,20 +72,27 @@ fn main() {
     env_logger::init();
 
     let mut rng = thread_rng();
-    const NUM_PLAYS: i32 = 100000;
+    const NUM_PLAYS: i32 = 10000;
     let mut total_turns = 0;
-    // let policy = take_if_no_n_of_kind;
-    let policy = take_if_pair;
+    let mut total_turns_to_5 = 0;
+    let policy = take_if_no_n_of_kind;
+    // let policy = take_if_pair;
 
     for _ in 0..NUM_PLAYS {
         let stats = play_game(&mut rng, policy);
         total_turns += stats.turns_to_win;
+        total_turns_to_5 += stats.turns_to_5;
     }
 
     println!(
         "Average number of turns: {}",
         total_turns as f64 / NUM_PLAYS as f64
-    )
+    );
+
+    println!(
+        "Average number of turns to 5: {}",
+        total_turns_to_5 as f64 / NUM_PLAYS as f64
+    );
 }
 
 /// Return the number of turns to get phase
@@ -106,6 +113,7 @@ where
 
     // Main gameplay loop
     let mut turn_count = 0;
+    let mut turns_to_5 = None;
     loop {
         turn_count += 1;
 
@@ -126,19 +134,25 @@ where
 
         discard_pile.push(discard(&mut hand));
 
-        assert_eq!(hand.len(), 10);
-        if evaluate(&hand) {
-            break;
+        let count = get_counts(&hand);
+        if turns_to_5.is_none() && count[count.len() - 1].1 >= 5 {
+            turns_to_5 = Some(turn_count);
         }
 
         // Cycle the cards as if another player went
         let c = draw_card(&mut draw_pile, &mut discard_pile, rng);
         discard_pile.push(c);
+
+        assert_eq!(hand.len(), 10);
+        if evaluate(&hand) {
+            break;
+        }
     }
     info!("{:?}", hand);
 
     return RunStats {
         turns_to_win: turn_count,
+        turns_to_5: turns_to_5.unwrap_or(turn_count),
     };
 }
 
@@ -155,7 +169,7 @@ fn take_if_pair(hand: &Vec<Card>, candidate_card: Card) -> Action {
 /// * If n of a kind or more, draw card
 fn take_if_no_n_of_kind(hand: &Vec<Card>, candidate_card: Card) -> Action {
     let counts = get_counts(&hand);
-    let (mcard, mcount) = counts[counts.len() - 1];
+    let (mcard, mcount) = counts[counts.len() - 1]; // end of list has highest count
 
     if mcount < 3 {
         return take_if_pair(hand, candidate_card);
