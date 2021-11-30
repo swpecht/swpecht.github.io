@@ -29,6 +29,7 @@ enum Face {
 enum Card {
     Regular(Face),
     Wild,
+    Skip,
 }
 
 enum Action {
@@ -64,7 +65,7 @@ fn main() {
     env_logger::init();
 
     let mut rng = thread_rng();
-    const NUM_PLAYS: i32 = 100000;
+    const NUM_PLAYS: i32 = 1000;
     let mut total_turns = 0;
     let policy = take_if_no_n_of_kind;
 
@@ -180,6 +181,11 @@ fn get_counts(cards: &Vec<Card>) -> Vec<(Card, i32)> {
 ///
 /// Discards the least common non-wild card in the hand
 fn discard(hand: &mut Vec<Card>) -> Card {
+    // Always discard a skip card if possible
+    if let Some(i) = hand.into_iter().position(|x| *x == Card::Skip) {
+        return hand.remove(i);
+    }
+
     let mut counts: HashMap<Card, usize> = HashMap::new();
     let hand_size = hand.len();
 
@@ -281,8 +287,13 @@ fn create_deck() -> Vec<Card> {
         deck.push(Card::Wild)
     }
 
-    // Should be 104 cards. The 108 total deck size less the 4 skip cards
-    assert_eq!(deck.len(), 104);
+    for _ in 0..4 {
+        deck.push(Card::Wild);
+    }
+
+    // Should be 108 total deck size
+    // https://en.wikipedia.org/wiki/Phase_10
+    assert_eq!(deck.len(), 108);
 
     return deck;
 }
