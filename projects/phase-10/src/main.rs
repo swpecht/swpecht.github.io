@@ -65,9 +65,10 @@ fn main() {
     env_logger::init();
 
     let mut rng = thread_rng();
-    const NUM_PLAYS: i32 = 1000;
+    const NUM_PLAYS: i32 = 100000;
     let mut total_turns = 0;
     let policy = take_if_no_n_of_kind;
+    // let policy = take_if_pair;
 
     for _ in 0..NUM_PLAYS {
         total_turns += play_game(&mut rng, policy);
@@ -156,8 +157,8 @@ fn take_if_no_n_of_kind(hand: &Vec<Card>, candidate_card: Card) -> Action {
 fn get_counts(cards: &Vec<Card>) -> Vec<(Card, i32)> {
     let mut counts = HashMap::new();
     for c in cards {
-        if *c == Card::Wild {
-            // Don't get counts for wildcards
+        if *c == Card::Wild || *c == Card::Skip {
+            // Don't get counts for wilds or skips
             continue;
         }
         if let Some(&count) = counts.get(c) {
@@ -300,7 +301,7 @@ fn create_deck() -> Vec<Card> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{evaluate, Card, Face};
+    use crate::{discard, evaluate, Card, Face};
 
     #[test]
     fn test_evaluate() {
@@ -340,5 +341,26 @@ mod tests {
         ];
 
         assert!(evaluate(&hand));
+    }
+
+    #[test]
+    fn test_discard() {
+        let mut hand = vec![
+            Card::Regular(Face::One),
+            Card::Regular(Face::Two),
+            Card::Regular(Face::Two),
+            Card::Regular(Face::Three),
+            Card::Regular(Face::Three),
+            Card::Regular(Face::Three),
+            Card::Skip,
+            Card::Wild,
+            Card::Wild,
+        ];
+
+        assert_eq!(discard(&mut hand), Card::Skip);
+        assert_eq!(discard(&mut hand), Card::Regular(Face::One));
+        assert_eq!(discard(&mut hand), Card::Regular(Face::Two));
+        assert_eq!(discard(&mut hand), Card::Regular(Face::Two));
+        assert_eq!(discard(&mut hand), Card::Regular(Face::Three));
     }
 }
