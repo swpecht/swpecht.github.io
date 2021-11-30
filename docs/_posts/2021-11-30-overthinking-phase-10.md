@@ -1,7 +1,6 @@
 ---
 layout: post
-title:  "How to not lose at Phase 10"
-date:   2021-11-30 00:00:00 +0000
+title:  "Overthinking Phase 10"
 categories: project-log
 ---
 
