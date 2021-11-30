@@ -41,7 +41,7 @@ enum Action {
 struct RunStats {
     turns_to_win: i32,
     turns_to_5: i32,
-    num_takes: i32, // Number of times taking the discard card
+    // num_takes: i32, // Number of times taking the discard card
 }
 
 /// Deck overview: 108 cards
@@ -72,27 +72,44 @@ fn main() {
     env_logger::init();
 
     let mut rng = thread_rng();
-    const NUM_PLAYS: i32 = 10000;
-    let mut total_turns = 0;
-    let mut total_turns_to_5 = 0;
-    let policy = take_if_no_n_of_kind;
+    const NUM_PLAYS: usize = 10000;
+    // let policy = greedy_5_after_n;
     // let policy = take_if_pair;
+    let runs: Vec<(&str, for<'r> fn(&'r Vec<Card>, Card) -> Action)> = vec![
+        ("Hide until 3", hide_until_3),
+        ("Hide until 4", hide_until_4),
+        ("Greedy pairs", greedy_pairs),
+        ("Greedy 5 after 3", greedy_5_after_3),
+        ("Greedy 5 after 4", greedy_5_after_4),
+    ];
 
-    for _ in 0..NUM_PLAYS {
-        let stats = play_game(&mut rng, policy);
-        total_turns += stats.turns_to_win;
-        total_turns_to_5 += stats.turns_to_5;
+    for r in runs {
+        println!("{}", r.0);
+        let mut run_tape = Vec::with_capacity(NUM_PLAYS);
+        for _ in 0..NUM_PLAYS {
+            let stats = play_game(&mut rng, r.1);
+            run_tape.push(stats.turns_to_win);
+        }
+
+        println!("Average number of turns: {}", mean(&run_tape));
+        println!("Median turns: {}", median(&mut run_tape));
     }
+}
 
-    println!(
-        "Average number of turns: {}",
-        total_turns as f64 / NUM_PLAYS as f64
-    );
+/// Returns the median and sorts the array
+fn median(array: &mut Vec<i32>) -> f64 {
+    array.sort();
+    if (array.len() % 2) == 0 {
+        let ind_left = array.len() / 2 - 1;
+        let ind_right = array.len() / 2;
+        (array[ind_left] + array[ind_right]) as f64 / 2.0
+    } else {
+        array[(array.len() / 2)] as f64
+    }
+}
 
-    println!(
-        "Average number of turns to 5: {}",
-        total_turns_to_5 as f64 / NUM_PLAYS as f64
-    );
+fn mean(array: &Vec<i32>) -> f64 {
+    array.iter().sum::<i32>() as f64 / array.len() as f64
 }
 
 /// Return the number of turns to get phase
@@ -157,7 +174,7 @@ where
 }
 
 /// Take a card if a copy exists in the hand, otherwise, draw
-fn take_if_pair(hand: &Vec<Card>, candidate_card: Card) -> Action {
+fn greedy_pairs(hand: &Vec<Card>, candidate_card: Card) -> Action {
     match hand.contains(&candidate_card) {
         true => Action::Take,
         _ => Action::Draw,
@@ -167,19 +184,58 @@ fn take_if_pair(hand: &Vec<Card>, candidate_card: Card) -> Action {
 /// Two phases:
 /// * If no n of a kind in hand, take if pair
 /// * If n of a kind or more, draw card
-fn take_if_no_n_of_kind(hand: &Vec<Card>, candidate_card: Card) -> Action {
+fn greedy_5_after_n(hand: &Vec<Card>, candidate_card: Card, target_n: i32) -> Action {
     let counts = get_counts(&hand);
-    let (mcard, mcount) = counts[counts.len() - 1]; // end of list has highest count
+    let (_, mcount) = counts[counts.len() - 1]; // end of list has highest count
 
-    if mcount < 3 {
-        return take_if_pair(hand, candidate_card);
+    if mcount < target_n {
+        return greedy_pairs(hand, candidate_card);
     }
 
-    // If it's part of the max set or wild, take it
-    return match candidate_card {
-        x if x == mcard => Action::Take,
-        _ => Action::Draw,
-    };
+    for (card, count) in counts {
+        match (card, count) {
+            // Check to ensure don't already have 5 of a kind
+            (x, n) if x == candidate_card && n >= target_n && n < 5 => return Action::Take,
+            _ => continue,
+        };
+    }
+
+    return Action::Draw;
+}
+
+fn greedy_5_after_3(hand: &Vec<Card>, candidate_card: Card) -> Action {
+    greedy_5_after_n(hand, candidate_card, 3)
+}
+
+fn greedy_5_after_4(hand: &Vec<Card>, candidate_card: Card) -> Action {
+    greedy_5_after_n(hand, candidate_card, 4)
+}
+
+fn hide_until_3(hand: &Vec<Card>, candidate_card: Card) -> Action {
+    return hide_until_n(hand, candidate_card, 3);
+}
+
+fn hide_until_4(hand: &Vec<Card>, candidate_card: Card) -> Action {
+    return hide_until_n(hand, candidate_card, 4);
+}
+
+fn hide_until_n(hand: &Vec<Card>, candidate_card: Card, target_n: i32) -> Action {
+    let counts = get_counts(&hand);
+    let (_, mcount) = counts[counts.len() - 1]; // end of list has highest count
+
+    if mcount <= target_n {
+        return Action::Draw;
+    }
+
+    for (card, count) in counts {
+        match (card, count) {
+            // Check to ensure don't already have 5 of a kind
+            (x, n) if x == candidate_card && n >= target_n && n < 5 => return Action::Take,
+            _ => continue,
+        };
+    }
+
+    return Action::Draw;
 }
 
 /// Returns a sorted list from lowest to highest by frequency of cards.
