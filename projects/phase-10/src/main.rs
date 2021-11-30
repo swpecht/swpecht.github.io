@@ -37,6 +37,13 @@ enum Action {
     Draw,
 }
 
+/// Store results of a game run
+struct RunStats {
+    turns_to_win: i32,
+    // turns_to_5: i32,
+    // turns_to_2: i32,
+}
+
 /// Deck overview: 108 cards
 /// 96 numbered: 2 of each value from 1-12 in each of the four colors
 /// 8 wild
@@ -71,7 +78,8 @@ fn main() {
     // let policy = take_if_pair;
 
     for _ in 0..NUM_PLAYS {
-        total_turns += play_game(&mut rng, policy);
+        let stats = play_game(&mut rng, policy);
+        total_turns += stats.turns_to_win;
     }
 
     println!(
@@ -81,7 +89,7 @@ fn main() {
 }
 
 /// Return the number of turns to get phase
-fn play_game<F>(rng: &mut ThreadRng, take_policy: F) -> i32
+fn play_game<F>(rng: &mut ThreadRng, take_policy: F) -> RunStats
 where
     F: Fn(&Vec<Card>, Card) -> Action,
 {
@@ -121,7 +129,9 @@ where
     }
     info!("{:?}", hand);
 
-    return turn_count;
+    return RunStats {
+        turns_to_win: turn_count,
+    };
 }
 
 /// Take a card if a copy exists in the hand, otherwise, draw
