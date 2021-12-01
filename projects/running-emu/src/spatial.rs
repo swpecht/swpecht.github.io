@@ -1,8 +1,7 @@
-use crossterm::style::Color;
 use hecs::{Entity, World};
 use std::{hash::Hash, vec};
 
-use crate::get_max_point;
+use crate::{get_max_point, Position, Sprite, Visibility, Vision};
 
 pub fn parse_map(world: &mut World, map: &str) {
     let mut x = 0;
@@ -39,8 +38,8 @@ pub fn parse_map(world: &mut World, map: &str) {
                 'G' => world.spawn((Position(p), Sprite(c), Visibility(true))), // Goal and Start are visible to begin
                 '@' => {
                     // Also spawn a visible start position
-                    world.spawn((Position(p), Sprite('S'), Visibility(true)));
-                    world.spawn((Position(p), Sprite(c), Visibility(true)))
+                    world.spawn((Position(p), Sprite(c), Visibility(true), Vision(1)));
+                    world.spawn((Position(p), Sprite('S'), Visibility(true)))
                 }
                 _ => world.spawn((Position(p), Sprite(c), Visibility(false))), // All others must be found
             };
@@ -68,23 +67,6 @@ pub fn get_entity(world: &World, p: Point) -> Option<Entity> {
     }
     return None;
 }
-
-pub fn set_visible(world: &mut World, p: Point, vis: bool) {
-    let id = get_entity(world, p);
-
-    match id {
-        Some(id) => {
-            world.insert_one(id, Visibility(vis)).unwrap();
-        }
-        _ => {}
-    }
-}
-
-pub struct Position(pub Point);
-pub struct Sprite(pub char);
-pub struct Visibility(pub bool);
-/// Determine if the background for an entity should be highlighted
-pub struct BackgroundHighlight(pub Color);
 
 /// Point in the game world
 #[derive(PartialEq, Clone, Copy, Hash, Eq, Debug)]

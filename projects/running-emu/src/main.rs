@@ -4,13 +4,10 @@ use crossterm::{
 };
 use hecs::World;
 use running_emu::{
-    attacker_system_update, get_max_point,
-    spatial::BackgroundHighlight,
-    spatial::Sprite,
-    spatial::Visibility,
-    spatial::{get_entity, Position},
+    attacker_system_update, get_max_point, print_cost_matrix,
+    spatial::get_entity,
     spatial::{parse_map, Point},
-    print_cost_matrix, AttackerAgent,
+    AttackerAgent, BackgroundHighlight, Position, Sprite, Visibility, Vision,
 };
 use std::io::stdout;
 
@@ -39,6 +36,7 @@ fn main() {
     loop {
         num_steps += 1;
         system_render(&mut world);
+        system_vision(&mut world);
         if attacker_system_update(&mut world, &mut agent) {
             break;
         }
@@ -98,4 +96,21 @@ fn system_render(world: &mut World) {
     println!("");
 
     // execute!(stdout(), MoveUp(10)).unwrap();
+}
+
+fn system_vision(world: &mut World) {
+    let mut ids = Vec::new();
+    for (id, (_, _)) in world.query_mut::<(&Position, &Vision)>() {
+        ids.push(id);
+    }
+
+    for id in ids {
+        let agent_pos = world.get::<Position>(id).unwrap().0;
+        let agent_sight = world.get::<Vision>(id).unwrap().0;
+        for (_, (position, visibility)) in world.query_mut::<(&Position, &mut Visibility)>() {
+            if agent_pos.dist(&position.0) <= agent_sight as i32 {
+                visibility.0 = true;
+            }
+        }
+    }
 }

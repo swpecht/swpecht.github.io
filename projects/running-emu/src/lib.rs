@@ -5,12 +5,20 @@ use std::{
 
 use crossterm::style::Color;
 use hecs::{Entity, World};
-use spatial::{get_tile, set_visible, BackgroundHighlight};
 use priority_queue::PriorityQueue;
+use spatial::get_tile;
 
-use crate::spatial::{get_entity, Point, Position, Sprite, Visibility};
+use crate::spatial::{get_entity, Point};
 
 pub mod spatial;
+
+pub struct Position(pub Point);
+pub struct Sprite(pub char);
+pub struct Visibility(pub bool);
+/// Determine if the background for an entity should be highlighted
+pub struct BackgroundHighlight(pub Color);
+/// How far an entity can see.
+pub struct Vision(pub usize);
 
 pub fn print_cost_matrix(world: &World, agent: &AttackerAgent) {
     let max_p = get_max_point(world);
@@ -356,9 +364,9 @@ pub fn explore(world: &mut World, agent: &mut AttackerAgent, p: Point) {
     let cost = agent.get_cost(p).unwrap();
     for n in neighors {
         let c = agent.get_cost(n);
-        set_visible(world, n, true); // Set tile as visible
         let new_cost = cost + 1 + get_tile_cost(get_tile(world, n)); // Cost always increases by minimum of 1
-                                                                     // Update if we have no cost or found a lower cost way to get here
+
+        // Update if we have no cost or found a lower cost way to get here
         if c.is_none() || c.unwrap() > new_cost {
             agent.update_cost(n, new_cost);
         }
