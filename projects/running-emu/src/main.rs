@@ -40,7 +40,7 @@ fn main() {
         if attacker_system_update(&mut world, &mut agent) {
             break;
         }
-        system_velocity(&mut world);
+        system_movement(&mut world);
         // block_on_input(); // Only progress system updates on input
     }
 
@@ -116,7 +116,7 @@ fn system_vision(world: &mut World) {
     }
 }
 
-fn system_velocity(world: &mut World) {
+fn system_movement(world: &mut World) {
     for (_, (pos, vel)) in world.query_mut::<(&mut Position, &mut Velocity)>() {
         pos.0 = Point {
             x: (pos.0.x as i32 + vel.0) as usize,
