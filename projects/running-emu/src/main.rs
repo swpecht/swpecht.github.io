@@ -7,7 +7,7 @@ use running_emu::{
     attacker_system_update, get_max_point, print_cost_matrix,
     spatial::get_entity,
     spatial::{parse_map, Point},
-    AttackerAgent, BackgroundHighlight, Position, Sprite, Visibility, Vision,
+    AttackerAgent, BackgroundHighlight, Position, Sprite, Velocity, Visibility, Vision,
 };
 use std::io::stdout;
 
@@ -40,6 +40,7 @@ fn main() {
         if attacker_system_update(&mut world, &mut agent) {
             break;
         }
+        system_velocity(&mut world);
         // block_on_input(); // Only progress system updates on input
     }
 
@@ -112,5 +113,18 @@ fn system_vision(world: &mut World) {
                 visibility.0 = true;
             }
         }
+    }
+}
+
+fn system_velocity(world: &mut World) {
+    for (_, (pos, vel)) in world.query_mut::<(&mut Position, &mut Velocity)>() {
+        pos.0 = Point {
+            x: (pos.0.x as i32 + vel.0) as usize,
+            y: (pos.0.y as i32 + vel.1) as usize,
+        };
+
+        // Set velocity to 0 after consumed
+        vel.0 = 0;
+        vel.1 = 0;
     }
 }

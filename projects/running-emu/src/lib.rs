@@ -19,6 +19,7 @@ pub struct Visibility(pub bool);
 pub struct BackgroundHighlight(pub Color);
 /// How far an entity can see.
 pub struct Vision(pub usize);
+pub struct Velocity(pub i32, pub i32);
 
 pub fn print_cost_matrix(world: &World, agent: &AttackerAgent) {
     let max_p = get_max_point(world);
@@ -244,7 +245,7 @@ fn get_tile_cost(tile: char) -> i32 {
 /// The lowest cost space is always explored next rather than traditional breadth first search.
 /// This ensures that tiles costs always represent the 'cheapest' way to get to the tile.
 pub fn attacker_system_update(world: &mut World, agent: &mut AttackerAgent) -> bool {
-    let mut cur_loc = world.get::<Position>(agent.agend_id.unwrap()).unwrap().0;
+    let cur_loc = world.get::<Position>(agent.agend_id.unwrap()).unwrap().0;
 
     agent.is_visited.insert(cur_loc, true);
     explore(world, agent, cur_loc);
@@ -305,9 +306,6 @@ pub fn attacker_system_update(world: &mut World, agent: &mut AttackerAgent) -> b
             }
         }
         println!("{:?}", min_p);
-        if min_p == (Point { x: 3, y: 8 }) {
-            println!("STOP")
-        }
         agent.next_target = Some(min_p);
     }
 
@@ -316,8 +314,15 @@ pub fn attacker_system_update(world: &mut World, agent: &mut AttackerAgent) -> b
         // Move the explorer '@'
         match agent.agend_id {
             Some(id) => {
-                world.insert_one(id, Position(path[1])).unwrap();
-                cur_loc = path[1]
+                world
+                    .insert_one(
+                        id,
+                        Velocity(
+                            path[1].x as i32 - cur_loc.x as i32,
+                            path[1].y as i32 - cur_loc.y as i32,
+                        ),
+                    )
+                    .unwrap();
             }
             _ => {}
         }
