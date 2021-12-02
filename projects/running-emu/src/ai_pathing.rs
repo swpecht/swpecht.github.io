@@ -16,7 +16,7 @@ use crate::{
 /// This system handles the pathfinding part of the AI. It doesn't select where agents should go
 /// only how to get there.
 pub fn system_pathing(world: &mut World) {
-    let tile_costs = get_tiles_costs(world);
+    let tile_costs = get_tile_costs(world);
 
     for (_, (pos, target)) in world.query_mut::<(&mut Position, &mut TargetLocation)>() {
         if target.0.is_none() || target.0.unwrap() == pos.0 {
@@ -51,7 +51,7 @@ pub fn system_ai(world: &mut World) -> bool {
 
     let target_loc = world.get::<TargetLocation>(agent_id).unwrap().0;
 
-    let tile_costs = get_tiles_costs(world);
+    let tile_costs = get_tile_costs(world);
     let travel_costs = get_travel_costs(start, &tile_costs);
 
     // Generate the next target if we're there or don't have a goal.
@@ -121,7 +121,7 @@ pub fn system_ai(world: &mut World) -> bool {
 pub fn system_path_highlight(world: &mut World) {
     let mut path_points = Vec::new();
     let mut goal_points = Vec::new();
-    let tile_costs = get_tiles_costs(world);
+    let tile_costs = get_tile_costs(world);
 
     let pathers = world
         .query_mut::<&TargetLocation>()
@@ -217,7 +217,7 @@ fn get_neighbors(point: Point, width: usize, height: usize) -> Vec<Point> {
 /// Debug function to print the travel costs
 pub fn print_travel_cost_matrix(world: &World) {
     let start = get_start(world);
-    let tile_costs = get_tiles_costs(world);
+    let tile_costs = get_tile_costs(world);
     let travel_costs = get_travel_costs(start, &tile_costs);
 
     let max_p = get_max_point(world);
@@ -306,7 +306,7 @@ fn get_travel_costs(start: Point, tile_costs: &Vec<Vec<Option<i32>>>) -> Vec<Vec
 }
 
 /// Return the cost matrix from currently visible tiles
-fn get_tiles_costs(world: &World) -> Vec<Vec<Option<i32>>> {
+fn get_tile_costs(world: &World) -> Vec<Vec<Option<i32>>> {
     let max_p = get_max_point(world);
     let mut tile_costs = vec![vec![None; max_p.x]; max_p.y];
     for (_, (pos, visible, spr)) in world
