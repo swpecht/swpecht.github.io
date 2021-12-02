@@ -321,6 +321,10 @@ pub fn system_pathing(world: &mut World) {
 
         let path = get_path(pos.0, target.0.unwrap(), &tile_costs).unwrap();
         pos.0 = path[1];
+
+        if target.0.unwrap() == pos.0 {
+            target.0 = None // Reach goal
+        }
     }
 }
 
@@ -335,16 +339,16 @@ pub fn system_ai(world: &mut World, agent: &mut AttackerAgent) -> bool {
     let agent_id = agent_ids[0].0; // Since only 1 agent
 
     let cur_loc = world.get::<Position>(agent_id).unwrap().0;
+    if cur_loc == agent.goal {
+        return true; // Found the goal
+    }
+
     agent.is_visited.insert(cur_loc, true);
 
     let tile_costs = get_tiles_costs(world);
     let travel_costs = get_travel_costs(agent.start, &tile_costs);
 
     // explore(world, agent, cur_loc, &tile_costs);
-
-    if cur_loc == agent.goal {
-        return true; // Found the goal
-    }
 
     // Generate the next target if we're there or don't have a goal.
     //
@@ -355,7 +359,7 @@ pub fn system_ai(world: &mut World, agent: &mut AttackerAgent) -> bool {
     if agent.next_target.is_none() || cur_loc == agent.next_target.unwrap() {
         let mut candidate_matrix = vec![None; max_p.x * max_p.y];
         // Create a cost matrix where unknown tiles have a cost of 1
-        let mut goal_dist_costs = vec![vec![Some(1); max_p.x]; max_p.y];
+        let mut goal_dist_costs = vec![vec![Some(0); max_p.x]; max_p.y];
         for y in 0..max_p.y {
             for x in 0..max_p.x {
                 goal_dist_costs[y][x] = Some(tile_costs[y][x].unwrap_or(0))
@@ -365,15 +369,11 @@ pub fn system_ai(world: &mut World, agent: &mut AttackerAgent) -> bool {
         for y in 0..max_p.y {
             for x in 0..max_p.x {
                 let p = Point { x: x, y: y };
-                match travel_costs[p.y][p.x] {
-                    Some(cost) => {
-                        let goal_dist =
-                            get_path(p, agent.goal, &goal_dist_costs).unwrap().len() as i32;
-                        let agent_dist = p.dist(&cur_loc);
-                        candidate_matrix[x + y * max_p.x] = Some(cost + goal_dist + agent_dist)
-                    }
-                    _ => {}
-                };
+                if let Some(cost) = travel_costs[p.y][p.x] {
+                    let goal_dist = get_path(p, agent.goal, &goal_dist_costs).unwrap().len() as i32;
+                    let agent_dist = p.dist(&cur_loc);
+                    candidate_matrix[x + y * max_p.x] = Some(cost + goal_dist + agent_dist)
+                }
                 // Don't choose a location previously visited
                 if agent.is_visited.contains_key(&p) {
                     candidate_matrix[x + y * max_p.x] = None;
