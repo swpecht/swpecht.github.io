@@ -1,7 +1,4 @@
-use std::{
-    cmp::{max, Reverse},
-    collections::HashMap,
-};
+use std::cmp::{max, Reverse};
 
 use crossterm::style::Color;
 use hecs::World;
@@ -220,7 +217,6 @@ pub struct AttackerAgent {
     start: Point,
     goal: Point,
     next_target: Option<Point>, // Intermediate target to navigate to
-    is_visited: HashMap<Point, bool>,
 }
 
 impl AttackerAgent {
@@ -241,7 +237,6 @@ impl AttackerAgent {
             start: start.unwrap(),
             goal: goal.unwrap(),
             next_target: None,
-            is_visited: HashMap::new(),
         };
 
         return agent;
@@ -315,7 +310,7 @@ pub fn system_pathing(world: &mut World) {
     let tile_costs = get_tiles_costs(world);
 
     for (_, (pos, target)) in world.query_mut::<(&mut Position, &mut TargetLocation)>() {
-        if target.0.is_none() {
+        if target.0.is_none() || target.0.unwrap() == pos.0 {
             continue;
         }
 
@@ -343,12 +338,8 @@ pub fn system_ai(world: &mut World, agent: &mut AttackerAgent) -> bool {
         return true; // Found the goal
     }
 
-    agent.is_visited.insert(cur_loc, true);
-
     let tile_costs = get_tiles_costs(world);
     let travel_costs = get_travel_costs(agent.start, &tile_costs);
-
-    // explore(world, agent, cur_loc, &tile_costs);
 
     // Generate the next target if we're there or don't have a goal.
     //
@@ -374,8 +365,16 @@ pub fn system_ai(world: &mut World, agent: &mut AttackerAgent) -> bool {
                     let agent_dist = p.dist(&cur_loc);
                     candidate_matrix[x + y * max_p.x] = Some(cost + goal_dist + agent_dist)
                 }
-                // Don't choose a location previously visited
-                if agent.is_visited.contains_key(&p) {
+                let neighbors = get_neighbors(p, max_p.x, max_p.y);
+                let mut all_neighbors_visible = true;
+                for n in neighbors {
+                    let e = get_entity(world, n).unwrap();
+                    let vis = world.query_one::<&Visibility>(e).unwrap().get().unwrap().0;
+                    all_neighbors_visible = all_neighbors_visible && vis;
+                }
+
+                // No reason to visit if all visible and not the goal
+                if all_neighbors_visible && p != agent.goal {
                     candidate_matrix[x + y * max_p.x] = None;
                 }
             }
