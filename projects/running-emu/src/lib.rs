@@ -19,7 +19,7 @@ pub struct Visibility(pub bool);
 pub struct BackgroundHighlight(pub Color);
 /// How far an entity can see.
 pub struct Vision(pub usize);
-pub struct Velocity(pub i32, pub i32);
+pub struct TargetLocation(pub Option<Point>);
 
 pub struct Agent;
 
@@ -308,14 +308,25 @@ fn get_tiles_costs(world: &World) -> Vec<Vec<Option<i32>>> {
     return tile_costs;
 }
 
-/// Update the attacker AI system. Returns True if have reached the goal.
+/// Move agents that have a target location.
 ///
-/// Two phases to the attacker system:
-///     1. Identify the next goal location we want to explore
-///     2. Indentify path to that goal location
-/// These two phases will continu on repeat until the final goal is found.
+/// This system handles the pathfinding part of the AI.
+pub fn system_pathing(world: &mut World) {
+    let tile_costs = get_tiles_costs(world);
+
+    for (_, (pos, target)) in world.query_mut::<(&mut Position, &mut TargetLocation)>() {
+        if target.0.is_none() {
+            continue;
+        }
+
+        let path = get_path(pos.0, target.0.unwrap(), &tile_costs).unwrap();
+        pos.0 = path[1];
+    }
+}
+
+/// Identify where agents should move next to explore.
 ///
-/// Populate the cost matrix for a given attacher agent with the distance from each point in the world to the start.
+/// This system sets target locations and handles route highlighting.
 ///
 /// The lowest cost space is always explored next rather than traditional breadth first search.
 /// This ensures that tiles costs always represent the 'cheapest' way to get to the tile.
@@ -344,7 +355,6 @@ pub fn system_ai(world: &mut World, agent: &mut AttackerAgent) -> bool {
     if agent.next_target.is_none() || cur_loc == agent.next_target.unwrap() {
         let mut candidate_matrix = vec![None; max_p.x * max_p.y];
         // Create a cost matrix where unknown tiles have a cost of 1
-        let tile_costs = get_cost_matrix(world);
         let mut goal_dist_costs = vec![vec![Some(1); max_p.x]; max_p.y];
         for y in 0..max_p.y {
             for x in 0..max_p.x {
@@ -387,54 +397,28 @@ pub fn system_ai(world: &mut World, agent: &mut AttackerAgent) -> bool {
         }
         println!("{:?}", min_p);
         agent.next_target = Some(min_p);
-    }
-
-    if cur_loc != agent.next_target.unwrap() {
-        let path = get_path(cur_loc, agent.next_target.unwrap(), &get_cost_matrix(world)).unwrap();
-
         world
-            .insert_one(
-                agent_id,
-                Velocity(
-                    path[1].x as i32 - cur_loc.x as i32,
-                    path[1].y as i32 - cur_loc.y as i32,
-                ),
-            )
+            .insert_one(agent_id, TargetLocation(Some(min_p)))
             .unwrap();
+    }
 
-        for p in path {
-            let e = get_entity(world, p);
-            let color = match p {
-                p if p == agent.next_target.unwrap() => Color::Green,
-                _ => Color::Blue,
-            };
+    // Highlight the target path
+    let path = get_path(cur_loc, agent.next_target.unwrap(), &tile_costs).unwrap();
+    for p in path {
+        let e = get_entity(world, p);
+        let color = match p {
+            p if p == agent.next_target.unwrap() => Color::Green,
+            _ => Color::Blue,
+        };
 
-            match e {
-                Some(e) => {
-                    world.insert_one(e, BackgroundHighlight(color)).unwrap();
-                }
-                _ => {}
+        match e {
+            Some(e) => {
+                world.insert_one(e, BackgroundHighlight(color)).unwrap();
             }
+            _ => {}
         }
     }
-
-    // explore(world, agent, cur_loc, &tile_costs);
-
     return false;
-}
-
-/// Returns a cost matrix representing the cost of visible tiles.
-fn get_cost_matrix(world: &mut World) -> Vec<Vec<Option<i32>>> {
-    let max_p = get_max_point(world);
-    let mut costs = vec![vec![None; max_p.x]; max_p.y];
-
-    for (_, (p, c, v)) in world.query_mut::<(&Position, &Sprite, &Visibility)>() {
-        if v.0 {
-            costs[p.0.y][p.0.x] = Some(get_tile_cost(c.0));
-        }
-    }
-
-    return costs;
 }
 
 /// Find a path between 2 arbitraty points if it exists

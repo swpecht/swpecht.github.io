@@ -4,9 +4,8 @@ use crossterm::{
 };
 use hecs::World;
 use running_emu::{
-    system_ai, get_max_point, print_cost_matrix,
-    spatial::{parse_map, Point},
-    AttackerAgent, BackgroundHighlight, Position, Sprite, Velocity, Visibility, Vision,
+    get_max_point, print_cost_matrix, spatial::parse_map, system_ai, system_pathing, AttackerAgent,
+    BackgroundHighlight, Position, Sprite, Visibility, Vision,
 };
 use std::io::stdout;
 
@@ -39,8 +38,7 @@ fn main() {
         if system_ai(&mut world, &mut agent) {
             break;
         }
-        system_movement(&mut world);
-        // block_on_input(); // Only progress system updates on input
+        system_pathing(&mut world);
     }
 
     println!("");
@@ -114,18 +112,5 @@ fn system_vision(world: &mut World) {
                 visibility.0 = true;
             }
         }
-    }
-}
-
-fn system_movement(world: &mut World) {
-    for (_, (pos, vel)) in world.query_mut::<(&mut Position, &mut Velocity)>() {
-        pos.0 = Point {
-            x: (pos.0.x as i32 + vel.0) as usize,
-            y: (pos.0.y as i32 + vel.1) as usize,
-        };
-
-        // Set velocity to 0 after consumed
-        vel.0 = 0;
-        vel.1 = 0;
     }
 }
