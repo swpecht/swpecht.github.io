@@ -70,6 +70,26 @@ pub fn parse_map(world: &mut World, map: &str) {
     }
 }
 
+/// Return Point where the goal is located
+pub fn get_goal(world: &World) -> Point {
+    for (_, (p, c)) in world.query::<(&Position, &Sprite)>().iter() {
+        if c.0 == 'G' {
+            return p.0;
+        }
+    }
+    panic!("No goal found in world");
+}
+
+/// Return Point where the start is located
+pub fn get_start(world: &World) -> Point {
+    for (_, (p, c)) in world.query::<(&Position, &Sprite)>().iter() {
+        if c.0 == 'S' {
+            return p.0;
+        }
+    }
+    panic!("No start found in world");
+}
+
 /// Returns Point representing the bottom right corner + 1. Or (1, 1) if no entities.
 ///
 /// Calculated based on entity locations

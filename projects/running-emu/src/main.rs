@@ -6,8 +6,8 @@ use hecs::World;
 
 use running_emu::{
     ai_pathing::print_travel_cost_matrix, ai_pathing::system_ai, ai_pathing::system_path_highlight,
-    ai_pathing::system_pathing, ai_pathing::AttackerAgent, get_max_point, parse_map,
-    BackgroundHighlight, Position, Sprite, Visibility, Vision,
+    ai_pathing::system_pathing, get_max_point, parse_map, BackgroundHighlight, Position, Sprite,
+    Visibility, Vision,
 };
 use std::io::stdout;
 
@@ -30,14 +30,13 @@ fn main() {
     let mut world = hecs::World::new();
     parse_map(&mut world, map);
 
-    let mut agent = AttackerAgent::new(&world);
     let mut num_steps = 0;
 
     loop {
         num_steps += 1;
         system_render(&mut world);
         system_vision(&mut world);
-        if system_ai(&mut world, &mut agent) {
+        if system_ai(&mut world) {
             break;
         }
         system_path_highlight(&mut world);
@@ -45,7 +44,7 @@ fn main() {
     }
 
     println!("");
-    print_travel_cost_matrix(&world, &agent);
+    print_travel_cost_matrix(&world);
     println!("Completed in {} steps", num_steps);
 
     // println!("Found in {} steps", steps);
