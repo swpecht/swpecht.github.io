@@ -82,8 +82,7 @@ fn system_render(world: &mut World) {
         output_char.push(Vec::new());
         for x in 0..max_p.x {
             let highlight = output_highlight[y][x];
-            if highlight.is_some() {
-                let color = highlight.unwrap();
+            if let Some(color) = highlight {
                 match execute!(stdout(), SetBackgroundColor(color)) {
                     Err(_) => panic!("error setting background color"),
                     _ => {}
