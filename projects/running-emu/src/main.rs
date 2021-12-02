@@ -1,11 +1,10 @@
 use crossterm::{
     execute,
-    style::{ResetColor, SetBackgroundColor},
+    style::{Color, ResetColor, SetBackgroundColor},
 };
 use hecs::World;
 use running_emu::{
     attacker_system_update, get_max_point, print_cost_matrix,
-    spatial::get_entity,
     spatial::{parse_map, Point},
     AttackerAgent, BackgroundHighlight, Position, Sprite, Velocity, Visibility, Vision,
 };
@@ -56,37 +55,42 @@ fn system_render(world: &mut World) {
     let max_p = get_max_point(world);
 
     // Populate base layer
-    let mut output = vec![vec!['?'; max_p.x]; max_p.y];
+    let mut output_char = vec![vec!['?'; max_p.x]; max_p.y];
+    let mut output_highlight = vec![vec![None; max_p.x]; max_p.y];
 
     // Draw over top with entities
     for (_, (p, c, v)) in world.query::<(&Position, &Sprite, &Visibility)>().iter() {
         if v.0 {
             // Handle special case for '.' only draw if nothing else present
-            if c.0 == '.' && output[p.0.y][p.0.x] != '?' {
+            if c.0 == '.' && output_char[p.0.y][p.0.x] != '?' {
                 // Do nothing, '.' can be in background
             } else {
-                output[p.0.y][p.0.x] = c.0;
+                output_char[p.0.y][p.0.x] = c.0;
             }
         }
     }
 
+    for (_, (p, bg)) in world
+        .query::<(&Position, &mut BackgroundHighlight)>()
+        .iter()
+    {
+        output_highlight[p.0.y][p.0.x] = Some(bg.0);
+        bg.0 = Color::Black; // Reset to black
+    }
+
     for y in 0..max_p.y {
-        output.push(Vec::new());
+        output_char.push(Vec::new());
         for x in 0..max_p.x {
-            let id = get_entity(world, Point { x: x, y: y });
-            let highlight = world.get::<BackgroundHighlight>(id.unwrap());
-            if id.is_some() && highlight.is_ok() {
-                let color = highlight.unwrap().0;
+            let highlight = output_highlight[y][x];
+            if highlight.is_some() {
+                let color = highlight.unwrap();
                 match execute!(stdout(), SetBackgroundColor(color)) {
                     Err(_) => panic!("error setting background color"),
                     _ => {}
                 };
-                world
-                    .remove_one::<BackgroundHighlight>(id.unwrap())
-                    .unwrap();
             }
 
-            print!("{}", output[y][x]);
+            print!("{}", output_char[y][x]);
             match execute!(stdout(), ResetColor) {
                 Err(_) => panic!("error reseting background color"),
                 _ => {}
@@ -95,8 +99,6 @@ fn system_render(world: &mut World) {
         println!("");
     }
     println!("");
-
-    // execute!(stdout(), MoveUp(10)).unwrap();
 }
 
 fn system_vision(world: &mut World) {
