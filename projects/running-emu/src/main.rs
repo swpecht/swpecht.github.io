@@ -3,9 +3,10 @@ use crossterm::{
     style::{Color, ResetColor, SetBackgroundColor},
 };
 use hecs::World;
+
 use running_emu::{
-    get_max_point, print_cost_matrix, spatial::parse_map, system_ai, system_pathing, AttackerAgent,
-    BackgroundHighlight, Position, Sprite, Visibility, Vision,
+    get_max_point, print_cost_matrix, spatial::parse_map, system_ai, system_path_highlight,
+    system_pathing, AttackerAgent, BackgroundHighlight, Position, Sprite, Visibility, Vision,
 };
 use std::io::stdout;
 
@@ -33,12 +34,13 @@ fn main() {
 
     loop {
         num_steps += 1;
-        system_render(&mut world);
         system_vision(&mut world);
         if system_ai(&mut world, &mut agent) {
             break;
         }
+        system_path_highlight(&mut world);
         system_pathing(&mut world);
+        system_render(&mut world);
     }
 
     println!("");

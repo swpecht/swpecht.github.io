@@ -402,23 +402,48 @@ pub fn system_ai(world: &mut World, agent: &mut AttackerAgent) -> bool {
             .unwrap();
     }
 
-    // Highlight the target path
-    let path = get_path(cur_loc, agent.next_target.unwrap(), &tile_costs).unwrap();
-    for p in path {
+    return false;
+}
+
+/// Highlight target locations and expected path, useful for debugging
+///
+/// Only highlights tiles with a sprite
+pub fn system_path_highlight(world: &mut World) {
+    let mut path_points = Vec::new();
+    let mut goal_points = Vec::new();
+    let tile_costs = get_tiles_costs(world);
+
+    let pathers = world
+        .query_mut::<&TargetLocation>()
+        .into_iter()
+        .map(|(e, loc)| (e, loc.0))
+        .collect_vec();
+
+    for pather in pathers {
+        let (id, target_loc) = pather;
+        if target_loc.is_none() {
+            continue;
+        }
+        let target_point = target_loc.unwrap();
+
+        goal_points.push(target_point);
+
+        let cur_loc = world.get::<Position>(id).unwrap().0;
+        let mut path = get_path(cur_loc, target_point, &tile_costs).unwrap();
+        path_points.append(&mut path);
+    }
+
+    for p in path_points {
         let e = get_entity(world, p);
         let color = match p {
-            p if p == agent.next_target.unwrap() => Color::Green,
+            p if goal_points.contains(&p) => Color::Green,
             _ => Color::Blue,
         };
 
-        match e {
-            Some(e) => {
-                world.insert_one(e, BackgroundHighlight(color)).unwrap();
-            }
-            _ => {}
+        if let Some(e) = e {
+            world.insert_one(e, BackgroundHighlight(color)).unwrap();
         }
     }
-    return false;
 }
 
 /// Find a path between 2 arbitraty points if it exists
