@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "Exploring a 2d space with Rust"
+title:  "Creating an AI to esplore 2d space with Rust"
 categories: project-log
 ---
 
@@ -10,7 +10,10 @@ I've had the half-idea for a base defence game with an intelligent AI attacker. 
 
 Creating a fun game isn't the goal -- learning Rust is. The code can be found [here](https://github.com/swpecht/swpecht.github.io/tree/master/projects/running-emu).
 
+As a caveat, this post is about AI in the game sense. Not in the pile of linear algebra sense.
+
 ## Problem
+
 Given a starting location and a goal location with unknown terrain in between, build an agent capable of exploring the area to find a low cost path to reach the goal.
 
 The main question we'll focus on is building a system to decide where the agent should explore next, e.g.
@@ -58,11 +61,114 @@ Each turn, the agent can move one to an adjacent square. The goal is the reach `
 
 ## Naive approach
 
-The naive approach is standard breadth first search path finding algorithm.
+At a high level, we can move to any visible square. We'll evaluate all visible squares. And then choose the one with the best score to move to.
+
+The naive approach is similar to a breadth first search path finding algorithm. We'll evaluate each square based on it's distance from our original starting point. This will give us a good path for future agents to follow.
+
+First we need to know the cost of traveling each of the visible tiles. I'm using [hecs](https://github.com/Ralith/hecs) as the ECS to store world state.
+
+```rust
+/// Return the cost matrix from currently visible tiles
+/// 
+/// This function essentially iterates through all tiles, creating a matrix
+/// with 0 for `.` tiles and 10 for `W` tiles
+fn get_tile_costs(world: &World) -> Vec<Vec<Option<i32>>> {
+    let max_p = get_max_point(world);
+    let mut tile_costs = vec![vec![None; max_p.x]; max_p.y];
+    for (_, (pos, visible, spr)) in world
+        .query::<(&Position, &Visibility, &Sprite)>()
+        .into_iter()
+    {
+        if visible.0 {
+            tile_costs[pos.0.y][pos.0.x] = Some(get_tile_cost(spr.0));
+        }
+    }
+
+    return tile_costs;
+}
+```
+
+Then we need to know the cost to travel to each of the tiles from the starting point. This is the BFS algorithm for path finding.
+
+```rust
+/// Return the lowest travel cost matrix for all visible tiles if possible
+///
+/// None means no path is possible or there isn't tile information
+fn get_travel_costs(start: Point, tile_costs: &Vec<Vec<Option<i32>>>) -> Vec<Vec<Option<i32>>> {
+    let width = tile_costs[0].len();
+    let height = tile_costs.len();
+    let mut travel_costs = vec![vec![None; width]; height];
+
+    let mut queue: PriorityQueue<Point, Reverse<i32>> = PriorityQueue::new();
+    queue.push(start, Reverse(0));
+    travel_costs[start.y][start.x] = Some(0);
+
+    while !queue.is_empty() {
+        let (node, _) = queue.pop().unwrap();
+        let distance = travel_costs[node.y][node.x].unwrap();
+
+        let neighbors = get_neighbors(node, width, height);
+
+        for n in neighbors {
+            let d = travel_costs[n.y][n.x];
+
+            // Only path over areas where we have cost data
+            if d.is_none() && tile_costs[n.y][n.x].is_some() {
+                let new_cost = distance + 1 + tile_costs[n.y][n.x].unwrap(); // Cost always increases by minimum of 1
+                travel_costs[n.y][n.x] = Some(new_cost);
+                queue.push(n, Reverse(new_cost));
+            }
+        }
+    }
+
+    return travel_costs;
+}
+```
+
+Given both of these, we can start constructing a matrix for the score of each possible tile we can navigate to. We then choose the tile with the lowest score as the next one to explore.
+
+```rust
+for y in 0..max_p.y {
+    for x in 0..max_p.x {
+        let p = Point { x: x, y: y };
+        if let Some(cost) = travel_costs[p.y][p.x] {
+            candidate_matrix[x + y * max_p.x] = Some(cost)
+        }
+        let neighbors = get_neighbors(p, max_p.x, max_p.y);
+        let mut all_neighbors_visible = true;
+        for n in neighbors {
+            let e = get_entity(world, n).unwrap();
+            let vis = world.query_one::<&Visibility>(e).unwrap().get().unwrap().0;
+            all_neighbors_visible = all_neighbors_visible && vis;
+        }
+
+        // No reason to visit if all visible and not the goal
+        if all_neighbors_visible && p != goal {
+            candidate_matrix[x + y * max_p.x] = None;
+        }
+    }
+}
+
+let min_val = candidate_matrix
+    .iter()
+    .filter_map(|c| c.as_ref())
+    .min()
+    .unwrap();
+
+let mut min_p = Point { x: 0, y: 0 };
+for y in 0..max_p.y {
+    for x in 0..max_p.x {
+        if candidate_matrix[x + y * max_p.x] == Some(*min_val) {
+            min_p = Point { x: x, y: y };
+            break;
+        }
+    }
+}
+```
 
 You can see the results here:
 
-{% include game_state_animation.html game_data='naive_approach.txt' %}
+{% include game_state_animation.html game_data='naive_approach.txt' fig_name='naive' %}
 
 This algorithm takes 472 steps to explore the space. In particular, it wasts a lot of time exploring tiles that aren't any closer to the goal.
 
@@ -138,3 +244,5 @@ Can explore this in 17 steps, commit: 06882d5f60f3f2fcfe00c19e7881d55ad673fccb
 .WWW???????????
 .WGW???????????
 ....???????????
+
+[NEED to figure out how to support multiple gifs at once, likely just want to make gifs rather than do anything more complicated.]

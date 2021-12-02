@@ -3,7 +3,7 @@
     fetch("/assets/{{include.game_data}}")
         .then(function (r) {
             if (!r.ok) {
-                document.getElementById("fig1").innerHTML = "Error loading"
+                document.getElementById("{{include.fig_name}}").innerHTML = "Error loading"
 
             } else {
                 r.text().then(t => setInterval(test_function, 500, t))
@@ -12,7 +12,7 @@
 
     function test_function(states) {
         state_array = states.split("\n\n");
-        document.getElementById("fig1").innerHTML = state_array[counter];
+        document.getElementById("{{include.fig_name}}").innerHTML = state_array[counter];
         counter += 1;
         if (counter >= state_array.length - 1) {
             counter = 0;
@@ -23,6 +23,6 @@
 <div class="language-text highlighter-rouge">
     <div class="highlight">
         <pre class="highlight">
-<code id=fig1>Loading...</code></pre>
+<code id={{include.fig_name}}>Loading...</code></pre>
     </div>
 </div>
