@@ -4,9 +4,9 @@ use std::{
 };
 
 use crossterm::style::Color;
-use hecs::{Entity, World};
+use hecs::World;
+use itertools::Itertools;
 use priority_queue::PriorityQueue;
-use spatial::get_tile;
 
 use crate::spatial::{get_entity, Point};
 
@@ -21,12 +21,17 @@ pub struct BackgroundHighlight(pub Color);
 pub struct Vision(pub usize);
 pub struct Velocity(pub i32, pub i32);
 
+pub struct Agent;
+
 pub fn print_cost_matrix(world: &World, agent: &AttackerAgent) {
+    let tile_costs = get_tiles_costs(world);
+    let travel_costs = get_travel_costs(agent.start, &tile_costs);
+
     let max_p = get_max_point(world);
     for y in 0..max_p.y {
         for x in 0..max_p.x {
             let p = Point { x: x, y: y };
-            print!("{}", agent.get_cost(p).unwrap_or(-1));
+            print!("{}", travel_costs[p.y][p.x].unwrap_or(-1));
             print!("\t")
         }
         println!("");
@@ -54,7 +59,7 @@ pub fn get_max_point(world: &World) -> Point {
 mod tests {
     use std::vec;
 
-    use crate::{create_map, get_path, Point};
+    use crate::{create_map, get_path, get_travel_costs, Point};
 
     #[test]
     fn create_map_empty() {
@@ -103,6 +108,62 @@ mod tests {
             ]
         )
     }
+
+    #[test]
+    fn test_travel_cost_simple() {
+        let tile_costs = vec![vec![Some(0); 3]; 3];
+        let start = Point { x: 0, y: 0 };
+
+        let travel_costs = get_travel_costs(start, &tile_costs);
+        assert_eq!(
+            travel_costs,
+            vec![
+                vec![Some(0), Some(1), Some(2)],
+                vec![Some(1), Some(2), Some(3)],
+                vec![Some(2), Some(3), Some(4)]
+            ]
+        )
+    }
+
+    #[test]
+    fn test_travel_cost_unexplored() {
+        let tile_costs = vec![
+            vec![Some(0), Some(0), Some(0)],
+            vec![Some(0), None, Some(0)],
+            vec![Some(0), Some(0), None],
+        ];
+        let start = Point { x: 0, y: 0 };
+
+        let travel_costs = get_travel_costs(start, &tile_costs);
+        assert_eq!(
+            travel_costs,
+            vec![
+                vec![Some(0), Some(1), Some(2)],
+                vec![Some(1), None, Some(3)],
+                vec![Some(2), Some(3), None]
+            ]
+        )
+    }
+
+    #[test]
+    fn test_travel_cost_with_tile_costs() {
+        let tile_costs = vec![
+            vec![Some(0), Some(10), Some(0)],
+            vec![Some(0), Some(10), Some(0)],
+            vec![Some(0), Some(0), Some(0)],
+        ];
+        let start = Point { x: 0, y: 0 };
+
+        let travel_costs = get_travel_costs(start, &tile_costs);
+        assert_eq!(
+            travel_costs,
+            vec![
+                vec![Some(0), Some(11), Some(6)],
+                vec![Some(1), Some(12), Some(5)],
+                vec![Some(2), Some(3), Some(4)]
+            ]
+        )
+    }
 }
 
 pub fn create_map(size: usize) -> String {
@@ -123,17 +184,6 @@ pub fn create_map(size: usize) -> String {
     }
 
     return map;
-}
-
-/// Returns a vector of Points for the shortest path to the goal and the number of steps to calculate
-pub fn find_path_bfs(world: &mut World, agent: &mut AttackerAgent) -> (Vec<Point>, i32) {
-    let mut steps = 0;
-    while !attacker_system_update(world, agent) {
-        steps += 1;
-    }
-
-    let path = get_path_from_distances(agent.start, agent.goal, &agent.cur_costs);
-    return (path, steps);
 }
 
 /// Return the path to the goal. Requires a fully populated distance matrix.
@@ -167,10 +217,8 @@ pub fn get_path_from_distances(
 
 /// Manages a view of the game world to explore given different policies.
 pub struct AttackerAgent {
-    cur_costs: Vec<Vec<Option<i32>>>,
     start: Point,
     goal: Point,
-    agend_id: Option<Entity>,   // Entity id for the movable agent
     next_target: Option<Point>, // Intermediate target to navigate to
     is_visited: HashMap<Point, bool>,
 }
@@ -179,46 +227,24 @@ impl AttackerAgent {
     pub fn new(world: &World) -> AttackerAgent {
         let mut start = None;
         let mut goal = None;
-        let mut agent_id = None;
-        let mut agent_start = None;
 
         // Find the proper entities and components for goal and start and update the map.
         for (_, (p, c)) in world.query::<(&Position, &Sprite)>().iter() {
             match c.0 {
                 'G' => goal = Some(p.0),
                 'S' => start = Some(p.0),
-                '@' => {
-                    agent_id = get_entity(world, p.0);
-                    agent_start = Some(p.0)
-                }
                 _ => {}
             }
         }
 
-        let max_p = get_max_point(world);
-        let mut agent = AttackerAgent {
-            cur_costs: vec![vec![None; max_p.x]; max_p.y],
+        let agent = AttackerAgent {
             start: start.unwrap(),
             goal: goal.unwrap(),
-            agend_id: agent_id,
             next_target: None,
             is_visited: HashMap::new(),
         };
 
-        // Update the agent starting spot cost
-        match agent_start {
-            Some(p) => agent.update_cost(p, 0),
-            _ => {}
-        }
         return agent;
-    }
-
-    fn update_cost(&mut self, p: Point, cost: i32) {
-        self.cur_costs[p.y][p.x] = Some(cost)
-    }
-
-    fn get_cost(&self, p: Point) -> Option<i32> {
-        self.cur_costs[p.y][p.x]
     }
 }
 
@@ -233,6 +259,55 @@ fn get_tile_cost(tile: char) -> i32 {
     }
 }
 
+/// Return the lowest travel cost matrix for all visible tiles if possible
+///
+/// None means no path is possible or there isn't tile information
+fn get_travel_costs(start: Point, tile_costs: &Vec<Vec<Option<i32>>>) -> Vec<Vec<Option<i32>>> {
+    let width = tile_costs[0].len();
+    let height = tile_costs.len();
+    let mut travel_costs = vec![vec![None; width]; height];
+
+    let mut queue: PriorityQueue<Point, Reverse<i32>> = PriorityQueue::new();
+    queue.push(start, Reverse(0));
+    travel_costs[start.y][start.x] = Some(0);
+
+    while !queue.is_empty() {
+        let (node, _) = queue.pop().unwrap();
+        let distance = travel_costs[node.y][node.x].unwrap();
+
+        let neighbors = get_neighbors(node, width, height);
+
+        for n in neighbors {
+            let d = travel_costs[n.y][n.x];
+
+            // Only path over areas where we have cost data
+            if d.is_none() && tile_costs[n.y][n.x].is_some() {
+                let new_cost = distance + 1 + tile_costs[n.y][n.x].unwrap(); // Cost always increases by minimum of 1
+                travel_costs[n.y][n.x] = Some(new_cost);
+                queue.push(n, Reverse(new_cost));
+            }
+        }
+    }
+
+    return travel_costs;
+}
+
+fn get_tiles_costs(world: &World) -> Vec<Vec<Option<i32>>> {
+    // Constrcut the cost matrix from currently visible tiles
+    let max_p = get_max_point(world);
+    let mut tile_costs = vec![vec![None; max_p.x]; max_p.y];
+    for (_, (pos, visible, spr)) in world
+        .query::<(&Position, &Visibility, &Sprite)>()
+        .into_iter()
+    {
+        if visible.0 {
+            tile_costs[pos.0.y][pos.0.x] = Some(get_tile_cost(spr.0));
+        }
+    }
+
+    return tile_costs;
+}
+
 /// Update the attacker AI system. Returns True if have reached the goal.
 ///
 /// Two phases to the attacker system:
@@ -244,11 +319,17 @@ fn get_tile_cost(tile: char) -> i32 {
 ///
 /// The lowest cost space is always explored next rather than traditional breadth first search.
 /// This ensures that tiles costs always represent the 'cheapest' way to get to the tile.
-pub fn attacker_system_update(world: &mut World, agent: &mut AttackerAgent) -> bool {
-    let cur_loc = world.get::<Position>(agent.agend_id.unwrap()).unwrap().0;
+pub fn system_ai(world: &mut World, agent: &mut AttackerAgent) -> bool {
+    let agent_ids = world.query_mut::<&Agent>().into_iter().collect_vec();
+    let agent_id = agent_ids[0].0; // Since only 1 agent
 
+    let cur_loc = world.get::<Position>(agent_id).unwrap().0;
     agent.is_visited.insert(cur_loc, true);
-    explore(world, agent, cur_loc);
+
+    let tile_costs = get_tiles_costs(world);
+    let travel_costs = get_travel_costs(agent.start, &tile_costs);
+
+    // explore(world, agent, cur_loc, &tile_costs);
 
     if cur_loc == agent.goal {
         return true; // Found the goal
@@ -264,10 +345,9 @@ pub fn attacker_system_update(world: &mut World, agent: &mut AttackerAgent) -> b
         let mut candidate_matrix = vec![None; max_p.x * max_p.y];
         // Create a cost matrix where unknown tiles have a cost of 1
         let tile_costs = get_cost_matrix(world);
-        let mut goal_dist_costs =
-            vec![vec![Some(1); agent.cur_costs[0].len()]; agent.cur_costs.len()];
-        for y in 0..agent.cur_costs.len() {
-            for x in 0..agent.cur_costs[0].len() {
+        let mut goal_dist_costs = vec![vec![Some(1); max_p.x]; max_p.y];
+        for y in 0..max_p.y {
+            for x in 0..max_p.x {
                 goal_dist_costs[y][x] = Some(tile_costs[y][x].unwrap_or(0))
             }
         }
@@ -275,7 +355,7 @@ pub fn attacker_system_update(world: &mut World, agent: &mut AttackerAgent) -> b
         for y in 0..max_p.y {
             for x in 0..max_p.x {
                 let p = Point { x: x, y: y };
-                match agent.get_cost(p) {
+                match travel_costs[p.y][p.x] {
                     Some(cost) => {
                         let goal_dist =
                             get_path(p, agent.goal, &goal_dist_costs).unwrap().len() as i32;
@@ -311,21 +391,16 @@ pub fn attacker_system_update(world: &mut World, agent: &mut AttackerAgent) -> b
 
     if cur_loc != agent.next_target.unwrap() {
         let path = get_path(cur_loc, agent.next_target.unwrap(), &get_cost_matrix(world)).unwrap();
-        // Move the explorer '@'
-        match agent.agend_id {
-            Some(id) => {
-                world
-                    .insert_one(
-                        id,
-                        Velocity(
-                            path[1].x as i32 - cur_loc.x as i32,
-                            path[1].y as i32 - cur_loc.y as i32,
-                        ),
-                    )
-                    .unwrap();
-            }
-            _ => {}
-        }
+
+        world
+            .insert_one(
+                agent_id,
+                Velocity(
+                    path[1].x as i32 - cur_loc.x as i32,
+                    path[1].y as i32 - cur_loc.y as i32,
+                ),
+            )
+            .unwrap();
 
         for p in path {
             let e = get_entity(world, p);
@@ -343,7 +418,7 @@ pub fn attacker_system_update(world: &mut World, agent: &mut AttackerAgent) -> b
         }
     }
 
-    explore(world, agent, cur_loc);
+    // explore(world, agent, cur_loc, &tile_costs);
 
     return false;
 }
@@ -360,22 +435,6 @@ fn get_cost_matrix(world: &mut World) -> Vec<Vec<Option<i32>>> {
     }
 
     return costs;
-}
-
-// Explore a given point for the agent, and update the move state
-pub fn explore(world: &mut World, agent: &mut AttackerAgent, p: Point) {
-    let max_p = get_max_point(world);
-    let neighors = get_neighbors(p, max_p.x, max_p.y);
-    let cost = agent.get_cost(p).unwrap();
-    for n in neighors {
-        let c = agent.get_cost(n);
-        let new_cost = cost + 1 + get_tile_cost(get_tile(world, n)); // Cost always increases by minimum of 1
-
-        // Update if we have no cost or found a lower cost way to get here
-        if c.is_none() || c.unwrap() > new_cost {
-            agent.update_cost(n, new_cost);
-        }
-    }
 }
 
 /// Find a path between 2 arbitraty points if it exists

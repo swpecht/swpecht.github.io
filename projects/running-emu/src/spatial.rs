@@ -1,7 +1,7 @@
 use hecs::{Entity, World};
 use std::{hash::Hash, vec};
 
-use crate::{get_max_point, Position, Sprite, Visibility, Vision};
+use crate::{get_max_point, Agent, Position, Sprite, Visibility, Vision};
 
 pub fn parse_map(world: &mut World, map: &str) {
     let mut x = 0;
@@ -38,7 +38,7 @@ pub fn parse_map(world: &mut World, map: &str) {
                 'G' => world.spawn((Position(p), Sprite(c), Visibility(true))), // Goal and Start are visible to begin
                 '@' => {
                     // Also spawn a visible start position
-                    world.spawn((Position(p), Sprite(c), Visibility(true), Vision(1)));
+                    world.spawn((Position(p), Sprite(c), Visibility(true), Vision(1), Agent));
                     world.spawn((Position(p), Sprite('S'), Visibility(true)))
                 }
                 _ => world.spawn((Position(p), Sprite(c), Visibility(false))), // All others must be found

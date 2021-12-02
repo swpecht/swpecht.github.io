@@ -4,7 +4,7 @@ use crossterm::{
 };
 use hecs::World;
 use running_emu::{
-    attacker_system_update, get_max_point, print_cost_matrix,
+    system_ai, get_max_point, print_cost_matrix,
     spatial::{parse_map, Point},
     AttackerAgent, BackgroundHighlight, Position, Sprite, Velocity, Visibility, Vision,
 };
@@ -36,7 +36,7 @@ fn main() {
         num_steps += 1;
         system_render(&mut world);
         system_vision(&mut world);
-        if attacker_system_update(&mut world, &mut agent) {
+        if system_ai(&mut world, &mut agent) {
             break;
         }
         system_movement(&mut world);
