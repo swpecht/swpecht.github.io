@@ -551,6 +551,7 @@ dependencies = [
  "crossterm",
  "hecs",
  "itertools",
+ "log",
  "priority-queue",
 ]
 

@@ -10,6 +10,7 @@ priority-queue = "1.2"
 crossterm = "0.22"
 itertools = "0.10.0"
 hecs = "0.6"
+log = "0.4"
 
 [dev-dependencies]
 criterion = "0.3"

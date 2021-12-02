@@ -1,4 +1,8 @@
-use std::{cmp::max, io::stdout};
+use std::{
+    cmp::max,
+    fs::File,
+    io::{stdout, Write},
+};
 
 use crossterm::{
     execute,
@@ -33,12 +37,18 @@ pub fn run_sim(map: &str, enable_render: bool) -> i32 {
 
     let mut num_steps = 0;
 
+    let mut output_file = File::create("output.txt").unwrap();
+
     loop {
         num_steps += 1;
-        if enable_render {
-            system_render(&mut world);
-        }
         system_vision(&mut world);
+        let char_buffer = build_char_output(&world);
+        let highlight_buffer = build_highlight_output(&mut world);
+        write_state(&char_buffer, &mut output_file).expect("error writing state");
+
+        if enable_render {
+            system_render(&char_buffer, &highlight_buffer);
+        }
         if system_ai(&mut world) {
             break;
         }
@@ -101,14 +111,11 @@ fn parse_map(world: &mut World, map: &str) {
     }
 }
 
-/// Update the render of the player visible map
-pub fn system_render(world: &mut World) {
+/// Build the grid of character outputs
+fn build_char_output(world: &World) -> Vec<Vec<char>> {
     let max_p = get_max_point(world);
-
     // Populate base layer
     let mut output_char = vec![vec!['?'; max_p.x]; max_p.y];
-    let mut output_highlight = vec![vec![None; max_p.x]; max_p.y];
-
     // Draw over top with entities
     for (_, (p, c, v)) in world.query::<(&Position, &Sprite, &Visibility)>().iter() {
         if v.0 {
@@ -121,6 +128,23 @@ pub fn system_render(world: &mut World) {
         }
     }
 
+    return output_char;
+}
+
+fn write_state(chars: &Vec<Vec<char>>, f: &mut File) -> std::io::Result<()> {
+    for y in 0..chars.len() {
+        for x in 0..chars[0].len() {
+            write!(f, "{}", chars[y][x])?;
+        }
+        writeln!(f, "")?;
+    }
+    writeln!(f, "")
+}
+
+fn build_highlight_output(world: &mut World) -> Vec<Vec<Option<Color>>> {
+    let max_p = get_max_point(world);
+    let mut output_highlight = vec![vec![None; max_p.x]; max_p.y];
+
     for (_, (p, bg)) in world
         .query::<(&Position, &mut BackgroundHighlight)>()
         .iter()
@@ -129,15 +153,21 @@ pub fn system_render(world: &mut World) {
         bg.0 = Color::Black; // Reset to black
     }
 
-    for y in 0..max_p.y {
-        output_char.push(Vec::new());
-        for x in 0..max_p.x {
+    return output_highlight;
+}
+
+/// Update the render of the player visible map
+pub fn system_render(output_char: &Vec<Vec<char>>, output_highlight: &Vec<Vec<Option<Color>>>) {
+    for y in 0..output_char.len() {
+        for x in 0..output_char[0].len() {
             let highlight = output_highlight[y][x];
             if let Some(color) = highlight {
                 execute!(stdout(), SetBackgroundColor(color)).unwrap();
+                print!("{}", output_char[y][x]);
+                execute!(stdout(), ResetColor).unwrap();
+            } else {
+                print!("{}", output_char[y][x]);
             }
-            print!("{}", output_char[y][x]);
-            execute!(stdout(), ResetColor).unwrap();
         }
         println!("");
     }
