@@ -1,58 +1,7 @@
 use hecs::{Entity, World};
-use std::{hash::Hash, vec};
+use std::hash::Hash;
 
-use crate::{get_max_point, Agent, Position, Sprite, TargetLocation, Visibility, Vision};
-
-pub fn parse_map(world: &mut World, map: &str) {
-    let mut x = 0;
-    let mut y = 0;
-    let mut width = None;
-    let mut tiles = vec![vec![]];
-
-    // calculate width
-    for c in map.chars() {
-        match c {
-            '.' | 'W' | 'G' | '@' => {
-                tiles[y].push(c);
-                x += 1
-            }
-            ' ' => {}
-            '\n' => {
-                if !width.is_none() && width.unwrap() != x {
-                    panic!("Error parsing map, rows vary in width")
-                };
-                width = Some(x);
-                x = 0;
-                y += 1;
-                tiles.push(vec![])
-            }
-            _ => panic!("Error parsing map, invalid character: {}", c),
-        }
-    }
-
-    for y in 0..tiles.len() {
-        for x in 0..tiles[0].len() {
-            let c = tiles[y][x];
-            let p = Point { x: x, y: y };
-            let _ = match c {
-                'G' => world.spawn((Position(p), Sprite(c), Visibility(true))), // Goal and Start are visible to begin
-                '@' => {
-                    // Also spawn a visible start position
-                    world.spawn((
-                        Position(p),
-                        Sprite(c),
-                        Visibility(true),
-                        Vision(1),
-                        Agent,
-                        TargetLocation(None),
-                    ));
-                    world.spawn((Position(p), Sprite('S'), Visibility(true)))
-                }
-                _ => world.spawn((Position(p), Sprite(c), Visibility(false))), // All others must be found
-            };
-        }
-    }
-}
+use crate::{get_max_point, Position, Sprite};
 
 /// Returns tile at a given location or '.' if no entities present
 pub fn get_tile(world: &World, p: Point) -> char {
@@ -101,26 +50,5 @@ pub fn print_path(path: &Vec<Point>, world: &World) {
             }
         }
         println!("")
-    }
-}
-
-mod test {
-    #[allow(unused_imports)]
-    use super::*;
-    #[allow(unused_imports)]
-    use hecs::World;
-
-    #[test]
-    fn test_simple_map_parse() {
-        let map = "@..
-        ...
-        ...
-        ..G";
-
-        let mut world = World::new();
-        parse_map(&mut world, map);
-        let max_p = get_max_point(&world);
-        assert_eq!(max_p.x, 3);
-        assert_eq!(max_p.y, 4);
     }
 }

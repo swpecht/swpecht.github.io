@@ -5,8 +5,9 @@ use crossterm::{
 use hecs::World;
 
 use running_emu::{
-    get_max_point, print_cost_matrix, spatial::parse_map, system_ai, system_path_highlight,
-    system_pathing, AttackerAgent, BackgroundHighlight, Position, Sprite, Visibility, Vision,
+    ai_pathing::print_travel_cost_matrix, ai_pathing::system_ai, ai_pathing::system_path_highlight,
+    ai_pathing::system_pathing, ai_pathing::AttackerAgent, get_max_point, parse_map,
+    BackgroundHighlight, Position, Sprite, Visibility, Vision,
 };
 use std::io::stdout;
 
@@ -44,7 +45,7 @@ fn main() {
     }
 
     println!("");
-    print_cost_matrix(&world, &agent);
+    print_travel_cost_matrix(&world, &agent);
     println!("Completed in {} steps", num_steps);
 
     // println!("Found in {} steps", steps);
