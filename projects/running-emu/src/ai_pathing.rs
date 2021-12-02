@@ -107,7 +107,6 @@ pub fn system_ai(world: &mut World) -> bool {
                 }
             }
         }
-        println!("{:?}", min_p);
         world
             .insert_one(agent_id, TargetLocation(Some(min_p)))
             .unwrap();
@@ -327,13 +326,7 @@ mod tests {
     use std::vec;
 
     use super::*;
-    use crate::{create_map, Point};
-
-    #[test]
-    fn create_map_empty() {
-        let map = create_map(3);
-        assert_eq!(map, "S..\n...\n..G")
-    }
+    use crate::Point;
 
     #[test]
     fn find_path_no_cost() {
