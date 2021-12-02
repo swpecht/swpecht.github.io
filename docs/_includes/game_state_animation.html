@@ -1,0 +1,28 @@
+<script type="text/javascript">
+    counter = 0;
+    fetch("/assets/{{include.game_data}}")
+        .then(function (r) {
+            if (!r.ok) {
+                document.getElementById("fig1").innerHTML = "Error loading"
+
+            } else {
+                r.text().then(t => setInterval(test_function, 500, t))
+            }
+        })
+
+    function test_function(states) {
+        state_array = states.split("\n\n");
+        document.getElementById("fig1").innerHTML = state_array[counter];
+        counter += 1;
+        if (counter >= state_array.length - 1) {
+            counter = 0;
+        }
+    }
+</script>
+
+<div class="language-text highlighter-rouge">
+    <div class="highlight">
+        <pre class="highlight">
+<code id=fig1>Loading...</code></pre>
+    </div>
+</div>
