@@ -11,18 +11,35 @@ pub struct SpatialCache {
 impl SpatialCache {
     pub fn new(world: &World) -> Self {
         let max_p = get_max_point(world);
-        let mut entity_lookup = vec![vec![Vec::new(); max_p.x]; max_p.y];
+        let entity_lookup = vec![vec![Vec::new(); max_p.x]; max_p.y];
 
+        let mut c = Self { entity_lookup };
+        c.populate_entity_lookup(world);
+        return c;
+    }
+
+    fn populate_entity_lookup(&mut self, world: &World) {
         for (id, pos) in world.query::<&Position>().into_iter() {
-            entity_lookup[pos.0.y][pos.0.x].push(id);
+            self.entity_lookup[pos.0.y][pos.0.x].push(id);
         }
-
-        return Self { entity_lookup };
     }
 
     /// Returns the tile at a given location
     pub fn get_entities(&self, point: Point) -> Vec<Entity> {
         return self.entity_lookup[point.y][point.x].clone();
+    }
+
+    pub fn update_cache(&mut self, world: &World) {
+        // Clear the chache
+        let width = self.entity_lookup[0].len();
+        let height = self.entity_lookup.len();
+        for y in 0..height {
+            for x in 0..width {
+                self.entity_lookup[y][x].clear();
+            }
+        }
+
+        self.populate_entity_lookup(world);
     }
 }
 

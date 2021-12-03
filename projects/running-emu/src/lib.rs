@@ -78,12 +78,14 @@ pub fn run_sim(map: &str, features: FeatureFlags) -> i32 {
     let max_p = get_max_point(&world);
     let mut char_buffer = vec![vec!['?'; max_p.x]; max_p.y];
 
+    let mut spatial_cache = SpatialCache::new(&world);
+
     loop {
         num_steps += 1;
-        let spatial_cache = match features.entity_spatial_cache {
-            true => Some(SpatialCache::new(&world)),
-            false => None,
-        };
+
+        if features.entity_spatial_cache {
+            spatial_cache.update_cache(&world);
+        }
 
         system_vision(&mut world);
         build_char_output(&world, &mut char_buffer);
@@ -99,7 +101,12 @@ pub fn run_sim(map: &str, features: FeatureFlags) -> i32 {
         if system_ai(&mut world, features, &mut start_pather, &mut goal_pather) {
             break;
         }
-        system_path_highlight(&mut world, spatial_cache.as_ref());
+        if features.entity_spatial_cache {
+            system_path_highlight(&mut world, Some(&spatial_cache));
+        } else {
+            system_path_highlight(&mut world, None);
+        }
+
         system_pathing(&mut world);
     }
     // print_travel_cost_matrix(&world);
@@ -160,6 +167,13 @@ fn parse_map(world: &mut World, map: &str) {
 
 /// Build the grid of character outputs
 fn build_char_output(world: &World, buffer: &mut Vec<Vec<char>>) {
+    // Reset the buffer
+    for y in 0..buffer.len() {
+        for x in 0..buffer[0].len() {
+            buffer[y][x] = '?';
+        }
+    }
+
     for (_, (p, c, v)) in world.query::<(&Position, &Sprite, &Visibility)>().iter() {
         if v.0 {
             // Handle special case for '.' only draw if nothing else present
