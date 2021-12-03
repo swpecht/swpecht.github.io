@@ -114,7 +114,7 @@ pub fn system_ai(
         }
 
         let travel_costs = match features.pathing_algorithm {
-            PathingAlgorithm::Astar => get_travel_costs(start, &candidate_points, &tile_costs),
+            PathingAlgorithm::Astar => get_travel_costs(start, &tile_costs),
             PathingAlgorithm::LpaStar => {
                 pather_start.update_tile_costs(&start_tile_costs);
                 pather_start.get_travel_costs()
@@ -123,7 +123,6 @@ pub fn system_ai(
         let goal_travel_costs = match features.pathing_algorithm {
             PathingAlgorithm::Astar => get_travel_costs(
                 goal,
-                &candidate_points,
                 &goal_tile_costs
                     .iter()
                     .map(|x| x.iter().map(|v| Some(*v)).collect_vec())
@@ -265,7 +264,7 @@ fn get_neighbors(point: Point, width: usize, height: usize) -> Vec<Point> {
 pub fn print_travel_cost_matrix(world: &World) {
     let start = get_start(world);
     let tile_costs = get_tile_costs(world);
-    let travel_costs = get_all_travel_costs(start, &tile_costs);
+    let travel_costs = get_travel_costs(start, &tile_costs);
 
     let max_p = get_max_point(world);
     for y in 0..max_p.y {
@@ -319,37 +318,19 @@ fn get_tile_cost(tile: char) -> i32 {
     }
 }
 
-fn get_all_travel_costs(start: Point, tile_costs: &Vec<Vec<Option<i32>>>) -> Vec<Vec<Option<i32>>> {
-    let width = tile_costs[0].len();
-    let height = tile_costs.len();
-    let mut end_points = Vec::new();
-    for y in 0..height {
-        for x in 0..width {
-            end_points.push(Point { x: x, y: y })
-        }
-    }
-
-    return get_travel_costs(start, &end_points, tile_costs);
-}
-
 /// Return the lowest travel cost matrix for all visible tiles if possible
 ///
 /// None means no path is possible or there isn't tile information
-fn get_travel_costs(
-    start: Point,
-    end_points: &Vec<Point>,
-    tile_costs: &Vec<Vec<Option<i32>>>,
-) -> Vec<Vec<Option<i32>>> {
+fn get_travel_costs(start: Point, tile_costs: &Vec<Vec<Option<i32>>>) -> Vec<Vec<Option<i32>>> {
     let width = tile_costs[0].len();
     let height = tile_costs.len();
     let mut travel_costs = vec![vec![None; width]; height];
-    let mut end_points = end_points.clone();
 
     let mut queue: PriorityQueue<Point, Reverse<i32>> = PriorityQueue::new();
     queue.push(start, Reverse(0));
     travel_costs[start.y][start.x] = Some(0);
 
-    while !queue.is_empty() && !end_points.is_empty() {
+    while !queue.is_empty() {
         let (node, _) = queue.pop().unwrap();
         let distance = travel_costs[node.y][node.x].unwrap();
 
@@ -363,11 +344,6 @@ fn get_travel_costs(
                 let new_cost = distance + 1 + tile_costs[n.y][n.x].unwrap(); // Cost always increases by minimum of 1
                 travel_costs[n.y][n.x] = Some(new_cost);
                 queue.push(n, Reverse(new_cost));
-
-                let index = end_points.iter().position(|x| *x == n);
-                if let Some(index) = index {
-                    end_points.remove(index);
-                }
             }
         }
     }
@@ -715,7 +691,7 @@ mod tests {
         let tile_costs = vec![vec![Some(0); 3]; 3];
         let start = Point { x: 0, y: 0 };
 
-        let travel_costs = get_all_travel_costs(start, &tile_costs);
+        let travel_costs = get_travel_costs(start, &tile_costs);
         assert_eq!(
             travel_costs,
             vec![
@@ -735,7 +711,7 @@ mod tests {
         ];
         let start = Point { x: 0, y: 0 };
 
-        let travel_costs = get_all_travel_costs(start, &tile_costs);
+        let travel_costs = get_travel_costs(start, &tile_costs);
         assert_eq!(
             travel_costs,
             vec![
@@ -755,34 +731,13 @@ mod tests {
         ];
         let start = Point { x: 0, y: 0 };
 
-        let travel_costs = get_all_travel_costs(start, &tile_costs);
+        let travel_costs = get_travel_costs(start, &tile_costs);
         assert_eq!(
             travel_costs,
             vec![
                 vec![Some(0), Some(11), Some(6)],
                 vec![Some(1), Some(12), Some(5)],
                 vec![Some(2), Some(3), Some(4)]
-            ]
-        )
-    }
-
-    #[test]
-    fn test_travel_cost_candidates() {
-        let tile_costs = vec![
-            vec![Some(0), Some(10), Some(0)],
-            vec![Some(0), Some(10), Some(0)],
-            vec![Some(0), Some(0), Some(0)],
-        ];
-        let start = Point { x: 0, y: 0 };
-        let candidates = vec![Point { x: 1, y: 0 }, Point { x: 0, y: 1 }];
-
-        let travel_costs = get_travel_costs(start, &candidates, &tile_costs);
-        assert_eq!(
-            travel_costs,
-            vec![
-                vec![Some(0), Some(11), None],
-                vec![Some(1), None, None],
-                vec![None, None, None]
             ]
         )
     }

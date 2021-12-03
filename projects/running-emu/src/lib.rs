@@ -4,7 +4,7 @@ use std::{
     io::{stdout, Write},
 };
 
-use ai_pathing::{get_goal_lpapather, get_start_lpapather, LpaStarPather};
+use ai_pathing::{get_goal_lpapather, get_start_lpapather};
 use crossterm::{
     execute,
     style::{Color, ResetColor, SetBackgroundColor},
