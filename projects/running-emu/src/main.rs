@@ -1,15 +1,15 @@
 use running_emu::{run_sim, FeatureFlags};
 
 fn main() {
-    let map = "....@..........
-    ............WWW
-    ...............
-    ............WWW
-    ...............
-    ....WWW........
-    .WWW.......WWW.
-    .WGW.......W.W.
-    ...............";
+    let map = "@..............
+    .WWWWWWWWWWWWW.
+    .W...........W.
+    .W.WWWWWWWWW.W.
+    .W.W.......W.W.
+    .W.WWWWWWW.W.W.
+    .W......GW.W.W.
+    .WWWWWWWWW.W.W.
+    ...........W...";
 
     // let map = ".@..
     // .WWW
@@ -18,7 +18,8 @@ fn main() {
 
     // let map = &create_map(50);
 
-    let features = FeatureFlags::new();
+    let mut features = FeatureFlags::new();
+    features.write_agent_visible_map = true;
     let num_steps = run_sim(map, features);
     println!("Completed in {} steps", num_steps);
 }

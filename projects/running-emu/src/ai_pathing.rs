@@ -8,7 +8,7 @@ use priority_queue::PriorityQueue;
 use crate::{
     get_goal, get_max_point, get_start,
     spatial::{get_entities, Point, SpatialCache},
-    Agent, BackgroundHighlight, Position, Sprite, TargetLocation, Visibility,
+    Agent, BackgroundHighlight, FeatureFlags, Position, Sprite, TargetLocation, Visibility,
 };
 
 /// Move agents that have a target location.
@@ -38,7 +38,11 @@ pub fn system_pathing(world: &mut World) {
 ///
 /// The lowest cost space is always explored next rather than traditional breadth first search.
 /// This ensures that tiles costs always represent the 'cheapest' way to get to the tile.
-pub fn system_ai(world: &mut World, spatial_cache: Option<&SpatialCache>) -> bool {
+pub fn system_ai(
+    world: &mut World,
+    spatial_cache: Option<&SpatialCache>,
+    features: FeatureFlags,
+) -> bool {
     let agent_ids = world.query_mut::<&Agent>().into_iter().collect_vec();
     let agent_id = agent_ids[0].0; // Since only 1 agent
 
@@ -70,11 +74,16 @@ pub fn system_ai(world: &mut World, spatial_cache: Option<&SpatialCache>) -> boo
             }
         }
 
+        let goal_travel_costs = get_travel_costs(goal, &goal_dist_costs);
+
         for y in 0..max_p.y {
             for x in 0..max_p.x {
                 let p = Point { x: x, y: y };
                 if let Some(cost) = travel_costs[p.y][p.x] {
-                    let goal_dist = get_path(p, goal, &goal_dist_costs).unwrap().len() as i32;
+                    let goal_dist = match features.travel_matrix_for_goal_distance {
+                        true => goal_travel_costs[y][x].unwrap(),
+                        false => get_path(p, goal, &goal_dist_costs).unwrap().len() as i32,
+                    };
                     let agent_dist = p.dist(&cur_loc);
                     candidate_matrix[x + y * max_p.x] = Some(cost + goal_dist + agent_dist)
                 }

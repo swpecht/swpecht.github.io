@@ -31,15 +31,24 @@ pub struct Agent;
 
 #[derive(Clone, Copy)]
 pub struct FeatureFlags {
-    pub enable_render: bool,
-    pub enable_entity_spatial_cache: bool,
+    /// Enable rendering to stdout
+    pub render: bool,
+    /// Enable the cache for `get_entity(Point)` calls
+    pub entity_spatial_cache: bool,
+    /// When calculating the `goal` score for the exploration AI, use a travel matrix
+    /// rather than calling `get_path` for each call
+    pub travel_matrix_for_goal_distance: bool,
+    /// Write the agent visible map to `output.txt`
+    pub write_agent_visible_map: bool,
 }
 
 impl FeatureFlags {
     pub fn new() -> Self {
         return Self {
-            enable_render: true,
-            enable_entity_spatial_cache: true,
+            render: true,
+            entity_spatial_cache: true,
+            travel_matrix_for_goal_distance: true,
+            write_agent_visible_map: false,
         };
     }
 }
@@ -57,7 +66,7 @@ pub fn run_sim(map: &str, features: FeatureFlags) -> i32 {
 
     loop {
         num_steps += 1;
-        let spatial_cache = match features.enable_entity_spatial_cache {
+        let spatial_cache = match features.entity_spatial_cache {
             true => Some(SpatialCache::new(&world)),
             false => None,
         };
@@ -65,12 +74,15 @@ pub fn run_sim(map: &str, features: FeatureFlags) -> i32 {
         system_vision(&mut world);
         let char_buffer = build_char_output(&world);
         let highlight_buffer = build_highlight_output(&mut world);
-        write_state(&char_buffer, &mut output_file).expect("error writing state");
 
-        if features.enable_render {
+        if features.write_agent_visible_map {
+            write_state(&char_buffer, &mut output_file).expect("error writing state");
+        }
+
+        if features.render {
             system_render(&char_buffer, &highlight_buffer);
         }
-        if system_ai(&mut world, spatial_cache.as_ref()) {
+        if system_ai(&mut world, spatial_cache.as_ref(), features) {
             break;
         }
         system_path_highlight(&mut world, spatial_cache.as_ref());

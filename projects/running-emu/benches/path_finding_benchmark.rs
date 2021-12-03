@@ -13,8 +13,9 @@ fn criterion_benchmark(c: &mut Criterion) {
     ...........W...";
 
     let mut features = FeatureFlags::new();
-    features.enable_render = false;
-    features.enable_entity_spatial_cache = true;
+    features.render = false;
+    features.entity_spatial_cache = true;
+    features.travel_matrix_for_goal_distance = true;
 
     c.bench_function("find path spiral", |b| {
         b.iter(|| running_emu::run_sim(black_box(&map), features))

@@ -15,15 +15,12 @@ Working on a concept for a game.
 
 ## Results
 
-## Start
+## Entity lookup cache
 
-Benchmarking find path 20x20: Warming up for 3.0000 s
-Warning: Unable to complete 100 samples in 5.0s. You may wish to increase target time to 7.2s, or reduce sample count to 60.
-find path 20x20         time:   [71.737 ms 72.456 ms 73.222 ms]
-                        change: [+57.311% +59.159% +61.079%] (p = 0.00 < 0.05)
+find path 20x20         time:   [59.692 ms 59.977 ms 60.279 ms]
+                        change: [+943.06% +952.35% +961.77%] (p = 0.00 < 0.05)
                         Performance has regressed.
-Found 2 outliers among 100 measurements (2.00%)
-  2 (2.00%) high mild
+Found 3 outliers among 100 measurements (3.00%)
 
 From flamegraph, 56% of the time is in `get_entity`
 
@@ -31,12 +28,17 @@ We re-create the cache each time
 
 Switching to a cache for entity lookups: `features.enable_entity_spatial_cache = true;`
 
-
-find path 20x20         time:   [47.588 ms 47.837 ms 48.138 ms]
-                        change: [-52.704% -51.547% -50.521%] (p = 0.00 < 0.05)
-                        Performance has improved.
-Found 7 outliers among 100 measurements (7.00%)
-  4 (4.00%) high mild
-  3 (3.00%) high severe
+find path 20x20         time:   [33.759 ms 34.235 ms 34.965 ms]
+                        change: [+481.58% +490.94% +502.80%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 100 measurements (1.00%)
+  1 (1.00%) high severe
 
 No visible time spent in get entity on flamegraph.
+
+## Reduce calls to get_path -- use a calculated travel matrix
+
+
+To: find path 20x20         time:   [5.6577 ms 5.6994 ms 5.7422 ms]
+                        change: [-83.714% -83.352% -83.073%] (p = 0.00 < 0.05)
+                        Performance has improved.
