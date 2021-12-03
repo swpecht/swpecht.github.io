@@ -7,7 +7,7 @@ use priority_queue::PriorityQueue;
 
 use crate::{
     get_goal, get_max_point, get_start,
-    spatial::{get_entity, Point},
+    spatial::{get_entities, Point, SpatialCache},
     Agent, BackgroundHighlight, Position, Sprite, TargetLocation, Visibility,
 };
 
@@ -38,7 +38,7 @@ pub fn system_pathing(world: &mut World) {
 ///
 /// The lowest cost space is always explored next rather than traditional breadth first search.
 /// This ensures that tiles costs always represent the 'cheapest' way to get to the tile.
-pub fn system_ai(world: &mut World) -> bool {
+pub fn system_ai(world: &mut World, spatial_cache: Option<&SpatialCache>) -> bool {
     let agent_ids = world.query_mut::<&Agent>().into_iter().collect_vec();
     let agent_id = agent_ids[0].0; // Since only 1 agent
 
@@ -81,7 +81,7 @@ pub fn system_ai(world: &mut World) -> bool {
                 let neighbors = get_neighbors(p, max_p.x, max_p.y);
                 let mut all_neighbors_visible = true;
                 for n in neighbors {
-                    let e = get_entity(world, n).unwrap();
+                    let e = get_entities(world, n, spatial_cache)[0];
                     let vis = world.query_one::<&Visibility>(e).unwrap().get().unwrap().0;
                     all_neighbors_visible = all_neighbors_visible && vis;
                 }
@@ -118,7 +118,7 @@ pub fn system_ai(world: &mut World) -> bool {
 /// Highlight target locations and expected path, useful for debugging
 ///
 /// Only highlights tiles with a sprite
-pub fn system_path_highlight(world: &mut World) {
+pub fn system_path_highlight(world: &mut World, spatial_cache: Option<&SpatialCache>) {
     let mut path_points = Vec::new();
     let mut goal_points = Vec::new();
     let tile_costs = get_tile_costs(world);
@@ -144,15 +144,13 @@ pub fn system_path_highlight(world: &mut World) {
     }
 
     for p in path_points {
-        let e = get_entity(world, p);
+        let e = get_entities(world, p, spatial_cache);
         let color = match p {
             p if goal_points.contains(&p) => Color::Green,
             _ => Color::Blue,
         };
 
-        if let Some(e) = e {
-            world.insert_one(e, BackgroundHighlight(color)).unwrap();
-        }
+        world.insert_one(e[0], BackgroundHighlight(color)).unwrap();
     }
 }
 

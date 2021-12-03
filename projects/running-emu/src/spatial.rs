@@ -1,27 +1,48 @@
 use hecs::{Entity, World};
 use std::hash::Hash;
 
-use crate::{get_max_point, Position, Sprite};
+use crate::{get_max_point, Position};
 
-/// Returns tile at a given location or '.' if no entities present
-pub fn get_tile(world: &World, p: Point) -> char {
-    let id = get_entity(world, p);
+/// Read only cache for spatial based lookups.
+pub struct SpatialCache {
+    entity_lookup: Vec<Vec<Vec<Entity>>>,
+}
 
-    match id {
-        Some(id) => world.get::<Sprite>(id).unwrap().0,
-        _ => '.',
+impl SpatialCache {
+    pub fn new(world: &World) -> Self {
+        let max_p = get_max_point(world);
+        let mut entity_lookup = vec![vec![Vec::new(); max_p.x]; max_p.y];
+
+        for (id, pos) in world.query::<&Position>().into_iter() {
+            entity_lookup[pos.0.y][pos.0.x].push(id);
+        }
+
+        return Self { entity_lookup };
+    }
+
+    /// Returns the tile at a given location
+    pub fn get_entities(&self, point: Point) -> Vec<Entity> {
+        return self.entity_lookup[point.y][point.x].clone();
     }
 }
 
-pub fn get_entity(world: &World, p: Point) -> Option<Entity> {
-    let mut positions = world.query::<&Position>();
-    for (id, candidate) in positions.iter() {
-        match p {
-            _ if candidate.0 == p => return Some(id),
-            _ => {}
+pub fn get_entities<'a>(
+    world: &World,
+    p: Point,
+    spatial_cache: Option<&'a SpatialCache>,
+) -> Vec<Entity> {
+    if let Some(cache) = spatial_cache {
+        return cache.get_entities(p);
+    } else {
+        let mut positions = world.query::<&Position>();
+        let mut results = Vec::new();
+        for (id, candidate) in positions.iter() {
+            if candidate.0 == p {
+                results.push(id)
+            }
         }
+        return results;
     }
-    return None;
 }
 
 /// Point in the game world

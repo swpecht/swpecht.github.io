@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use running_emu::create_map;
+use running_emu::{create_map, FeatureFlags};
 
 fn criterion_benchmark(c: &mut Criterion) {
     let map = "@..............
@@ -12,13 +12,17 @@ fn criterion_benchmark(c: &mut Criterion) {
     .WWWWWWWWW.W.W.
     ...........W...";
 
+    let mut features = FeatureFlags::new();
+    features.enable_render = false;
+    features.enable_entity_spatial_cache = true;
+
     c.bench_function("find path spiral", |b| {
-        b.iter(|| running_emu::run_sim(black_box(&map), false))
+        b.iter(|| running_emu::run_sim(black_box(&map), features))
     });
 
     let large_map = create_map(20);
     c.bench_function("find path 20x20", |b| {
-        b.iter(|| running_emu::run_sim(black_box(&large_map), false))
+        b.iter(|| running_emu::run_sim(black_box(&large_map), features))
     });
 }
 

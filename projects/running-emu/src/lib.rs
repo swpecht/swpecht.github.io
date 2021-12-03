@@ -9,6 +9,7 @@ use crossterm::{
     style::{Color, ResetColor, SetBackgroundColor},
 };
 use hecs::World;
+use spatial::SpatialCache;
 
 use crate::{
     ai_pathing::{system_ai, system_path_highlight, system_pathing},
@@ -28,10 +29,25 @@ pub struct Vision(pub usize);
 pub struct TargetLocation(pub Option<Point>);
 pub struct Agent;
 
+#[derive(Clone, Copy)]
+pub struct FeatureFlags {
+    pub enable_render: bool,
+    pub enable_entity_spatial_cache: bool,
+}
+
+impl FeatureFlags {
+    pub fn new() -> Self {
+        return Self {
+            enable_render: true,
+            enable_entity_spatial_cache: true,
+        };
+    }
+}
+
 /// Returns the cost to reach the goal.
 ///
 /// Main entry point for running a simulation
-pub fn run_sim(map: &str, enable_render: bool) -> i32 {
+pub fn run_sim(map: &str, features: FeatureFlags) -> i32 {
     let mut world = hecs::World::new();
     parse_map(&mut world, map);
 
@@ -41,18 +57,23 @@ pub fn run_sim(map: &str, enable_render: bool) -> i32 {
 
     loop {
         num_steps += 1;
+        let spatial_cache = match features.enable_entity_spatial_cache {
+            true => Some(SpatialCache::new(&world)),
+            false => None,
+        };
+
         system_vision(&mut world);
         let char_buffer = build_char_output(&world);
         let highlight_buffer = build_highlight_output(&mut world);
         write_state(&char_buffer, &mut output_file).expect("error writing state");
 
-        if enable_render {
+        if features.enable_render {
             system_render(&char_buffer, &highlight_buffer);
         }
-        if system_ai(&mut world) {
+        if system_ai(&mut world, spatial_cache.as_ref()) {
             break;
         }
-        system_path_highlight(&mut world);
+        system_path_highlight(&mut world, spatial_cache.as_ref());
         system_pathing(&mut world);
     }
     // print_travel_cost_matrix(&world);

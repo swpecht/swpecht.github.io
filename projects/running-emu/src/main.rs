@@ -1,4 +1,4 @@
-use running_emu::{create_map, run_sim};
+use running_emu::{run_sim, FeatureFlags};
 
 fn main() {
     let map = "....@..........
@@ -18,6 +18,7 @@ fn main() {
 
     // let map = &create_map(50);
 
-    let num_steps = run_sim(map, true);
+    let features = FeatureFlags::new();
+    let num_steps = run_sim(map, features);
     println!("Completed in {} steps", num_steps);
 }
