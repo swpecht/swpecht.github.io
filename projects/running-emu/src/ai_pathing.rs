@@ -39,7 +39,12 @@ pub fn system_pathing(world: &mut World) {
 ///
 /// The lowest cost space is always explored next rather than traditional breadth first search.
 /// This ensures that tiles costs always represent the 'cheapest' way to get to the tile.
-pub fn system_ai(world: &mut World, features: FeatureFlags, pather: &mut LpaStarPather) -> bool {
+pub fn system_ai(
+    world: &mut World,
+    features: FeatureFlags,
+    pather_start: &mut LpaStarPather,
+    pather_goal: &mut LpaStarPather,
+) -> bool {
     let agent_ids = world.query_mut::<&Agent>().into_iter().collect_vec();
     let agent_id = agent_ids[0].0; // Since only 1 agent
 
@@ -93,21 +98,42 @@ pub fn system_ai(world: &mut World, features: FeatureFlags, pather: &mut LpaStar
 
         let mut candidate_matrix = vec![None; max_p.x * max_p.y];
         // Create a cost matrix where unknown tiles have a cost of 1
-        let mut goal_tile_costs = vec![vec![Some(0); max_p.x]; max_p.y];
+        let mut goal_tile_costs = vec![vec![0; max_p.x]; max_p.y];
         for y in 0..max_p.y {
             for x in 0..max_p.x {
-                goal_tile_costs[y][x] = Some(tile_costs[y][x].unwrap_or(0))
+                goal_tile_costs[y][x] = tile_costs[y][x].unwrap_or(0);
+            }
+        }
+
+        // Populate invisible tiles as max cost
+        let mut start_tile_costs = vec![vec![i32::MAX; max_p.x]; max_p.y];
+        for y in 0..max_p.y {
+            for x in 0..max_p.x {
+                start_tile_costs[y][x] = tile_costs[y][x].unwrap_or(i32::MAX);
             }
         }
 
         let travel_costs = match features.pathing_algorithm {
             PathingAlgorithm::Astar => get_travel_costs(start, &candidate_points, &tile_costs),
             PathingAlgorithm::LpaStar => {
-                pather.update_tile_costs(&tile_costs);
-                pather.get_travel_costs()
+                pather_start.update_tile_costs(&start_tile_costs);
+                pather_start.get_travel_costs()
             }
         };
-        let goal_travel_costs = get_travel_costs(goal, &candidate_points, &goal_tile_costs);
+        let goal_travel_costs = match features.pathing_algorithm {
+            PathingAlgorithm::Astar => get_travel_costs(
+                goal,
+                &candidate_points,
+                &goal_tile_costs
+                    .iter()
+                    .map(|x| x.iter().map(|v| Some(*v)).collect_vec())
+                    .collect_vec(),
+            ),
+            PathingAlgorithm::LpaStar => {
+                pather_goal.update_tile_costs(&goal_tile_costs);
+                pather_goal.get_travel_costs()
+            }
+        };
 
         for p in candidate_points {
             let travel_cost = travel_costs[p.y][p.x].unwrap();
@@ -369,7 +395,7 @@ fn get_tile_costs(world: &World) -> Vec<Vec<Option<i32>>> {
 /// https://en.wikipedia.org/wiki/Lifelong_Planning_A*
 pub struct LpaStarPather {
     queue: PriorityQueue<Point, Reverse<LpaKey>>,
-    tile_costs: Vec<Vec<Option<i32>>>,
+    tile_costs: Vec<Vec<i32>>,
     g: Vec<Vec<i32>>,
     rhs: Vec<Vec<i32>>,
     width: usize,
@@ -401,16 +427,43 @@ impl PartialOrd for LpaKey {
     }
 }
 
-pub fn get_lpapather(world: &World) -> LpaStarPather {
+pub fn get_start_lpapather(world: &World) -> LpaStarPather {
     let start = get_start(world);
     let goal = get_goal(world);
     let tile_costs = get_tile_costs(world);
 
-    return LpaStarPather::new(start, goal, tile_costs);
+    let width = tile_costs[0].len();
+    let height = tile_costs.len();
+    let mut start_tile_costs = vec![vec![i32::MAX; width]; height];
+    for y in 0..height {
+        for x in 0..width {
+            start_tile_costs[y][x] = tile_costs[y][x].unwrap_or(i32::MAX);
+        }
+    }
+
+    return LpaStarPather::new(start, goal, start_tile_costs);
+}
+
+pub fn get_goal_lpapather(world: &World) -> LpaStarPather {
+    let start = get_start(world);
+    let goal = get_goal(world);
+    let tile_costs = get_tile_costs(world);
+
+    let width = tile_costs[0].len();
+    let height = tile_costs.len();
+    let mut goal_tile_costs = vec![vec![0; width]; height];
+    for y in 0..height {
+        for x in 0..width {
+            goal_tile_costs[y][x] = tile_costs[y][x].unwrap_or(0);
+        }
+    }
+
+    // Want to calculate distances from the goal, so goal is the start
+    return LpaStarPather::new(goal, start, goal_tile_costs);
 }
 
 impl LpaStarPather {
-    fn new(start: Point, goal: Point, tile_costs: Vec<Vec<Option<i32>>>) -> Self {
+    fn new(start: Point, goal: Point, tile_costs: Vec<Vec<i32>>) -> Self {
         let width = tile_costs[0].len();
         let height = tile_costs.len();
 
@@ -493,12 +546,7 @@ impl LpaStarPather {
                 self.rhs[p.y][p.x] = min(
                     self.rhs[p.y][p.x],
                     self.get_g(n)
-                        .checked_add(
-                            self.tile_costs[p.y][p.x]
-                                .unwrap_or(i32::MAX)
-                                .checked_add(1)
-                                .unwrap_or(i32::MAX),
-                        )
+                        .checked_add(self.tile_costs[p.y][p.x].checked_add(1).unwrap_or(i32::MAX))
                         .unwrap_or(i32::MAX),
                 )
             }
@@ -509,7 +557,7 @@ impl LpaStarPather {
         }
     }
 
-    pub fn update_tile_costs(&mut self, tile_costs: &Vec<Vec<Option<i32>>>) {
+    pub fn update_tile_costs(&mut self, tile_costs: &Vec<Vec<i32>>) {
         for y in 0..self.height {
             for x in 0..self.width {
                 if self.tile_costs[y][x] != tile_costs[y][x] {
@@ -527,7 +575,7 @@ impl LpaStarPather {
 
         for y in 0..self.height {
             for x in 0..self.width {
-                if self.tile_costs[y][x].is_some() {
+                if self.tile_costs[y][x] < i32::MAX {
                     travel_costs[y][x] = Some(self.g[y][x]);
                 }
             }
@@ -537,7 +585,7 @@ impl LpaStarPather {
         let mut all_neighbors_invisible = true;
         for n in get_neighbors(self.goal, self.width, self.height) {
             all_neighbors_invisible =
-                all_neighbors_invisible && self.tile_costs[n.y][n.x].is_none();
+                all_neighbors_invisible && self.tile_costs[n.y][n.x] == i32::MAX;
         }
 
         if all_neighbors_invisible {
@@ -557,7 +605,7 @@ mod tests {
 
     #[test]
     fn test_lpa_no_update() {
-        let tile_costs = vec![vec![Some(0); 3]; 3];
+        let tile_costs = vec![vec![0; 3]; 3];
         let start = Point { x: 0, y: 0 };
         let goal = Point { x: 2, y: 2 };
 
@@ -568,11 +616,7 @@ mod tests {
 
     #[test]
     fn test_lpa_no_update_cost() {
-        let tile_costs = vec![
-            vec![Some(0), Some(10), Some(0)],
-            vec![Some(0), Some(10), Some(0)],
-            vec![Some(0), Some(0), Some(0)],
-        ];
+        let tile_costs = vec![vec![0, 10, 0], vec![0, 10, 0], vec![0, 0, 0]];
         let start = Point { x: 0, y: 0 };
         let goal = Point { x: 2, y: 2 };
 
@@ -586,11 +630,7 @@ mod tests {
 
     #[test]
     fn test_lpa_no_update_hidden() {
-        let tile_costs = vec![
-            vec![Some(0), Some(10), Some(0)],
-            vec![Some(0), Some(10), Some(0)],
-            vec![Some(0), None, Some(0)],
-        ];
+        let tile_costs = vec![vec![0, 10, 0], vec![0, 10, 0], vec![0, i32::MAX, 0]];
         let start = Point { x: 0, y: 0 };
         let goal = Point { x: 2, y: 2 };
 
@@ -608,7 +648,7 @@ mod tests {
 
     #[test]
     fn test_lpa_update() {
-        let mut tile_costs = vec![vec![Some(0); 3]; 3];
+        let mut tile_costs = vec![vec![0; 3]; 3];
         let start = Point { x: 0, y: 0 };
         let goal = Point { x: 2, y: 2 };
 
@@ -617,9 +657,9 @@ mod tests {
         assert_eq!(pather.g, vec![vec![0, 1, 2], vec![1, 2, 3], vec![2, 3, 4]]);
 
         // discover a wall
-        tile_costs[0][1] = Some(10);
-        tile_costs[1][1] = Some(10);
-        tile_costs[2][1] = Some(10);
+        tile_costs[0][1] = 10;
+        tile_costs[1][1] = 10;
+        tile_costs[2][1] = 10;
         pather.update_tile_costs(&tile_costs);
 
         assert_eq!(

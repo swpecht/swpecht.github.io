@@ -4,7 +4,7 @@ use std::{
     io::{stdout, Write},
 };
 
-use ai_pathing::{get_lpapather, LpaStarPather};
+use ai_pathing::{get_goal_lpapather, get_start_lpapather, LpaStarPather};
 use crossterm::{
     execute,
     style::{Color, ResetColor, SetBackgroundColor},
@@ -72,7 +72,8 @@ pub fn run_sim(map: &str, features: FeatureFlags) -> i32 {
     let mut num_steps = 0;
 
     let mut output_file = File::create("output.txt").unwrap();
-    let mut pather = get_lpapather(&world);
+    let mut start_pather = get_start_lpapather(&world);
+    let mut goal_pather = get_goal_lpapather(&world);
 
     loop {
         num_steps += 1;
@@ -92,7 +93,7 @@ pub fn run_sim(map: &str, features: FeatureFlags) -> i32 {
         if features.render {
             system_render(&char_buffer, &highlight_buffer);
         }
-        if system_ai(&mut world, features, &mut pather) {
+        if system_ai(&mut world, features, &mut start_pather, &mut goal_pather) {
             break;
         }
         system_path_highlight(&mut world, spatial_cache.as_ref());

@@ -246,3 +246,53 @@ Can explore this in 17 steps, commit: 06882d5f60f3f2fcfe00c19e7881d55ad673fccb
 ....???????????
 
 [NEED to figure out how to support multiple gifs at once, likely just want to make gifs rather than do anything more complicated.]
+
+## Reduce calls to get_path -- use a calculated travel matrix
+
+From: find path 20x20         time:   [33.759 ms 34.235 ms 34.965 ms]
+                        change: [+481.58% +490.94% +502.80%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 100 measurements (1.00%)
+  1 (1.00%) high severe
+
+
+To: find path 20x20         time:   [5.6577 ms 5.6994 ms 5.7422 ms]
+                        change: [-83.714% -83.352% -83.073%] (p = 0.00 < 0.05)
+                        Performance has improved.
+
+
+## Add A* to djikstra's algorithms
+
+for the travel matrix calc, use a minimum distance across all endpoints as the A* heuristic.
+
+```rust
+let new_cost = distance + 1 + tile_costs[n.y][n.x].unwrap(); // Cost always increases by minimum of 1
+travel_costs[n.y][n.x] = Some(new_cost);
+let heuristic = end_points.iter().map(|x| n.dist(x)).min().unwrap_or(0);
+queue.push(n, Reverse(new_cost + heuristic));
+```
+find path 100x100       time:   [1.4218 s 1.4443 s 1.4678 s]
+                        change: [+178.37% +185.62% +192.62%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 3 outliers among 100 measurements (3.00%)
+  3 (3.00%) high mild
+
+## Other pathfidning algorithms, LPA*
+https://en.wikipedia.org/wiki/Lifelong_Planning_A*
+
+With A*:
+find path 100x100       time:   [508.55 ms 513.37 ms 518.59 ms]
+                        change: [-1.5160% +0.2276% +1.9708%] (p = 0.80 > 0.05)
+                        No change in performance detected.
+
+With LPA*:
+find path 100x100       time:   [147.91 ms 149.18 ms 150.48 ms]
+                        change: [-73.413% -72.822% -72.289%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 100 measurements (1.00%)
+  1 (1.00%) high mild
+
+
+## Look at alternative heaps, e.g. Fibinacci heap
+
+https://en.wikipedia.org/wiki/Fibonacci_heap
