@@ -82,7 +82,7 @@ pub fn run_sim(map: &str, features: FeatureFlags) -> i32 {
         if features.render {
             system_render(&char_buffer, &highlight_buffer);
         }
-        if system_ai(&mut world, spatial_cache.as_ref(), features) {
+        if system_ai(&mut world, features) {
             break;
         }
         system_path_highlight(&mut world, spatial_cache.as_ref());
@@ -305,5 +305,24 @@ mod test {
         let max_p = get_max_point(&world);
         assert_eq!(max_p.x, 3);
         assert_eq!(max_p.y, 4);
+    }
+
+    #[test]
+    fn test_spiral_map() {
+        let map = "@..............
+                        .WWWWWWWWWWWWW.
+                        .W...........W.
+                        .W.WWWWWWWWW.W.
+                        .W.W.......W.W.
+                        .W.WWWWWWW.W.W.
+                        .W......GW.W.W.
+                        .WWWWWWWWW.W.W.
+                        ...........W...";
+
+        let mut features = FeatureFlags::new();
+        features.render = false;
+        features.write_agent_visible_map = true;
+        let num_steps = run_sim(map, features);
+        assert_eq!(num_steps, 189)
     }
 }

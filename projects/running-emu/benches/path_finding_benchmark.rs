@@ -25,6 +25,11 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("find path 20x20", |b| {
         b.iter(|| running_emu::run_sim(black_box(&large_map), features))
     });
+
+    let large_map = create_map(100);
+    c.bench_function("find path 100x100", |b| {
+        b.iter(|| running_emu::run_sim(black_box(&large_map), features))
+    });
 }
 
 criterion_group!(benches, criterion_benchmark);

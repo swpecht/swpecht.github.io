@@ -38,11 +38,7 @@ pub fn system_pathing(world: &mut World) {
 ///
 /// The lowest cost space is always explored next rather than traditional breadth first search.
 /// This ensures that tiles costs always represent the 'cheapest' way to get to the tile.
-pub fn system_ai(
-    world: &mut World,
-    spatial_cache: Option<&SpatialCache>,
-    features: FeatureFlags,
-) -> bool {
+pub fn system_ai(world: &mut World, features: FeatureFlags) -> bool {
     let agent_ids = world.query_mut::<&Agent>().into_iter().collect_vec();
     let agent_id = agent_ids[0].0; // Since only 1 agent
 
@@ -87,11 +83,12 @@ pub fn system_ai(
                     let agent_dist = p.dist(&cur_loc);
                     candidate_matrix[x + y * max_p.x] = Some(cost + goal_dist + agent_dist)
                 }
+
                 let neighbors = get_neighbors(p, max_p.x, max_p.y);
                 let mut all_neighbors_visible = true;
                 for n in neighbors {
-                    let e = get_entities(world, n, spatial_cache)[0];
-                    let vis = world.query_one::<&Visibility>(e).unwrap().get().unwrap().0;
+                    // tile_costs can act as a mask to determine if the cell is visible or not.
+                    let vis = tile_costs[n.y][n.x].is_some();
                     all_neighbors_visible = all_neighbors_visible && vis;
                 }
 
