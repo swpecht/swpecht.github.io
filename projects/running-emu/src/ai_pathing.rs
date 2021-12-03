@@ -462,4 +462,25 @@ mod tests {
             ]
         )
     }
+
+    #[test]
+    fn test_travel_cost_candidates() {
+        let tile_costs = vec![
+            vec![Some(0), Some(10), Some(0)],
+            vec![Some(0), Some(10), Some(0)],
+            vec![Some(0), Some(0), Some(0)],
+        ];
+        let start = Point { x: 0, y: 0 };
+        let candidates = vec![Point { x: 1, y: 0 }, Point { x: 0, y: 1 }];
+
+        let travel_costs = get_travel_costs(start, &candidates, &tile_costs);
+        assert_eq!(
+            travel_costs,
+            vec![
+                vec![Some(0), Some(11), None],
+                vec![Some(1), None, None],
+                vec![None, None, None]
+            ]
+        )
+    }
 }
