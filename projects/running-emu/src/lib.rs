@@ -4,6 +4,7 @@ use std::{
     io::{stdout, Write},
 };
 
+use ai_pathing::{get_lpapather, LpaStarPather};
 use crossterm::{
     execute,
     style::{Color, ResetColor, SetBackgroundColor},
@@ -40,6 +41,13 @@ pub struct FeatureFlags {
     pub travel_matrix_for_goal_distance: bool,
     /// Write the agent visible map to `output.txt`
     pub write_agent_visible_map: bool,
+    pub pathing_algorithm: PathingAlgorithm,
+}
+
+#[derive(Clone, Copy)]
+pub enum PathingAlgorithm {
+    Astar,
+    LpaStar,
 }
 
 impl FeatureFlags {
@@ -49,6 +57,7 @@ impl FeatureFlags {
             entity_spatial_cache: true,
             travel_matrix_for_goal_distance: true,
             write_agent_visible_map: false,
+            pathing_algorithm: PathingAlgorithm::LpaStar,
         };
     }
 }
@@ -63,6 +72,7 @@ pub fn run_sim(map: &str, features: FeatureFlags) -> i32 {
     let mut num_steps = 0;
 
     let mut output_file = File::create("output.txt").unwrap();
+    let mut pather = get_lpapather(&world);
 
     loop {
         num_steps += 1;
@@ -82,7 +92,7 @@ pub fn run_sim(map: &str, features: FeatureFlags) -> i32 {
         if features.render {
             system_render(&char_buffer, &highlight_buffer);
         }
-        if system_ai(&mut world, features) {
+        if system_ai(&mut world, features, &mut pather) {
             break;
         }
         system_path_highlight(&mut world, spatial_cache.as_ref());

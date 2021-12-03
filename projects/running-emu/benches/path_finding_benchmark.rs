@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use running_emu::{create_map, FeatureFlags};
+use running_emu::{create_map, FeatureFlags, PathingAlgorithm};
 
 fn criterion_benchmark(c: &mut Criterion) {
     let map = "@..............
@@ -16,6 +16,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     features.render = false;
     features.entity_spatial_cache = true;
     features.travel_matrix_for_goal_distance = true;
+    features.pathing_algorithm = PathingAlgorithm::LpaStar;
 
     c.bench_function("find path spiral", |b| {
         b.iter(|| running_emu::run_sim(black_box(&map), features))

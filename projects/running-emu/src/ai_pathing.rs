@@ -1,4 +1,4 @@
-use std::cmp::Reverse;
+use std::cmp::{min, Reverse};
 
 use crossterm::style::Color;
 use hecs::World;
@@ -8,7 +8,8 @@ use priority_queue::PriorityQueue;
 use crate::{
     get_goal, get_max_point, get_start,
     spatial::{get_entities, Point, SpatialCache},
-    Agent, BackgroundHighlight, FeatureFlags, Position, Sprite, TargetLocation, Visibility,
+    Agent, BackgroundHighlight, FeatureFlags, PathingAlgorithm, Position, Sprite, TargetLocation,
+    Visibility,
 };
 
 /// Move agents that have a target location.
@@ -38,7 +39,7 @@ pub fn system_pathing(world: &mut World) {
 ///
 /// The lowest cost space is always explored next rather than traditional breadth first search.
 /// This ensures that tiles costs always represent the 'cheapest' way to get to the tile.
-pub fn system_ai(world: &mut World, features: FeatureFlags) -> bool {
+pub fn system_ai(world: &mut World, features: FeatureFlags, pather: &mut LpaStarPather) -> bool {
     let agent_ids = world.query_mut::<&Agent>().into_iter().collect_vec();
     let agent_id = agent_ids[0].0; // Since only 1 agent
 
@@ -99,7 +100,13 @@ pub fn system_ai(world: &mut World, features: FeatureFlags) -> bool {
             }
         }
 
-        let travel_costs = get_travel_costs(start, &candidate_points, &tile_costs);
+        let travel_costs = match features.pathing_algorithm {
+            PathingAlgorithm::Astar => get_travel_costs(start, &candidate_points, &tile_costs),
+            PathingAlgorithm::LpaStar => {
+                pather.update_tile_costs(&tile_costs);
+                pather.get_travel_costs()
+            }
+        };
         let goal_travel_costs = get_travel_costs(goal, &candidate_points, &goal_tile_costs);
 
         for p in candidate_points {
@@ -358,12 +365,268 @@ fn get_tile_costs(world: &World) -> Vec<Vec<Option<i32>>> {
     return tile_costs;
 }
 
+/// Implementation for LPA*, based on:
+/// https://en.wikipedia.org/wiki/Lifelong_Planning_A*
+pub struct LpaStarPather {
+    queue: PriorityQueue<Point, Reverse<LpaKey>>,
+    tile_costs: Vec<Vec<Option<i32>>>,
+    g: Vec<Vec<i32>>,
+    rhs: Vec<Vec<i32>>,
+    width: usize,
+    height: usize,
+    start: Point,
+    goal: Point,
+}
+
+#[derive(PartialEq, Eq)]
+struct LpaKey {
+    k1: i32,
+    k2: i32,
+}
+
+impl Ord for LpaKey {
+    /// Returns the larger of k1s, if k1s are equal, then look at k2
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        if self.k1 != other.k1 {
+            return self.k1.cmp(&other.k1);
+        } else {
+            return self.k2.cmp(&other.k2);
+        }
+    }
+}
+
+impl PartialOrd for LpaKey {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+pub fn get_lpapather(world: &World) -> LpaStarPather {
+    let start = get_start(world);
+    let goal = get_goal(world);
+    let tile_costs = get_tile_costs(world);
+
+    return LpaStarPather::new(start, goal, tile_costs);
+}
+
+impl LpaStarPather {
+    fn new(start: Point, goal: Point, tile_costs: Vec<Vec<Option<i32>>>) -> Self {
+        let width = tile_costs[0].len();
+        let height = tile_costs.len();
+
+        // Ensure using a square map
+        for i in 0..height {
+            assert_eq!(tile_costs[i].len(), width);
+        }
+
+        let queue = PriorityQueue::new();
+
+        // Using i32 max as placeholder for infinity
+        let g = vec![vec![i32::MAX; width]; height];
+        let rhs = vec![vec![i32::MAX; width]; height];
+
+        let mut pather = Self {
+            queue: queue,
+            tile_costs: tile_costs,
+            g,
+            rhs,
+            width,
+            height,
+            start,
+            goal,
+        };
+
+        pather.rhs[start.y][start.x] = 0;
+        pather.queue.push(start, pather.calculate_key(&start));
+
+        pather.compute_shortest_path();
+
+        return pather;
+    }
+
+    fn calculate_key(&self, p: &Point) -> Reverse<LpaKey> {
+        let k1 = min(self.g[p.y][p.x], self.rhs[p.y][p.x]) + self.goal.dist(p);
+        let k2 = min(self.g[p.y][p.x], self.rhs[p.y][p.x]);
+        return Reverse(LpaKey { k1: k1, k2: k2 });
+    }
+
+    #[inline]
+    fn get_rhs(&self, p: Point) -> i32 {
+        return self.rhs[p.y][p.x];
+    }
+
+    #[inline]
+    fn get_g(&self, p: Point) -> i32 {
+        return self.g[p.y][p.x];
+    }
+
+    fn compute_shortest_path(&mut self) {
+        // This needs to be greater than since we're actually comparing the reverse of the keys
+        while !self.queue.is_empty()
+        // Remove the normal termination logic as we want to populate the entire matrix. May need to revisit for
+        // performance reasons.
+        // && *self.queue.peek().unwrap().1 > self.calculate_key(&self.goal))
+        // || (self.get_rhs(self.goal) != self.get_g(self.goal))
+        {
+            let node = self.queue.pop().unwrap().0;
+            if self.get_g(node) > self.get_rhs(node) {
+                self.g[node.y][node.x] = self.get_rhs(node);
+                for s in get_neighbors(node, self.width, self.height) {
+                    self.update_node(&s);
+                }
+            } else {
+                self.g[node.y][node.x] = i32::MAX;
+                self.update_node(&node);
+                for s in get_neighbors(node, self.width, self.height) {
+                    self.update_node(&s);
+                }
+            }
+        }
+    }
+
+    /// Recalculates rhs for a node and removes it from the queue.
+    /// If the node has become locally inconsistent, it is (re-)inserted into the queue with its new key.
+    fn update_node(&mut self, p: &Point) {
+        if *p != self.start {
+            self.rhs[p.y][p.x] = i32::MAX;
+            for n in get_neighbors(*p, self.width, self.height) {
+                self.rhs[p.y][p.x] = min(
+                    self.rhs[p.y][p.x],
+                    self.get_g(n)
+                        .checked_add(
+                            self.tile_costs[p.y][p.x]
+                                .unwrap_or(i32::MAX)
+                                .checked_add(1)
+                                .unwrap_or(i32::MAX),
+                        )
+                        .unwrap_or(i32::MAX),
+                )
+            }
+            self.queue.remove(p);
+            if self.get_g(*p) != self.get_rhs(*p) {
+                self.queue.push(*p, self.calculate_key(p));
+            }
+        }
+    }
+
+    pub fn update_tile_costs(&mut self, tile_costs: &Vec<Vec<Option<i32>>>) {
+        for y in 0..self.height {
+            for x in 0..self.width {
+                if self.tile_costs[y][x] != tile_costs[y][x] {
+                    self.tile_costs[y][x] = tile_costs[y][x];
+                    self.update_node(&Point { x: x, y: y })
+                }
+            }
+        }
+
+        self.compute_shortest_path();
+    }
+
+    pub fn get_travel_costs(&self) -> Vec<Vec<Option<i32>>> {
+        let mut travel_costs = vec![vec![None; self.width]; self.height];
+
+        for y in 0..self.height {
+            for x in 0..self.width {
+                if self.tile_costs[y][x].is_some() {
+                    travel_costs[y][x] = Some(self.g[y][x]);
+                }
+            }
+        }
+
+        // Properly mask the goal
+        let mut all_neighbors_invisible = true;
+        for n in get_neighbors(self.goal, self.width, self.height) {
+            all_neighbors_invisible =
+                all_neighbors_invisible && self.tile_costs[n.y][n.x].is_none();
+        }
+
+        if all_neighbors_invisible {
+            travel_costs[self.goal.y][self.goal.x] = None;
+        }
+
+        return travel_costs;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::vec;
 
     use super::*;
     use crate::Point;
+
+    #[test]
+    fn test_lpa_no_update() {
+        let tile_costs = vec![vec![Some(0); 3]; 3];
+        let start = Point { x: 0, y: 0 };
+        let goal = Point { x: 2, y: 2 };
+
+        let pather = LpaStarPather::new(start, goal, tile_costs);
+
+        assert_eq!(pather.g, vec![vec![0, 1, 2], vec![1, 2, 3], vec![2, 3, 4]]);
+    }
+
+    #[test]
+    fn test_lpa_no_update_cost() {
+        let tile_costs = vec![
+            vec![Some(0), Some(10), Some(0)],
+            vec![Some(0), Some(10), Some(0)],
+            vec![Some(0), Some(0), Some(0)],
+        ];
+        let start = Point { x: 0, y: 0 };
+        let goal = Point { x: 2, y: 2 };
+
+        let pather = LpaStarPather::new(start, goal, tile_costs);
+
+        assert_eq!(
+            pather.g,
+            vec![vec![0, 11, 6], vec![1, 12, 5], vec![2, 3, 4]]
+        );
+    }
+
+    #[test]
+    fn test_lpa_no_update_hidden() {
+        let tile_costs = vec![
+            vec![Some(0), Some(10), Some(0)],
+            vec![Some(0), Some(10), Some(0)],
+            vec![Some(0), None, Some(0)],
+        ];
+        let start = Point { x: 0, y: 0 };
+        let goal = Point { x: 2, y: 2 };
+
+        let pather = LpaStarPather::new(start, goal, tile_costs);
+
+        assert_eq!(
+            pather.get_travel_costs(),
+            vec![
+                vec![Some(0), Some(11), Some(12)],
+                vec![Some(1), Some(12), Some(13)],
+                vec![Some(2), None, Some(14)]
+            ]
+        );
+    }
+
+    #[test]
+    fn test_lpa_update() {
+        let mut tile_costs = vec![vec![Some(0); 3]; 3];
+        let start = Point { x: 0, y: 0 };
+        let goal = Point { x: 2, y: 2 };
+
+        let mut pather = LpaStarPather::new(start, goal, tile_costs.clone());
+
+        assert_eq!(pather.g, vec![vec![0, 1, 2], vec![1, 2, 3], vec![2, 3, 4]]);
+
+        // discover a wall
+        tile_costs[0][1] = Some(10);
+        tile_costs[1][1] = Some(10);
+        tile_costs[2][1] = Some(10);
+        pather.update_tile_costs(&tile_costs);
+
+        assert_eq!(
+            pather.g,
+            vec![vec![0, 11, 12], vec![1, 12, 13], vec![2, 13, 14]]
+        );
+    }
 
     #[test]
     fn find_path_no_cost() {
