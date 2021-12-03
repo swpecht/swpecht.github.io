@@ -347,4 +347,15 @@ mod test {
         let num_steps = run_sim(map, features);
         assert_eq!(num_steps, 159)
     }
+
+    #[test]
+    fn test_empty_map() {
+        let map = &&create_map(10);
+
+        let mut features = FeatureFlags::new();
+        features.render = false;
+        features.write_agent_visible_map = true;
+        let num_steps = run_sim(map, features);
+        assert_eq!(num_steps, 19)
+    }
 }

@@ -89,13 +89,14 @@ pub fn system_ai(
             }
         };
 
-        let mut candidate_scores = vec![i32::MAX; candidate_points.len()];
-        for i in 0..candidate_points.len() {
-            let p = candidate_points[i];
-            let travel_cost = start_travel_costs[p.y][p.x];
-            let goal_dist = goal_travel_costs[p.y][p.x];
-            let agent_dist = p.dist(&cur_loc);
-            candidate_scores[i] = travel_cost + goal_dist + agent_dist;
+        let mut candidate_scores = Vec::with_capacity(candidate_points.len());
+        for p in candidate_points.iter() {
+            let score = CandidateScore {
+                dist_to_start: start_travel_costs[p.y][p.x],
+                dist_to_goal: goal_travel_costs[p.y][p.x],
+                dist_to_agent: p.dist(&cur_loc),
+            };
+            candidate_scores.push(score);
         }
 
         let min_val = *candidate_scores.iter().min().unwrap();
@@ -107,6 +108,31 @@ pub fn system_ai(
     }
 
     return false;
+}
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+struct CandidateScore {
+    dist_to_start: i32,
+    dist_to_goal: i32,
+    dist_to_agent: i32,
+}
+
+impl Ord for CandidateScore {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        let self_total = self.dist_to_start + self.dist_to_goal + self.dist_to_agent;
+        let other_total = other.dist_to_start + other.dist_to_goal + other.dist_to_agent;
+        if self_total != other_total {
+            return self_total.cmp(&other_total);
+        } else {
+            return self.dist_to_goal.cmp(&other.dist_to_goal);
+        }
+    }
+}
+
+impl PartialOrd for CandidateScore {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 fn unwrap_tile_costs(tile_costs: &Vec<Vec<Option<i32>>>, default: i32) -> Vec<Vec<i32>> {

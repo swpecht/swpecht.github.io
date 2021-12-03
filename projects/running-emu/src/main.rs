@@ -1,4 +1,4 @@
-use running_emu::{run_sim, FeatureFlags};
+use running_emu::{create_map, run_sim, FeatureFlags};
 
 fn main() {
     let map = "@..............
@@ -16,7 +16,7 @@ fn main() {
     // .WGW
     // ....";
 
-    // let map = &create_map(50);
+    let map = &create_map(10);
 
     let mut features = FeatureFlags::new();
     features.write_agent_visible_map = true;
