@@ -114,20 +114,14 @@ pub fn system_ai(
         }
 
         let travel_costs = match features.pathing_algorithm {
-            PathingAlgorithm::Astar => get_travel_costs(start, &tile_costs),
+            PathingAlgorithm::Astar => get_travel_costs(start, &start_tile_costs),
             PathingAlgorithm::LpaStar => {
                 pather_start.update_tile_costs(&start_tile_costs);
                 pather_start.get_travel_costs()
             }
         };
         let goal_travel_costs = match features.pathing_algorithm {
-            PathingAlgorithm::Astar => get_travel_costs(
-                goal,
-                &goal_tile_costs
-                    .iter()
-                    .map(|x| x.iter().map(|v| Some(*v)).collect_vec())
-                    .collect_vec(),
-            ),
+            PathingAlgorithm::Astar => get_travel_costs(goal, &goal_tile_costs),
             PathingAlgorithm::LpaStar => {
                 pather_goal.update_tile_costs(&goal_tile_costs);
                 pather_goal.get_travel_costs()
@@ -135,8 +129,8 @@ pub fn system_ai(
         };
 
         for p in candidate_points {
-            let travel_cost = travel_costs[p.y][p.x].unwrap();
-            let goal_dist = goal_travel_costs[p.y][p.x].unwrap();
+            let travel_cost = travel_costs[p.y][p.x];
+            let goal_dist = goal_travel_costs[p.y][p.x];
             let agent_dist = p.dist(&cur_loc);
             candidate_matrix[p.x + p.y * max_p.x] = Some(travel_cost + goal_dist + agent_dist);
         }
@@ -260,23 +254,6 @@ fn get_neighbors(point: Point, width: usize, height: usize) -> Vec<Point> {
     return neighbors;
 }
 
-/// Debug function to print the travel costs
-pub fn print_travel_cost_matrix(world: &World) {
-    let start = get_start(world);
-    let tile_costs = get_tile_costs(world);
-    let travel_costs = get_travel_costs(start, &tile_costs);
-
-    let max_p = get_max_point(world);
-    for y in 0..max_p.y {
-        for x in 0..max_p.x {
-            let p = Point { x: x, y: y };
-            print!("{}", travel_costs[p.y][p.x].unwrap_or(-1));
-            print!("\t")
-        }
-        println!("");
-    }
-}
-
 /// Return optimal path connecting start to end given a set of travel costs.
 ///
 /// Given the cost matrix, we can start at the goal and greedily follow the lowest cost
@@ -321,28 +298,30 @@ fn get_tile_cost(tile: char) -> i32 {
 /// Return the lowest travel cost matrix for all visible tiles if possible
 ///
 /// None means no path is possible or there isn't tile information
-fn get_travel_costs(start: Point, tile_costs: &Vec<Vec<Option<i32>>>) -> Vec<Vec<Option<i32>>> {
+fn get_travel_costs(start: Point, tile_costs: &Vec<Vec<i32>>) -> Vec<Vec<i32>> {
     let width = tile_costs[0].len();
     let height = tile_costs.len();
-    let mut travel_costs = vec![vec![None; width]; height];
+    let mut travel_costs = vec![vec![i32::MAX; width]; height];
 
     let mut queue: PriorityQueue<Point, Reverse<i32>> = PriorityQueue::new();
     queue.push(start, Reverse(0));
-    travel_costs[start.y][start.x] = Some(0);
+    travel_costs[start.y][start.x] = 0;
 
     while !queue.is_empty() {
         let (node, _) = queue.pop().unwrap();
-        let distance = travel_costs[node.y][node.x].unwrap();
+        let distance = travel_costs[node.y][node.x];
 
         let neighbors = get_neighbors(node, width, height);
 
         for n in neighbors {
             let d = travel_costs[n.y][n.x];
-
-            // Only path over areas where we have cost data
-            if d.is_none() && tile_costs[n.y][n.x].is_some() {
-                let new_cost = distance + 1 + tile_costs[n.y][n.x].unwrap(); // Cost always increases by minimum of 1
-                travel_costs[n.y][n.x] = Some(new_cost);
+            let new_cost = distance
+                .checked_add(1) // Cost always increases by minimum of 1
+                .unwrap_or(i32::MAX)
+                .checked_add(tile_costs[n.y][n.x])
+                .unwrap_or(i32::MAX);
+            travel_costs[n.y][n.x] = min(d, new_cost);
+            if new_cost < d {
                 queue.push(n, Reverse(new_cost));
             }
         }
@@ -546,29 +525,8 @@ impl LpaStarPather {
         self.compute_shortest_path();
     }
 
-    pub fn get_travel_costs(&self) -> Vec<Vec<Option<i32>>> {
-        let mut travel_costs = vec![vec![None; self.width]; self.height];
-
-        for y in 0..self.height {
-            for x in 0..self.width {
-                if self.tile_costs[y][x] < i32::MAX {
-                    travel_costs[y][x] = Some(self.g[y][x]);
-                }
-            }
-        }
-
-        // Properly mask the goal
-        let mut all_neighbors_invisible = true;
-        for n in get_neighbors(self.goal, self.width, self.height) {
-            all_neighbors_invisible =
-                all_neighbors_invisible && self.tile_costs[n.y][n.x] == i32::MAX;
-        }
-
-        if all_neighbors_invisible {
-            travel_costs[self.goal.y][self.goal.x] = None;
-        }
-
-        return travel_costs;
+    pub fn get_travel_costs(&self) -> Vec<Vec<i32>> {
+        return self.g.clone();
     }
 }
 
@@ -614,11 +572,7 @@ mod tests {
 
         assert_eq!(
             pather.get_travel_costs(),
-            vec![
-                vec![Some(0), Some(11), Some(12)],
-                vec![Some(1), Some(12), Some(13)],
-                vec![Some(2), None, Some(14)]
-            ]
+            vec![vec![0, 11, 12], vec![1, 12, 13], vec![2, i32::MAX, 14]]
         );
     }
 
@@ -688,57 +642,37 @@ mod tests {
 
     #[test]
     fn test_travel_cost_simple() {
-        let tile_costs = vec![vec![Some(0); 3]; 3];
+        let tile_costs = vec![vec![0; 3]; 3];
         let start = Point { x: 0, y: 0 };
 
         let travel_costs = get_travel_costs(start, &tile_costs);
         assert_eq!(
             travel_costs,
-            vec![
-                vec![Some(0), Some(1), Some(2)],
-                vec![Some(1), Some(2), Some(3)],
-                vec![Some(2), Some(3), Some(4)]
-            ]
+            vec![vec![0, 1, 2], vec![1, 2, 3], vec![2, 3, 4]]
         )
     }
 
     #[test]
     fn test_travel_cost_unexplored() {
-        let tile_costs = vec![
-            vec![Some(0), Some(0), Some(0)],
-            vec![Some(0), None, Some(0)],
-            vec![Some(0), Some(0), None],
-        ];
+        let tile_costs = vec![vec![0, 0, 0], vec![0, i32::MAX, 0], vec![0, 0, i32::MAX]];
         let start = Point { x: 0, y: 0 };
 
         let travel_costs = get_travel_costs(start, &tile_costs);
         assert_eq!(
             travel_costs,
-            vec![
-                vec![Some(0), Some(1), Some(2)],
-                vec![Some(1), None, Some(3)],
-                vec![Some(2), Some(3), None]
-            ]
+            vec![vec![0, 1, 2], vec![1, i32::MAX, 3], vec![2, 3, i32::MAX]]
         )
     }
 
     #[test]
     fn test_travel_cost_with_tile_costs() {
-        let tile_costs = vec![
-            vec![Some(0), Some(10), Some(0)],
-            vec![Some(0), Some(10), Some(0)],
-            vec![Some(0), Some(0), Some(0)],
-        ];
+        let tile_costs = vec![vec![0, 10, 0], vec![0, 10, 0], vec![0, 0, 0]];
         let start = Point { x: 0, y: 0 };
 
         let travel_costs = get_travel_costs(start, &tile_costs);
         assert_eq!(
             travel_costs,
-            vec![
-                vec![Some(0), Some(11), Some(6)],
-                vec![Some(1), Some(12), Some(5)],
-                vec![Some(2), Some(3), Some(4)]
-            ]
+            vec![vec![0, 11, 6], vec![1, 12, 5], vec![2, 3, 4]]
         )
     }
 }
