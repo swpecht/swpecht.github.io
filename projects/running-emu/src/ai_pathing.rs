@@ -58,9 +58,9 @@ pub fn system_ai(world: &mut World, features: FeatureFlags) -> bool {
     // The next target is chosen by constructing a matrix of scores for all possible explored locations and choosing the minimum
     // An explored location will not be chosen. The scores for squares have the following form:
     //  Score(point) = cost to get there from start + distance from the agent + cost to get to goal assuming un-explored squares have only travel cost
-    let max_p = get_max_point(world);
     if target_loc.is_none() || cur_loc == target_loc.unwrap() {
         let mut candidate_points = Vec::new();
+        let max_p = get_max_point(world);
         for y in 0..max_p.y {
             for x in 0..max_p.x {
                 let p = Point { x: x, y: y };
