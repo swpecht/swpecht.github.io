@@ -225,30 +225,36 @@ fn get_edge_points(tile_costs: &Vec<Vec<Option<i32>>>, goal: Point) -> Vec<Point
 
     for y in 0..height {
         for x in 0..width {
-            let p = Point { x: x, y: y };
-
             // Don't visit if not visible
             let visible = tile_costs[y][x].is_some();
             if !visible {
                 continue;
             }
 
-            let neighbors = get_neighbors(p, width, height);
             let mut all_neighbors_visible = true;
             let mut all_neighbors_invisible = true; // to catch isolated tiles
-            for n in neighbors {
+            let directions = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+
+            // Using a custom version of the get neighbors algorithm to avoid the allocations
+            // Done to improve performance
+            for d in directions {
                 // tile_costs can act as a mask to determine if the cell is visible or not.
-                let vis = tile_costs[n.y][n.x].is_some();
+                let y = (y as i32 + d.1) as usize;
+                let x = (x as i32 + d.0) as usize;
+                if x >= width || y >= height {
+                    continue;
+                }
+                let vis = tile_costs[y][x].is_some();
                 all_neighbors_visible = all_neighbors_visible && vis;
                 all_neighbors_invisible = all_neighbors_invisible && !vis;
             }
 
             // No reason to visit if all visible and not the goal
-            if (all_neighbors_visible && p != goal) || all_neighbors_invisible {
+            if (all_neighbors_visible && !(x == goal.x && y == goal.y)) || all_neighbors_invisible {
                 continue;
             }
 
-            edge_points.push(p);
+            edge_points.push(Point { x: x, y: y });
         }
     }
 
