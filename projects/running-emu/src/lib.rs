@@ -75,6 +75,9 @@ pub fn run_sim(map: &str, features: FeatureFlags) -> i32 {
     let mut start_pather = get_start_lpapather(&world);
     let mut goal_pather = get_goal_lpapather(&world);
 
+    let max_p = get_max_point(&world);
+    let mut char_buffer = vec![vec!['?'; max_p.x]; max_p.y];
+
     loop {
         num_steps += 1;
         let spatial_cache = match features.entity_spatial_cache {
@@ -83,7 +86,7 @@ pub fn run_sim(map: &str, features: FeatureFlags) -> i32 {
         };
 
         system_vision(&mut world);
-        let char_buffer = build_char_output(&world);
+        build_char_output(&world, &mut char_buffer);
         let highlight_buffer = build_highlight_output(&mut world);
 
         if features.write_agent_visible_map {
@@ -156,23 +159,17 @@ fn parse_map(world: &mut World, map: &str) {
 }
 
 /// Build the grid of character outputs
-fn build_char_output(world: &World) -> Vec<Vec<char>> {
-    let max_p = get_max_point(world);
-    // Populate base layer
-    let mut output_char = vec![vec!['?'; max_p.x]; max_p.y];
-    // Draw over top with entities
+fn build_char_output(world: &World, buffer: &mut Vec<Vec<char>>) {
     for (_, (p, c, v)) in world.query::<(&Position, &Sprite, &Visibility)>().iter() {
         if v.0 {
             // Handle special case for '.' only draw if nothing else present
-            if c.0 == '.' && output_char[p.0.y][p.0.x] != '?' {
+            if c.0 == '.' && buffer[p.0.y][p.0.x] != '?' {
                 // Do nothing, '.' can be in background
             } else {
-                output_char[p.0.y][p.0.x] = c.0;
+                buffer[p.0.y][p.0.x] = c.0;
             }
         }
     }
-
-    return output_char;
 }
 
 fn write_state(chars: &Vec<Vec<char>>, f: &mut File) -> std::io::Result<()> {
@@ -334,6 +331,6 @@ mod test {
         features.render = false;
         features.write_agent_visible_map = true;
         let num_steps = run_sim(map, features);
-        assert_eq!(num_steps, 189)
+        assert_eq!(num_steps, 159)
     }
 }

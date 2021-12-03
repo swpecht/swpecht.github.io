@@ -18,3 +18,6 @@ criterion = "0.3"
 [[bench]]
 name = "path_finding_benchmark"
 harness = false
+
+[profile.bench]
+debug = true

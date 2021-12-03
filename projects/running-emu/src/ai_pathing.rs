@@ -65,61 +65,22 @@ pub fn system_ai(
     // An explored location will not be chosen. The scores for squares have the following form:
     //  Score(point) = cost to get there from start + distance from the agent + cost to get to goal assuming un-explored squares have only travel cost
     if target_loc.is_none() || cur_loc == target_loc.unwrap() {
-        let mut candidate_points = Vec::new();
-        let max_p = get_max_point(world);
-        for y in 0..max_p.y {
-            for x in 0..max_p.x {
-                let p = Point { x: x, y: y };
+        let candidate_points = get_edge_points(&tile_costs, goal);
 
-                // Don't visit if not visible
-                let visible = tile_costs[y][x].is_some();
-                if !visible {
-                    continue;
-                }
+        // Assume unseen tiles are infinite cost
+        let start_tile_costs = unwrap_tile_costs(&tile_costs, i32::MAX);
 
-                let neighbors = get_neighbors(p, max_p.x, max_p.y);
-                let mut all_neighbors_visible = true;
-                let mut all_neighbors_invisible = true; // to catch isolated tiles
-                for n in neighbors {
-                    // tile_costs can act as a mask to determine if the cell is visible or not.
-                    let vis = tile_costs[n.y][n.x].is_some();
-                    all_neighbors_visible = all_neighbors_visible && vis;
-                    all_neighbors_invisible = all_neighbors_invisible && !vis;
-                }
-
-                // No reason to visit if all visible and not the goal
-                if (all_neighbors_visible && p != goal) || all_neighbors_invisible {
-                    continue;
-                }
-
-                candidate_points.push(p);
-            }
-        }
-
-        let mut candidate_matrix = vec![None; max_p.x * max_p.y];
-        // Create a cost matrix where unknown tiles have a cost of 1
-        let mut goal_tile_costs = vec![vec![0; max_p.x]; max_p.y];
-        for y in 0..max_p.y {
-            for x in 0..max_p.x {
-                goal_tile_costs[y][x] = tile_costs[y][x].unwrap_or(0);
-            }
-        }
-
-        // Populate invisible tiles as max cost
-        let mut start_tile_costs = vec![vec![i32::MAX; max_p.x]; max_p.y];
-        for y in 0..max_p.y {
-            for x in 0..max_p.x {
-                start_tile_costs[y][x] = tile_costs[y][x].unwrap_or(i32::MAX);
-            }
-        }
-
-        let travel_costs = match features.pathing_algorithm {
+        let start_travel_costs = match features.pathing_algorithm {
             PathingAlgorithm::Astar => get_travel_costs(start, &start_tile_costs),
             PathingAlgorithm::LpaStar => {
                 pather_start.update_tile_costs(&start_tile_costs);
                 pather_start.get_travel_costs()
             }
         };
+
+        // Assume unseen tiles are empty
+        let goal_tile_costs = unwrap_tile_costs(&tile_costs, 0);
+
         let goal_travel_costs = match features.pathing_algorithm {
             PathingAlgorithm::Astar => get_travel_costs(goal, &goal_tile_costs),
             PathingAlgorithm::LpaStar => {
@@ -128,33 +89,32 @@ pub fn system_ai(
             }
         };
 
-        for p in candidate_points {
-            let travel_cost = travel_costs[p.y][p.x];
+        let mut candidate_scores = vec![i32::MAX; candidate_points.len()];
+        for i in 0..candidate_points.len() {
+            let p = candidate_points[i];
+            let travel_cost = start_travel_costs[p.y][p.x];
             let goal_dist = goal_travel_costs[p.y][p.x];
             let agent_dist = p.dist(&cur_loc);
-            candidate_matrix[p.x + p.y * max_p.x] = Some(travel_cost + goal_dist + agent_dist);
+            candidate_scores[i] = travel_cost + goal_dist + agent_dist;
         }
 
-        let min_val = candidate_matrix
-            .iter()
-            .filter_map(|c| c.as_ref())
-            .min()
-            .unwrap();
-        let mut min_p = Point { x: 0, y: 0 };
-        for y in 0..max_p.y {
-            for x in 0..max_p.x {
-                if candidate_matrix[x + y * max_p.x] == Some(*min_val) {
-                    min_p = Point { x: x, y: y };
-                    break;
-                }
-            }
-        }
+        let min_val = *candidate_scores.iter().min().unwrap();
+        let min_index = candidate_scores.iter().position(|x| *x == min_val).unwrap();
+        let min_p = candidate_points[min_index];
         world
             .insert_one(agent_id, TargetLocation(Some(min_p)))
             .unwrap();
     }
 
     return false;
+}
+
+fn unwrap_tile_costs(tile_costs: &Vec<Vec<Option<i32>>>, default: i32) -> Vec<Vec<i32>> {
+    return tile_costs
+        .clone()
+        .iter()
+        .map(|x| x.iter().map(|v| v.unwrap_or(default)).collect_vec())
+        .collect_vec();
 }
 
 /// Highlight target locations and expected path, useful for debugging
@@ -252,6 +212,47 @@ fn get_neighbors(point: Point, width: usize, height: usize) -> Vec<Point> {
     }
 
     return neighbors;
+}
+
+/// Returns visible points with at least one invisible neighbor
+///
+/// The Goal is treated as a special case since it's always visible. Goal is only returned
+/// if there is at least one visible square near it.
+fn get_edge_points(tile_costs: &Vec<Vec<Option<i32>>>, goal: Point) -> Vec<Point> {
+    let mut edge_points = Vec::new();
+    let width = tile_costs[0].len();
+    let height = tile_costs.len();
+
+    for y in 0..height {
+        for x in 0..width {
+            let p = Point { x: x, y: y };
+
+            // Don't visit if not visible
+            let visible = tile_costs[y][x].is_some();
+            if !visible {
+                continue;
+            }
+
+            let neighbors = get_neighbors(p, width, height);
+            let mut all_neighbors_visible = true;
+            let mut all_neighbors_invisible = true; // to catch isolated tiles
+            for n in neighbors {
+                // tile_costs can act as a mask to determine if the cell is visible or not.
+                let vis = tile_costs[n.y][n.x].is_some();
+                all_neighbors_visible = all_neighbors_visible && vis;
+                all_neighbors_invisible = all_neighbors_invisible && !vis;
+            }
+
+            // No reason to visit if all visible and not the goal
+            if (all_neighbors_visible && p != goal) || all_neighbors_invisible {
+                continue;
+            }
+
+            edge_points.push(p);
+        }
+    }
+
+    return edge_points;
 }
 
 /// Return optimal path connecting start to end given a set of travel costs.
