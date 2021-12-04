@@ -16,7 +16,7 @@ fn main() {
     // .WGW
     // ....";
 
-    let map = &create_map(10);
+    // let map = &create_map(10);
 
     let mut features = FeatureFlags::new();
     features.write_agent_visible_map = true;

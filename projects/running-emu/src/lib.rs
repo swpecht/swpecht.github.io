@@ -20,6 +20,7 @@ use crate::{
 pub mod ai_pathing;
 pub mod spatial;
 
+/// Position of the entity in the game world
 pub struct Position(pub Point);
 pub struct Sprite(pub char);
 pub struct Visibility(pub bool);
@@ -29,6 +30,8 @@ pub struct BackgroundHighlight(pub Color);
 pub struct Vision(pub usize);
 pub struct TargetLocation(pub Option<Point>);
 pub struct Agent;
+pub struct Health(pub i32);
+pub struct Damage(pub i32);
 
 #[derive(Clone, Copy)]
 pub struct FeatureFlags {
@@ -303,6 +306,29 @@ pub fn create_map(size: usize) -> String {
     return map;
 }
 
+pub fn system_health(world: &mut World) {
+    let mut damage_removal = Vec::new();
+    let mut entity_despawn = Vec::new();
+
+    for (e, (health, dmg)) in world.query_mut::<(&mut Health, &Damage)>() {
+        health.0 = health.0 - dmg.0;
+
+        if health.0 <= 0 {
+            entity_despawn.push(e);
+        } else {
+            damage_removal.push(e);
+        }
+    }
+
+    for e in damage_removal {
+        world.remove_one::<Damage>(e).unwrap();
+    }
+
+    for e in entity_despawn {
+        world.despawn(e).unwrap();
+    }
+}
+
 mod test {
     #[allow(unused_imports)]
     use super::*;
@@ -357,5 +383,21 @@ mod test {
         features.write_agent_visible_map = true;
         let num_steps = run_sim(map, features);
         assert_eq!(num_steps, 19)
+    }
+
+    #[test]
+    fn test_health_system() {
+        let mut world = hecs::World::new();
+
+        let e = world.spawn((Health(10), Damage(5)));
+        system_health(&mut world);
+        assert_eq!(world.get::<Health>(e).unwrap().0, 5);
+        system_health(&mut world);
+        // No more damage done, it was consumed
+        assert_eq!(world.get::<Health>(e).unwrap().0, 5);
+        world.insert_one(e, Damage(10)).unwrap();
+
+        system_health(&mut world);
+        assert_eq!(world.len(), 0);
     }
 }
