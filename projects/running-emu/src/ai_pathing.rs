@@ -70,8 +70,12 @@ pub fn system_ai(
         // Assume unseen tiles are infinite cost
         let start_tile_costs = unwrap_tile_costs(&tile_costs, i32::MAX);
 
+        let v;
         let start_travel_costs = match features.pathing_algorithm {
-            PathingAlgorithm::Astar => get_travel_costs(start, &start_tile_costs),
+            PathingAlgorithm::Astar => {
+                v = get_travel_costs(start, &start_tile_costs);
+                &v
+            }
             PathingAlgorithm::LpaStar => {
                 pather_start.update_tile_costs(&start_tile_costs);
                 pather_start.get_travel_costs()
@@ -81,8 +85,12 @@ pub fn system_ai(
         // Assume unseen tiles are empty
         let goal_tile_costs = unwrap_tile_costs(&tile_costs, 0);
 
+        let v;
         let goal_travel_costs = match features.pathing_algorithm {
-            PathingAlgorithm::Astar => get_travel_costs(goal, &goal_tile_costs),
+            PathingAlgorithm::Astar => {
+                v = get_travel_costs(goal, &goal_tile_costs);
+                &v
+            }
             PathingAlgorithm::LpaStar => {
                 pather_goal.update_tile_costs(&goal_tile_costs);
                 pather_goal.get_travel_costs()
@@ -110,6 +118,7 @@ pub fn system_ai(
     return false;
 }
 
+/// Helper for sorting candidate locations.
 #[derive(PartialEq, Eq, Clone, Copy)]
 struct CandidateScore {
     dist_to_start: i32,
@@ -118,6 +127,7 @@ struct CandidateScore {
 }
 
 impl Ord for CandidateScore {
+    /// Compare on total score, if a tiebreaker, use goal dist as secondary sort.
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         let self_total = self.dist_to_start + self.dist_to_goal + self.dist_to_agent;
         let other_total = other.dist_to_start + other.dist_to_goal + other.dist_to_agent;
@@ -558,8 +568,8 @@ impl LpaStarPather {
         self.compute_shortest_path();
     }
 
-    pub fn get_travel_costs(&self) -> Vec<Vec<i32>> {
-        return self.g.clone();
+    pub fn get_travel_costs(&self) -> &Vec<Vec<i32>> {
+        return &self.g;
     }
 }
 
@@ -604,7 +614,7 @@ mod tests {
         let pather = LpaStarPather::new(start, goal, tile_costs);
 
         assert_eq!(
-            pather.get_travel_costs(),
+            *pather.get_travel_costs(),
             vec![vec![0, 11, 12], vec![1, 12, 13], vec![2, i32::MAX, 14]]
         );
     }
