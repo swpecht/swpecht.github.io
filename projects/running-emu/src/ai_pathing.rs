@@ -8,8 +8,8 @@ use priority_queue::PriorityQueue;
 use crate::{
     get_goal, get_max_point, get_start,
     spatial::{get_entities, Point, SpatialCache},
-    Agent, BackgroundHighlight, FeatureFlags, PathingAlgorithm, Position, Sprite, TargetLocation,
-    Visibility,
+    Agent, BackgroundHighlight, FeatureFlags, Health, PathingAlgorithm, Position, Sprite,
+    TargetLocation, Visibility,
 };
 
 /// Move agents that have a target location.
@@ -326,18 +326,6 @@ pub fn get_path_from_distances(
     return path;
 }
 
-/// Helper function to determine the cost of traversing a given unit
-fn get_tile_cost(tile: char) -> i32 {
-    match tile {
-        '.' => 0,
-        'S' => 0,
-        'G' => 0,
-        '@' => 0,
-        'W' => 50,
-        _ => panic!("Error parsing map, invalid character: {}", &tile),
-    }
-}
-
 /// Return the lowest travel cost matrix for all visible tiles if possible
 ///
 /// None means no path is possible or there isn't tile information
@@ -377,12 +365,21 @@ fn get_travel_costs(start: Point, tile_costs: &Vec<Vec<i32>>) -> Vec<Vec<i32>> {
 fn get_tile_costs(world: &World) -> Vec<Vec<Option<i32>>> {
     let max_p = get_max_point(world);
     let mut tile_costs = vec![vec![None; max_p.x]; max_p.y];
-    for (_, (pos, visible, spr)) in world
-        .query::<(&Position, &Visibility, &Sprite)>()
+
+    // Populate a base map with 0 cost based on visibility
+    for (_, (pos, visible)) in world.query::<(&Position, &Visibility)>().into_iter() {
+        if visible.0 {
+            tile_costs[pos.0.y][pos.0.x] = Some(0);
+        }
+    }
+
+    // Populate costs based on entity health
+    for (_, (pos, visible, health)) in world
+        .query::<(&Position, &Visibility, &Health)>()
         .into_iter()
     {
         if visible.0 {
-            tile_costs[pos.0.y][pos.0.x] = Some(get_tile_cost(spr.0));
+            tile_costs[pos.0.y][pos.0.x] = Some(health.0);
         }
     }
 

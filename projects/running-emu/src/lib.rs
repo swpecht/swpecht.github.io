@@ -154,7 +154,7 @@ fn parse_map(world: &mut World, map: &str) {
                     // Also spawn a visible start position
                     world.spawn((
                         Position(p),
-                        Sprite(c),
+                        Sprite('@'),
                         Visibility(true),
                         Vision(1),
                         Agent,
@@ -162,7 +162,12 @@ fn parse_map(world: &mut World, map: &str) {
                     ));
                     world.spawn((Position(p), Sprite('S'), Visibility(true)))
                 }
-                _ => world.spawn((Position(p), Sprite(c), Visibility(false))), // All others must be found
+                'W' => {
+                    world.spawn((Position(p), Sprite('W'), Visibility(false), Health(50)));
+                    world.spawn((Position(p), Sprite('.'), Visibility(false))) // Spawn empty tile underneath
+                }
+                '.' => world.spawn((Position(p), Sprite(c), Visibility(false))), // All others must be found
+                _ => panic!("Error spawning entities, unknown tile: {}", c),
             };
         }
     }
