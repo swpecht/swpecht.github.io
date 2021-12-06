@@ -10,10 +10,10 @@ use crossterm::{
     style::{Color, ResetColor, SetBackgroundColor},
 };
 use hecs::World;
-use spatial::SpatialCache;
+use spatial::system_update_spatial_cache;
 
 use crate::{
-    ai_pathing::{system_ai, system_path_highlight, system_pathing},
+    ai_pathing::{system_exploration, system_path_highlight, system_pathing},
     spatial::Point,
 };
 
@@ -81,13 +81,11 @@ pub fn run_sim(map: &str, features: FeatureFlags) -> i32 {
     let max_p = get_max_point(&world);
     let mut char_buffer = vec![vec!['?'; max_p.x]; max_p.y];
 
-    let mut spatial_cache = SpatialCache::new(&world);
-
     loop {
         num_steps += 1;
 
         if features.entity_spatial_cache {
-            spatial_cache.update_cache(&world);
+            system_update_spatial_cache(&mut world);
         }
 
         system_vision(&mut world);
@@ -101,14 +99,11 @@ pub fn run_sim(map: &str, features: FeatureFlags) -> i32 {
         if features.render {
             system_render(&char_buffer, &highlight_buffer);
         }
-        if system_ai(&mut world, features, &mut start_pather, &mut goal_pather) {
+        if system_exploration(&mut world, features, &mut start_pather, &mut goal_pather) {
             break;
         }
-        if features.entity_spatial_cache {
-            system_path_highlight(&mut world, Some(&spatial_cache));
-        } else {
-            system_path_highlight(&mut world, None);
-        }
+
+        system_path_highlight(&mut world);
 
         system_pathing(&mut world);
     }

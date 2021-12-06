@@ -7,9 +7,9 @@ use priority_queue::PriorityQueue;
 
 use crate::{
     get_goal, get_max_point, get_start,
-    spatial::{get_entities, Point, SpatialCache},
-    Agent, BackgroundHighlight, FeatureFlags, Health, PathingAlgorithm, Position, Sprite,
-    TargetLocation, Visibility,
+    spatial::{get_entities, Point},
+    Agent, BackgroundHighlight, FeatureFlags, Health, PathingAlgorithm, Position, TargetLocation,
+    Visibility,
 };
 
 /// Move agents that have a target location.
@@ -39,7 +39,7 @@ pub fn system_pathing(world: &mut World) {
 ///
 /// The lowest cost space is always explored next rather than traditional breadth first search.
 /// This ensures that tiles costs always represent the 'cheapest' way to get to the tile.
-pub fn system_ai(
+pub fn system_exploration(
     world: &mut World,
     features: FeatureFlags,
     pather_start: &mut LpaStarPather,
@@ -156,7 +156,7 @@ fn unwrap_tile_costs(tile_costs: &Vec<Vec<Option<i32>>>, default: i32) -> Vec<Ve
 /// Highlight target locations and expected path, useful for debugging
 ///
 /// Only highlights tiles with a sprite
-pub fn system_path_highlight(world: &mut World, spatial_cache: Option<&SpatialCache>) {
+pub fn system_path_highlight(world: &mut World) {
     let mut path_points = Vec::new();
     let mut goal_points = Vec::new();
     let tile_costs = get_tile_costs(world);
@@ -182,7 +182,7 @@ pub fn system_path_highlight(world: &mut World, spatial_cache: Option<&SpatialCa
     }
 
     for p in path_points {
-        let e = get_entities(world, p, spatial_cache);
+        let e = get_entities(world, p);
         let color = match p {
             p if goal_points.contains(&p) => Color::Green,
             _ => Color::Blue,

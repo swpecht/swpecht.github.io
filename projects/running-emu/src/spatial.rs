@@ -1,4 +1,4 @@
-use hecs::{Entity, World};
+use hecs::{Entity, EntityBuilder, World};
 use std::hash::Hash;
 
 use crate::{get_max_point, Position};
@@ -28,38 +28,47 @@ impl SpatialCache {
     pub fn get_entities(&self, point: Point) -> Vec<Entity> {
         return self.entity_lookup[point.y][point.x].clone();
     }
-
-    pub fn update_cache(&mut self, world: &World) {
-        // Clear the chache
-        let width = self.entity_lookup[0].len();
-        let height = self.entity_lookup.len();
-        for y in 0..height {
-            for x in 0..width {
-                self.entity_lookup[y][x].clear();
-            }
-        }
-
-        self.populate_entity_lookup(world);
-    }
 }
 
-pub fn get_entities<'a>(
-    world: &World,
-    p: Point,
-    spatial_cache: Option<&'a SpatialCache>,
-) -> Vec<Entity> {
-    if let Some(cache) = spatial_cache {
-        return cache.get_entities(p);
-    } else {
-        let mut positions = world.query::<&Position>();
-        let mut results = Vec::new();
-        for (id, candidate) in positions.iter() {
-            if candidate.0 == p {
-                results.push(id)
+pub fn system_update_spatial_cache(world: &mut World) {
+    let cache;
+
+    for (_, c) in world.query::<&mut SpatialCache>().iter() {
+        cache = c;
+        // Clear the chache
+        let width = cache.entity_lookup[0].len();
+        let height = cache.entity_lookup.len();
+        for y in 0..height {
+            for x in 0..width {
+                cache.entity_lookup[y][x].clear();
             }
         }
-        return results;
+        cache.populate_entity_lookup(world);
+
+        return;
     }
+
+    let cache = SpatialCache::new(world);
+    let mut builder = EntityBuilder::new();
+    builder.add(cache);
+    // Otherwise we create one if it doesn't exist
+    world.spawn(builder.build());
+}
+
+pub fn get_entities(world: &World, p: Point) -> Vec<Entity> {
+    for (_, cache) in world.query::<&SpatialCache>().iter() {
+        return cache.get_entities(p);
+    }
+
+    // If no cache, need to iterate and find
+    let mut positions = world.query::<&Position>();
+    let mut results = Vec::new();
+    for (id, candidate) in positions.iter() {
+        if candidate.0 == p {
+            results.push(id)
+        }
+    }
+    return results;
 }
 
 /// Point in the game world

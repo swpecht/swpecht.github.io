@@ -1,15 +1,13 @@
-use running_emu::{create_map, run_sim, FeatureFlags};
+use running_emu::{run_sim, FeatureFlags};
 
 fn main() {
     let map = "@..............
-    .WWWWWWWWWWWWW.
-    .W...........W.
-    .W.WWWWWWWWW.W.
-    .W.W.......W.W.
-    .W.WWWWWWW.W.W.
-    .W......GW.W.W.
-    .WWWWWWWWW.W.W.
-    ...........W...";
+    ...............
+    ...............
+    .....WWWWW.....
+    .....W.G.W.....
+    .....WWWWW.....
+    ...............";
 
     // let map = ".@..
     // .WWW
