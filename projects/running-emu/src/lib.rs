@@ -127,7 +127,7 @@ fn parse_map(world: &mut World, map: &str) {
     // calculate width
     for c in map.chars() {
         match c {
-            '.' | 'W' | 'G' | '@' => {
+            '.' | 'W' | 'D' | 'G' | '@' => {
                 tiles[y].push(c);
                 x += 1
             }
@@ -155,7 +155,7 @@ fn parse_map(world: &mut World, map: &str) {
                     // Also spawn a visible start position
                     world.spawn((
                         Position(p),
-                        Sprite('@'),
+                        Sprite(c),
                         Visibility(true),
                         Vision(1),
                         Agent,
@@ -165,7 +165,11 @@ fn parse_map(world: &mut World, map: &str) {
                     world.spawn((Position(p), Sprite('S'), Visibility(true)))
                 }
                 'W' => {
-                    world.spawn((Position(p), Sprite('W'), Visibility(false), Health(50)));
+                    world.spawn((Position(p), Sprite(c), Visibility(false), Health(50)));
+                    world.spawn((Position(p), Sprite('.'), Visibility(false))) // Spawn empty tile underneath
+                }
+                'D' => {
+                    world.spawn((Position(p), Sprite(c), Visibility(false), Health(25)));
                     world.spawn((Position(p), Sprite('.'), Visibility(false))) // Spawn empty tile underneath
                 }
                 '.' => world.spawn((Position(p), Sprite(c), Visibility(false))), // All others must be found
@@ -427,10 +431,7 @@ mod test {
             Attack(1),
         ));
         world.spawn((Health(10), Position(Point { x: 1, y: 0 }), Visibility(true)));
-        world.spawn((
-            Position(Point { x: 1, y: 0 }),
-            Visibility(true),
-        ));
+        world.spawn((Position(Point { x: 1, y: 0 }), Visibility(true)));
         world.spawn((
             Sprite('G'),
             Position(Point { x: 2, y: 0 }),
