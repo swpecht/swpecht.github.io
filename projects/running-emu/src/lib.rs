@@ -4,12 +4,13 @@ use std::{
     io::{stdout, Write},
 };
 
+use ai::system_defense_ai;
 use ai_pathing::{get_goal_lpapather, get_start_lpapather, system_print_tile_costs};
 use crossterm::{
     execute,
     style::{Color, ResetColor, SetBackgroundColor},
 };
-use hecs::World;
+use hecs::{Entity, World};
 use spatial::system_update_spatial_cache;
 
 use crate::{
@@ -17,6 +18,7 @@ use crate::{
     spatial::Point,
 };
 
+pub mod ai;
 pub mod ai_pathing;
 pub mod spatial;
 
@@ -31,7 +33,10 @@ pub struct Vision(pub usize);
 pub struct TargetLocation(pub Option<Point>);
 pub struct AttackerAgent;
 pub struct Health(pub i32);
-pub struct Damage(pub i32);
+pub struct Damage {
+    pub amount: i32,
+    pub from: Entity,
+}
 /// Damage a unit can do
 pub struct Attack {
     pub damage: i32,
@@ -91,13 +96,15 @@ fn run_sim(world: &mut World, features: FeatureFlags) -> i32 {
     let max_p = get_max_point(&world);
     let mut char_buffer = vec![vec!['?'; max_p.x]; max_p.y];
 
+    // Bootstrap
+    system_vision(world);
+
     loop {
         num_steps += 1;
 
         if features.entity_spatial_cache {
             system_update_spatial_cache(world);
         }
-        system_vision(world);
 
         if system_exploration(world, features, &mut start_pather, &mut goal_pather) {
             break;
@@ -118,6 +125,8 @@ fn run_sim(world: &mut World, features: FeatureFlags) -> i32 {
         }
 
         system_ai_action(world);
+        system_defense_ai(world);
+        system_vision(world);
         system_health(world); // Can despawn enemies so, should be run last
     }
     return num_steps;
@@ -169,7 +178,7 @@ fn parse_map(world: &mut World, map: &str) {
                             damage: 1,
                             range: 1,
                         },
-                        Health(50),
+                        Health(500),
                     ));
                     world.spawn((Position(p), Sprite('S'), Visibility(true)))
                 }
@@ -185,11 +194,11 @@ fn parse_map(world: &mut World, map: &str) {
                     world.spawn((
                         Position(p),
                         Sprite(c),
-                        Visibility(true),
+                        Visibility(false),
                         Health(5),
                         Attack {
                             range: 2,
-                            damage: 10,
+                            damage: 5,
                         },
                     ));
                     world.spawn((Position(p), Sprite('.'), Visibility(false))) // Spawn empty tile underneath
@@ -266,6 +275,7 @@ pub fn system_render(output_char: &Vec<Vec<char>>, output_highlight: &Vec<Vec<Op
 }
 
 pub fn system_vision(world: &mut World) {
+    // Make entities visible based on line of sight
     let mut ids = Vec::new();
     for (id, (_, _)) in world.query_mut::<(&Position, &Vision)>() {
         ids.push(id);
@@ -279,6 +289,16 @@ pub fn system_vision(world: &mut World) {
                 visibility.0 = true;
             }
         }
+    }
+
+    // Make entities visible based on attacking
+    let mut attackers = Vec::new();
+    for (_, dmg) in world.query_mut::<&Damage>() {
+        attackers.push(dmg.from);
+    }
+
+    for attacker in attackers {
+        world.insert_one(attacker, Visibility(true)).unwrap();
     }
 }
 
@@ -344,7 +364,7 @@ pub fn system_health(world: &mut World) {
     let mut entity_despawn = Vec::new();
 
     for (e, (health, dmg)) in world.query_mut::<(&mut Health, &Damage)>() {
-        health.0 = health.0 - dmg.0;
+        health.0 = health.0 - dmg.amount;
 
         if health.0 <= 0 {
             entity_despawn.push(e);
@@ -419,17 +439,33 @@ mod test {
     #[test]
     fn test_health_system() {
         let mut world = hecs::World::new();
+        let attacker = world.spawn(());
 
-        let e = world.spawn((Health(10), Damage(5)));
+        let e = world.spawn((
+            Health(10),
+            Damage {
+                amount: 5,
+                from: attacker,
+            },
+        ));
+        assert_eq!(world.len(), 2);
         system_health(&mut world);
         assert_eq!(world.get::<Health>(e).unwrap().0, 5);
         system_health(&mut world);
         // No more damage done, it was consumed
         assert_eq!(world.get::<Health>(e).unwrap().0, 5);
-        world.insert_one(e, Damage(10)).unwrap();
+        world
+            .insert_one(
+                e,
+                Damage {
+                    amount: 10,
+                    from: attacker,
+                },
+            )
+            .unwrap();
 
         system_health(&mut world);
-        assert_eq!(world.len(), 0);
+        assert_eq!(world.len(), 1);
     }
 
     #[test]

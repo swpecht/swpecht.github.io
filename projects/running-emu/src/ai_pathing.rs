@@ -26,7 +26,7 @@ pub fn system_ai_action(world: &mut World) {
 
     // Agents that can attack, attack if a health entity in front, otherwise they move
     let mut attacks_to_apply = Vec::new();
-    for (_, (pos, target, attack)) in
+    for (e, (pos, target, attack)) in
         world.query_mut::<(&mut Position, &mut TargetLocation, &Attack)>()
     {
         if target.0.is_none() {
@@ -36,7 +36,13 @@ pub fn system_ai_action(world: &mut World) {
         let path = get_path(pos.0, target.0.unwrap(), &tile_costs).unwrap();
         let target_move = path[1];
         if let Some((target, _)) = health_entities.iter().find(|(_, p)| *p == target_move) {
-            attacks_to_apply.push((target, attack.damage));
+            attacks_to_apply.push((
+                target,
+                Damage {
+                    amount: attack.damage,
+                    from: e,
+                },
+            ));
         } else {
             // Nothing in the way, can move
             pos.0 = target_move;
@@ -48,7 +54,7 @@ pub fn system_ai_action(world: &mut World) {
     }
 
     for (target, dmg) in attacks_to_apply {
-        world.insert_one(*target, Damage(dmg)).unwrap();
+        world.insert_one(*target, dmg).unwrap();
     }
 }
 
@@ -87,10 +93,6 @@ pub fn system_exploration(
     // An explored location will not be chosen. The scores for squares have the following form:
     //  Score(point) = cost to get there from start + distance from the agent + cost to get to goal assuming un-explored squares have only travel cost
     if target_loc.is_none() || cur_loc == target_loc.unwrap() {
-        if cur_loc == (Point { x: 12, y: 7 }) {
-            println!("BREAK")
-        }
-
         let candidate_points = get_edge_points(&tile_costs, goal);
 
         // Assume unseen tiles are infinite cost

@@ -6,7 +6,7 @@ fn main() {
     ...............
     T.....T........
     ...............
-    ..............T
+    .............TT
     ...............
     ..............G";
 
@@ -19,7 +19,7 @@ fn main() {
 
     let mut features = FeatureFlags::new();
     features.write_agent_visible_map = false;
-    features.print_tile_costs = true;
+    features.print_tile_costs = false;
     let num_steps = run_sim_from_map(map, features);
     println!("Completed in {} steps", num_steps);
 }
