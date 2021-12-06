@@ -4,7 +4,7 @@ use std::{
     io::{stdout, Write},
 };
 
-use ai_pathing::{get_goal_lpapather, get_start_lpapather};
+use ai_pathing::{get_goal_lpapather, get_start_lpapather, system_print_tile_costs};
 use crossterm::{
     execute,
     style::{Color, ResetColor, SetBackgroundColor},
@@ -29,11 +29,14 @@ pub struct BackgroundHighlight(pub Color);
 /// How far an entity can see.
 pub struct Vision(pub usize);
 pub struct TargetLocation(pub Option<Point>);
-pub struct Agent;
+pub struct AttackerAgent;
 pub struct Health(pub i32);
 pub struct Damage(pub i32);
 /// Damage a unit can do
-pub struct Attack(pub i32);
+pub struct Attack {
+    pub damage: i32,
+    pub range: usize,
+}
 
 #[derive(Clone, Copy)]
 pub struct FeatureFlags {
@@ -47,6 +50,7 @@ pub struct FeatureFlags {
     /// Write the agent visible map to `output.txt`
     pub write_agent_visible_map: bool,
     pub pathing_algorithm: PathingAlgorithm,
+    pub print_tile_costs: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -63,6 +67,7 @@ impl FeatureFlags {
             travel_matrix_for_goal_distance: true,
             write_agent_visible_map: false,
             pathing_algorithm: PathingAlgorithm::LpaStar,
+            print_tile_costs: false,
         };
     }
 }
@@ -92,28 +97,29 @@ fn run_sim(world: &mut World, features: FeatureFlags) -> i32 {
         if features.entity_spatial_cache {
             system_update_spatial_cache(world);
         }
-
         system_vision(world);
-        build_char_output(&world, &mut char_buffer);
-        let highlight_buffer = build_highlight_output(world);
 
-        if features.write_agent_visible_map {
-            write_state(&char_buffer, &mut output_file).expect("error writing state");
-        }
-
-        if features.render {
-            system_render(&char_buffer, &highlight_buffer);
-        }
         if system_exploration(world, features, &mut start_pather, &mut goal_pather) {
             break;
         }
 
         system_path_highlight(world);
+        build_char_output(&world, &mut char_buffer);
+        let highlight_buffer = build_highlight_output(world);
+        if features.write_agent_visible_map {
+            write_state(&char_buffer, &mut output_file).expect("error writing state");
+        }
+        if features.render {
+            system_render(&char_buffer, &highlight_buffer);
+        }
+
+        if features.print_tile_costs {
+            system_print_tile_costs(world);
+        }
 
         system_ai_action(world);
-        system_health(world);
+        system_health(world); // Can despawn enemies so, should be run last
     }
-    // print_travel_cost_matrix(&world);
     return num_steps;
 }
 
@@ -127,10 +133,6 @@ fn parse_map(world: &mut World, map: &str) {
     // calculate width
     for c in map.chars() {
         match c {
-            '.' | 'W' | 'D' | 'G' | '@' => {
-                tiles[y].push(c);
-                x += 1
-            }
             ' ' => {}
             '\n' => {
                 if !width.is_none() && width.unwrap() != x {
@@ -141,7 +143,10 @@ fn parse_map(world: &mut World, map: &str) {
                 y += 1;
                 tiles.push(vec![])
             }
-            _ => panic!("Error parsing map, invalid character: {}", c),
+            _ => {
+                tiles[y].push(c);
+                x += 1
+            }
         }
     }
 
@@ -158,9 +163,13 @@ fn parse_map(world: &mut World, map: &str) {
                         Sprite(c),
                         Visibility(true),
                         Vision(1),
-                        Agent,
+                        AttackerAgent,
                         TargetLocation(None),
-                        Attack(1),
+                        Attack {
+                            damage: 1,
+                            range: 1,
+                        },
+                        Health(50),
                     ));
                     world.spawn((Position(p), Sprite('S'), Visibility(true)))
                 }
@@ -170,6 +179,19 @@ fn parse_map(world: &mut World, map: &str) {
                 }
                 'D' => {
                     world.spawn((Position(p), Sprite(c), Visibility(false), Health(25)));
+                    world.spawn((Position(p), Sprite('.'), Visibility(false))) // Spawn empty tile underneath
+                }
+                'T' => {
+                    world.spawn((
+                        Position(p),
+                        Sprite(c),
+                        Visibility(true),
+                        Health(5),
+                        Attack {
+                            range: 2,
+                            damage: 10,
+                        },
+                    ));
                     world.spawn((Position(p), Sprite('.'), Visibility(false))) // Spawn empty tile underneath
                 }
                 '.' => world.spawn((Position(p), Sprite(c), Visibility(false))), // All others must be found
@@ -380,9 +402,8 @@ mod test {
 
         let mut features = FeatureFlags::new();
         features.render = false;
-        features.write_agent_visible_map = true;
         let num_steps = run_sim_from_map(map, features);
-        assert_eq!(num_steps, 159)
+        assert_eq!(num_steps, 375)
     }
 
     #[test]
@@ -390,8 +411,7 @@ mod test {
         let map = &&create_map(10);
 
         let mut features = FeatureFlags::new();
-        features.render = false;
-        features.write_agent_visible_map = true;
+        features.render = true;
         let num_steps = run_sim_from_map(map, features);
         assert_eq!(num_steps, 19)
     }
@@ -425,10 +445,12 @@ mod test {
         world.spawn((
             Position(Point { x: 0, y: 0 }),
             Visibility(true),
-            Vision(1),
-            Agent,
+            AttackerAgent,
             TargetLocation(None),
-            Attack(1),
+            Attack {
+                damage: 1,
+                range: 1,
+            },
         ));
         world.spawn((Health(10), Position(Point { x: 1, y: 0 }), Visibility(true)));
         world.spawn((Position(Point { x: 1, y: 0 }), Visibility(true)));

@@ -1,4 +1,4 @@
-use std::cmp::{min, Reverse};
+use std::cmp::{max, min, Reverse};
 
 use crossterm::style::Color;
 use hecs::World;
@@ -8,8 +8,8 @@ use priority_queue::PriorityQueue;
 use crate::{
     get_goal, get_max_point, get_start,
     spatial::{get_entities, Point},
-    Agent, Attack, BackgroundHighlight, Damage, FeatureFlags, Health, PathingAlgorithm, Position,
-    TargetLocation, Visibility,
+    Attack, AttackerAgent, BackgroundHighlight, Damage, FeatureFlags, Health, PathingAlgorithm,
+    Position, TargetLocation, Visibility,
 };
 
 /// Move agents that have a target location and attack if needed.
@@ -29,13 +29,14 @@ pub fn system_ai_action(world: &mut World) {
     for (_, (pos, target, attack)) in
         world.query_mut::<(&mut Position, &mut TargetLocation, &Attack)>()
     {
-        if target.0.is_none() || target.0.unwrap() == pos.0 {
+        if target.0.is_none() {
             continue;
         }
+
         let path = get_path(pos.0, target.0.unwrap(), &tile_costs).unwrap();
         let target_move = path[1];
         if let Some((target, _)) = health_entities.iter().find(|(_, p)| *p == target_move) {
-            attacks_to_apply.push((target, attack.0));
+            attacks_to_apply.push((target, attack.damage));
         } else {
             // Nothing in the way, can move
             pos.0 = target_move;
@@ -63,7 +64,10 @@ pub fn system_exploration(
     pather_start: &mut LpaStarPather,
     pather_goal: &mut LpaStarPather,
 ) -> bool {
-    let agent_ids = world.query_mut::<&Agent>().into_iter().collect_vec();
+    let agent_ids = world
+        .query_mut::<&AttackerAgent>()
+        .into_iter()
+        .collect_vec();
     let agent_id = agent_ids[0].0; // Since only 1 agent
 
     let cur_loc = world.get::<Position>(agent_id).unwrap().0;
@@ -83,6 +87,10 @@ pub fn system_exploration(
     // An explored location will not be chosen. The scores for squares have the following form:
     //  Score(point) = cost to get there from start + distance from the agent + cost to get to goal assuming un-explored squares have only travel cost
     if target_loc.is_none() || cur_loc == target_loc.unwrap() {
+        if cur_loc == (Point { x: 12, y: 7 }) {
+            println!("BREAK")
+        }
+
         let candidate_points = get_edge_points(&tile_costs, goal);
 
         // Assume unseen tiles are infinite cost
@@ -145,14 +153,19 @@ struct CandidateScore {
 }
 
 impl Ord for CandidateScore {
-    /// Compare on total score, if a tiebreaker, use goal dist as secondary sort.
+    /// Compare on dist to goal + dist to start, if a tiebreaker, use goal dist as secondary sort, if still tied, used agent dist
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let self_total = self.dist_to_start + self.dist_to_goal + self.dist_to_agent;
-        let other_total = other.dist_to_start + other.dist_to_goal + other.dist_to_agent;
+        let self_total = self.dist_to_start + self.dist_to_goal;
+        let other_total = other
+            .dist_to_start
+            .checked_add(other.dist_to_goal)
+            .unwrap_or(i32::MAX);
         if self_total != other_total {
             return self_total.cmp(&other_total);
-        } else {
+        } else if self.dist_to_goal != other.dist_to_goal {
             return self.dist_to_goal.cmp(&other.dist_to_goal);
+        } else {
+            return self.dist_to_agent.cmp(&other.dist_to_agent);
         }
     }
 }
@@ -392,8 +405,10 @@ fn get_tile_costs(world: &World) -> Vec<Vec<Option<i32>>> {
     }
 
     // Populate costs based on entity health
+    // Exlcude any agent entities from this calculation
     for (_, (pos, visible, health)) in world
         .query::<(&Position, &Visibility, &Health)>()
+        .without::<AttackerAgent>()
         .into_iter()
     {
         if visible.0 {
@@ -401,7 +416,48 @@ fn get_tile_costs(world: &World) -> Vec<Vec<Option<i32>>> {
         }
     }
 
+    // Populate based on damage in the area
+    // Exclude any agent entities from the calculation
+    for (_, (pos, visible, attack)) in world
+        .query::<(&Position, &Visibility, &Attack)>()
+        .without::<AttackerAgent>()
+        .into_iter()
+    {
+        if visible.0 {
+            for y in max(0, pos.0.y as i32 - attack.range as i32) as usize
+                ..min(max_p.y, pos.0.y + attack.range + 1)
+            {
+                for x in max(0, pos.0.x as i32 - attack.range as i32) as usize
+                    ..min(max_p.x, pos.0.x + attack.range + 1)
+                {
+                    let p = Point { x: x, y: y };
+
+                    if pos.0.dist(&p) > attack.range as i32 {
+                        continue; // Out of range
+                    }
+
+                    let base = tile_costs[p.y][p.x].unwrap_or(0);
+                    tile_costs[p.y][p.x] = Some(base + attack.damage)
+                }
+            }
+        }
+    }
+
+    // Goal is always 0 to move to
+    let goal = get_goal(world);
+    tile_costs[goal.y][goal.x] = Some(0);
+
     return tile_costs;
+}
+
+pub fn system_print_tile_costs(world: &World) {
+    let costs = get_tile_costs(world);
+    for y in 0..costs.len() {
+        for x in 0..costs[0].len() {
+            print! {"{}\t", costs[y][x].unwrap_or(-1)}
+        }
+        println!("")
+    }
 }
 
 /// Implementation for LPA*, based on:

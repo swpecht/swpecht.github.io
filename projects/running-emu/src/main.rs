@@ -1,23 +1,25 @@
-use running_emu::{run_sim_from_map, FeatureFlags};
+use running_emu::{create_map, run_sim_from_map, FeatureFlags};
 
 fn main() {
     let map = "@..............
     ...............
     ...............
-    .....WWDWW.....
-    .....W.G.W.....
-    .....WWWWW.....
-    ...............";
+    T.....T........
+    ...............
+    ..............T
+    ...............
+    ..............G";
 
     // let map = ".@..
+    // DWWW
     // .WWW
-    // .WGW
-    // ....";
+    // ...G";
 
-    // let map = &create_map(10);
+    // let map = &create_map(5);
 
     let mut features = FeatureFlags::new();
-    features.write_agent_visible_map = true;
+    features.write_agent_visible_map = false;
+    features.print_tile_costs = true;
     let num_steps = run_sim_from_map(map, features);
     println!("Completed in {} steps", num_steps);
 }
