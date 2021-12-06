@@ -406,18 +406,6 @@ fn get_tile_costs(world: &World) -> Vec<Vec<Option<i32>>> {
         }
     }
 
-    // Populate costs based on entity health
-    // Exlcude any agent entities from this calculation
-    for (_, (pos, visible, health)) in world
-        .query::<(&Position, &Visibility, &Health)>()
-        .without::<AttackerAgent>()
-        .into_iter()
-    {
-        if visible.0 {
-            tile_costs[pos.0.y][pos.0.x] = Some(health.0);
-        }
-    }
-
     // Populate based on damage in the area
     // Exclude any agent entities from the calculation
     for (_, (pos, visible, attack)) in world
@@ -442,6 +430,20 @@ fn get_tile_costs(world: &World) -> Vec<Vec<Option<i32>>> {
                     tile_costs[p.y][p.x] = Some(base + attack.damage)
                 }
             }
+        }
+    }
+
+    // Scale any damage areas by health of the unit to move through
+    // Exlcude any agent entities from this calculation
+    for (_, (pos, visible, health)) in world
+        .query::<(&Position, &Visibility, &Health)>()
+        .without::<AttackerAgent>()
+        .into_iter()
+    {
+        if visible.0 {
+            let damage = tile_costs[pos.0.y][pos.0.x].unwrap_or(1);
+            // Add some cost, even if no damage
+            tile_costs[pos.0.y][pos.0.x] = Some(damage + health.0);
         }
     }
 
