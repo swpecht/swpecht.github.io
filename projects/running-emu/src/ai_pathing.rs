@@ -8,28 +8,46 @@ use priority_queue::PriorityQueue;
 use crate::{
     get_goal, get_max_point, get_start,
     spatial::{get_entities, Point},
-    Agent, BackgroundHighlight, FeatureFlags, Health, PathingAlgorithm, Position, TargetLocation,
-    Visibility,
+    Agent, Attack, BackgroundHighlight, Damage, FeatureFlags, Health, PathingAlgorithm, Position,
+    TargetLocation, Visibility,
 };
 
-/// Move agents that have a target location.
+/// Move agents that have a target location and attack if needed.
 ///
 /// This system handles the pathfinding part of the AI. It doesn't select where agents should go
 /// only how to get there.
-pub fn system_pathing(world: &mut World) {
+pub fn system_ai_action(world: &mut World) {
     let tile_costs = get_tile_costs(world);
+    let mut health_entities = Vec::new();
 
-    for (_, (pos, target)) in world.query_mut::<(&mut Position, &mut TargetLocation)>() {
+    for (e, (pos, _)) in world.query_mut::<(&Position, &Health)>() {
+        health_entities.push((e, pos.0))
+    }
+
+    // Agents that can attack, attack if a health entity in front, otherwise they move
+    let mut attacks_to_apply = Vec::new();
+    for (_, (pos, target, attack)) in
+        world.query_mut::<(&mut Position, &mut TargetLocation, &Attack)>()
+    {
         if target.0.is_none() || target.0.unwrap() == pos.0 {
             continue;
         }
-
         let path = get_path(pos.0, target.0.unwrap(), &tile_costs).unwrap();
-        pos.0 = path[1];
+        let target_move = path[1];
+        if let Some((target, _)) = health_entities.iter().find(|(_, p)| *p == target_move) {
+            attacks_to_apply.push((target, attack.0));
+        } else {
+            // Nothing in the way, can move
+            pos.0 = target_move;
+        }
 
         if target.0.unwrap() == pos.0 {
             target.0 = None // Reach goal
         }
+    }
+
+    for (target, dmg) in attacks_to_apply {
+        world.insert_one(*target, Damage(dmg)).unwrap();
     }
 }
 

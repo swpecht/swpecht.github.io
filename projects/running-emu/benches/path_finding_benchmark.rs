@@ -19,17 +19,17 @@ fn criterion_benchmark(c: &mut Criterion) {
     features.pathing_algorithm = PathingAlgorithm::LpaStar;
 
     c.bench_function("find path spiral", |b| {
-        b.iter(|| running_emu::run_sim(black_box(&map), features))
+        b.iter(|| running_emu::run_sim_from_map(black_box(&map), features))
     });
 
     let large_map = create_map(20);
     c.bench_function("find path 20x20", |b| {
-        b.iter(|| running_emu::run_sim(black_box(&large_map), features))
+        b.iter(|| running_emu::run_sim_from_map(black_box(&large_map), features))
     });
 
     let large_map = create_map(100);
     c.bench_function("find path 100x100", |b| {
-        b.iter(|| running_emu::run_sim(black_box(&large_map), features))
+        b.iter(|| running_emu::run_sim_from_map(black_box(&large_map), features))
     });
 }
 

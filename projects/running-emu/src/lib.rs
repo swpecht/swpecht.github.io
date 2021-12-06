@@ -13,7 +13,7 @@ use hecs::World;
 use spatial::system_update_spatial_cache;
 
 use crate::{
-    ai_pathing::{system_exploration, system_path_highlight, system_pathing},
+    ai_pathing::{system_ai_action, system_exploration, system_path_highlight},
     spatial::Point,
 };
 
@@ -32,6 +32,8 @@ pub struct TargetLocation(pub Option<Point>);
 pub struct Agent;
 pub struct Health(pub i32);
 pub struct Damage(pub i32);
+/// Damage a unit can do
+pub struct Attack(pub i32);
 
 #[derive(Clone, Copy)]
 pub struct FeatureFlags {
@@ -68,10 +70,13 @@ impl FeatureFlags {
 /// Returns the cost to reach the goal.
 ///
 /// Main entry point for running a simulation
-pub fn run_sim(map: &str, features: FeatureFlags) -> i32 {
+pub fn run_sim_from_map(map: &str, features: FeatureFlags) -> i32 {
     let mut world = hecs::World::new();
     parse_map(&mut world, map);
+    return run_sim(&mut world, features);
+}
 
+fn run_sim(world: &mut World, features: FeatureFlags) -> i32 {
     let mut num_steps = 0;
 
     let mut output_file = File::create("output.txt").unwrap();
@@ -85,12 +90,12 @@ pub fn run_sim(map: &str, features: FeatureFlags) -> i32 {
         num_steps += 1;
 
         if features.entity_spatial_cache {
-            system_update_spatial_cache(&mut world);
+            system_update_spatial_cache(world);
         }
 
-        system_vision(&mut world);
+        system_vision(world);
         build_char_output(&world, &mut char_buffer);
-        let highlight_buffer = build_highlight_output(&mut world);
+        let highlight_buffer = build_highlight_output(world);
 
         if features.write_agent_visible_map {
             write_state(&char_buffer, &mut output_file).expect("error writing state");
@@ -99,13 +104,14 @@ pub fn run_sim(map: &str, features: FeatureFlags) -> i32 {
         if features.render {
             system_render(&char_buffer, &highlight_buffer);
         }
-        if system_exploration(&mut world, features, &mut start_pather, &mut goal_pather) {
+        if system_exploration(world, features, &mut start_pather, &mut goal_pather) {
             break;
         }
 
-        system_path_highlight(&mut world);
+        system_path_highlight(world);
 
-        system_pathing(&mut world);
+        system_ai_action(world);
+        system_health(world);
     }
     // print_travel_cost_matrix(&world);
     return num_steps;
@@ -154,6 +160,7 @@ fn parse_map(world: &mut World, map: &str) {
                         Vision(1),
                         Agent,
                         TargetLocation(None),
+                        Attack(1),
                     ));
                     world.spawn((Position(p), Sprite('S'), Visibility(true)))
                 }
@@ -370,7 +377,7 @@ mod test {
         let mut features = FeatureFlags::new();
         features.render = false;
         features.write_agent_visible_map = true;
-        let num_steps = run_sim(map, features);
+        let num_steps = run_sim_from_map(map, features);
         assert_eq!(num_steps, 159)
     }
 
@@ -381,7 +388,7 @@ mod test {
         let mut features = FeatureFlags::new();
         features.render = false;
         features.write_agent_visible_map = true;
-        let num_steps = run_sim(map, features);
+        let num_steps = run_sim_from_map(map, features);
         assert_eq!(num_steps, 19)
     }
 
@@ -399,5 +406,41 @@ mod test {
 
         system_health(&mut world);
         assert_eq!(world.len(), 0);
+    }
+
+    #[test]
+    fn test_attacking() {
+        // Map of:
+        // @WG
+        let mut world = hecs::World::new();
+        world.spawn((
+            Sprite('S'),
+            Position(Point { x: 0, y: 0 }),
+            Visibility(true),
+        ));
+        world.spawn((
+            Position(Point { x: 0, y: 0 }),
+            Visibility(true),
+            Vision(1),
+            Agent,
+            TargetLocation(None),
+            Attack(1),
+        ));
+        world.spawn((Health(10), Position(Point { x: 1, y: 0 }), Visibility(true)));
+        world.spawn((
+            Position(Point { x: 1, y: 0 }),
+            Visibility(true),
+        ));
+        world.spawn((
+            Sprite('G'),
+            Position(Point { x: 2, y: 0 }),
+            Visibility(true),
+        ));
+
+        let mut features = FeatureFlags::new();
+        features.render = false;
+        features.write_agent_visible_map = true;
+        let num_steps = run_sim(&mut world, features);
+        assert_eq!(num_steps, 13)
     }
 }
