@@ -18,7 +18,7 @@ fn main() {
     .WWWWWWWWW.W.W.
     ...........W...";
 
-    // let _map = &create_map(5);
+    let _map = &create_map(5);
 
     let mut features = FeatureFlags::new();
     features.write_agent_visible_map = false;
