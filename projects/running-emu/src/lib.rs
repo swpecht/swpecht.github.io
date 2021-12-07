@@ -423,7 +423,7 @@ mod test {
         let mut features = FeatureFlags::new();
         features.render = false;
         let num_steps = run_sim_from_map(map, features);
-        assert_eq!(num_steps, 375)
+        assert_eq!(num_steps, 459)
     }
 
     #[test]
@@ -431,7 +431,7 @@ mod test {
         let map = &&create_map(10);
 
         let mut features = FeatureFlags::new();
-        features.render = true;
+        features.render = false;
         let num_steps = run_sim_from_map(map, features);
         assert_eq!(num_steps, 19)
     }

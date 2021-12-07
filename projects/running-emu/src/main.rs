@@ -8,12 +8,17 @@ fn main() {
     ...WWWWWWW.....
     ...............";
 
-    // let map = ".@..
-    // DWWW
-    // .WWW
-    // ...G";
+    let map = "@..............
+    .WWWWWWWWWWWWW.
+    .W...........W.
+    .W.WWWWWWWWW.W.
+    .W.W.......W.W.
+    .W.WWWWWWW.W.W.
+    .W......GW.W.W.
+    .WWWWWWWWW.W.W.
+    ...........W...";
 
-    // let map = &create_map(5);
+    let map = &create_map(5);
 
     let mut features = FeatureFlags::new();
     features.write_agent_visible_map = false;
