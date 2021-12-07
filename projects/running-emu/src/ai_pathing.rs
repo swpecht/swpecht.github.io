@@ -1,6 +1,6 @@
 use std::{
     cmp::{max, min, Reverse},
-    collections::{hash_map::Iter, HashMap},
+    collections::{HashMap, HashSet},
 };
 
 use crossterm::style::Color;
@@ -365,10 +365,10 @@ fn get_travel_costs(start: Point, tile_costs: &CostMap) -> Vec<Vec<i32>> {
 /// Underlying datastructure used for path finding
 #[derive(Debug)]
 struct CostMap {
-    adjacency_list: HashMap<Point, HashMap<Point, i32>>,
+    /// Vector of the list of neighbors, indexed as `x + y * height`
+    adjacency_list: Vec<Vec<(Point, i32)>>,
     pub width: usize,
     pub height: usize,
-    _empty_map: HashMap<Point, i32>, // For returning when no neighbors
 }
 
 #[derive(PartialEq, Eq)]
@@ -380,22 +380,23 @@ enum InvisibleTileTreatment {
 impl CostMap {
     fn from_world(world: &World, tile_treatment: InvisibleTileTreatment) -> Self {
         let max_p = get_max_point(world);
+        let width = max_p.x;
+        let height = max_p.y;
 
         let mut g = CostMap {
-            adjacency_list: HashMap::new(),
+            adjacency_list: vec![Vec::with_capacity(4); width * height],
             width: max_p.x,
             height: max_p.y,
-            _empty_map: HashMap::new(),
         };
 
         let max_p = get_max_point(world);
 
-        let visible_tiles = world
+        let visible_tiles: HashSet<Point> = world
             .query::<(&Position, &Visibility)>()
             .into_iter()
             .filter(|(_, (_, vis))| vis.0)
             .map(|(_, (pos, _))| pos.0)
-            .collect_vec();
+            .collect();
 
         // Build the baseline adjacency list, if the node is visible, it can be moved to by neigbors in 1 step
         for (_, (pos, visible)) in world.query::<(&Position, &Visibility)>().into_iter() {
@@ -406,14 +407,7 @@ impl CostMap {
                     {
                         continue;
                     }
-
-                    if let Some(list) = g.adjacency_list.get_mut(&n) {
-                        list.insert(pos.0, 1);
-                    } else {
-                        let mut map = HashMap::new();
-                        map.insert(pos.0, 1);
-                        g.adjacency_list.insert(n, map);
-                    }
+                    g.set_cost(n, pos.0, 1);
                 }
             }
         }
@@ -424,6 +418,7 @@ impl CostMap {
             .without::<AttackerAgent>()
             .into_iter()
         {
+            // Must be visible to get this info
             if visible.0 {
                 for n in get_neighbors(pos.0, max_p.x, max_p.y) {
                     if !visible_tiles.contains(&n)
@@ -431,14 +426,7 @@ impl CostMap {
                     {
                         continue;
                     }
-
-                    if let Some(list) = g.adjacency_list.get_mut(&n) {
-                        list.insert(pos.0, health.0);
-                    } else {
-                        let mut map = HashMap::new();
-                        map.insert(pos.0, health.0);
-                        g.adjacency_list.insert(n, map);
-                    }
+                    g.set_cost(n, pos.0, health.0);
                 }
             }
         }
@@ -447,11 +435,13 @@ impl CostMap {
     }
 
     fn _from_vec(vec: &Vec<Vec<i32>>) -> Self {
+        let width = vec[0].len();
+        let height = vec.len();
+
         let mut g = CostMap {
-            adjacency_list: HashMap::new(),
-            width: vec[0].len(),
-            height: vec.len(),
-            _empty_map: HashMap::new(),
+            adjacency_list: vec![Vec::with_capacity(4); width * height],
+            width: width,
+            height: height,
         };
 
         let width = vec[0].len();
@@ -464,13 +454,7 @@ impl CostMap {
                     // Check if connection
                     let mut cost = vec[y][x];
                     cost = max(cost, 0) + 1; // At least 1 cost to move
-                    if let Some(list) = g.adjacency_list.get_mut(&n) {
-                        list.insert(p, cost);
-                    } else {
-                        let mut map = HashMap::new();
-                        map.insert(p, cost);
-                        g.adjacency_list.insert(n, map);
-                    }
+                    g.set_cost(n, p, cost);
                 }
             }
         }
@@ -478,36 +462,48 @@ impl CostMap {
         return g;
     }
 
+    fn get_neighbors_mut(&mut self, p: Point) -> &mut Vec<(Point, i32)> {
+        return &mut self.adjacency_list[p.x + p.y * self.width];
+    }
+
     /// Returns a list of neighbors and the cost to move to each
-    fn get_neighbors(&self, p: Point) -> Iter<Point, i32> {
-        if let Some(neighbors) = self.adjacency_list.get(&p) {
-            neighbors.iter()
-        } else {
-            return self._empty_map.iter();
-        }
+    fn get_neighbors(&self, p: Point) -> &Vec<(Point, i32)> {
+        return &self.adjacency_list[p.x + p.y * self.width];
     }
 
     /// Get the cost to move from one node to another
     fn get_cost(&self, from: Point, to: Point) -> Option<i32> {
-        let neighbors = self.adjacency_list.get(&from)?;
-        let v = neighbors.get(&to)?;
+        let neighbors = &self.get_neighbors(from);
+        let (_, v) = neighbors.iter().find(|(p, _)| *p == to)?;
         return Some(*v);
+    }
+
+    /// Sets the transition cost
+    fn set_cost(&mut self, from: Point, to: Point, cost: i32) {
+        let neighbors = self.get_neighbors_mut(from);
+        if let Some(cur_entry) = neighbors.iter().position(|(p, _)| *p == to) {
+            neighbors[cur_entry] = (to, cost)
+        } else {
+            neighbors.push((to, cost))
+        }
+
+        assert!(neighbors.len() <= 4); // Shouldn't ever have more than 4 neighbors
     }
 
     /// Update to match another, and returns the nodes
     /// that have changed, this will add new nodes, it won't remove previous ones
     pub fn update(&mut self, other: &CostMap) -> Vec<Point> {
         let mut changed = Vec::new();
-        for (p, neighbors) in &other.adjacency_list {
-            if let Some(entry) = self.adjacency_list.get_mut(&p) {
-                if *entry != *neighbors {
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let p = Point { x: x, y: y };
+                let neighbors = other.get_neighbors(p);
+
+                let entry = self.get_neighbors_mut(p);
+                if entry != neighbors {
                     *entry = neighbors.clone();
-                    changed.push(*p);
+                    changed.push(p);
                 }
-            } else {
-                // Node node found
-                self.adjacency_list.insert(*p, neighbors.clone());
-                changed.push(*p);
             }
         }
 
@@ -667,7 +663,7 @@ impl LpaStarPather {
             for (n, _) in self.tile_costs.get_neighbors(*p) {
                 self.rhs[p.y][p.x] = min(
                     self.rhs[p.y][p.x],
-                    // Ok to unwrap here, edges are guaranteed to be bi-directional
+                    // Ok to unwrap here, edges are guaranteed to be bi-directional, if not, there is a bug
                     self.get_g(*n)
                         .checked_add(self.tile_costs.get_cost(*n, *p).unwrap())
                         .unwrap_or(i32::MAX),
