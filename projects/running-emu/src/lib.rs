@@ -203,6 +203,15 @@ fn parse_map(world: &mut World, map: &str) {
                     ));
                     world.spawn((Position(p), Sprite('.'), Visibility(false))) // Spawn empty tile underneath
                 }
+                'O' => world.spawn((
+                    Position(p),
+                    Sprite(c),
+                    Visibility(false),
+                    Attack {
+                        range: 0,
+                        damage: 100,
+                    },
+                )),
                 '.' => world.spawn((Position(p), Sprite(c), Visibility(false))), // All others must be found
                 _ => panic!("Error spawning entities, unknown tile: {}", c),
             };
@@ -411,14 +420,14 @@ mod test {
     #[test]
     fn test_spiral_map() {
         let map = "@..............
-                        .WWWWWWWWWWWWW.
-                        .W...........W.
-                        .W.WWWWWWWWW.W.
-                        .W.W.......W.W.
-                        .W.WWWWWWW.W.W.
-                        .W......GW.W.W.
-                        .WWWWWWWWW.W.W.
-                        ...........W...";
+                        .OOOOOOOOOOOOO.
+                        .O...........O.
+                        .O.OOOOOOOOO.O.
+                        .O.O.......O.O.
+                        .O.OOOOOOO.O.O.
+                        .O......GO.O.O.
+                        .OOOOOOOOO.O.O.
+                        ...........O...";
 
         let mut features = FeatureFlags::new();
         features.render = false;
@@ -513,5 +522,16 @@ mod test {
         features.render = false;
         let num_steps = run_sim_from_map(map, features);
         assert_eq!(num_steps, 16)
+    }
+
+    #[test]
+    fn test_object_avoidance() {
+        let map = "@...O..G
+        ........";
+
+        let mut features = FeatureFlags::new();
+        features.render = false;
+        let num_steps = run_sim_from_map(map, features);
+        assert_eq!(num_steps, 10)
     }
 }

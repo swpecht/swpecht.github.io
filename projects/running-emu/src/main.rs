@@ -1,8 +1,7 @@
 use running_emu::{create_map, run_sim_from_map, FeatureFlags};
 
 fn main() {
-    let _map = "@...T..G
-    ........                 
+    let _map = "@...O..G
     ........";
 
     // let _map = "@..............

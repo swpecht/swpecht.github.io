@@ -162,7 +162,7 @@ fn get_edge_points(tile_costs: &CostMap, goal: Point) -> Vec<Point> {
                 .collect_vec()
                 .len();
             let is_edge = match p {
-                p if p == goal => n > 0,            // Goal is valid if at least one connected point
+                p if p == goal => n > 0, // Goal is valid if at least one connected point
                 p if (p.x == width - 1 || p.x == 0) && (p.y == 0 || p.y == height - 1) => n < 2, // corner point, 2 edges
                 p if p.x == 0 || p.y == 0 => n < 3, // side point, 3 edges
                 p if p.x == width - 1 || p.y == height - 1 => n < 3, // side point, 3 edges
@@ -389,29 +389,12 @@ impl CostMap {
         let width = max_p.x;
         let height = max_p.y;
 
-        let mut g = CostMap {
-            adjacency_list: vec![[None; 4]; width * height],
-            width: max_p.x,
-            height: max_p.y,
-        };
-
         let mut vis_mask = vec![vec![false; width]; height];
         CostMap::populate_vis_mask(&mut vis_mask, world);
 
-        // Build the baseline adjacency list, if the node is visible, it can be moved to by neigbors in 1 step
-        for (_, (pos, visible)) in world.query::<(&Position, &Visibility)>().into_iter() {
-            if visible.0 || tile_treatment == InvisibleTileTreatment::Empty {
-                for n in get_neighbors(pos.0, max_p.x, max_p.y) {
-                    if !vis_mask[n.y][n.x] && tile_treatment == InvisibleTileTreatment::Impassible {
-                        continue;
-                    }
-                    g.set_cost(n, pos.0, 1);
-                }
-            }
-        }
-
-        // Update costs to include damage of units
-        // Only iterating over visible units
+        // Amount of damage taken from standing on a tile for 1 turn
+        let mut dmg_mask = vec![vec![0; width]; height];
+        // Only iterating over visible units with attacks
         for (_, (pos, _, attack)) in world
             .query::<(&Position, &Visibility, &Attack)>()
             .without::<AttackerAgent>()
@@ -430,42 +413,48 @@ impl CostMap {
                         continue; // Out of range
                     }
 
-                    for n in get_neighbors(p, max_p.x, max_p.y) {
-                        if (!vis_mask[n.y][n.x] || !vis_mask[p.y][p.x]) // Only populate visible connections
-                            && tile_treatment == InvisibleTileTreatment::Impassible
-                        {
-                            continue;
-                        }
-                        let base = g.get_cost(n, p).unwrap_or(1);
-                        g.set_cost(n, p, base + attack.damage);
-                    }
+                    dmg_mask[p.y][p.x] = attack.damage;
                 }
             }
         }
 
-        // Update nodes to include cost of health units
-        for (_, (pos, visible, health)) in world
+        let mut health_mask = vec![vec![0; width]; height];
+        // For visible entities
+        for (_, (pos, _, health)) in world
             .query::<(&Position, &Visibility, &Health)>()
             .without::<AttackerAgent>()
             .into_iter()
+            .filter(|(_, (_, vis, _))| vis.0)
         {
-            // Must be visible to get this info
-            if visible.0 {
-                for n in get_neighbors(pos.0, max_p.x, max_p.y) {
-                    if !vis_mask[n.y][n.x] && tile_treatment == InvisibleTileTreatment::Impassible {
-                        continue;
+            health_mask[pos.0.y][pos.0.x] = health.0;
+        }
+
+        let mut g = CostMap {
+            adjacency_list: vec![[None; 4]; width * height],
+            width: max_p.x,
+            height: max_p.y,
+        };
+
+        // Apply the costs
+        for y in 0..height {
+            for x in 0..width {
+                let to = Point { x: x, y: y };
+                for from in get_neighbors(to, width, height) {
+                    if (!vis_mask[to.y][to.x] || !vis_mask[from.y][from.x])
+                        && tile_treatment == InvisibleTileTreatment::Impassible
+                    {
+                        continue; // Not a valid connection
                     }
-                    g.set_cost(n, pos.0, health.0);
+
+                    // The cost to travel to a node is:
+                    // the damage you receive upon arriving + the damage you'll take while killing whatever is on the tile + 1 (for travel)
+                    let cost = dmg_mask[to.y][to.x]
+                        + health_mask[to.y][to.x] * dmg_mask[from.y][from.x]
+                        + 1;
+                    g.set_cost(from, to, cost);
                 }
             }
         }
-
-        // Update costs to include damage of units
-        for (_, (pos, visible, attack)) in world
-            .query::<(&Position, &Visibility, &Attack)>()
-            .without::<AttackerAgent>()
-            .into_iter()
-        {}
 
         return g;
     }
@@ -511,8 +500,8 @@ impl CostMap {
 
     /// Returns a list of neighbors and the cost to move to each
     #[inline]
-    fn get_neighbors(&self, p: Point) -> &[Option<(Point, i32)>; 4] {
-        return &self.adjacency_list[p.x + p.y * self.width];
+    fn get_neighbors(&self, from: Point) -> &[Option<(Point, i32)>; 4] {
+        return &self.adjacency_list[from.x + from.y * self.width];
     }
 
     /// Get the cost to move from one node to another
@@ -571,20 +560,26 @@ impl CostMap {
 /// Prints the minimum cost to get to a given cell
 pub fn system_print_tile_costs(world: &World) {
     let costs = CostMap::from_world(world, InvisibleTileTreatment::Impassible);
+    let mut output = vec![vec![i32::MAX; costs.width]; costs.height];
     for y in 0..costs.height {
         for x in 0..costs.width {
-            let p = Point { x: x, y: y };
-            let mut cost = i32::MAX;
+            let from = Point { x: x, y: y };
 
-            let neighbors = costs.get_neighbors(p);
-            for (_, c) in neighbors.iter().filter_map(|x| x.as_ref()) {
-                cost = min(cost, *c);
+            let tos = costs.get_neighbors(from);
+            for (to, c) in tos.iter().filter_map(|x| x.as_ref()) {
+                output[to.y][to.x] = min(output[to.y][to.x], *c);
             }
+        }
+        println!("")
+    }
 
-            if cost == i32::MAX {
-                cost = -1;
-            }
-            print! {"{}\t", cost}
+    for y in 0..costs.height {
+        for x in 0..costs.width {
+            let display_cost = match output[y][x] {
+                i32::MAX => -1,
+                cost => cost,
+            };
+            print! {"{}\t", display_cost}
         }
         println!("")
     }
