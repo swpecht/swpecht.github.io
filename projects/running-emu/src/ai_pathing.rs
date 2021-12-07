@@ -162,10 +162,10 @@ fn get_edge_points(tile_costs: &CostMap, goal: Point) -> Vec<Point> {
                 .collect_vec()
                 .len();
             let is_edge = match p {
+                p if p == goal => n > 0,            // Goal is valid if at least one connected point
                 p if (p.x == width - 1 || p.x == 0) && (p.y == 0 || p.y == height - 1) => n < 2, // corner point, 2 edges
                 p if p.x == 0 || p.y == 0 => n < 3, // side point, 3 edges
                 p if p.x == width - 1 || p.y == height - 1 => n < 3, // side point, 3 edges
-                p if p == goal => n > 0,            // Goal is valid if at least one connected point
                 _ => n < 4,
             };
 
@@ -410,6 +410,39 @@ impl CostMap {
             }
         }
 
+        // Update costs to include damage of units
+        // Only iterating over visible units
+        for (_, (pos, _, attack)) in world
+            .query::<(&Position, &Visibility, &Attack)>()
+            .without::<AttackerAgent>()
+            .into_iter()
+            .filter(|(_, (_, vis, _))| vis.0)
+        {
+            for y in max(0, pos.0.y as i32 - attack.range as i32) as usize
+                ..min(max_p.y, pos.0.y + attack.range + 1)
+            {
+                for x in max(0, pos.0.x as i32 - attack.range as i32) as usize
+                    ..min(max_p.x, pos.0.x + attack.range + 1)
+                {
+                    let p = Point { x: x, y: y };
+
+                    if pos.0.dist(&p) > attack.range as i32 {
+                        continue; // Out of range
+                    }
+
+                    for n in get_neighbors(p, max_p.x, max_p.y) {
+                        if (!vis_mask[n.y][n.x] || !vis_mask[p.y][p.x]) // Only populate visible connections
+                            && tile_treatment == InvisibleTileTreatment::Impassible
+                        {
+                            continue;
+                        }
+                        let base = g.get_cost(n, p).unwrap_or(1);
+                        g.set_cost(n, p, base + attack.damage);
+                    }
+                }
+            }
+        }
+
         // Update nodes to include cost of health units
         for (_, (pos, visible, health)) in world
             .query::<(&Position, &Visibility, &Health)>()
@@ -426,6 +459,13 @@ impl CostMap {
                 }
             }
         }
+
+        // Update costs to include damage of units
+        for (_, (pos, visible, attack)) in world
+            .query::<(&Position, &Visibility, &Attack)>()
+            .without::<AttackerAgent>()
+            .into_iter()
+        {}
 
         return g;
     }

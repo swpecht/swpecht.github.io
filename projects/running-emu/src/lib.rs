@@ -502,4 +502,16 @@ mod test {
         let num_steps = run_sim(&mut world, features);
         assert_eq!(num_steps, 13)
     }
+
+    #[test]
+    fn test_damage_avoidance() {
+        let map = "@...T..G
+        ........                 
+        ........";
+
+        let mut features = FeatureFlags::new();
+        features.render = false;
+        let num_steps = run_sim_from_map(map, features);
+        assert_eq!(num_steps, 16)
+    }
 }
