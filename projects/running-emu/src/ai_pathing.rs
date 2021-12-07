@@ -374,34 +374,6 @@ enum InvisibleTileTreatment {
     Empty,
 }
 
-#[derive(Clone, Copy)]
-enum Direction {
-    Left = 0,
-    Right,
-    Down,
-    Up,
-}
-
-impl Direction {
-    fn new(from: Point, to: Point) -> Option<Direction> {
-        let x_diff = to.x as i32 - from.x as i32;
-        let y_diff = to.y as i32 - from.y as i32;
-
-        return match (x_diff, y_diff) {
-            (1, 0) => Some(Direction::Right),
-            (-1, 0) => Some(Direction::Left),
-            (0, -1) => Some(Direction::Up),
-            (0, 1) => Some(Direction::Down),
-            _ => None,
-        };
-    }
-
-    /// Convert to undex
-    fn i(&self) -> usize {
-        return *self as usize;
-    }
-}
-
 /// Underlying datastructure used for path finding
 #[derive(Debug)]
 struct CostMap {
@@ -423,20 +395,14 @@ impl CostMap {
             height: max_p.y,
         };
 
-        let max_p = get_max_point(world);
-
-        let mut visibility_map = vec![vec![false; width]; height];
-        for (_, (pos, vis)) in world.query::<(&Position, &Visibility)>().into_iter() {
-            visibility_map[pos.0.y][pos.0.x] = visibility_map[pos.0.y][pos.0.x] || vis.0
-        }
+        let mut vis_mask = vec![vec![false; width]; height];
+        CostMap::populate_vis_mask(&mut vis_mask, world);
 
         // Build the baseline adjacency list, if the node is visible, it can be moved to by neigbors in 1 step
         for (_, (pos, visible)) in world.query::<(&Position, &Visibility)>().into_iter() {
             if visible.0 || tile_treatment == InvisibleTileTreatment::Empty {
                 for n in get_neighbors(pos.0, max_p.x, max_p.y) {
-                    if !visibility_map[n.y][n.x]
-                        && tile_treatment == InvisibleTileTreatment::Impassible
-                    {
+                    if !vis_mask[n.y][n.x] && tile_treatment == InvisibleTileTreatment::Impassible {
                         continue;
                     }
                     g.set_cost(n, pos.0, 1);
@@ -453,9 +419,7 @@ impl CostMap {
             // Must be visible to get this info
             if visible.0 {
                 for n in get_neighbors(pos.0, max_p.x, max_p.y) {
-                    if !visibility_map[n.y][n.x]
-                        && tile_treatment == InvisibleTileTreatment::Impassible
-                    {
+                    if !vis_mask[n.y][n.x] && tile_treatment == InvisibleTileTreatment::Impassible {
                         continue;
                     }
                     g.set_cost(n, pos.0, health.0);
@@ -494,11 +458,19 @@ impl CostMap {
         return g;
     }
 
+    fn populate_vis_mask(mask: &mut Vec<Vec<bool>>, world: &World) {
+        for (_, (pos, vis)) in world.query::<(&Position, &Visibility)>().into_iter() {
+            mask[pos.0.y][pos.0.x] = mask[pos.0.y][pos.0.x] || vis.0
+        }
+    }
+
+    #[inline]
     fn get_neighbors_mut(&mut self, p: Point) -> &mut [Option<(Point, i32)>; 4] {
         return &mut self.adjacency_list[p.x + p.y * self.width];
     }
 
     /// Returns a list of neighbors and the cost to move to each
+    #[inline]
     fn get_neighbors(&self, p: Point) -> &[Option<(Point, i32)>; 4] {
         return &self.adjacency_list[p.x + p.y * self.width];
     }
@@ -506,30 +478,31 @@ impl CostMap {
     /// Get the cost to move from one node to another
     fn get_cost(&self, from: Point, to: Point) -> Option<i32> {
         let neighbors = &self.get_neighbors(from);
-        let (_, v) = neighbors
-            .iter()
-            .filter_map(|x| x.as_ref())
-            .find(|(p, _)| *p == to)?;
-        return Some(*v);
+        let index = CostMap::get_index(from, to)?;
+        let (_, c) = neighbors[index]?;
+        return Some(c);
     }
 
     /// Sets the transition cost
     fn set_cost(&mut self, from: Point, to: Point, cost: i32) {
         let neighbors = self.get_neighbors_mut(from);
-        if let Some(cur_entry) = neighbors
-            .iter()
-            .filter_map(|x| x.as_ref())
-            .position(|(p, _)| *p == to)
-        {
-            neighbors[cur_entry] = Some((to, cost))
-        } else {
-            let open_index = neighbors.iter().position(|x| x.is_none());
-            // Should be safe to unwrap here, or cost map has gotten into an invalid state
-            // where there are more than 4 neighbors
-            neighbors[open_index.unwrap()] = Some((to, cost));
-        }
+        // Invalid set cost call
+        let index = CostMap::get_index(from, to).unwrap();
+        neighbors[index] = Some((to, cost));
+    }
 
-        assert!(neighbors.len() <= 4); // Shouldn't ever have more than 4 neighbors
+    /// Get the index for where a neighbor is stored
+    fn get_index(from: Point, to: Point) -> Option<usize> {
+        let x_diff = to.x as i32 - from.x as i32;
+        let y_diff = to.y as i32 - from.y as i32;
+
+        return match (x_diff, y_diff) {
+            (1, 0) => Some(0),
+            (-1, 0) => Some(1),
+            (0, -1) => Some(2),
+            (0, 1) => Some(3),
+            _ => None,
+        };
     }
 
     /// Update to match another, and returns the nodes
@@ -542,9 +515,11 @@ impl CostMap {
                 let neighbors = other.get_neighbors(p);
 
                 let entry = self.get_neighbors_mut(p);
-                if entry != neighbors {
-                    *entry = neighbors.clone();
-                    changed.push(p);
+                for i in 0..entry.len() {
+                    if entry[i] != neighbors[i] {
+                        entry[i] = neighbors[i].clone();
+                        changed.push(p);
+                    }
                 }
             }
         }
