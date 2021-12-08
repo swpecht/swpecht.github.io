@@ -1,22 +1,19 @@
-use std::cmp::{max, min};
+use std::{
+    cmp::{max, min},
+    collections::HashSet,
+    iter::FromIterator,
+};
 
 use hecs::World;
+use itertools::Itertools;
 
 use crate::{get_max_point, spatial::Point, Attack, AttackerAgent, Health, Position, Visibility};
-
-/// Options for handling fog of war tiles
-#[derive(PartialEq, Eq, Clone, Copy)]
-pub enum Fog {
-    Impassible,
-    Empty,
-}
 
 /// Underlying datastructure used for path finding
 #[derive(Debug)]
 pub struct CostMap {
     /// Vector of the list of neighbors, indexed as `x + y * height`
-    adjacency_list: Vec<[Option<(Point, i32)>; 4]>,
-    vis_mask: Vec<Vec<bool>>,
+    successors: Vec<[Option<(Point, i32, EdgeType)>; 4]>,
     pub width: usize,
     pub height: usize,
 }
@@ -68,10 +65,9 @@ impl CostMap {
         }
 
         let mut g = CostMap {
-            adjacency_list: vec![[None; 4]; width * height],
+            successors: vec![[None; 4]; width * height],
             width: max_p.x,
             height: max_p.y,
-            vis_mask,
         };
 
         // Apply the costs
@@ -84,7 +80,11 @@ impl CostMap {
                     let cost = dmg_mask[to.y][to.x]
                         + health_mask[to.y][to.x] * dmg_mask[from.y][from.x]
                         + 1;
-                    g.set_cost(from, to, cost);
+                    let edge_type = match vis_mask[from.y][from.x] && vis_mask[to.y][to.x] {
+                        true => EdgeType::Visible,
+                        _ => EdgeType::Fog,
+                    };
+                    g.set_cost(from, to, cost, edge_type);
                 }
             }
         }
@@ -98,10 +98,9 @@ impl CostMap {
         let height = vec.len();
 
         let mut g = CostMap {
-            adjacency_list: vec![[None; 4]; width * height],
+            successors: vec![[None; 4]; width * height],
             width: width,
             height: height,
-            vis_mask: vec![vec![true; width]; height], // Everything is visible when from vec
         };
 
         for y in 0..height {
@@ -111,7 +110,7 @@ impl CostMap {
                     // Check if connection
                     let mut cost = vec[y][x];
                     cost = max(cost, 0) + 1; // At least 1 cost to move
-                    g.set_cost(n, p, cost);
+                    g.set_cost(n, p, cost, EdgeType::Visible);
                 }
             }
         }
@@ -126,64 +125,44 @@ impl CostMap {
     }
 
     #[inline]
-    fn get_successors_mut(&mut self, p: Point) -> &mut [Option<(Point, i32)>; 4] {
-        return &mut self.adjacency_list[p.x + p.y * self.width];
+    fn get_successors_mut(&mut self, p: Point) -> &mut [Option<(Point, i32, EdgeType)>; 4] {
+        return &mut self.successors[p.x + p.y * self.width];
     }
 
     /// Returns a list of successors and the cost to move to each
-    pub fn get_successors(&self, p: Point, tile_treatment: Fog) -> [Option<(Point, i32)>; 4] {
-        if tile_treatment == Fog::Empty {
-            return self.adjacency_list[p.x + p.y * self.width];
-        } else if tile_treatment == Fog::Impassible && !self.vis_mask[p.y][p.x] {
-            return [None; 4];
-        } else {
-            let mut new = self.adjacency_list[p.x + p.y * self.width].clone();
-            for i in 0..new.len() {
-                if let Some((p, _)) = new[i] {
-                    if !self.vis_mask[p.y][p.x] {
-                        new[i] = None;
-                    }
-                }
-            }
-            return new;
-        }
+    fn get_successors(&self, p: Point) -> [Option<(Point, i32, EdgeType)>; 4] {
+        return self.successors[p.x + p.y * self.width];
     }
 
     /// Returns a list of predecessors and the cost to move to each
-    pub fn get_predecessors(&self, p: Point, tile_treatment: Fog) -> [Option<(Point, i32)>; 4] {
+    fn get_predecessors(&self, p: Point) -> [Option<(Point, i32, EdgeType)>; 4] {
         // Graph is always bi directional, so can use successort to look up predecessors
-        let successors = self.get_successors(p, tile_treatment);
+        let successors = self.get_successors(p);
         let mut predecessors = [None; 4];
 
-        for (s, _) in successors.iter().filter_map(|x| x.as_ref()) {
+        for (s, _, _) in successors.iter().filter_map(|x| x.as_ref()) {
             // Should be fine since bi-directional
-            let cost = self.get_cost(*s, p, tile_treatment).unwrap();
+            let (cost, t) = self.get_edge(*s, p).unwrap();
             let index = CostMap::get_index(*s, p).unwrap();
-            predecessors[index] = Some((*s, cost));
+            predecessors[index] = Some((*s, cost, t));
         }
         return predecessors;
     }
 
     /// Get the cost to move from one node to another
-    pub fn get_cost(&self, from: Point, to: Point, tile_treatment: Fog) -> Option<i32> {
-        if tile_treatment == Fog::Impassible
-            && (!self.vis_mask[from.y][from.x] || !self.vis_mask[to.y][to.x])
-        {
-            return None;
-        }
-
-        let neighbors = &self.get_successors(from, tile_treatment);
+    fn get_edge(&self, from: Point, to: Point) -> Option<(i32, EdgeType)> {
+        let neighbors = &self.get_successors(from);
         let index = CostMap::get_index(from, to)?;
-        let (_, c) = neighbors[index]?;
-        return Some(c);
+        let (_, c, t) = neighbors[index]?;
+        return Some((c, t));
     }
 
     /// Sets the transition cost
-    fn set_cost(&mut self, from: Point, to: Point, cost: i32) {
+    fn set_cost(&mut self, from: Point, to: Point, cost: i32, edge_type: EdgeType) {
         let neighbors = self.get_successors_mut(from);
         // Invalid set cost call
         let index = CostMap::get_index(from, to).unwrap();
-        neighbors[index] = Some((to, cost));
+        neighbors[index] = Some((to, cost, edge_type));
     }
 
     /// Get the index for where a neighbor is stored
@@ -198,37 +177,6 @@ impl CostMap {
             (0, 1) => Some(3),
             _ => None,
         };
-    }
-
-    /// Update to match another, and returns the nodes
-    /// that have changed, this will add new nodes, it won't remove previous ones
-    pub fn update(&mut self, other: &CostMap) -> Vec<Point> {
-        self.vis_mask = other.vis_mask.clone();
-
-        let mut changed = Vec::new();
-        for y in 0..self.height {
-            for x in 0..self.width {
-                let p = Point { x: x, y: y };
-                // TODO: This should probably be predecessors to determine if something has changed
-                // Always copy the full version of edges
-                let other_s = other.get_successors(p, Fog::Empty);
-
-                let self_s = self.get_successors_mut(p);
-                let mut is_changed = false;
-                for i in 0..self_s.len() {
-                    if self_s[i] != other_s[i] {
-                        self_s[i] = other_s[i].clone();
-                        is_changed = true;
-                    }
-                }
-
-                if is_changed {
-                    changed.push(p);
-                }
-            }
-        }
-
-        return changed;
     }
 }
 
@@ -250,4 +198,76 @@ pub fn get_neighbors(point: Point, width: usize, height: usize) -> Vec<Point> {
     }
 
     return neighbors;
+}
+
+/// Options for handling fog of war tiles
+#[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
+pub enum EdgeType {
+    /// Both nodes are visible
+    Visible,
+    /// At least one node is in fog
+    Fog,
+}
+
+/// Read-only view of a cost map that can filter by edge type
+pub struct CostMapView<'a> {
+    cost_map: &'a CostMap,
+    allowed_edges: HashSet<EdgeType>,
+    pub width: usize,
+    pub height: usize,
+}
+
+impl<'a> CostMapView<'a> {
+    pub fn new(cost_map: &'a CostMap, allowed_edges: Vec<EdgeType>) -> CostMapView {
+        return Self {
+            cost_map,
+            allowed_edges: HashSet::from_iter(allowed_edges.iter().cloned()),
+            width: cost_map.width,
+            height: cost_map.height,
+        };
+    }
+
+    pub fn get_successors(&self, p: Point) -> Vec<(Point, i32)> {
+        let successors = self.cost_map.get_successors(p);
+        return self.filter_edges(successors);
+    }
+
+    pub fn get_predecessors(&self, p: Point) -> Vec<(Point, i32)> {
+        let predecessors = self.cost_map.get_predecessors(p);
+        return self.filter_edges(predecessors);
+    }
+
+    fn filter_edges(&self, edges: [Option<(Point, i32, EdgeType)>; 4]) -> Vec<(Point, i32)> {
+        let results = edges
+            .iter()
+            .filter_map(|x| x.as_ref())
+            .filter(|(_, _, t)| self.allowed_edges.contains(t))
+            .map(|(p, c, _)| (*p, *c))
+            .collect_vec();
+        return results;
+    }
+
+    pub fn get_cost(&self, from: Point, to: Point) -> Option<i32> {
+        let successors = self.get_successors(from);
+        let (_, cost) = successors.iter().find(|(p, _)| *p == to)?;
+        return Some(*cost);
+    }
+
+    /// Returns a list of nodes where predecessors have changed
+    pub fn get_changed_nodes(&self, other: &CostMapView) -> Vec<Point> {
+        let mut changed = Vec::new();
+
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let p = Point { x: x, y: y };
+                let o_pred = other.get_predecessors(p);
+                let s_pred = self.get_predecessors(p);
+
+                if o_pred != s_pred {
+                    changed.push(p)
+                }
+            }
+        }
+        return changed;
+    }
 }
