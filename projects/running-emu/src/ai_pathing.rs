@@ -1,4 +1,4 @@
-use std::cmp::{max, min, Reverse};
+use std::cmp::{min, Reverse};
 
 use crossterm::style::Color;
 use hecs::World;
@@ -6,10 +6,11 @@ use itertools::Itertools;
 use priority_queue::PriorityQueue;
 
 use crate::{
-    get_goal, get_max_point, get_start,
+    get_goal, get_start,
+    graph::{get_neighbors, CostMap, Fog},
     spatial::{get_entities, Point},
     Attack, AttackerAgent, BackgroundHighlight, Damage, FeatureFlags, Health, PathingAlgorithm,
-    Position, TargetLocation, Visibility,
+    Position, TargetLocation,
 };
 
 /// Move agents that have a target location and attack if needed.
@@ -17,7 +18,7 @@ use crate::{
 /// This system handles the pathfinding part of the AI. It doesn't select where agents should go
 /// only how to get there.
 pub fn system_ai_action(world: &mut World) {
-    let tile_costs = CostMap::from_world(&world, InvisibleTileTreatment::Impassible);
+    let tile_costs = CostMap::from_world(&world);
     let mut health_entities = Vec::new();
 
     for (e, (pos, _)) in world.query_mut::<(&Position, &Health)>() {
@@ -91,32 +92,29 @@ pub fn system_exploration(
     // An explored location will not be chosen. The scores for squares have the following form:
     //  Score(point) = cost to get there from start + distance from the agent + cost to get to goal assuming un-explored squares have only travel cost
     if target_loc.is_none() || cur_loc == target_loc.unwrap() {
-        let start_costs = CostMap::from_world(&world, InvisibleTileTreatment::Impassible);
-        let candidate_points = get_edge_points(&start_costs, goal);
+        let costs = CostMap::from_world(&world);
+        let candidate_points = get_edge_points(&costs, goal);
 
         let v;
         let start_travel_costs = match features.pathing_algorithm {
             PathingAlgorithm::Astar => {
-                v = get_travel_costs(start, &start_costs);
+                v = get_travel_costs(start, &costs, Fog::Impassible);
                 &v
             }
             PathingAlgorithm::LpaStar => {
-                pather_start.update_tile_costs(&start_costs);
+                pather_start.update_tile_costs(&costs);
                 pather_start.get_travel_costs()
             }
         };
 
-        // Assume unseen tiles are empty
-        let goal_costs = CostMap::from_world(&world, InvisibleTileTreatment::Empty);
-
         let v;
         let goal_travel_costs = match features.pathing_algorithm {
             PathingAlgorithm::Astar => {
-                v = get_travel_costs(goal, &goal_costs);
+                v = get_travel_costs(goal, &costs, Fog::Empty);
                 &v
             }
             PathingAlgorithm::LpaStar => {
-                pather_goal.update_tile_costs(&goal_costs);
+                pather_goal.update_tile_costs(&costs);
                 pather_goal.get_travel_costs()
             }
         };
@@ -156,18 +154,19 @@ fn get_edge_points(tile_costs: &CostMap, goal: Point) -> Vec<Point> {
         for x in 0..width {
             let p = Point { x: x, y: y };
             let n = tile_costs
-                .get_neighbors(p)
+                .get_predecessors(p, Fog::Impassible)
                 .iter()
                 .filter_map(|x| x.as_ref())
                 .collect_vec()
                 .len();
-            let is_edge = match p {
-                p if p == goal => n > 0, // Goal is valid if at least one connected point
-                p if (p.x == width - 1 || p.x == 0) && (p.y == 0 || p.y == height - 1) => n < 2, // corner point, 2 edges
-                p if p.x == 0 || p.y == 0 => n < 3, // side point, 3 edges
-                p if p.x == width - 1 || p.y == height - 1 => n < 3, // side point, 3 edges
-                _ => n < 4,
-            };
+            let is_edge = (n > 0) // needs at least one connection
+                && match p {
+                    p if p == goal => n > 0, // Goal is valid if at least one connected point
+                    p if (p.x == width - 1 || p.x == 0) && (p.y == 0 || p.y == height - 1) => n < 2, // corner point, 2 edges
+                    p if p.x == 0 || p.y == 0 => n < 3, // side point, 3 edges
+                    p if p.x == width - 1 || p.y == height - 1 => n < 3, // side point, 3 edges
+                    _ => n < 4,
+                };
 
             if is_edge {
                 points.push(p)
@@ -189,7 +188,10 @@ struct CandidateScore {
 impl Ord for CandidateScore {
     /// Compare on dist to goal + dist to start, if a tiebreaker, use goal dist as secondary sort, if still tied, used agent dist
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let self_total = self.dist_to_start + self.dist_to_goal;
+        let self_total = self
+            .dist_to_start
+            .checked_add(self.dist_to_goal)
+            .unwrap_or(i32::MAX);
         let other_total = other
             .dist_to_start
             .checked_add(other.dist_to_goal)
@@ -216,7 +218,7 @@ impl PartialOrd for CandidateScore {
 pub fn system_path_highlight(world: &mut World) {
     let mut path_points = Vec::new();
     let mut goal_points = Vec::new();
-    let tile_costs = CostMap::from_world(&world, InvisibleTileTreatment::Impassible);
+    let tile_costs = CostMap::from_world(&world);
 
     let pathers = world
         .query_mut::<&TargetLocation>()
@@ -267,7 +269,11 @@ fn get_path(start: Point, end: Point, costs: &CostMap) -> Option<Vec<Point>> {
             break; // found the goal
         }
 
-        for (n, cost) in costs.get_neighbors(node).iter().filter_map(|x| x.as_ref()) {
+        for (n, cost) in costs
+            .get_successors(node, Fog::Impassible)
+            .iter()
+            .filter_map(|x| x.as_ref())
+        {
             let d = distance_matrix[n.y][n.x];
 
             // Only path over areas where we have cost data
@@ -283,26 +289,6 @@ fn get_path(start: Point, end: Point, costs: &CostMap) -> Option<Vec<Point>> {
     }
 
     return Some(get_path_from_distances(start, end, &distance_matrix));
-}
-
-/// Return positions that are neighbors to a givne position
-fn get_neighbors(point: Point, width: usize, height: usize) -> Vec<Point> {
-    // Allow adjacent and diagonal movement
-    // let directions = [(-1, 0), (1, 0), (0, -1), (0, 1), (1, 1), (-1, -1), (1, -1), (-1, 1)];
-    let directions = [(-1, 0), (1, 0), (0, -1), (0, 1)];
-    let mut neighbors: Vec<Point> = Vec::new();
-
-    for d in directions {
-        let candidate = Point {
-            x: (point.x as i32 + d.0) as usize,
-            y: (point.y as i32 + d.1) as usize,
-        };
-        if candidate.x < width && candidate.y < (height) {
-            neighbors.push(candidate);
-        }
-    }
-
-    return neighbors;
 }
 
 /// Return optimal path connecting start to end given a set of travel costs.
@@ -337,7 +323,7 @@ pub fn get_path_from_distances(
 /// Return the lowest travel cost matrix for all visible tiles if possible
 ///
 /// None means no path is possible or there isn't tile information
-fn get_travel_costs(start: Point, tile_costs: &CostMap) -> Vec<Vec<i32>> {
+fn get_travel_costs(start: Point, tile_costs: &CostMap, fog: Fog) -> Vec<Vec<i32>> {
     let width = tile_costs.width;
     let height = tile_costs.height;
     let mut travel_costs = vec![vec![i32::MAX; width]; height];
@@ -351,7 +337,7 @@ fn get_travel_costs(start: Point, tile_costs: &CostMap) -> Vec<Vec<i32>> {
         let distance = travel_costs[node.y][node.x];
 
         for (n, cost) in tile_costs
-            .get_neighbors(node)
+            .get_successors(node, fog)
             .iter()
             .filter_map(|x| x.as_ref())
         {
@@ -368,209 +354,23 @@ fn get_travel_costs(start: Point, tile_costs: &CostMap) -> Vec<Vec<i32>> {
     return travel_costs;
 }
 
-#[derive(PartialEq, Eq)]
-enum InvisibleTileTreatment {
-    Impassible,
-    Empty,
-}
-
-/// Underlying datastructure used for path finding
-#[derive(Debug)]
-struct CostMap {
-    /// Vector of the list of neighbors, indexed as `x + y * height`
-    adjacency_list: Vec<[Option<(Point, i32)>; 4]>,
-    pub width: usize,
-    pub height: usize,
-}
-
-impl CostMap {
-    fn from_world(world: &World, tile_treatment: InvisibleTileTreatment) -> Self {
-        let max_p = get_max_point(world);
-        let width = max_p.x;
-        let height = max_p.y;
-
-        let mut vis_mask = vec![vec![false; width]; height];
-        CostMap::populate_vis_mask(&mut vis_mask, world);
-
-        // Amount of damage taken from standing on a tile for 1 turn
-        let mut dmg_mask = vec![vec![0; width]; height];
-        // Only iterating over visible units with attacks
-        for (_, (pos, _, attack)) in world
-            .query::<(&Position, &Visibility, &Attack)>()
-            .without::<AttackerAgent>()
-            .into_iter()
-            .filter(|(_, (_, vis, _))| vis.0)
-        {
-            for y in max(0, pos.0.y as i32 - attack.range as i32) as usize
-                ..min(max_p.y, pos.0.y + attack.range + 1)
-            {
-                for x in max(0, pos.0.x as i32 - attack.range as i32) as usize
-                    ..min(max_p.x, pos.0.x + attack.range + 1)
-                {
-                    let p = Point { x: x, y: y };
-
-                    if pos.0.dist(&p) > attack.range as i32 {
-                        continue; // Out of range
-                    }
-
-                    dmg_mask[p.y][p.x] = attack.damage;
-                }
-            }
-        }
-
-        let mut health_mask = vec![vec![0; width]; height];
-        // For visible entities
-        for (_, (pos, _, health)) in world
-            .query::<(&Position, &Visibility, &Health)>()
-            .without::<AttackerAgent>()
-            .into_iter()
-            .filter(|(_, (_, vis, _))| vis.0)
-        {
-            health_mask[pos.0.y][pos.0.x] = health.0;
-        }
-
-        let mut g = CostMap {
-            adjacency_list: vec![[None; 4]; width * height],
-            width: max_p.x,
-            height: max_p.y,
-        };
-
-        // Apply the costs
-        for y in 0..height {
-            for x in 0..width {
-                let to = Point { x: x, y: y };
-                for from in get_neighbors(to, width, height) {
-                    if (!vis_mask[to.y][to.x] || !vis_mask[from.y][from.x])
-                        && tile_treatment == InvisibleTileTreatment::Impassible
-                    {
-                        continue; // Not a valid connection
-                    }
-
-                    // The cost to travel to a node is:
-                    // the damage you receive upon arriving + the damage you'll take while killing whatever is on the tile + 1 (for travel)
-                    let cost = dmg_mask[to.y][to.x]
-                        + health_mask[to.y][to.x] * dmg_mask[from.y][from.x]
-                        + 1;
-                    g.set_cost(from, to, cost);
-                }
-            }
-        }
-
-        return g;
-    }
-
-    fn _from_vec(vec: &Vec<Vec<i32>>) -> Self {
-        let width = vec[0].len();
-        let height = vec.len();
-
-        let mut g = CostMap {
-            adjacency_list: vec![[None; 4]; width * height],
-            width: width,
-            height: height,
-        };
-
-        let width = vec[0].len();
-        let height = vec.len();
-
-        for y in 0..height {
-            for x in 0..width {
-                let p = Point { x: x, y: y };
-                for n in get_neighbors(p, width, height) {
-                    // Check if connection
-                    let mut cost = vec[y][x];
-                    cost = max(cost, 0) + 1; // At least 1 cost to move
-                    g.set_cost(n, p, cost);
-                }
-            }
-        }
-
-        return g;
-    }
-
-    fn populate_vis_mask(mask: &mut Vec<Vec<bool>>, world: &World) {
-        for (_, (pos, vis)) in world.query::<(&Position, &Visibility)>().into_iter() {
-            mask[pos.0.y][pos.0.x] = mask[pos.0.y][pos.0.x] || vis.0
-        }
-    }
-
-    #[inline]
-    fn get_neighbors_mut(&mut self, p: Point) -> &mut [Option<(Point, i32)>; 4] {
-        return &mut self.adjacency_list[p.x + p.y * self.width];
-    }
-
-    /// Returns a list of neighbors and the cost to move to each
-    #[inline]
-    fn get_neighbors(&self, from: Point) -> &[Option<(Point, i32)>; 4] {
-        return &self.adjacency_list[from.x + from.y * self.width];
-    }
-
-    /// Get the cost to move from one node to another
-    fn get_cost(&self, from: Point, to: Point) -> Option<i32> {
-        let neighbors = &self.get_neighbors(from);
-        let index = CostMap::get_index(from, to)?;
-        let (_, c) = neighbors[index]?;
-        return Some(c);
-    }
-
-    /// Sets the transition cost
-    fn set_cost(&mut self, from: Point, to: Point, cost: i32) {
-        let neighbors = self.get_neighbors_mut(from);
-        // Invalid set cost call
-        let index = CostMap::get_index(from, to).unwrap();
-        neighbors[index] = Some((to, cost));
-    }
-
-    /// Get the index for where a neighbor is stored
-    fn get_index(from: Point, to: Point) -> Option<usize> {
-        let x_diff = to.x as i32 - from.x as i32;
-        let y_diff = to.y as i32 - from.y as i32;
-
-        return match (x_diff, y_diff) {
-            (1, 0) => Some(0),
-            (-1, 0) => Some(1),
-            (0, -1) => Some(2),
-            (0, 1) => Some(3),
-            _ => None,
-        };
-    }
-
-    /// Update to match another, and returns the nodes
-    /// that have changed, this will add new nodes, it won't remove previous ones
-    pub fn update(&mut self, other: &CostMap) -> Vec<Point> {
-        let mut changed = Vec::new();
-        for y in 0..self.height {
-            for x in 0..self.width {
-                let p = Point { x: x, y: y };
-                let neighbors = other.get_neighbors(p);
-
-                let entry = self.get_neighbors_mut(p);
-                for i in 0..entry.len() {
-                    if entry[i] != neighbors[i] {
-                        entry[i] = neighbors[i].clone();
-                        changed.push(p);
-                    }
-                }
-            }
-        }
-
-        return changed;
-    }
-}
-
 /// Prints the minimum cost to get to a given cell
 pub fn system_print_tile_costs(world: &World) {
-    let costs = CostMap::from_world(world, InvisibleTileTreatment::Impassible);
+    let costs = CostMap::from_world(world);
     let mut output = vec![vec![i32::MAX; costs.width]; costs.height];
+
     for y in 0..costs.height {
         for x in 0..costs.width {
-            let from = Point { x: x, y: y };
+            let to = Point { x: x, y: y };
 
-            let tos = costs.get_neighbors(from);
-            for (to, c) in tos.iter().filter_map(|x| x.as_ref()) {
-                output[to.y][to.x] = min(output[to.y][to.x], *c);
-            }
+            let predecessors = costs.get_predecessors(to, Fog::Impassible);
+            output[to.y][to.x] = predecessors
+                .iter()
+                .filter_map(|x| x.as_ref())
+                .map(|(_, c)| *c)
+                .min()
+                .unwrap_or(i32::MAX);
         }
-        println!("")
     }
 
     for y in 0..costs.height {
@@ -596,6 +396,7 @@ pub struct LpaStarPather {
     height: usize,
     start: Point,
     goal: Point,
+    fog: Fog,
 }
 
 #[derive(PartialEq, Eq)]
@@ -624,21 +425,21 @@ impl PartialOrd for LpaKey {
 pub fn get_start_lpapather(world: &World) -> LpaStarPather {
     let start = get_start(world);
     let goal = get_goal(world);
-    let g = CostMap::from_world(world, InvisibleTileTreatment::Impassible);
+    let tile_costs = CostMap::from_world(world);
 
-    return LpaStarPather::new(start, goal, g);
+    return LpaStarPather::new(start, goal, tile_costs, Fog::Impassible);
 }
 
 pub fn get_goal_lpapather(world: &World) -> LpaStarPather {
     let start = get_start(world);
     let goal = get_goal(world);
-    let g = CostMap::from_world(world, InvisibleTileTreatment::Empty);
+    let tile_costs = CostMap::from_world(world);
 
-    return LpaStarPather::new(goal, start, g);
+    return LpaStarPather::new(goal, start, tile_costs, Fog::Empty);
 }
 
 impl LpaStarPather {
-    fn new(start: Point, goal: Point, tile_costs: CostMap) -> Self {
+    fn new(start: Point, goal: Point, tile_costs: CostMap, tile_treatment: Fog) -> Self {
         let width = tile_costs.width;
         let height = tile_costs.height;
 
@@ -657,6 +458,7 @@ impl LpaStarPather {
             height,
             start,
             goal,
+            fog: tile_treatment,
         };
 
         pather.rhs[start.y][start.x] = 0;
@@ -712,18 +514,16 @@ impl LpaStarPather {
     fn update_node(&mut self, p: &Point) {
         if *p != self.start {
             self.rhs[p.y][p.x] = i32::MAX;
-            for (n, _) in self
+            for (n, cost) in self
                 .tile_costs
-                .get_neighbors(*p)
+                .get_predecessors(*p, self.fog)
                 .iter()
                 .filter_map(|x| x.as_ref())
             {
                 self.rhs[p.y][p.x] = min(
                     self.rhs[p.y][p.x],
                     // Ok to unwrap here, edges are guaranteed to be bi-directional, if not, there is a bug
-                    self.get_g(*n)
-                        .checked_add(self.tile_costs.get_cost(*n, *p).unwrap())
-                        .unwrap_or(i32::MAX),
+                    self.get_g(*n).checked_add(*cost).unwrap_or(i32::MAX),
                 )
             }
             self.queue.remove(p);
@@ -760,7 +560,7 @@ mod tests {
         let start = Point { x: 0, y: 0 };
         let goal = Point { x: 2, y: 2 };
 
-        let pather = LpaStarPather::new(start, goal, tile_costs);
+        let pather = LpaStarPather::new(start, goal, tile_costs, Fog::Impassible);
 
         assert_eq!(pather.g, vec![vec![0, 1, 2], vec![1, 2, 3], vec![2, 3, 4]]);
     }
@@ -771,7 +571,7 @@ mod tests {
         let start = Point { x: 0, y: 0 };
         let goal = Point { x: 2, y: 2 };
 
-        let pather = LpaStarPather::new(start, goal, tile_costs);
+        let pather = LpaStarPather::new(start, goal, tile_costs, Fog::Impassible);
 
         assert_eq!(
             pather.g,
@@ -785,7 +585,7 @@ mod tests {
         let start = Point { x: 0, y: 0 };
         let goal = Point { x: 2, y: 2 };
 
-        let mut pather = LpaStarPather::new(start, goal, tile_costs);
+        let mut pather = LpaStarPather::new(start, goal, tile_costs, Fog::Impassible);
 
         assert_eq!(pather.g, vec![vec![0, 1, 2], vec![1, 2, 3], vec![2, 3, 4]]);
 
@@ -839,7 +639,7 @@ mod tests {
         let tile_costs = CostMap::_from_vec(&vec![vec![0; 3]; 3]);
         let start = Point { x: 0, y: 0 };
 
-        let travel_costs = get_travel_costs(start, &tile_costs);
+        let travel_costs = get_travel_costs(start, &tile_costs, Fog::Impassible);
         assert_eq!(
             travel_costs,
             vec![vec![0, 1, 2], vec![1, 2, 3], vec![2, 3, 4]]
@@ -851,7 +651,7 @@ mod tests {
         let tile_costs = CostMap::_from_vec(&vec![vec![0, 10, 0], vec![0, 10, 0], vec![0, 0, 0]]);
         let start = Point { x: 0, y: 0 };
 
-        let travel_costs = get_travel_costs(start, &tile_costs);
+        let travel_costs = get_travel_costs(start, &tile_costs, Fog::Impassible);
         assert_eq!(
             travel_costs,
             vec![vec![0, 11, 6], vec![1, 12, 5], vec![2, 3, 4]]

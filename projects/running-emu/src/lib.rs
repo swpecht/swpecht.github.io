@@ -20,6 +20,7 @@ use crate::{
 
 pub mod ai;
 pub mod ai_pathing;
+pub mod graph;
 pub mod spatial;
 
 /// Position of the entity in the game world
