@@ -12,6 +12,11 @@ itertools = "0.10.0"
 hecs = "0.6"
 log = "0.4"
 
+[dependencies.sdl2]
+version = "0.35"
+default-features = true
+features = ["gfx"]
+
 [dev-dependencies]
 criterion = "0.3"
 

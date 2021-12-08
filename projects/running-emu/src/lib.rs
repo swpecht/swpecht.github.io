@@ -1,11 +1,7 @@
-use std::{
-    cmp::max,
-    fs::File,
-    io::{stdout, Write},
-};
+use std::{cmp::max, io::stdout};
 
 use ai::system_defense_ai;
-use ai_pathing::{get_goal_lpapather, get_start_lpapather, system_print_tile_costs};
+use ai_pathing::{get_goal_lpapather, get_start_lpapather, system_print_tile_costs, LpaStarPather};
 use crossterm::{
     execute,
     style::{Color, ResetColor, SetBackgroundColor},
@@ -21,6 +17,7 @@ use crate::{
 pub mod ai;
 pub mod ai_pathing;
 pub mod graph;
+pub mod render;
 pub mod spatial;
 
 /// Position of the entity in the game world
@@ -89,52 +86,56 @@ pub fn run_sim_from_map(map: &str, features: FeatureFlags) -> i32 {
 
 fn run_sim(world: &mut World, features: FeatureFlags) -> i32 {
     let mut num_steps = 0;
-
-    let mut output_file = File::create("output.txt").unwrap();
     let mut start_pather = get_start_lpapather(&world);
     let mut goal_pather = get_goal_lpapather(&world);
-
-    let max_p = get_max_point(&world);
-    let mut char_buffer = vec![vec!['?'; max_p.x]; max_p.y];
 
     // Bootstrap
     system_vision(world);
 
     loop {
         num_steps += 1;
-
-        if features.entity_spatial_cache {
-            system_update_spatial_cache(world);
-        }
-
-        if system_exploration(world, features, &mut start_pather, &mut goal_pather) {
+        if step_game_world(world, features, &mut start_pather, &mut goal_pather) {
             break;
         }
-
-        system_path_highlight(world);
-        build_char_output(&world, &mut char_buffer);
-        let highlight_buffer = build_highlight_output(world);
-        if features.write_agent_visible_map {
-            write_state(&char_buffer, &mut output_file).expect("error writing state");
-        }
-        if features.render {
-            system_render(&char_buffer, &highlight_buffer);
-        }
-
-        if features.print_tile_costs {
-            system_print_tile_costs(world);
-        }
-
-        system_ai_action(world);
-        system_defense_ai(world);
-        system_vision(world);
-        system_health(world); // Can despawn enemies so, should be run last
     }
     return num_steps;
 }
 
+pub fn step_game_world(
+    world: &mut World,
+    features: FeatureFlags,
+    start_pather: &mut LpaStarPather,
+    goal_pather: &mut LpaStarPather,
+) -> bool {
+    if features.entity_spatial_cache {
+        system_update_spatial_cache(world);
+    }
+
+    if system_exploration(world, features, start_pather, goal_pather) {
+        return true;
+    }
+
+    system_path_highlight(world);
+    let char_buffer = build_char_output(&world);
+    let highlight_buffer = build_highlight_output(world);
+    if features.render {
+        system_render(&char_buffer, &highlight_buffer);
+    }
+
+    if features.print_tile_costs {
+        system_print_tile_costs(world);
+    }
+
+    system_ai_action(world);
+    system_defense_ai(world);
+    system_vision(world);
+    system_health(world); // Can despawn enemies so, should be run last
+
+    return false;
+}
+
 /// Populate a world from a string map
-fn parse_map(world: &mut World, map: &str) {
+pub fn parse_map(world: &mut World, map: &str) {
     let mut x = 0;
     let mut y = 0;
     let mut width = None;
@@ -221,7 +222,10 @@ fn parse_map(world: &mut World, map: &str) {
 }
 
 /// Build the grid of character outputs
-fn build_char_output(world: &World, buffer: &mut Vec<Vec<char>>) {
+fn build_char_output(world: &World) -> Vec<Vec<char>> {
+    let max_p = get_max_point(world);
+    let mut buffer = vec![vec!['?'; max_p.x]; max_p.y];
+
     // Reset the buffer
     for y in 0..buffer.len() {
         for x in 0..buffer[0].len() {
@@ -239,16 +243,8 @@ fn build_char_output(world: &World, buffer: &mut Vec<Vec<char>>) {
             }
         }
     }
-}
 
-fn write_state(chars: &Vec<Vec<char>>, f: &mut File) -> std::io::Result<()> {
-    for y in 0..chars.len() {
-        for x in 0..chars[0].len() {
-            write!(f, "{}", chars[y][x])?;
-        }
-        writeln!(f, "")?;
-    }
-    writeln!(f, "")
+    return buffer;
 }
 
 fn build_highlight_output(world: &mut World) -> Vec<Vec<Option<Color>>> {
