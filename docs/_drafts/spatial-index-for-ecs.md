@@ -35,10 +35,3 @@ Found 1 outliers among 100 measurements (1.00%)
   1 (1.00%) high severe
 
 No visible time spent in get entity on flamegraph.
-
-## Reduce calls to get_path -- use a calculated travel matrix
-
-
-To: find path 20x20         time:   [5.6577 ms 5.6994 ms 5.7422 ms]
-                        change: [-83.714% -83.352% -83.073%] (p = 0.00 < 0.05)
-                        Performance has improved.

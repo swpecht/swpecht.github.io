@@ -271,6 +271,7 @@ travel_costs[n.y][n.x] = Some(new_cost);
 let heuristic = end_points.iter().map(|x| n.dist(x)).min().unwrap_or(0);
 queue.push(n, Reverse(new_cost + heuristic));
 ```
+
 find path 100x100       time:   [1.4218 s 1.4443 s 1.4678 s]
                         change: [+178.37% +185.62% +192.62%] (p = 0.00 < 0.05)
                         Performance has regressed.
@@ -278,6 +279,7 @@ Found 3 outliers among 100 measurements (3.00%)
   3 (3.00%) high mild
 
 ## Other pathfidning algorithms, LPA*
+
 https://en.wikipedia.org/wiki/Lifelong_Planning_A*
 
 With A*:

@@ -38,21 +38,37 @@ Status:
   * Add movement system with velocity (done)
   * Fix bug where attacker agent doesn't look at all visible tiles, e.g. vision of 2 doesn't work, re-create the cost matrix each pass? (done)
 
-* Concept of sending units that give "life" to explore?
-  * Add life to units
-  * Add tower unit that can do damage in an area, in terms of damage per frame
-  * Update cost calculations to be frames to destroy * damage per frame
-  * Then could add in destructable walls? For future units to make it easier?
+* Begin optimizing pathfinding (done)
+  * Add spatial index for entity lookups (done)
+  * Look at LPA (done)
+  * Move the logic to handle unrevealed tiles out of pathing algos, give tile costs that reflect things (done)
+  * Finish low hanging fruit optimization of loops, look at memory allocation (done)
 
 * Do some performance benchmarks on large maps
-  * Fix bug where not properly accounting for cost when doing pathing to intermediate goal (done)
-  * Fix issue with backtracking while exploring the map, add heuristic to explore spaces close to the agent (done)
-    * Fix bug where S and the first position for @ aren't the same, only specify the @ in maps and then have start be shown from there (done)
-  * Finish back tracking exploration, see below (done)
-    * Fix bug to update cost of tiles when re-visited (done)
   * Add ability to read map from file, create a benchmark suite of maps to run through, test both time and number of steps
-  * Create 100x100 map and benchmark
+  * Create 100x100 map and benchmark (done)
+
+* Concept of sending units that give "life" to explore?
+  * Add life to units (done)
+  * Add attack to the agent -- update `system_pathing` to attack if there is a W in the way (done)
+  * Add a weapon component to store damage? (done)
+  * Add tower unit that can do damage in an area, in terms of damage per frame (done)
+  * Update cost calculations to be frames to destroy * damage per frame, rather than additive, but need to accound for location, it will now be different costs depending on where the unit is trying to move
+    * may need to switch this to be a graph rather than a straight array, could store this as an adjacency matrix (done)
+    * Optimize adjacency matrix implementation, use vectors to back it? (done)
+    * Switch to arrays and slices? https://doc.rust-lang.org/rust-by-example/primitives/array.html (done)
+    * Switch to multi-phase creation -- first one makes all connections, then have an update edgfe function that onjly works on existing edges (done)
+    * Switch how unseen tiles are handled, likely want a single version where vision is applied at the end? so can populate without respect for vision, and then remove all edges to invisible tiles -- although creates issues with unseen damage sources -- create annotation for the connection type in nodes, can create views of the graph that filter for certain edge types (done)
+    * Add spike trap tile, no health and 0 range attack, can use this as the replacement for walls (done)
+
+* Get rendering working
+  * Use SDL? (done)
+  * Refactor to move all caches into world object, will make calling code easier
+
+* Clean up some tech debt and fix bugs
+  * Refactor how processing pair of entities: <https://www.reddit.com/r/rust_gamedev/comments/fsfqhf/how_to_process_pairs_of_entities_using_ecs/>
+  * Switch to a modify health queue so can have multiple damage sources per tick
+
+* Update vision system to be line of sight rather than a set distance, e.g. can't see past walls
 
 * Add support for coordinating multiple agents to explore at once
-
-
