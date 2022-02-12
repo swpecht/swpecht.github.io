@@ -15,9 +15,22 @@ fn main() {
     println!("Loaded {} answers", answers.len());
     println!("Loaded {} guesses", guesses.len());
 
-    let expected_answers = evaluate_guess("crane", &answers);
-    println!("crane: {}", expected_answers);
+    let mut best_guess_score = usize::MAX;
+    let mut count = 0;
 
-    let expected_answers = evaluate_guess("while", &answers);
-    println!("while: {}", expected_answers);
+    for guess in guesses {
+        let expected_answers = evaluate_guess("crane", &answers);
+        count += 1;
+        if expected_answers < best_guess_score {
+            best_guess_score = expected_answers;
+            println!(
+                "New best guess found: {}, {}, in {}",
+                guess, expected_answers, count
+            );
+        }
+
+        if count % 10 == 0 {
+            println!("evaluated: {}", count)
+        }
+    }
 }

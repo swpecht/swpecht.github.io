@@ -79,7 +79,7 @@ fn filter_answers(
     }
 
     // Filter by char counts
-    let mut known_char_counts = HashMap::new();
+    let mut known_char_counts = [0; 26];
     for i in 0..5 {
         if score[i] == LetterState::Yellow || score[i] == LetterState::Green {
             let g = guess.chars().nth(i).unwrap();
@@ -87,14 +87,15 @@ fn filter_answers(
         }
     }
 
+    // TODO: Could loop over only remaining answers as an optimization
     for answer in answers {
-        let mut char_count = HashMap::new();
+        let mut char_count = [0; 26];
         for a in answer.chars() {
             increment_count(a, &mut char_count);
         }
 
-        for (c, count) in known_char_counts.iter() {
-            if char_count.get(c).unwrap_or(&0) < count {
+        for i in 0..26 {
+            if char_count[i] < known_char_counts[i] {
                 filtered.remove(answer);
             }
         }
@@ -103,9 +104,10 @@ fn filter_answers(
     return filtered;
 }
 
-fn increment_count(c: char, counts: &mut HashMap<char, i32>) {
-    let count = *counts.get(&c).unwrap_or(&0);
-    counts.insert(c, count + 1);
+fn increment_count(c: char, counts: &mut [usize; 26]) {
+    const A_DECIMAL: usize = 97;
+    let index = c.to_ascii_lowercase() as usize - A_DECIMAL;
+    counts[index] += 1;
 }
 
 /// Returns the expected value for the number of remaining answers after the guess
@@ -194,6 +196,7 @@ mod tests {
             "cxxxe".to_string(), // Not included, otherwise C would be green
             "xcxxe".to_string(), // answer
             "xxaxe".to_string(), // Not included, A not in answer
+            "xaxxe".to_string(), // Not included, A not in answer
             "xxxxe".to_string(), // Not included, no c
         ]);
         let filtered = filter_answers(
