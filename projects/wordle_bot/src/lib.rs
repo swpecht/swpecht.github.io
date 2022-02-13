@@ -5,8 +5,6 @@ use std::{
     path::Path,
 };
 
-use itertools::Itertools;
-
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum LetterState {
     /// Letter is in the right position
@@ -18,7 +16,7 @@ pub enum LetterState {
 }
 
 /// Returns Green, Yellow, Gray for a given guess and answer
-fn score_guess(guess: &str, answer: &str) -> [LetterState; 5] {
+pub fn score_guess(guess: &str, answer: &str) -> [LetterState; 5] {
     let mut score = [LetterState::Gray; 5];
     let mut unmatch_chars = HashMap::new();
 
@@ -81,6 +79,7 @@ pub fn filter_answers(
     }
 
     // Filter by char counts
+    // TODO: need to account for double letters, do an optional for known char counts
     let mut known_char_counts = [0; 26];
     let mut is_absent = [false; 26];
     for i in 0..5 {
@@ -92,15 +91,17 @@ pub fn filter_answers(
         }
     }
 
-    // TODO: Could loop over only remaining answers as an optimization
-    for answer in answers {
+    for answer in &filtered.clone() {
         let mut char_count = [0; 26];
         for a in answer.chars() {
             increment_count(a, &mut char_count);
         }
 
         for i in 0..26 {
-            if (char_count[i] < known_char_counts[i]) || (char_count[i] > 0 && is_absent[i]) {
+            if (char_count[i] < known_char_counts[i])
+                // Need to check for known_char_counts being zero to handle double letters
+                || (char_count[i] > 0 && is_absent[i] && known_char_counts[i] == 0)
+            {
                 filtered.remove(answer);
             }
         }
@@ -277,6 +278,27 @@ mod tests {
             &answers,
         );
         assert_eq!(filtered.len(), 3);
+    }
+
+    #[test]
+    fn test_filter_digit() {
+        let answer_str: Vec<String> = ["robin", "roomy", "rowdy", "round", "rocky", "rough"]
+            .iter()
+            .map(|&s| s.into())
+            .collect();
+        let answers = HashSet::from_iter(answer_str);
+        let filtered = filter_answers(
+            "digit",
+            [
+                LetterState::Gray,
+                LetterState::Gray,
+                LetterState::Gray,
+                LetterState::Green,
+                LetterState::Gray,
+            ],
+            &answers,
+        );
+        assert_eq!(filtered.len(), 1);
     }
 
     #[test]
