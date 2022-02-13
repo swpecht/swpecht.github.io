@@ -5,6 +5,8 @@ use std::{
     path::Path,
 };
 
+use itertools::Itertools;
+
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum LetterState {
     /// Letter is in the right position
@@ -118,18 +120,52 @@ fn get_index(c: char) -> usize {
     return index;
 }
 
+/// Returns all possible scores
+///
+/// Could model this as a bit mask
+/// Every 2 bits corresponds to the flag state
+///
+fn get_all_scores() -> Vec<[LetterState; 5]> {
+    let mut cur = [LetterState::Green; 5];
+    let mut scores = Vec::new();
+    scores.push(cur);
+
+    while cur != [LetterState::Gray; 5] {
+        for i in 0..5 {
+            match cur[i] {
+                LetterState::Green => {
+                    cur[i] = LetterState::Yellow;
+                    scores.push(cur);
+                    break;
+                }
+                LetterState::Yellow => {
+                    cur[i] = LetterState::Gray;
+                    scores.push(cur);
+                    break;
+                }
+                LetterState::Gray => cur[i] = LetterState::Green, // restart
+            }
+        }
+    }
+
+    return scores;
+}
+
 /// Returns the expected value for the number of remaining answers after the guess
 ///
 /// This method can be used to iterate overall all possible guesses. The guess with the
 /// lowest expected value of remaining answers is the best guess
 pub fn evaluate_guess(guess: &str, answers: &HashSet<String>) -> usize {
-    let mut total_remaining_answers = 0;
-    for answer in answers {
-        let score = score_guess(guess, &answer); // the evaluation
+    let mut expected_remaining_answers = 0;
+    for score in get_all_scores() {
         let remaining_answers = filter_answers(guess, score, answers);
-        total_remaining_answers += remaining_answers.len();
+
+        // E[] = Sum( P(# answers) * # answers )
+        // P(# answers) = # answers/ total answers
+        // Factor out the total answers and divide at the end
+        expected_remaining_answers += remaining_answers.len() * remaining_answers.len();
     }
-    return (total_remaining_answers as f64 / answers.len() as f64) as usize;
+    return (expected_remaining_answers as f64 / answers.len() as f64) as usize;
 }
 
 pub fn load_word_list(path: &str, set: &mut HashSet<String>) {
@@ -155,7 +191,7 @@ where
 mod tests {
     use std::collections::HashSet;
 
-    use crate::{filter_answers, score_guess, LetterState};
+    use crate::{filter_answers, get_all_scores, score_guess, LetterState};
 
     #[test]
     fn test_score_correct() {
@@ -241,5 +277,11 @@ mod tests {
             &answers,
         );
         assert_eq!(filtered.len(), 3);
+    }
+
+    #[test]
+    fn test_get_all_scores() {
+        let scores = get_all_scores();
+        assert_eq!(scores.len(), 243); //3^5 options
     }
 }
