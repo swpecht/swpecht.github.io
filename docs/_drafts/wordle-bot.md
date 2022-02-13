@@ -34,4 +34,16 @@ After:
 
 * Bench: [124.59 ms 126.04 ms 127.87 ms], -87%
 
-Significant reduction
+Significant reduction, but still about too slow to evaluate all guesses in realtime. Most time is now spent in hashset related work, specifically on removing items.
+
+For the final iteration, only iterate over remaining items,
+
+* Bench:  [64.390 ms 64.798 ms 65.236 ms], -46%
+
+Could you create a multi-level hash function:
+
+* Mask based on letter counts, 26 long array of counts, would need to support maybe
+* Mask based on position for final filtering
+HashMap<letter_count>
+
+`cargo run --release` significantly speeds up execution
