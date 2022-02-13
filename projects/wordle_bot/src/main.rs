@@ -1,11 +1,32 @@
 use std::collections::HashSet;
 
-use wordle_bot::{evaluate_guess, load_word_list};
+use wordle_bot::{evaluate_guess, filter_answers, load_word_list, LetterState};
 
 const ANSWER_FILE: &str = "data/wordle-answers-alphabetical.txt";
 const GUESS_FILE: &str = "data/wordle-allowed-guesses.txt";
 
 fn main() {
+    let mut answers = HashSet::new();
+    load_word_list(GUESS_FILE, &mut answers);
+    let r = filter_answers(
+        "weary",
+        [
+            LetterState::Green,
+            LetterState::Gray,
+            LetterState::Gray,
+            LetterState::Yellow,
+            LetterState::Green,
+        ],
+        &answers,
+    );
+
+    println!("Num: {}", r.len());
+    println!("{:?}", r);
+
+    find_best_guess();
+}
+
+fn find_best_guess() {
     let mut answers = HashSet::new();
     load_word_list(ANSWER_FILE, &mut answers);
     let mut guesses = HashSet::new();

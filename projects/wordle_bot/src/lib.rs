@@ -6,7 +6,7 @@ use std::{
 };
 
 #[derive(Debug, PartialEq, Copy, Clone)]
-enum LetterState {
+pub enum LetterState {
     /// Letter is in the right position
     Green,
     /// Letter is in the word, but wrong position
@@ -46,7 +46,7 @@ fn score_guess(guess: &str, answer: &str) -> [LetterState; 5] {
     return score;
 }
 
-fn filter_answers(
+pub fn filter_answers(
     guess: &str,
     score: [LetterState; 5],
     answers: &HashSet<String>,
@@ -80,10 +80,13 @@ fn filter_answers(
 
     // Filter by char counts
     let mut known_char_counts = [0; 26];
+    let mut is_absent = [false; 26];
     for i in 0..5 {
-        if score[i] == LetterState::Yellow || score[i] == LetterState::Green {
-            let g = guess.chars().nth(i).unwrap();
-            increment_count(g, &mut known_char_counts);
+        let g = guess.chars().nth(i).unwrap();
+        let index = get_index(g);
+        match score[i] {
+            LetterState::Yellow | LetterState::Green => known_char_counts[index] += 1,
+            LetterState::Gray => is_absent[index] = true,
         }
     }
 
@@ -95,7 +98,7 @@ fn filter_answers(
         }
 
         for i in 0..26 {
-            if char_count[i] < known_char_counts[i] {
+            if (char_count[i] < known_char_counts[i]) || (char_count[i] > 0 && is_absent[i]) {
                 filtered.remove(answer);
             }
         }
@@ -105,9 +108,14 @@ fn filter_answers(
 }
 
 fn increment_count(c: char, counts: &mut [usize; 26]) {
+    let index = get_index(c);
+    counts[index] += 1;
+}
+
+fn get_index(c: char) -> usize {
     const A_DECIMAL: usize = 97;
     let index = c.to_ascii_lowercase() as usize - A_DECIMAL;
-    counts[index] += 1;
+    return index;
 }
 
 /// Returns the expected value for the number of remaining answers after the guess
@@ -121,7 +129,7 @@ pub fn evaluate_guess(guess: &str, answers: &HashSet<String>) -> usize {
         let remaining_answers = filter_answers(guess, score, answers);
         total_remaining_answers += remaining_answers.len();
     }
-    return total_remaining_answers / answers.len();
+    return (total_remaining_answers as f64 / answers.len() as f64) as usize;
 }
 
 pub fn load_word_list(path: &str, set: &mut HashSet<String>) {
@@ -175,7 +183,7 @@ mod tests {
 
     #[test]
     fn test_filter_green_letters() {
-        let answers = HashSet::from_iter(vec!["capes".to_string(), "boats".to_string()]);
+        let answers = HashSet::from_iter(vec!["cxxxx".to_string(), "bxxxx".to_string()]);
         let filtered = filter_answers(
             "crane",
             [
@@ -211,5 +219,27 @@ mod tests {
             &answers,
         );
         assert_eq!(filtered.len(), 1);
+    }
+
+    #[test]
+    fn test_filter_weary() {
+        let answers = HashSet::from_iter(vec![
+            "warby".to_string(), // no
+            "wordy".to_string(), // yes
+            "wormy".to_string(), // yes
+            "wryly".to_string(), // yes
+        ]);
+        let filtered = filter_answers(
+            "weary",
+            [
+                LetterState::Green,
+                LetterState::Gray,
+                LetterState::Gray,
+                LetterState::Yellow,
+                LetterState::Green,
+            ],
+            &answers,
+        );
+        assert_eq!(filtered.len(), 3);
     }
 }
