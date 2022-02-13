@@ -19,7 +19,11 @@ fn main() {
 
     for answer in &answers {
         let turns = play_game(answer, &answers, &guesses);
-        println!("Solved {} in {}", answer, turns);
+        println!(
+            "Solved {} in {}",
+            answer.into_iter().collect::<String>(),
+            turns
+        );
         let count = *histogram.get(&turns).unwrap_or(&0);
         histogram.insert(turns, count + 1);
 
@@ -44,10 +48,10 @@ fn interactive_mode() {
         let stdin = io::stdin();
 
         println!("Enter guess:");
-        let mut guess = String::new();
+        let mut guess_string = String::new();
         stdin
             .lock()
-            .read_line(&mut guess)
+            .read_line(&mut guess_string)
             .expect("Could not read line");
 
         println!("Enter score (GYX):");
@@ -65,6 +69,11 @@ fn interactive_mode() {
                 'Y' => score[i] = LetterState::Yellow,
                 _ => score[i] = LetterState::Gray,
             }
+        }
+
+        let mut guess = ['a'; 5];
+        for i in 0..5 {
+            guess[i] = guess_string.chars().nth(i).unwrap();
         }
 
         answers = filter_answers(&guess, score, &answers);

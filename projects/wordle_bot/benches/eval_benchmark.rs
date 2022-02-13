@@ -10,7 +10,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     load_word_list(ANSWER_FILE, &mut answers);
 
     c.bench_function("eval crane", |b| {
-        b.iter(|| evaluate_guess(black_box("crane"), &answers))
+        b.iter(|| evaluate_guess(black_box(&['c', 'r', 'a', 'n', 'e']), &answers))
     });
 }
 

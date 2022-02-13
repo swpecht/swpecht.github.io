@@ -50,14 +50,29 @@ HashMap<letter_count>
 
 Still too slow for evaluation,
 
-# Switch to vector for filtering
+## Switch to vector for filtering
 
 * Realize that usually filter most values, so spending a lot of time doing hashset removes, what is create a separate vec and move items over as needed
 
 Bench:  [13.343 ms 13.407 ms 13.485 ms], -75%
 Flamegraph: vector-filter
 
-# Next
+## Pre-size vectors
+
+Minimal change
+
+## Improved char indexing
+
+Store words in a char array rather than string, allows for faster indexing
+Bench: [5.8062 ms 5.9414 ms 6.1319 ms], -56%
+flamegraph: array-words
+
+## Exit char count checking early
+
+Bench: [4.4250 ms 4.4978 ms 4.5848 ms], -24%
+
+## Next
 
 * Some way to filter based on char counts?
 * Do a bloom filter like hash function, 5*26 bit mask to represent the words, or just start with a 26 mask for which letters are contained
+* Look 2-3 steps ahead to evaluate opening guess, or just on expected score

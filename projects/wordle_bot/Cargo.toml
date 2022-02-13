@@ -16,3 +16,7 @@ criterion = "0.3"
 [[bench]]
 name = "eval_benchmark"
 harness = false
+
+[[bench]]
+name = "find_best_benchmark"
+harness = false
