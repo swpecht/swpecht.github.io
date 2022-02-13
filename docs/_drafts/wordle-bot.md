@@ -47,3 +47,17 @@ Could you create a multi-level hash function:
 HashMap<letter_count>
 
 `cargo run --release` significantly speeds up execution
+
+Still too slow for evaluation,
+
+# Switch to vector for filtering
+
+* Realize that usually filter most values, so spending a lot of time doing hashset removes, what is create a separate vec and move items over as needed
+
+Bench:  [13.343 ms 13.407 ms 13.485 ms], -75%
+Flamegraph: vector-filter
+
+# Next
+
+* Some way to filter based on char counts?
+* Do a bloom filter like hash function, 5*26 bit mask to represent the words, or just start with a 26 mask for which letters are contained

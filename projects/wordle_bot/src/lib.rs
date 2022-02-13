@@ -46,7 +46,140 @@ pub fn score_guess(guess: &str, answer: &str) -> [LetterState; 5] {
     return score;
 }
 
+/// Returns the number of guesses to get the word
+pub fn play_game(answer: &str, answers: &HashSet<String>, guesses: &HashSet<String>) -> u32 {
+    let mut answers = answers.clone();
+    let guess = "roate"; // Hardcode the first guess
+    let mut score = score_guess(guess, answer);
+    answers = filter_answers(guess, score, &answers);
+    println!("{}: {:?}, {} answers remain", guess, &score, answers.len());
+    let mut num_rounds = 1;
+
+    while score != [LetterState::Green; 5] {
+        let guess = &find_best_guess(&answers, guesses);
+        score = score_guess(guess, answer);
+        answers = filter_answers(guess, score, &answers);
+        println!("{}: {:?}, {} answers remain", guess, &score, answers.len());
+        num_rounds += 1;
+    }
+
+    return num_rounds;
+}
+
+pub fn find_best_guess(answers: &HashSet<String>, guesses: &HashSet<String>) -> String {
+    let mut best_guess_score = usize::MAX;
+    let mut best_guess = "N/A".to_string();
+
+    // Early exit if only 2 or fewer possible answers
+    // Randomly choose 1
+    if answers.len() <= 2 {
+        return answers.into_iter().nth(0).unwrap().to_string();
+    }
+
+    for guess in guesses {
+        let expected_answers = evaluate_guess(&guess, &answers);
+        if expected_answers < best_guess_score {
+            best_guess_score = expected_answers;
+            best_guess = guess.clone();
+            // Can't get better than 1, can return early
+            if expected_answers == 1 {
+                return best_guess;
+            }
+        }
+    }
+
+    return best_guess;
+}
+
 pub fn filter_answers(
+    guess: &str,
+    score: [LetterState; 5],
+    answers: &HashSet<String>,
+) -> HashSet<String> {
+    // return filter_answers_hashset(guess, score, answers);
+    return filter_answers_vec(guess, score, answers);
+}
+
+fn filter_answers_vec(
+    guess: &str,
+    score: [LetterState; 5],
+    answers: &HashSet<String>,
+) -> HashSet<String> {
+    // Start with a copy of all answers and remove ones that can't match
+
+    let mut filtered = Vec::new();
+    // Filter letters where they should be, e.g. Green
+    for answer in answers {
+        let mut is_match = true;
+        for i in 0..5 {
+            if score[i] == LetterState::Green {
+                let g = guess.chars().nth(i).unwrap();
+                let a = answer.chars().nth(i).unwrap();
+                is_match = is_match && a == g
+            }
+        }
+
+        if is_match {
+            filtered.push(answer);
+        }
+    }
+
+    let mut new_filtered = Vec::new();
+
+    // Filter letters where they shouldn't be, e.g. Gray and not Green
+    for answer in filtered {
+        let mut is_match = true;
+        for i in 0..5 {
+            if score[i] == LetterState::Yellow {
+                let g = guess.chars().nth(i).unwrap();
+                let a = answer.chars().nth(i).unwrap();
+                is_match = is_match && a != g
+            }
+        }
+
+        if is_match {
+            new_filtered.push(answer);
+        }
+    }
+
+    filtered = new_filtered;
+    new_filtered = Vec::new();
+
+    // Filter by char counts
+    let mut known_char_counts = [0; 26];
+    let mut is_absent = [false; 26];
+    for i in 0..5 {
+        let g = guess.chars().nth(i).unwrap();
+        let index = get_index(g);
+        match score[i] {
+            LetterState::Yellow | LetterState::Green => known_char_counts[index] += 1,
+            LetterState::Gray => is_absent[index] = true,
+        }
+    }
+
+    for answer in filtered {
+        let mut char_count = [0; 26];
+        for a in answer.chars() {
+            increment_count(a, &mut char_count);
+        }
+
+        let mut is_match = true;
+        for i in 0..26 {
+            is_match = is_match
+                && !((char_count[i] < known_char_counts[i])
+                // Need to check for known_char_counts being zero to handle double letters
+                || (char_count[i] > 0 && is_absent[i] && known_char_counts[i] == 0))
+        }
+
+        if is_match {
+            new_filtered.push(answer)
+        }
+    }
+
+    return HashSet::from_iter(new_filtered.into_iter().map(|s| s.clone()));
+}
+
+fn filter_answers_hashset(
     guess: &str,
     score: [LetterState; 5],
     answers: &HashSet<String>,
