@@ -5,7 +5,7 @@ use std::{
     path::Path,
 };
 
-#[derive(Debug, PartialEq, Copy, Clone)]
+#[derive(Debug, PartialEq, Copy, Clone, Eq, Hash)]
 pub enum LetterState {
     /// Letter is in the right position
     Green,
@@ -49,25 +49,23 @@ pub fn score_guess(guess: &[char; 5], answer: &[char; 5]) -> [LetterState; 5] {
 /// Returns the number of guesses to get the word
 pub fn play_game(
     answer: &[char; 5],
+    start_guess: &[char; 5],
     answers: &HashSet<[char; 5]>,
     guesses: &HashSet<[char; 5]>,
+    second_guess_lookup: &HashMap<[LetterState; 5], [char; 5]>,
 ) -> u32 {
     let mut answers = answers.clone();
-    let guess = ['r', 'o', 'a', 't', 'e']; // Hardcode the first guess
-    let mut score = score_guess(&guess, answer);
-    answers = filter_answers(&guess, score, &answers);
-    println!(
-        "{}: {:?}, {} answers remain",
-        guess.into_iter().collect::<String>(),
-        &score,
-        answers.len()
-    );
-    let mut num_rounds = 1;
+    let mut num_rounds = 0;
+    let mut score = [LetterState::Gray; 5];
 
     while score != [LetterState::Green; 5] {
-        let guess = &find_best_guess(&answers, guesses);
-        score = score_guess(guess, answer);
-        answers = filter_answers(guess, score, &answers);
+        let guess = match num_rounds {
+            0 => *start_guess,
+            1 => second_guess_lookup.get(&score).unwrap().clone(),
+            _ => find_best_guess(&answers, guesses),
+        };
+        score = score_guess(&guess, answer);
+        answers = filter_answers(&guess, score, &answers);
         println!(
             "{}: {:?}, {} answers remain",
             guess.into_iter().collect::<String>(),
@@ -279,11 +277,7 @@ fn get_index(c: char) -> usize {
 }
 
 /// Returns all possible scores
-///
-/// Could model this as a bit mask
-/// Every 2 bits corresponds to the flag state
-///
-fn get_all_scores() -> Vec<[LetterState; 5]> {
+pub fn get_all_scores() -> Vec<[LetterState; 5]> {
     let mut cur = [LetterState::Green; 5];
     let mut scores = Vec::new();
     scores.push(cur);

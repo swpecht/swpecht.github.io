@@ -3,22 +3,53 @@ use std::{
     io::{self, BufRead},
 };
 
-use wordle_bot::{filter_answers, find_best_guess, load_word_list, play_game, LetterState};
+use wordle_bot::{
+    filter_answers, find_best_guess, get_all_scores, load_word_list, play_game, LetterState,
+};
 
 const ANSWER_FILE: &str = "data/wordle-answers-alphabetical.txt";
 const GUESS_FILE: &str = "data/wordle-allowed-guesses.txt";
 
 fn main() {
+    evaluate();
+    // interactive_mode();
+}
+
+fn evaluate() {
     let mut answers = HashSet::new();
     load_word_list(ANSWER_FILE, &mut answers);
     let mut guesses = HashSet::new();
     load_word_list(GUESS_FILE, &mut guesses);
     load_word_list(ANSWER_FILE, &mut guesses);
 
+    println!("calculating starting guess...");
+    let starting_guess = find_best_guess(&answers, &guesses);
+
+    // Build lookup table for second guess
+    println!("building second guess lookup...");
+    let mut second_guess_lookup = HashMap::new();
+    for score in get_all_scores() {
+        let filtered_answers = filter_answers(&starting_guess, score, &answers);
+
+        if filtered_answers.len() == 0 {
+            // impossible state, don't need to pre-compute
+            continue;
+        }
+
+        let best_guess = find_best_guess(&filtered_answers, &guesses);
+        second_guess_lookup.insert(score, best_guess);
+    }
+
     let mut histogram = HashMap::new();
 
     for answer in &answers {
-        let turns = play_game(answer, &answers, &guesses);
+        let turns = play_game(
+            answer,
+            &starting_guess,
+            &answers,
+            &guesses,
+            &second_guess_lookup,
+        );
         println!(
             "Solved {} in {}",
             answer.into_iter().collect::<String>(),
@@ -43,10 +74,8 @@ fn interactive_mode() {
 
     println!("Loaded {} answers", answers.len());
     println!("Loaded {} guesses", guesses.len());
-
+    let stdin = io::stdin();
     loop {
-        let stdin = io::stdin();
-
         println!("Enter guess:");
         let mut guess_string = String::new();
         stdin
@@ -80,6 +109,7 @@ fn interactive_mode() {
         println!("{} answers remain", answers.len());
         println!("{:?}", answers);
 
-        find_best_guess(&answers, &guesses);
+        let best_guess = find_best_guess(&answers, &guesses);
+        println!("Best guess: {}", best_guess.into_iter().collect::<String>())
     }
 }

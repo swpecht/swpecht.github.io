@@ -71,8 +71,13 @@ flamegraph: array-words
 
 Bench: [4.4250 ms 4.4978 ms 4.5848 ms], -24%
 
+## Pre-cache initial guess results
+
+* Can run entire sim very quickly, average guesses: 3.77
+
 ## Next
 
+* Pre-cache initial guess results
 * Some way to filter based on char counts?
 * Do a bloom filter like hash function, 5*26 bit mask to represent the words, or just start with a 26 mask for which letters are contained
 * Look 2-3 steps ahead to evaluate opening guess, or just on expected score
