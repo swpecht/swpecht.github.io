@@ -1,45 +1,57 @@
-const NUM_DICE: usize = 4;
+pub mod liars_poker;
 
-enum DiceState {
-    U,     // unknown
-    K(u8), // Known
+use clap::Parser;
+use liars_poker::{GameState, LiarsPoker};
+use log::*;
+use rand::Rng;
+
+/// Agent that randomly chooses moves
+fn random_agent(possible_moves: &Vec<GameState>) -> usize {
+    debug!("Evaluating moves: {:#?}", possible_moves);
+    let mut rng = rand::thread_rng();
+    return rng.gen_range(0..possible_moves.len());
 }
 
-impl std::fmt::Debug for DiceState {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            DiceState::U => write!(f, "U"),
-            DiceState::K(x) => write!(f, "{}", x),
-        }
-    }
-}
+/// Simple program to greet a person
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+struct Args {
+    #[clap(short, long, value_parser, default_value_t = 5)]
+    num_games: usize,
 
-#[derive(Debug, Clone, Copy)]
-enum GuessState {
-    NG, // Not guessed
-    P1, // Player 1
-    P2, // Player 2
-}
-
-struct GameState {
-    dice_state: [DiceState; NUM_DICE],
-
-    // There are 6 possible values for the dice, can wager up to the
-    // number of dice for each value
-    guess_state: [GuessState; NUM_DICE * 6],
-}
-
-impl std::fmt::Debug for GameState {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?}, {:?}", self.dice_state, self.guess_state)
-    }
+    #[clap(short, long, action)]
+    quiet: bool,
 }
 
 fn main() {
-    let g = GameState {
-        dice_state: [DiceState::K(1), DiceState::K(1), DiceState::U, DiceState::U],
-        guess_state: [GuessState::NG; NUM_DICE * 6],
-    };
+    let args = Args::parse();
 
-    println!("{:?}", g);
+    print!("{}", args.quiet);
+
+    stderrlog::new()
+        .module(module_path!())
+        .quiet(args.quiet)
+        .verbosity(log::Level::Debug)
+        .timestamp(stderrlog::Timestamp::Second)
+        .init()
+        .unwrap();
+
+    let mut p1_wins = 0;
+    let mut p2_wins = 0;
+
+    for _ in 0..args.num_games {
+        let mut game = LiarsPoker::new();
+        let mut score = game.step(random_agent);
+        while score == 0 {
+            score = game.step(random_agent);
+        }
+
+        if score == 1 {
+            p1_wins += 1;
+        } else {
+            p2_wins += 1;
+        }
+    }
+
+    print!("P1 wins: {},  P2 wins: {}", p1_wins, p2_wins)
 }
