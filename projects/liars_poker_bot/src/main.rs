@@ -1,15 +1,48 @@
 pub mod liars_poker;
 
 use clap::Parser;
-use liars_poker::{GameState, LiarsPoker};
+use liars_poker::{Action, GameState, LiarsPoker};
 use log::*;
-use rand::Rng;
+use rand::prelude::SliceRandom;
+
+use crate::liars_poker::{parse_bet, parse_highest_bet, DiceState};
 
 /// Agent that randomly chooses moves
-fn random_agent(possible_moves: &Vec<GameState>) -> usize {
-    debug!("Evaluating moves: {:#?}", possible_moves);
+fn random_agent(_: &GameState, possible_moves: &Vec<Action>) -> Action {
+    debug!("Random agent evaluating moves: {:?}", possible_moves);
     let mut rng = rand::thread_rng();
-    return rng.gen_range(0..possible_moves.len());
+    return possible_moves.choose(&mut rng).unwrap().clone();
+}
+
+/// Bets based on own dice info only
+fn own_dice_agent(g: &GameState, possible_moves: &Vec<Action>) -> Action {
+    debug!("Own dice agent evaluating moves: {:?}", possible_moves);
+
+    // count own dice
+    let mut counts = [0; 6];
+    for d in g.dice_state {
+        match d {
+            DiceState::K(x) => counts[x] += 1,
+            _ => {}
+        }
+    }
+
+    if let Some((count, value)) = parse_highest_bet(&g) {
+        if count > counts[value - 1] {
+            return Action::Call;
+        }
+    }
+
+    for a in possible_moves {
+        if let Action::Bet(i) = a {
+            let (count, value) = parse_bet(*i);
+            if counts[value - 1] >= count {
+                return Action::Bet(value);
+            }
+        }
+    }
+
+    return Action::Call;
 }
 
 /// Simple program to greet a person
@@ -26,8 +59,6 @@ struct Args {
 fn main() {
     let args = Args::parse();
 
-    print!("{}", args.quiet);
-
     stderrlog::new()
         .module(module_path!())
         .quiet(args.quiet)
@@ -41,11 +72,9 @@ fn main() {
 
     for _ in 0..args.num_games {
         let mut game = LiarsPoker::new();
-        let mut score = game.step(random_agent);
-        while score == 0 {
-            score = game.step(random_agent);
-        }
-
+        // let score = game.play(random_agent, random_agent);
+        // let score = game.play(own_dice_agent, random_agent);
+        let score = game.play(random_agent, own_dice_agent);
         if score == 1 {
             p1_wins += 1;
         } else {
@@ -53,5 +82,5 @@ fn main() {
         }
     }
 
-    print!("P1 wins: {},  P2 wins: {}", p1_wins, p2_wins)
+    print!("P1 wins: {},  P2 wins: {}\n\n", p1_wins, p2_wins)
 }
