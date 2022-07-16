@@ -1,10 +1,10 @@
 use core::panic;
 
-use log::info;
+use log::{debug, info};
 /// Game implementation for liars poker.
 use rand::Rng;
 
-const NUM_DICE: usize = 4;
+const NUM_DICE: usize = 12;
 
 #[derive(Clone, PartialEq)]
 pub enum Action {
@@ -108,6 +108,7 @@ impl LiarsPoker {
             }
 
             is_player1_turn = !is_player1_turn;
+            debug!("Game state: {:?}", self.game_state);
         }
 
         return score;
@@ -121,13 +122,14 @@ impl LiarsPoker {
         let possible_actions = get_possible_actions(&filtered_state);
         let a = agent(&filtered_state, &possible_actions);
 
+        let acting_player = get_acting_player(&self.game_state);
+        info!("{:?} tried to play {:?}", acting_player, a);
+
         // Verify the action is allowed
         if !possible_actions.contains(&a) {
             panic!("Agent attempted invalid action")
         }
 
-        let acting_player = get_acting_player(&self.game_state);
-        info!("{:?} played {:?}", acting_player, a);
         // Apply the action
         match a {
             Action::Bet(i) => self.game_state.bet_state[i] = acting_player,

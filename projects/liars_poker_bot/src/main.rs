@@ -36,13 +36,18 @@ fn own_dice_agent(g: &GameState, possible_moves: &Vec<Action>) -> Action {
     for a in possible_moves {
         if let Action::Bet(i) = a {
             let (count, value) = parse_bet(*i);
-            if counts[value - 1] >= count {
-                return Action::Bet(value);
+            let a = Action::Bet(value);
+            if counts[value - 1] >= count && possible_moves.contains(&a) {
+                return a;
             }
         }
     }
 
     return Action::Call;
+}
+
+fn minmax_agent(g: &GameState, possible_moves: &Vec<Action>) -> Action {
+    debug!("Expecation agent evaluating moves: {:?}", possible_moves);
 }
 
 /// Simple program to greet a person
@@ -74,7 +79,8 @@ fn main() {
         let mut game = LiarsPoker::new();
         // let score = game.play(random_agent, random_agent);
         // let score = game.play(own_dice_agent, random_agent);
-        let score = game.play(random_agent, own_dice_agent);
+        // let score = game.play(random_agent, own_dice_agent);
+        let score = game.play(own_dice_agent, own_dice_agent);
         if score == 1 {
             p1_wins += 1;
         } else {
