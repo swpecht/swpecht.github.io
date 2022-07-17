@@ -1,11 +1,9 @@
 pub mod game_tree;
 pub mod liars_poker;
 
-use std::cmp::Ordering;
-
 use clap::Parser;
 use itertools::Itertools;
-use liars_poker::{apply_action, get_possible_actions, get_winner, Action, GameState, LiarsPoker};
+use liars_poker::{apply_action, get_winner, Action, GameState, LiarsPoker};
 use log::*;
 use rand::prelude::SliceRandom;
 
@@ -121,49 +119,6 @@ fn score_game_state(g: &GameState) -> f32 {
     return wins as f32 / games as f32;
 }
 
-fn minimax(g: &GameState, alpha: &mut f32, beta: &mut f32, maximizing_player: bool) -> f32 {
-    if let Some(_) = get_winner(g) {
-        let score = score_game_state(g);
-        return match maximizing_player {
-            true => score,
-            false => 1.0 - score,
-        };
-    }
-
-    if maximizing_player {
-        let mut value = f32::MIN;
-        let actions = get_possible_actions(g);
-        for a in actions {
-            let f = apply_action(g, &a);
-            value = {
-                let v2 = minimax(&f, alpha, beta, false);
-                value.max(v2)
-            };
-            if value >= *beta {
-                break;
-            }
-            *alpha = alpha.max(value);
-        }
-        return value;
-    } else {
-        let mut value = f32::MAX;
-        let actions = get_possible_actions(g);
-        for a in actions {
-            let f = apply_action(g, &a);
-            value = {
-                let v2 = minimax(&f, alpha, beta, false);
-                value.min(v2)
-            };
-            if value <= *alpha {
-                break;
-            }
-
-            *beta = beta.min(value);
-        }
-        return value;
-    }
-}
-
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -236,18 +191,5 @@ mod tests {
         g.bet_state[2 * DICE_SIDES + 1] = Some(Player::P1);
         let score = score_game_state(&g);
         assert_eq!(score, 0.0);
-    }
-
-    #[test]
-    fn test_build_tree() {
-        let mut g = GameState {
-            dice_state: [DiceState::K(1), DiceState::K(1), DiceState::U, DiceState::U],
-            bet_state: [None; NUM_DICE * DICE_SIDES],
-            call_state: None,
-        };
-
-        let t = GameTree::new(&g);
-        print!("{:?}", t);
-        print!("{}\n", t.len());
     }
 }
