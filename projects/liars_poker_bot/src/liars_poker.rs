@@ -1,12 +1,14 @@
 use core::panic;
+use std::ops;
 
 use log::{debug, info};
 /// Game implementation for liars poker.
 use rand::Rng;
 
-const NUM_DICE: usize = 12;
+pub const NUM_DICE: usize = 4;
+pub const DICE_SIDES: usize = 2;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum Action {
     Bet(usize),
     Call,
@@ -21,7 +23,8 @@ impl std::fmt::Debug for Action {
     }
 }
 
-pub enum Players {
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Player {
     P1,
     P2,
 }
@@ -30,6 +33,26 @@ pub enum Players {
 pub enum DiceState {
     U,        // unknown
     K(usize), // Known
+}
+
+impl DiceState {
+    pub fn unwrap_or(&self, x: usize) -> usize {
+        return match self {
+            DiceState::K(v) => *v,
+            _ => x,
+        };
+    }
+}
+
+impl ops::Add<usize> for DiceState {
+    type Output = DiceState;
+
+    fn add(self, rhs: usize) -> DiceState {
+        match self {
+            DiceState::K(x) => DiceState::K(x + rhs),
+            DiceState::U => DiceState::U,
+        }
+    }
 }
 
 impl std::fmt::Debug for DiceState {
@@ -41,23 +64,16 @@ impl std::fmt::Debug for DiceState {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum BetState {
-    NB, // Not bet
-    P1, // Player 1
-    P2, // Player 2
-}
-
 #[derive(Clone, PartialEq)]
 pub struct GameState {
     pub dice_state: [DiceState; NUM_DICE],
 
-    // There are 6 possible values for the dice, can wager up to the
+    // There are DICE_SIDES possible values for the dice, can wager up to the
     // number of dice for each value
-    pub bet_state: [BetState; NUM_DICE * 6],
+    pub bet_state: [Option<Player>; NUM_DICE * DICE_SIDES],
 
     /// Track if someone has called the other player
-    pub call_state: BetState,
+    pub call_state: Option<Player>,
 }
 
 impl std::fmt::Debug for GameState {
@@ -79,13 +95,13 @@ impl LiarsPoker {
         let mut rng = rand::thread_rng();
         let mut dice_state = [DiceState::U; NUM_DICE];
         for i in 0..NUM_DICE {
-            dice_state[i] = DiceState::K(rng.gen_range(1..6));
+            dice_state[i] = DiceState::K(rng.gen_range(0..DICE_SIDES));
         }
 
         let s = GameState {
             dice_state: dice_state,
-            bet_state: [BetState::NB; NUM_DICE * 6],
-            call_state: BetState::NB,
+            bet_state: [None; NUM_DICE * DICE_SIDES],
+            call_state: None,
         };
 
         info!("Game created: {:?}", s);
@@ -130,17 +146,13 @@ impl LiarsPoker {
             panic!("Agent attempted invalid action")
         }
 
-        // Apply the action
-        match a {
-            Action::Bet(i) => self.game_state.bet_state[i] = acting_player,
-            Action::Call => self.game_state.call_state = acting_player,
-        }
+        self.game_state = apply_action(&self.game_state, &a);
 
         let score = evaluate_state(&self.game_state);
         if score == 1 || score == -1 {
             let winner = match score {
-                1 => BetState::P1,
-                -1 => BetState::P2,
+                1 => Player::P1,
+                -1 => Player::P2,
                 _ => panic!("Invalid game state"),
             };
             info!("Winner: {:?}; {:?}", winner, self.game_state);
@@ -152,7 +164,7 @@ impl LiarsPoker {
 
 /// Return 0 if no one has won, 1 is P1, -1 if P2
 fn evaluate_state(g: &GameState) -> i32 {
-    if g.call_state == BetState::NB {
+    if g.call_state == None {
         return 0; // game isn't over
     }
 
@@ -166,21 +178,24 @@ fn evaluate_state(g: &GameState) -> i32 {
         }
     }
 
-    info!(
-        "{:?} called against {} {:?}s there were {} {:?}s",
-        g.call_state, num_dice, state, counted_dice, state
-    );
-
     let call_is_correct = counted_dice >= num_dice;
     match (g.call_state, call_is_correct) {
-        (BetState::P1, false) => return 1,
-        (BetState::P2, true) => return 1,
-        (BetState::NB, _) => panic!("Invalid player state"),
+        (Some(Player::P1), false) => return 1,
+        (Some(Player::P2), true) => return 1,
+        (None, _) => 0,
         _ => return -1,
     }
 }
 
-/// Returns the number
+pub fn get_winner(g: &GameState) -> Option<Player> {
+    return match evaluate_state(g) {
+        1 => Some(Player::P1),
+        -1 => Some(Player::P2),
+        _ => None,
+    };
+}
+
+/// Returns (num_dice, value)
 pub fn parse_highest_bet(g: &GameState) -> Option<(usize, usize)> {
     let last_guess = get_last_bet(g);
     match last_guess {
@@ -190,8 +205,8 @@ pub fn parse_highest_bet(g: &GameState) -> Option<(usize, usize)> {
 }
 
 pub fn parse_bet(i: usize) -> (usize, usize) {
-    let value = i % 6 + 1;
-    let num_dice = i / 6 + 1;
+    let value = i % DICE_SIDES + 1;
+    let num_dice = i / DICE_SIDES + 1;
     return (num_dice, value);
 }
 
@@ -201,9 +216,8 @@ fn filter_state(g: &GameState) -> GameState {
     let acting_player = get_acting_player(g);
 
     let filter_start = match acting_player {
-        BetState::P1 => NUM_DICE / 2,
-        BetState::P2 => 0,
-        _ => panic!("Invalid player state"),
+        Player::P1 => NUM_DICE / 2,
+        Player::P2 => 0,
     };
 
     for i in filter_start..filter_start + NUM_DICE / 2 {
@@ -218,50 +232,61 @@ fn get_last_bet(g: &GameState) -> Option<usize> {
     let mut last_guess = None;
     for i in 0..g.bet_state.len() {
         match g.bet_state[i] {
-            BetState::P1 => last_guess = Some(i),
-            BetState::P2 => last_guess = Some(i),
+            Some(Player::P1) => last_guess = Some(i),
+            Some(Player::P2) => last_guess = Some(i),
             _ => {}
         }
     }
     return last_guess;
 }
 
-fn get_acting_player(g: &GameState) -> BetState {
+fn get_acting_player(g: &GameState) -> Player {
     // Check for a call
     match g.call_state {
-        BetState::P1 => return BetState::P2,
-        BetState::P2 => return BetState::P1,
+        Some(Player::P1) => return Player::P2,
+        Some(Player::P2) => return Player::P1,
         _ => {}
     }
 
     // Get the last guesser
-    let mut last_guesser = BetState::NB;
+    let mut last_guesser = None;
     for i in 0..g.bet_state.len() {
         match g.bet_state[i] {
-            BetState::P1 => {
-                last_guesser = BetState::P1;
+            Some(Player::P1) => {
+                last_guesser = Some(Player::P1);
             }
-            BetState::P2 => {
-                last_guesser = BetState::P2;
+            Some(Player::P2) => {
+                last_guesser = Some(Player::P2);
             }
             _ => {}
         }
     }
 
     let next_guesser = match last_guesser {
-        BetState::P1 => BetState::P2,
-        BetState::P2 => BetState::P1,
-        BetState::NB => BetState::P1,
+        Some(Player::P1) => Player::P2,
+        Some(Player::P2) => Player::P1,
+        None => Player::P1,
     };
 
     return next_guesser;
 }
 
-fn get_possible_actions(g: &GameState) -> Vec<Action> {
+pub fn apply_action(g: &GameState, a: &Action) -> GameState {
+    let mut f = g.clone();
+    let acting_player = get_acting_player(g);
+    match a {
+        Action::Bet(i) => f.bet_state[*i] = Some(acting_player),
+        Action::Call => f.call_state = Some(acting_player),
+    };
+
+    return f;
+}
+
+pub fn get_possible_actions(g: &GameState) -> Vec<Action> {
     let mut actions = Vec::new();
 
     // Check for call
-    if g.call_state != BetState::NB {
+    if g.call_state != None {
         return actions; // no possible moves
     }
 
@@ -277,7 +302,7 @@ fn get_possible_actions(g: &GameState) -> Vec<Action> {
     }
 
     // Call bluff, only possible if another bet has been made
-    if g.bet_state.iter().any(|&x| x != BetState::NB) {
+    if g.bet_state.iter().any(|&x| x != None) {
         actions.push(Action::Call);
     }
 
@@ -286,25 +311,27 @@ fn get_possible_actions(g: &GameState) -> Vec<Action> {
 
 #[cfg(test)]
 mod tests {
-    use crate::liars_poker::{get_possible_actions, BetState, DiceState, GameState, NUM_DICE};
+    use crate::liars_poker::{
+        get_possible_actions, DiceState, GameState, Player, DICE_SIDES, NUM_DICE,
+    };
 
     #[test]
     fn move_getter() {
         let mut g = GameState {
-            dice_state: [DiceState::K(1), DiceState::K(1), DiceState::U, DiceState::U],
-            bet_state: [BetState::NB; NUM_DICE * 6],
-            call_state: BetState::NB,
+            dice_state: [DiceState::K(1); NUM_DICE],
+            bet_state: [None; NUM_DICE * DICE_SIDES],
+            call_state: None,
         };
 
         let moves = get_possible_actions(&g);
-        assert_eq!(moves.len(), NUM_DICE * 6);
+        assert_eq!(moves.len(), NUM_DICE * DICE_SIDES);
 
-        g.bet_state[4] = BetState::P1;
+        g.bet_state[4] = Some(Player::P1);
         let moves = get_possible_actions(&g);
-        assert_eq!(moves.len(), NUM_DICE * 6 - 5 + 1);
+        assert_eq!(moves.len(), NUM_DICE * DICE_SIDES - 5 + 1);
 
-        g.bet_state[5] = BetState::P2;
+        g.bet_state[5] = Some(Player::P2);
         let moves = get_possible_actions(&g);
-        assert_eq!(moves.len(), NUM_DICE * 6 - 6 + 1);
+        assert_eq!(moves.len(), NUM_DICE * DICE_SIDES - DICE_SIDES + 1);
     }
 }
