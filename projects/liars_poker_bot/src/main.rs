@@ -168,14 +168,27 @@ impl GameTree {
         // Get the next free index
         let next_index = self.nodes.len();
 
+        let parent_actor = match parent {
+            None => Player::P1,
+            Some(id) => {
+                let p = self.get(id);
+                p.actor
+            }
+        };
+        let actor = match parent_actor {
+            Player::P1 => Player::P2,
+            Player::P2 => Player::P1,
+        };
+
         // Push the node into the arena
         self.nodes.push(GameTreeNode {
             id: next_index,
-            parent: None,
+            parent: parent,
             children: Vec::new(),
             state: state,
             action: action,
             score: None,
+            actor: actor,
         });
 
         if let Some(p) = parent {
@@ -188,6 +201,10 @@ impl GameTree {
 
     pub fn get(&self, id: usize) -> &GameTreeNode {
         return &self.nodes[id];
+    }
+
+    pub fn set_score(&mut self, id: usize, score: f32) {
+        self.nodes[id].score = Some(score);
     }
 }
 
@@ -213,7 +230,7 @@ impl std::fmt::Debug for GameTree {
                 _ => String::new(),
             };
 
-            output.push_str(&format!("{}{:?}", START, action_string));
+            output.push_str(&format!("{} {:?} {:?}", START, node.actor, action_string));
 
             if let Some(score) = node.score {
                 output.push_str(&format!(": {}", score));
@@ -239,6 +256,7 @@ struct GameTreeNode {
 
     pub state: GameState,
     pub action: Option<Action>,
+    pub actor: Player,
     pub score: Option<f32>,
 }
 
@@ -277,13 +295,51 @@ fn score_tree(tree: &mut GameTree) {
     for n in leaf_nodes {
         let s = &tree.get(n).state;
         let score = score_game_state(s);
-        tree.nodes[n].score = Some(score);
+        tree.set_score(n, score);
     }
 }
 
 /// Use minimax algorithm to propogate scores up the tree
 fn propogate_scores(tree: &mut GameTree) {
-    TODO
+    let mut nodes_to_score = Vec::new();
+    nodes_to_score.push(0);
+
+    let mut nodes_visited = 0;
+    let mut nodes_scored = 0;
+
+    'processor: while let Some(id) = nodes_to_score.pop() {
+        nodes_visited += 1;
+        if nodes_visited % 100 == 0 {
+            info!(
+                "propogate_scores visited {} nodes and scored {}. Queue length is {}",
+                nodes_visited,
+                nodes_scored,
+                nodes_to_score.len()
+            )
+        }
+
+        let n = tree.get(id);
+        let mut score = match n.actor {
+            Player::P1 => f32::MAX,
+            Player::P2 => f32::MIN,
+        };
+        for &c in &n.children {
+            let cn = tree.get(c);
+            if let Some(cn_score) = cn.score {
+                score = match n.actor {
+                    Player::P1 => score.min(cn_score),
+                    Player::P2 => score.max(cn_score),
+                }
+            } else {
+                nodes_to_score.push(id); // need to rescore this node
+                nodes_to_score.push(c);
+                continue 'processor;
+            }
+        }
+
+        tree.set_score(id, score);
+        nodes_scored += 1;
+    }
 }
 
 /// Simple program to greet a person
@@ -327,7 +383,7 @@ fn main() {
 
     print!("P1 wins: {},  P2 wins: {}\n\n", p1_wins, p2_wins);
 
-    let mut g = GameState {
+    let g = GameState {
         dice_state: [DiceState::K(1), DiceState::K(1), DiceState::U, DiceState::U],
         bet_state: [None; NUM_DICE * DICE_SIDES],
         call_state: None,
@@ -335,9 +391,9 @@ fn main() {
 
     let mut t = build_tree(&g);
     score_tree(&mut t);
-
-    print!("{}\n", t.nodes.len());
+    propogate_scores(&mut t);
     print!("{:?}", t);
+    print!("{}\n", t.nodes.len());
 }
 
 #[cfg(test)]
@@ -382,8 +438,7 @@ mod tests {
         };
 
         let t = build_tree(&g);
-
-        print!("{}\n", t.nodes.len());
         print!("{:?}", t);
+        print!("{}\n", t.nodes.len());
     }
 }
