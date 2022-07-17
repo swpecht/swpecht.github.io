@@ -18,7 +18,7 @@ impl std::fmt::Debug for Action {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Action::Call => write!(f, "C"),
-            Action::Bet(x) => write!(f, "{}", x),
+            Action::Bet(x) => write!(f, "{:?}", parse_bet(*x)),
         }
     }
 }

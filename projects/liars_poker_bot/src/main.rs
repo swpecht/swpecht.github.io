@@ -1,5 +1,7 @@
 pub mod liars_poker;
 
+use std::cmp::Ordering;
+
 use clap::Parser;
 use itertools::Itertools;
 use liars_poker::{apply_action, get_possible_actions, get_winner, Action, GameState, LiarsPoker};
@@ -342,6 +344,44 @@ fn propogate_scores(tree: &mut GameTree) {
     }
 }
 
+/// Returns the series of actions for the optimal line through the tree
+fn get_optimal_line(t: &GameTree) {
+    let mut line = Vec::new();
+    let mut nodes_to_process = Vec::new();
+    nodes_to_process.push(0);
+
+    while let Some(id) = nodes_to_process.pop() {
+        let n = t.get(id);
+        line.push(id);
+
+        let best_child_index = match n.actor {
+            Player::P1 => n
+                .children
+                .iter()
+                .map(|&x| t.get(x).score.unwrap())
+                .enumerate()
+                .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(Ordering::Equal))
+                .map(|(index, _)| index),
+            Player::P2 => n
+                .children
+                .iter()
+                .map(|&x| t.get(x).score.unwrap())
+                .enumerate()
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(Ordering::Equal))
+                .map(|(index, _)| index),
+        };
+
+        if let Some(child) = best_child_index {
+            nodes_to_process.push(n.children[child]);
+        }
+    }
+
+    for id in line {
+        let n = t.get(id);
+        println!("{:?} {:?} {:?}", n.actor, n.action, n.score);
+    }
+}
+
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -369,11 +409,11 @@ fn main() {
 
     for _ in 0..args.num_games {
         let mut game = LiarsPoker::new();
-        // let score = game.play(random_agent, random_agent);
+        let score = game.play(random_agent, random_agent);
         // let score = game.play(own_dice_agent, random_agent);
         // let score = game.play(random_agent, own_dice_agent);
         // let score = game.play(own_dice_agent, own_dice_agent);
-        let score = game.play(minimax_agent, random_agent);
+        // let score = game.play(minimax_agent, random_agent);
         if score == 1 {
             p1_wins += 1;
         } else {
@@ -394,6 +434,7 @@ fn main() {
     propogate_scores(&mut t);
     print!("{:?}", t);
     print!("{}\n", t.nodes.len());
+    get_optimal_line(&t);
 }
 
 #[cfg(test)]
