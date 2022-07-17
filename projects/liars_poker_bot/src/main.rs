@@ -170,10 +170,12 @@ impl GameTree {
 
         // Push the node into the arena
         self.nodes.push(GameTreeNode {
+            id: next_index,
             parent: None,
             children: Vec::new(),
             state: state,
             action: action,
+            score: None,
         });
 
         if let Some(p) = parent {
@@ -211,7 +213,13 @@ impl std::fmt::Debug for GameTree {
                 _ => String::new(),
             };
 
-            output.push_str(&format!("{}{:?}\n", START, action_string));
+            output.push_str(&format!("{}{:?}", START, action_string));
+
+            if let Some(score) = node.score {
+                output.push_str(&format!(": {}", score));
+            }
+
+            output.push_str("\n");
 
             for c in &node.children {
                 nodes_to_print.push((*c, depth + 1));
@@ -224,11 +232,14 @@ impl std::fmt::Debug for GameTree {
 
 #[derive(Debug)]
 struct GameTreeNode {
+    id: usize,
+
     parent: Option<usize>,
     children: Vec<usize>,
 
     pub state: GameState,
     pub action: Option<Action>,
+    pub score: Option<f32>,
 }
 
 /// Build a tree of the possible game states from the given one
@@ -252,6 +263,27 @@ fn build_tree(g: &GameState) -> GameTree {
     }
 
     return tree;
+}
+
+/// Adds scores to all leaf nodes
+fn score_tree(tree: &mut GameTree) {
+    let leaf_nodes = tree
+        .nodes
+        .iter()
+        .filter(|&n| n.children.len() == 0)
+        .map(|n| n.id)
+        .collect_vec();
+
+    for n in leaf_nodes {
+        let s = &tree.get(n).state;
+        let score = score_game_state(s);
+        tree.nodes[n].score = Some(score);
+    }
+}
+
+/// Use minimax algorithm to propogate scores up the tree
+fn propogate_scores(tree: &mut GameTree) {
+    TODO
 }
 
 /// Simple program to greet a person
@@ -293,7 +325,19 @@ fn main() {
         }
     }
 
-    print!("P1 wins: {},  P2 wins: {}\n\n", p1_wins, p2_wins)
+    print!("P1 wins: {},  P2 wins: {}\n\n", p1_wins, p2_wins);
+
+    let mut g = GameState {
+        dice_state: [DiceState::K(1), DiceState::K(1), DiceState::U, DiceState::U],
+        bet_state: [None; NUM_DICE * DICE_SIDES],
+        call_state: None,
+    };
+
+    let mut t = build_tree(&g);
+    score_tree(&mut t);
+
+    print!("{}\n", t.nodes.len());
+    print!("{:?}", t);
 }
 
 #[cfg(test)]
