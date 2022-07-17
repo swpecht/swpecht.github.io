@@ -6,7 +6,7 @@ use log::{debug, info};
 use rand::Rng;
 
 pub const NUM_DICE: usize = 4;
-pub const DICE_SIDES: usize = 2;
+pub const DICE_SIDES: usize = 4;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum Action {
@@ -205,7 +205,7 @@ pub fn parse_highest_bet(g: &GameState) -> Option<(usize, usize)> {
 }
 
 pub fn parse_bet(i: usize) -> (usize, usize) {
-    let value = i % DICE_SIDES + 1;
+    let value = i % DICE_SIDES;
     let num_dice = i / DICE_SIDES + 1;
     return (num_dice, value);
 }
@@ -240,7 +240,7 @@ fn get_last_bet(g: &GameState) -> Option<usize> {
     return last_guess;
 }
 
-fn get_acting_player(g: &GameState) -> Player {
+pub fn get_acting_player(g: &GameState) -> Player {
     // Check for a call
     match g.call_state {
         Some(Player::P1) => return Player::P2,

@@ -14,6 +14,6 @@ Going to use Liar's poker bots to illustrate why.
 
 ## Results
 
-
-Next steps -- need to switch the minimax agent to use the game tree implementation.
-Easier to debug and inspect and can work on optimizations later
+[x] Need to switch the minimax agent to use the game tree implementation.
+    Easier to debug and inspect and can work on optimizations later
+[ ] Implement scoring and pruning as part of the tree building process

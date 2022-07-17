@@ -1,3 +1,4 @@
+pub mod game_tree;
 pub mod liars_poker;
 
 use std::cmp::Ordering;
@@ -8,7 +9,10 @@ use liars_poker::{apply_action, get_possible_actions, get_winner, Action, GameSt
 use log::*;
 use rand::prelude::SliceRandom;
 
-use crate::liars_poker::{parse_bet, parse_highest_bet, DiceState, Player, DICE_SIDES, NUM_DICE};
+use crate::{
+    game_tree::GameTree,
+    liars_poker::{parse_bet, parse_highest_bet, DiceState, Player, DICE_SIDES, NUM_DICE},
+};
 
 /// Agent that randomly chooses moves
 fn random_agent(_: &GameState, possible_moves: &Vec<Action>) -> Action {
@@ -31,7 +35,7 @@ fn own_dice_agent(g: &GameState, possible_moves: &Vec<Action>) -> Action {
     }
 
     if let Some((count, value)) = parse_highest_bet(&g) {
-        if count > counts[value - 1] {
+        if count > counts[value] {
             return Action::Call;
         }
     }
@@ -40,7 +44,7 @@ fn own_dice_agent(g: &GameState, possible_moves: &Vec<Action>) -> Action {
         if let Action::Bet(i) = a {
             let (count, value) = parse_bet(*i);
             let a = Action::Bet(value);
-            if counts[value - 1] >= count && possible_moves.contains(&a) {
+            if counts[value] >= count && possible_moves.contains(&a) {
                 return a;
             }
         }
@@ -57,7 +61,12 @@ fn minimax_agent(g: &GameState, possible_moves: &Vec<Action>) -> Action {
     for a in possible_moves {
         let f = apply_action(g, a);
         debug!("Evaluating: {:?}", f);
-        let value = minimax(g, &mut f32::MIN, &mut f32::MAX, true);
+        // let value = minimax(g, &mut f32::MIN, &mut f32::MAX, true);
+        let t = GameTree::new(&f);
+        // print!("{:?}", t);
+
+        let value = t.get(0).score.unwrap();
+
         debug!("value: {:?}", value);
         if value > cur_max {
             cur_max = value;
@@ -155,233 +164,6 @@ fn minimax(g: &GameState, alpha: &mut f32, beta: &mut f32, maximizing_player: bo
     }
 }
 
-/// Arena tree implementation
-struct GameTree {
-    nodes: Vec<GameTreeNode>,
-}
-
-impl GameTree {
-    pub fn new_node(
-        &mut self,
-        state: GameState,
-        action: Option<Action>,
-        parent: Option<usize>,
-    ) -> usize {
-        // Get the next free index
-        let next_index = self.nodes.len();
-
-        let parent_actor = match parent {
-            None => Player::P1,
-            Some(id) => {
-                let p = self.get(id);
-                p.actor
-            }
-        };
-        let actor = match parent_actor {
-            Player::P1 => Player::P2,
-            Player::P2 => Player::P1,
-        };
-
-        // Push the node into the arena
-        self.nodes.push(GameTreeNode {
-            id: next_index,
-            parent: parent,
-            children: Vec::new(),
-            state: state,
-            action: action,
-            score: None,
-            actor: actor,
-        });
-
-        if let Some(p) = parent {
-            self.nodes[p].children.push(next_index);
-        }
-
-        // Return the node identifier
-        return next_index;
-    }
-
-    pub fn get(&self, id: usize) -> &GameTreeNode {
-        return &self.nodes[id];
-    }
-
-    pub fn set_score(&mut self, id: usize, score: f32) {
-        self.nodes[id].score = Some(score);
-    }
-}
-
-impl std::fmt::Debug for GameTree {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        const START: char = '├';
-        const V: char = '|'; // vertical
-
-        let mut output = String::new();
-        let mut nodes_to_print = Vec::new();
-        nodes_to_print.push((0, 0));
-        while let Some((id, depth)) = nodes_to_print.pop() {
-            for _ in 0..depth {
-                output.push(V);
-            }
-            let node = self.get(id);
-            let action_string = match node.action {
-                Some(Action::Bet(x)) => {
-                    let (n, v) = parse_bet(x);
-                    format!("{} {}s", n, v)
-                }
-                Some(Action::Call) => "C".to_string(),
-                _ => String::new(),
-            };
-
-            output.push_str(&format!("{} {:?} {:?}", START, node.actor, action_string));
-
-            if let Some(score) = node.score {
-                output.push_str(&format!(": {}", score));
-            }
-
-            output.push_str("\n");
-
-            for c in &node.children {
-                nodes_to_print.push((*c, depth + 1));
-            }
-        }
-
-        write!(f, "{}", output)
-    }
-}
-
-#[derive(Debug)]
-struct GameTreeNode {
-    id: usize,
-
-    parent: Option<usize>,
-    children: Vec<usize>,
-
-    pub state: GameState,
-    pub action: Option<Action>,
-    pub actor: Player,
-    pub score: Option<f32>,
-}
-
-/// Build a tree of the possible game states from the given one
-fn build_tree(g: &GameState) -> GameTree {
-    let mut nodes_to_process = Vec::new();
-
-    let mut tree = GameTree { nodes: Vec::new() };
-    let root_id = tree.new_node(g.clone(), None, None);
-
-    nodes_to_process.push(root_id);
-
-    while let Some(parent_id) = nodes_to_process.pop() {
-        let parent = tree.get(parent_id);
-        let state = parent.state.clone();
-        let actions = get_possible_actions(&state);
-        for a in actions {
-            let next_state = apply_action(&state, &a);
-            let child = tree.new_node(next_state, Some(a), Some(parent_id));
-            nodes_to_process.push(child);
-        }
-    }
-
-    return tree;
-}
-
-/// Adds scores to all leaf nodes
-fn score_tree(tree: &mut GameTree) {
-    let leaf_nodes = tree
-        .nodes
-        .iter()
-        .filter(|&n| n.children.len() == 0)
-        .map(|n| n.id)
-        .collect_vec();
-
-    for n in leaf_nodes {
-        let s = &tree.get(n).state;
-        let score = score_game_state(s);
-        tree.set_score(n, score);
-    }
-}
-
-/// Use minimax algorithm to propogate scores up the tree
-fn propogate_scores(tree: &mut GameTree) {
-    let mut nodes_to_score = Vec::new();
-    nodes_to_score.push(0);
-
-    let mut nodes_visited = 0;
-    let mut nodes_scored = 0;
-
-    'processor: while let Some(id) = nodes_to_score.pop() {
-        nodes_visited += 1;
-        if nodes_visited % 100 == 0 {
-            info!(
-                "propogate_scores visited {} nodes and scored {}. Queue length is {}",
-                nodes_visited,
-                nodes_scored,
-                nodes_to_score.len()
-            )
-        }
-
-        let n = tree.get(id);
-        let mut score = match n.actor {
-            Player::P1 => f32::MAX,
-            Player::P2 => f32::MIN,
-        };
-        for &c in &n.children {
-            let cn = tree.get(c);
-            if let Some(cn_score) = cn.score {
-                score = match n.actor {
-                    Player::P1 => score.min(cn_score),
-                    Player::P2 => score.max(cn_score),
-                }
-            } else {
-                nodes_to_score.push(id); // need to rescore this node
-                nodes_to_score.push(c);
-                continue 'processor;
-            }
-        }
-
-        tree.set_score(id, score);
-        nodes_scored += 1;
-    }
-}
-
-/// Returns the series of actions for the optimal line through the tree
-fn get_optimal_line(t: &GameTree) {
-    let mut line = Vec::new();
-    let mut nodes_to_process = Vec::new();
-    nodes_to_process.push(0);
-
-    while let Some(id) = nodes_to_process.pop() {
-        let n = t.get(id);
-        line.push(id);
-
-        let best_child_index = match n.actor {
-            Player::P1 => n
-                .children
-                .iter()
-                .map(|&x| t.get(x).score.unwrap())
-                .enumerate()
-                .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(Ordering::Equal))
-                .map(|(index, _)| index),
-            Player::P2 => n
-                .children
-                .iter()
-                .map(|&x| t.get(x).score.unwrap())
-                .enumerate()
-                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(Ordering::Equal))
-                .map(|(index, _)| index),
-        };
-
-        if let Some(child) = best_child_index {
-            nodes_to_process.push(n.children[child]);
-        }
-    }
-
-    for id in line {
-        let n = t.get(id);
-        println!("{:?} {:?} {:?}", n.actor, n.action, n.score);
-    }
-}
-
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -409,11 +191,11 @@ fn main() {
 
     for _ in 0..args.num_games {
         let mut game = LiarsPoker::new();
-        let score = game.play(random_agent, random_agent);
+        // let score = game.play(random_agent, random_agent);
         // let score = game.play(own_dice_agent, random_agent);
         // let score = game.play(random_agent, own_dice_agent);
         // let score = game.play(own_dice_agent, own_dice_agent);
-        // let score = game.play(minimax_agent, random_agent);
+        let score = game.play(minimax_agent, own_dice_agent);
         if score == 1 {
             p1_wins += 1;
         } else {
@@ -422,27 +204,13 @@ fn main() {
     }
 
     print!("P1 wins: {},  P2 wins: {}\n\n", p1_wins, p2_wins);
-
-    let g = GameState {
-        dice_state: [DiceState::K(1), DiceState::K(1), DiceState::U, DiceState::U],
-        bet_state: [None; NUM_DICE * DICE_SIDES],
-        call_state: None,
-    };
-
-    let mut t = build_tree(&g);
-    score_tree(&mut t);
-    propogate_scores(&mut t);
-    print!("{:?}", t);
-    print!("{}\n", t.nodes.len());
-    get_optimal_line(&t);
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{
-        build_tree,
         liars_poker::{DiceState, GameState, Player, DICE_SIDES, NUM_DICE},
-        score_game_state,
+        score_game_state, GameTree,
     };
 
     #[test]
@@ -478,8 +246,8 @@ mod tests {
             call_state: None,
         };
 
-        let t = build_tree(&g);
+        let t = GameTree::new(&g);
         print!("{:?}", t);
-        print!("{}\n", t.nodes.len());
+        print!("{}\n", t.len());
     }
 }
