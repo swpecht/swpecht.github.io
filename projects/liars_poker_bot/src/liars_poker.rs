@@ -8,7 +8,7 @@ use rand::Rng;
 use crate::agents::Agent;
 
 pub const NUM_DICE: usize = 4;
-pub const DICE_SIDES: usize = 4;
+pub const DICE_SIDES: usize = 2;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum Action {
@@ -133,6 +133,7 @@ impl LiarsPoker {
     pub fn step(&mut self, agent: &Box<dyn Agent>) -> i32 {
         let filtered_state = filter_state(&self.game_state);
         let possible_actions = get_possible_actions(&filtered_state);
+        debug!("{} sees game state of {:?}", agent.name(), filtered_state);
         debug!("{} evaluating moves: {:?}", agent.name(), possible_actions);
         let a = agent.play(&filtered_state, &possible_actions);
 
@@ -147,7 +148,10 @@ impl LiarsPoker {
         self.game_state = apply_action(&self.game_state, &a);
 
         let winner = get_winner(&self.game_state);
-        info!("Winner: {:?}; {:?}", winner, self.game_state);
+
+        if let Some(_) = winner {
+            info!("Winner: {:?}; {:?}", winner, self.game_state);
+        }
 
         let score = match winner {
             Some(Player::P1) => 1,
@@ -174,7 +178,7 @@ pub fn get_winner(g: &GameState) -> Option<Player> {
         }
     }
 
-    let call_is_correct = counted_dice >= num_dice;
+    let call_is_correct = counted_dice < num_dice;
 
     match (g.call_state, call_is_correct) {
         (Some(x), true) => return Some(x),
@@ -301,6 +305,8 @@ mod tests {
         get_possible_actions, DiceState, GameState, Player, DICE_SIDES, NUM_DICE,
     };
 
+    use super::get_winner;
+
     #[test]
     fn move_getter() {
         let mut g = GameState {
@@ -319,5 +325,23 @@ mod tests {
         g.bet_state[5] = Some(Player::P2);
         let moves = get_possible_actions(&g);
         assert_eq!(moves.len(), NUM_DICE * DICE_SIDES - DICE_SIDES + 1);
+    }
+
+    #[test]
+    fn test_get_winner() {
+        let mut g = GameState {
+            dice_state: [DiceState::K(0); NUM_DICE],
+            bet_state: [None; NUM_DICE * DICE_SIDES],
+            call_state: None,
+        };
+
+        g.bet_state[0] = Some(Player::P1);
+        g.call_state = Some(Player::P2);
+        let winner = get_winner(&g);
+        assert_eq!(winner, Some(Player::P1));
+
+        g.dice_state = [DiceState::K(1); NUM_DICE];
+        let winner = get_winner(&g);
+        assert_eq!(winner, Some(Player::P2));
     }
 }
