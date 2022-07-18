@@ -3,11 +3,9 @@ use std::cmp::Ordering;
 use itertools::Itertools;
 use log::info;
 
-use crate::{
-    liars_poker::{
-        apply_action, get_acting_player, get_possible_actions, parse_bet, Action, GameState, Player,
-    },
-    score_game_state,
+use crate::liars_poker::{
+    apply_action, get_acting_player, get_possible_actions, get_winner, parse_bet, Action,
+    DiceState, GameState, Player, DICE_SIDES, NUM_DICE,
 };
 
 /// Arena tree implementation
@@ -27,7 +25,6 @@ impl GameTree {
 
         // Create the root node
         tree.nodes.push(GameTreeNode {
-            id: tree.len(),
             parent: None,
             children: Vec::new(),
             state: g.clone(),
@@ -42,15 +39,14 @@ impl GameTree {
             let parent = tree.get(parent_id);
             let state = parent.state.clone();
             let actions = get_possible_actions(&state);
+
             for a in actions {
                 let next_state = apply_action(&state, &a);
                 let child = tree.new_node(next_state, Some(a), Some(parent_id));
                 nodes_to_process.push(child);
             }
         }
-
         score_tree(&mut tree);
-        propogate_scores(&mut tree);
 
         return tree;
     }
@@ -78,7 +74,6 @@ impl GameTree {
 
         // Push the node into the arena
         self.nodes.push(GameTreeNode {
-            id: next_index,
             parent: parent,
             children: Vec::new(),
             state: state,
@@ -149,8 +144,6 @@ impl std::fmt::Debug for GameTree {
 
 #[derive(Debug)]
 pub struct GameTreeNode {
-    id: usize,
-
     parent: Option<usize>,
     children: Vec<usize>,
 
@@ -160,24 +153,8 @@ pub struct GameTreeNode {
     pub score: Option<f32>,
 }
 
-/// Adds scores to all leaf nodes
-fn score_tree(tree: &mut GameTree) {
-    let leaf_nodes = tree
-        .nodes
-        .iter()
-        .filter(|&n| n.children.len() == 0)
-        .map(|n| n.id)
-        .collect_vec();
-
-    for n in leaf_nodes {
-        let s = &tree.get(n).state;
-        let score = score_game_state(s);
-        tree.set_score(n, score);
-    }
-}
-
 /// Use minimax algorithm to propogate scores up the tree
-fn propogate_scores(tree: &mut GameTree) {
+fn score_tree(tree: &mut GameTree) {
     let mut nodes_to_score = Vec::new();
     nodes_to_score.push(0);
 
@@ -200,23 +177,74 @@ fn propogate_scores(tree: &mut GameTree) {
             Player::P1 => f32::MAX,
             Player::P2 => f32::MIN,
         };
-        for &c in &n.children {
-            let cn = tree.get(c);
-            if let Some(cn_score) = cn.score {
-                score = match n.actor {
-                    Player::P1 => score.min(cn_score),
-                    Player::P2 => score.max(cn_score),
+
+        if n.children.len() == 0 {
+            // leaf node
+            let score = score_game_state(&n.state);
+            tree.set_score(id, score);
+        } else {
+            for &c in &n.children {
+                let cn = tree.get(c);
+                if let Some(cn_score) = cn.score {
+                    score = match n.actor {
+                        Player::P1 => score.min(cn_score),
+                        Player::P2 => score.max(cn_score),
+                    }
+                } else {
+                    nodes_to_score.push(id); // need to rescore this node
+                    nodes_to_score.push(c);
+                    continue 'processor;
                 }
-            } else {
-                nodes_to_score.push(id); // need to rescore this node
-                nodes_to_score.push(c);
-                continue 'processor;
             }
+
+            tree.set_score(id, score);
+            nodes_scored += 1;
+        }
+    }
+}
+
+/// Returns the chance of P1 winning from this game state
+fn score_game_state(g: &GameState) -> f32 {
+    let known_dice = g
+        .dice_state
+        .iter()
+        .filter(|&x| match x {
+            DiceState::K(_) => true,
+            _ => false,
+        })
+        .collect_vec();
+
+    let num_unknown = g.dice_state.iter().filter(|&x| *x == DiceState::U).count();
+    assert!(num_unknown >= 1);
+
+    let unknown_dice = (0..num_unknown)
+        .map(|_| 0..DICE_SIDES)
+        .multi_cartesian_product();
+    let mut dice_state = [DiceState::K(1); NUM_DICE];
+
+    for i in 0..known_dice.len() {
+        dice_state[i] = *known_dice[i];
+    }
+
+    let mut wins = 0;
+    let mut games = 0;
+    for p in unknown_dice {
+        let mut guess = p.iter();
+        for i in known_dice.len()..NUM_DICE {
+            dice_state[i] = DiceState::K(*guess.next().unwrap());
         }
 
-        tree.set_score(id, score);
-        nodes_scored += 1;
+        let mut state = g.clone();
+        state.dice_state = dice_state;
+
+        wins += match get_winner(&state) {
+            Some(x) if x == Player::P1 => 1,
+            _ => 0,
+        };
+        games += 1;
     }
+
+    return wins as f32 / games as f32;
 }
 
 /// Returns the series of actions for the optimal line through the tree
@@ -254,5 +282,38 @@ fn get_optimal_line(t: &GameTree) {
     for id in line {
         let n = t.get(id);
         println!("{:?} {:?} {:?}", n.actor, n.action, n.score);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        game_tree::score_game_state,
+        liars_poker::{DiceState, GameState, Player, DICE_SIDES, NUM_DICE},
+    };
+
+    #[test]
+    fn test_score_game_state() {
+        let mut g = GameState {
+            dice_state: [DiceState::K(1), DiceState::K(1), DiceState::U, DiceState::U],
+            bet_state: [None; NUM_DICE * DICE_SIDES],
+            call_state: None,
+        };
+        g.call_state = Some(Player::P2);
+
+        g.bet_state[0] = Some(Player::P1);
+        let score = score_game_state(&g);
+        assert_eq!(score, 1.0);
+
+        g.bet_state[2 * DICE_SIDES] = Some(Player::P1);
+        let score = score_game_state(&g);
+        assert_eq!(
+            score,
+            2.0 / DICE_SIDES as f32 - 1.0 / DICE_SIDES as f32 / DICE_SIDES as f32
+        );
+
+        g.bet_state[2 * DICE_SIDES + 1] = Some(Player::P1);
+        let score = score_game_state(&g);
+        assert_eq!(score, 0.0);
     }
 }

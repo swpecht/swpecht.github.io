@@ -5,8 +5,10 @@ use log::{debug, info};
 /// Game implementation for liars poker.
 use rand::Rng;
 
+use crate::agents::Agent;
+
 pub const NUM_DICE: usize = 4;
-pub const DICE_SIDES: usize = 4;
+pub const DICE_SIDES: usize = 2;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum Action {
@@ -110,11 +112,7 @@ impl LiarsPoker {
     }
 
     // Play through a game. Positive if P1 wins, negative is P2 wins
-    pub fn play(
-        &mut self,
-        p1: fn(&GameState, &Vec<Action>) -> Action,
-        p2: fn(&GameState, &Vec<Action>) -> Action,
-    ) -> i32 {
+    pub fn play(&mut self, p1: &Box<dyn Agent>, p2: &Box<dyn Agent>) -> i32 {
         let mut score = 0;
         let mut is_player1_turn = true;
         while score == 0 {
@@ -132,11 +130,11 @@ impl LiarsPoker {
 
     /// Play 1 step of the game, return score. 1 if P1 wins, -1 if P2,
     /// 0 is no winner
-    pub fn step(&mut self, agent: fn(&GameState, &Vec<Action>) -> Action) -> i32 {
-        // TODO, implement filtering of dice state
+    pub fn step(&mut self, agent: &Box<dyn Agent>) -> i32 {
         let filtered_state = filter_state(&self.game_state);
         let possible_actions = get_possible_actions(&filtered_state);
-        let a = agent(&filtered_state, &possible_actions);
+        debug!("{} evaluating moves: {:?}", agent.name(), possible_actions);
+        let a = agent.play(&filtered_state, &possible_actions);
 
         let acting_player = get_acting_player(&self.game_state);
         info!("{:?} tried to play {:?}", acting_player, a);
