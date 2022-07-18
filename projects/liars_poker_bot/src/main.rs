@@ -5,14 +5,11 @@ pub mod minimax_agent;
 
 use agents::RandomAgent;
 use clap::Parser;
-use itertools::Itertools;
-use liars_poker::{apply_action, get_winner, Action, GameState, LiarsPoker};
-use log::*;
+
+use liars_poker::LiarsPoker;
 
 use crate::{
     agents::{Agent, OwnDiceAgent},
-    game_tree::GameTree,
-    liars_poker::{parse_bet, parse_highest_bet, DiceState, Player, DICE_SIDES, NUM_DICE},
     minimax_agent::MinimaxAgent,
 };
 

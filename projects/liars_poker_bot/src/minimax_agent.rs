@@ -3,10 +3,7 @@ use log::debug;
 use crate::{
     agents::Agent,
     game_tree::GameTree,
-    liars_poker::{
-        apply_action, get_acting_player, get_winner, DiceState, GameState, Player, DICE_SIDES,
-        NUM_DICE,
-    },
+    liars_poker::{apply_action, get_acting_player, Player},
 };
 
 pub struct MinimaxAgent {
