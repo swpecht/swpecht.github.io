@@ -8,7 +8,7 @@ use rand::Rng;
 use crate::agents::Agent;
 
 pub const NUM_DICE: usize = 4;
-pub const DICE_SIDES: usize = 2;
+pub const DICE_SIDES: usize = 4;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum Action {
@@ -146,24 +146,22 @@ impl LiarsPoker {
 
         self.game_state = apply_action(&self.game_state, &a);
 
-        let score = evaluate_state(&self.game_state);
-        if score == 1 || score == -1 {
-            let winner = match score {
-                1 => Player::P1,
-                -1 => Player::P2,
-                _ => panic!("Invalid game state"),
-            };
-            info!("Winner: {:?}; {:?}", winner, self.game_state);
-        }
+        let winner = get_winner(&self.game_state);
+        info!("Winner: {:?}; {:?}", winner, self.game_state);
+
+        let score = match winner {
+            Some(Player::P1) => 1,
+            Some(Player::P2) => -1,
+            None => 0,
+        };
 
         return score;
     }
 }
 
-/// Return 0 if no one has won, 1 is P1, -1 if P2
-fn evaluate_state(g: &GameState) -> i32 {
+pub fn get_winner(g: &GameState) -> Option<Player> {
     if g.call_state == None {
-        return 0; // game isn't over
+        return None; // game isn't over
     }
 
     let (num_dice, state) = parse_highest_bet(g).unwrap();
@@ -177,20 +175,13 @@ fn evaluate_state(g: &GameState) -> i32 {
     }
 
     let call_is_correct = counted_dice >= num_dice;
-    match (g.call_state, call_is_correct) {
-        (Some(Player::P1), false) => return 1,
-        (Some(Player::P2), true) => return 1,
-        (None, _) => 0,
-        _ => return -1,
-    }
-}
 
-pub fn get_winner(g: &GameState) -> Option<Player> {
-    return match evaluate_state(g) {
-        1 => Some(Player::P1),
-        -1 => Some(Player::P2),
-        _ => None,
-    };
+    match (g.call_state, call_is_correct) {
+        (Some(x), true) => return Some(x),
+        (Some(Player::P1), false) => return Some(Player::P2),
+        (Some(Player::P2), false) => return Some(Player::P1),
+        (None, _) => return None,
+    }
 }
 
 /// Returns (num_dice, value)
@@ -226,16 +217,13 @@ fn filter_state(g: &GameState) -> GameState {
 }
 
 fn get_last_bet(g: &GameState) -> Option<usize> {
-    // Get the last guesser
-    let mut last_guess = None;
-    for i in 0..g.bet_state.len() {
+    for i in (0..g.bet_state.len()).rev() {
         match g.bet_state[i] {
-            Some(Player::P1) => last_guess = Some(i),
-            Some(Player::P2) => last_guess = Some(i),
+            Some(_) => return Some(i),
             _ => {}
         }
     }
-    return last_guess;
+    return None;
 }
 
 pub fn get_acting_player(g: &GameState) -> Player {

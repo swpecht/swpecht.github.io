@@ -71,10 +71,4 @@ fn main() {
             );
         }
     }
-
-    // let score = game.play(random_agent, random_agent);
-    // let score = game.play(own_dice_agent, random_agent);
-    // let score = game.play(random_agent, own_dice_agent);
-    // let score = game.play(own_dice_agent, own_dice_agent);
-    // let score = game.play(&mma, &oda);
 }
