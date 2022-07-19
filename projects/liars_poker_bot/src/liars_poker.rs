@@ -112,7 +112,8 @@ impl LiarsPoker {
     }
 
     // Play through a game. Positive if P1 wins, negative is P2 wins
-    pub fn play(&mut self, p1: &Box<dyn Agent>, p2: &Box<dyn Agent>) -> i32 {
+    pub fn play(&mut self, p1: &(impl Agent + ?Sized), p2: &(impl Agent + ?Sized)) -> i32 {
+        info!("{} playing {}", p1.name(), p2.name());
         let mut score = 0;
         let mut is_player1_turn = true;
         while score == 0 {
@@ -130,7 +131,7 @@ impl LiarsPoker {
 
     /// Play 1 step of the game, return score. 1 if P1 wins, -1 if P2,
     /// 0 is no winner
-    pub fn step(&mut self, agent: &Box<dyn Agent>) -> i32 {
+    pub fn step(&mut self, agent: &(impl Agent + ?Sized)) -> i32 {
         let filtered_state = filter_state(&self.game_state);
         let possible_actions = get_possible_actions(&filtered_state);
         debug!("{} sees game state of {:?}", agent.name(), filtered_state);

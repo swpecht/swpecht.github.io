@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 use itertools::Itertools;
-use log::info;
+use log::{debug, info};
 
 use crate::liars_poker::{
     apply_action, get_acting_player, get_possible_actions, get_winner, parse_bet, Action,
@@ -164,7 +164,7 @@ fn score_tree(tree: &mut GameTree) {
     'processor: while let Some(id) = nodes_to_score.pop() {
         nodes_visited += 1;
         if nodes_visited % 100 == 0 {
-            info!(
+            debug!(
                 "propogate_scores visited {} nodes and scored {}. Queue length is {}",
                 nodes_visited,
                 nodes_scored,
