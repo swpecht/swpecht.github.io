@@ -221,7 +221,7 @@ fn filter_state(g: &GameState) -> GameState {
     return f;
 }
 
-fn get_last_bet(g: &GameState) -> Option<usize> {
+pub fn get_last_bet(g: &GameState) -> Option<usize> {
     for i in (0..g.bet_state.len()).rev() {
         match g.bet_state[i] {
             Some(_) => return Some(i),

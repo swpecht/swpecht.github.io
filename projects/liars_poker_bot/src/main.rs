@@ -7,6 +7,7 @@ use agents::{IncorporateBetAgent, RandomAgent};
 use clap::Parser;
 
 use liars_poker::LiarsPoker;
+use minimax_agent::MetaMinimaxAgent;
 
 use crate::{
     agents::{Agent, OwnDiceAgent},
@@ -43,9 +44,8 @@ fn main() {
             name: "Random".to_string(),
         };
 
-        let mma = MinimaxAgent {
-            name: "Minimax".to_string(),
-        };
+        let mma = MinimaxAgent {};
+        let meta = MetaMinimaxAgent {};
         let oda = OwnDiceAgent {
             name: "OwnDiceAgent".to_string(),
         };
@@ -54,8 +54,13 @@ fn main() {
             name: "IncorporateBetAgent".to_string(),
         };
 
-        let agents: Vec<Box<dyn Agent>> =
-            vec![Box::new(ra), Box::new(mma), Box::new(oda), Box::new(iba)];
+        let agents: Vec<Box<dyn Agent>> = vec![
+            Box::new(ra),
+            Box::new(mma),
+            Box::new(meta),
+            Box::new(oda),
+            Box::new(iba),
+        ];
 
         for i in 0..agents.len() {
             for j in 0..agents.len() {
@@ -81,15 +86,11 @@ fn main() {
             }
         }
     } else {
-        let iba = IncorporateBetAgent {
-            name: "IncorporateBetAgent".to_string(),
-        };
+        let meta = MetaMinimaxAgent {};
 
-        let mma = MinimaxAgent {
-            name: "Minimax".to_string(),
-        };
+        let mma = MinimaxAgent {};
 
         let mut game = LiarsPoker::new();
-        game.play(&iba, &mma);
+        game.play(&mma, &meta);
     }
 }

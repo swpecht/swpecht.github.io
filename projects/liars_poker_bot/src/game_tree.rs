@@ -164,12 +164,12 @@ fn score_tree(tree: &mut GameTree) {
     'processor: while let Some(id) = nodes_to_score.pop() {
         nodes_visited += 1;
         if nodes_visited % 100 == 0 {
-            debug!(
-                "propogate_scores visited {} nodes and scored {}. Queue length is {}",
-                nodes_visited,
-                nodes_scored,
-                nodes_to_score.len()
-            )
+            // debug!(
+            //     "propogate_scores visited {} nodes and scored {}. Queue length is {}",
+            //     nodes_visited,
+            //     nodes_scored,
+            //     nodes_to_score.len()
+            // )
         }
 
         let n = tree.get(id);
@@ -214,8 +214,16 @@ fn score_game_state(g: &GameState) -> f32 {
         })
         .collect_vec();
 
+    assert!(g.call_state != None); // Can only score states with a Call
+
     let num_unknown = g.dice_state.iter().filter(|&x| *x == DiceState::U).count();
-    assert!(num_unknown >= 1);
+    if num_unknown == 0 {
+        return match get_winner(g) {
+            Some(Player::P1) => 1.0,
+            Some(Player::P2) => 0.0,
+            _ => panic!("Invalid state"),
+        };
+    }
 
     let unknown_dice = (0..num_unknown)
         .map(|_| 0..DICE_SIDES)
