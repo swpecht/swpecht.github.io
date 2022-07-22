@@ -7,10 +7,13 @@ pub mod minimax_agent;
 use agents::{IncorporateBetAgent, RandomAgent};
 use clap::Parser;
 
+use game::RPSState;
+
 use game::RPS;
 use liars_poker::{LPAction, LPGameState, LiarsPoker};
 use minimax_agent::MetaMinimaxAgent;
 
+use crate::game::RPSAction;
 use crate::{
     agents::{Agent, OwnDiceAgent},
     game::Game,
@@ -87,18 +90,18 @@ fn main() {
             }
         }
     } else {
-        let p1 = RandomAgent {};
-        let p2 = RandomAgent {};
+        let p1 = &RandomAgent {} as &dyn Agent<RPSState, RPSAction>;
+        let p2 = &RandomAgent {} as &dyn Agent<RPSState, RPSAction>;
 
         let mut running_score = 0;
         for _ in 0..args.num_games {
             let mut game = RPS::new();
-            running_score += game.play(&p1, &p2);
+            running_score += game.play(p1, p2);
         }
         println!(
             "{} vs {}, score over {} games: {}",
-            "a", // p1.name(),
-            "b", // p2.name(),
+            p1.name(),
+            p2.name(),
             args.num_games,
             running_score
         );

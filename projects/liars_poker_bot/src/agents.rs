@@ -7,10 +7,7 @@ use crate::liars_poker::{
     parse_bet, parse_highest_bet, DiceState, LPAction, LPGameState, NUM_DICE,
 };
 
-pub trait Agent<GameState, Action>
-where
-    Action: Clone,
-{
+pub trait Agent<GameState, Action: Clone> {
     fn name(&self) -> &str;
     fn play(&self, g: &GameState, possible_moves: &Vec<Action>) -> Action;
 }
@@ -18,10 +15,7 @@ where
 /// Agent that randomly chooses moves
 pub struct RandomAgent {}
 
-impl<GameState, Action> Agent<GameState, Action> for RandomAgent
-where
-    Action: Clone,
-{
+impl<GameState, Action: Clone> Agent<GameState, Action> for RandomAgent {
     fn name(&self) -> &str {
         return &"RandomAgent";
     }
