@@ -5,19 +5,19 @@ use crate::{
     agents::Agent,
     game_tree::GameTree,
     liars_poker::{
-        apply_action, get_acting_player, get_last_bet, get_possible_actions, Action, DiceState,
-        GameState, Player, DICE_SIDES, NUM_DICE,
+        apply_action, get_acting_player, get_last_bet, get_possible_actions, DiceState, LPAction,
+        LPGameState, Player, DICE_SIDES, NUM_DICE,
     },
 };
 
 pub struct MinimaxAgent {}
 
-impl Agent for MinimaxAgent {
+impl Agent<LPGameState, LPAction> for MinimaxAgent {
     fn name(&self) -> &str {
         return "MinimaxAgent";
     }
 
-    fn play(&self, g: &GameState, possible_moves: &Vec<Action>) -> Action {
+    fn play(&self, g: &LPGameState, possible_moves: &Vec<LPAction>) -> LPAction {
         let acting_player = get_acting_player(g);
 
         let mut cur_max = match acting_player {
@@ -54,12 +54,16 @@ impl Agent for MinimaxAgent {
 /// dice.
 pub struct MetaMinimaxAgent {}
 
-impl Agent for MetaMinimaxAgent {
+impl Agent<LPGameState, LPAction> for MetaMinimaxAgent {
     fn name(&self) -> &str {
         return "MetaMiniMaxAgent";
     }
 
-    fn play(&self, g: &GameState, possible_moves: &Vec<crate::liars_poker::Action>) -> Action {
+    fn play(
+        &self,
+        g: &LPGameState,
+        possible_moves: &Vec<crate::liars_poker::LPAction>,
+    ) -> LPAction {
         let mma = MinimaxAgent {};
 
         // Get previous state
@@ -69,7 +73,7 @@ impl Agent for MetaMinimaxAgent {
             return mma.play(g, possible_moves);
         }
         let lb_index = lb_index.unwrap();
-        let last_bet = Action::Bet(lb_index);
+        let last_bet = LPAction::Bet(lb_index);
         let mut pg = g.clone();
         pg.bet_state[lb_index] = None; // Remove last bet
         pg.dice_state = [DiceState::U; NUM_DICE]; // remove dice
@@ -88,7 +92,7 @@ impl Agent for MetaMinimaxAgent {
 
             debug!("Meta agent testing dicestate {:?}", pg.dice_state);
             let a = mma.play(&pg, &get_possible_actions(&pg));
-            debug!("Meta agent found action {:?}", a);
+            debug!("Meta agent suggests action {:?}", a);
             if a == last_bet {
                 found_match = true;
                 break;

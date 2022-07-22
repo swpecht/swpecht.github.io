@@ -1,4 +1,5 @@
 pub mod agents;
+pub mod game;
 pub mod game_tree;
 pub mod liars_poker;
 pub mod minimax_agent;
@@ -6,11 +7,13 @@ pub mod minimax_agent;
 use agents::{IncorporateBetAgent, RandomAgent};
 use clap::Parser;
 
-use liars_poker::LiarsPoker;
+use game::RPS;
+use liars_poker::{LPAction, LPGameState, LiarsPoker};
 use minimax_agent::MetaMinimaxAgent;
 
 use crate::{
     agents::{Agent, OwnDiceAgent},
+    game::Game,
     minimax_agent::MinimaxAgent,
 };
 
@@ -40,9 +43,7 @@ fn main() {
         .unwrap();
 
     if args.benchmark {
-        let ra = RandomAgent {
-            name: "Random".to_string(),
-        };
+        let ra = RandomAgent {};
 
         let mma = MinimaxAgent {};
         let meta = MetaMinimaxAgent {};
@@ -54,7 +55,7 @@ fn main() {
             name: "IncorporateBetAgent".to_string(),
         };
 
-        let agents: Vec<Box<dyn Agent>> = vec![
+        let agents: Vec<Box<dyn Agent<LPGameState, LPAction>>> = vec![
             Box::new(ra),
             Box::new(mma),
             Box::new(meta),
@@ -86,11 +87,20 @@ fn main() {
             }
         }
     } else {
-        let meta = MetaMinimaxAgent {};
+        let p1 = RandomAgent {};
+        let p2 = RandomAgent {};
 
-        let mma = MinimaxAgent {};
-
-        let mut game = LiarsPoker::new();
-        game.play(&mma, &meta);
+        let mut running_score = 0;
+        for _ in 0..args.num_games {
+            let mut game = RPS::new();
+            running_score += game.play(&p1, &p2);
+        }
+        println!(
+            "{} vs {}, score over {} games: {}",
+            "a", // p1.name(),
+            "b", // p2.name(),
+            args.num_games,
+            running_score
+        );
     }
 }

@@ -1,11 +1,10 @@
 use std::cmp::Ordering;
 
 use itertools::Itertools;
-use log::{debug, info};
 
 use crate::liars_poker::{
-    apply_action, get_acting_player, get_possible_actions, get_winner, parse_bet, Action,
-    DiceState, GameState, Player, DICE_SIDES, NUM_DICE,
+    apply_action, get_acting_player, get_possible_actions, get_winner, parse_bet, DiceState,
+    LPAction, LPGameState, Player, DICE_SIDES, NUM_DICE,
 };
 
 /// Arena tree implementation
@@ -14,7 +13,7 @@ pub struct GameTree {
 }
 
 impl GameTree {
-    pub fn new(g: &GameState) -> GameTree {
+    pub fn new(g: &LPGameState) -> GameTree {
         let mut nodes_to_process = Vec::new();
 
         let mut tree = Self { nodes: Vec::new() };
@@ -25,7 +24,6 @@ impl GameTree {
 
         // Create the root node
         tree.nodes.push(GameTreeNode {
-            parent: None,
             children: Vec::new(),
             state: g.clone(),
             action: None,
@@ -53,8 +51,8 @@ impl GameTree {
 
     fn new_node(
         &mut self,
-        state: GameState,
-        action: Option<Action>,
+        state: LPGameState,
+        action: Option<LPAction>,
         parent: Option<usize>,
     ) -> usize {
         // Get the next free index
@@ -74,7 +72,6 @@ impl GameTree {
 
         // Push the node into the arena
         self.nodes.push(GameTreeNode {
-            parent: parent,
             children: Vec::new(),
             state: state,
             action: action,
@@ -117,11 +114,11 @@ impl std::fmt::Debug for GameTree {
             }
             let node = self.get(id);
             let action_string = match node.action {
-                Some(Action::Bet(x)) => {
+                Some(LPAction::Bet(x)) => {
                     let (n, v) = parse_bet(x);
                     format!("{} {}s", n, v)
                 }
-                Some(Action::Call) => "C".to_string(),
+                Some(LPAction::Call) => "C".to_string(),
                 _ => String::new(),
             };
 
@@ -144,11 +141,10 @@ impl std::fmt::Debug for GameTree {
 
 #[derive(Debug)]
 pub struct GameTreeNode {
-    parent: Option<usize>,
     children: Vec<usize>,
 
-    pub state: GameState,
-    pub action: Option<Action>,
+    pub state: LPGameState,
+    pub action: Option<LPAction>,
     pub actor: Player,
     pub score: Option<f32>,
 }
@@ -204,7 +200,7 @@ fn score_tree(tree: &mut GameTree) {
 }
 
 /// Returns the chance of P1 winning from this game state
-fn score_game_state(g: &GameState) -> f32 {
+fn score_game_state(g: &LPGameState) -> f32 {
     let known_dice = g
         .dice_state
         .iter()
@@ -297,12 +293,12 @@ fn get_optimal_line(t: &GameTree) {
 mod tests {
     use crate::{
         game_tree::score_game_state,
-        liars_poker::{DiceState, GameState, Player, DICE_SIDES, NUM_DICE},
+        liars_poker::{DiceState, LPGameState, Player, DICE_SIDES, NUM_DICE},
     };
 
     #[test]
     fn test_score_game_state() {
-        let mut g = GameState {
+        let mut g = LPGameState {
             dice_state: [DiceState::K(1), DiceState::K(1), DiceState::U, DiceState::U],
             bet_state: [None; NUM_DICE * DICE_SIDES],
             call_state: None,
