@@ -1,4 +1,5 @@
 pub mod agents;
+pub mod cfr_agent;
 pub mod game;
 pub mod game_tree;
 pub mod liars_poker;
@@ -13,6 +14,7 @@ use game::RPS;
 use liars_poker::{LPAction, LPGameState, LiarsPoker};
 use minimax_agent::MetaMinimaxAgent;
 
+use crate::cfr_agent::CFRAgent;
 use crate::game::RPSAction;
 use crate::{
     agents::{Agent, OwnDiceAgent},
@@ -90,7 +92,7 @@ fn main() {
             }
         }
     } else {
-        let p1 = &RandomAgent {} as &dyn Agent<RPSState, RPSAction>;
+        let p1 = &CFRAgent::new();
         let p2 = &RandomAgent {} as &dyn Agent<RPSState, RPSAction>;
 
         let mut running_score = 0;

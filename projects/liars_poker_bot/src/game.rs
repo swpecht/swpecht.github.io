@@ -26,6 +26,12 @@ pub struct RPSState {
     actions: [Option<RPSAction>; 2],
 }
 
+impl RPSState {
+    pub fn new() -> Self {
+        return Self { actions: [None; 2] };
+    }
+}
+
 /// Implementation of weighted RPS. Any game involving scissors means the payoff is doubled
 ///
 /// https://arxiv.org/pdf/2007.13544.pdf
@@ -44,7 +50,7 @@ impl Game for RPS {
         p1: &(impl Agent<RPSState, RPSAction> + ?Sized),
         p2: &(impl Agent<RPSState, RPSAction> + ?Sized),
     ) -> i32 {
-        let mut state = RPSState { actions: [None; 2] };
+        let mut state = RPSState::new();
         let actions = self.get_possible_actions(&state);
         state.actions[0] = Some(p1.play(&state, &actions));
         state.actions[1] = Some(p2.play(&state, &actions));
