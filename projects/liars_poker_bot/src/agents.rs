@@ -26,6 +26,19 @@ impl<GameState, Action: Clone> Agent<GameState, Action> for RandomAgent {
     }
 }
 
+/// Agent always plays the first action
+pub struct AlwaysFirstAgent {}
+
+impl<GameState, Action: Clone> Agent<GameState, Action> for AlwaysFirstAgent {
+    fn name(&self) -> &str {
+        return &"AlwaysFirstAgent";
+    }
+
+    fn play(&self, _: &GameState, possible_moves: &Vec<Action>) -> Action {
+        return possible_moves[0].clone();
+    }
+}
+
 pub struct OwnDiceAgent {
     pub name: String,
 }

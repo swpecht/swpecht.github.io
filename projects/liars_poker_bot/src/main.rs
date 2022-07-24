@@ -14,6 +14,7 @@ use game::RPS;
 use liars_poker::{LPAction, LPGameState, LiarsPoker};
 use minimax_agent::MetaMinimaxAgent;
 
+use crate::agents::AlwaysFirstAgent;
 use crate::cfr_agent::CFRAgent;
 use crate::game::RPSAction;
 use crate::{
@@ -92,14 +93,17 @@ fn main() {
             }
         }
     } else {
-        let p1 = &CFRAgent::new();
-        let p2 = &RandomAgent {} as &dyn Agent<RPSState, RPSAction>;
+        let p1 = &AlwaysFirstAgent {} as &dyn Agent<RPSState, RPSAction>;
+        let p2 = &CFRAgent::new() as &dyn Agent<RPSState, RPSAction>;
 
         let mut running_score = 0;
         for _ in 0..args.num_games {
             let mut game = RPS::new();
             running_score += game.play(p1, p2);
         }
+
+        // TODO: figure out why the CFR agent isn't winning more;
+
         println!(
             "{} vs {}, score over {} games: {}",
             p1.name(),
