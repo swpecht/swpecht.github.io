@@ -2,8 +2,8 @@ use log::{debug, info};
 use rand::{prelude::SliceRandom, thread_rng};
 
 use crate::{
-    agents::{Agent, RandomAgent},
-    game::{RPSAction, RPSState, RPS},
+    agents::Agent,
+    game::{RPSAction, RPSState},
 };
 
 const NUM_ACTIONS: usize = 3;

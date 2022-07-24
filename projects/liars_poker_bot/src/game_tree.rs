@@ -154,20 +154,7 @@ fn score_tree(tree: &mut GameTree) {
     let mut nodes_to_score = Vec::new();
     nodes_to_score.push(0);
 
-    let mut nodes_visited = 0;
-    let mut nodes_scored = 0;
-
     'processor: while let Some(id) = nodes_to_score.pop() {
-        nodes_visited += 1;
-        if nodes_visited % 100 == 0 {
-            // debug!(
-            //     "propogate_scores visited {} nodes and scored {}. Queue length is {}",
-            //     nodes_visited,
-            //     nodes_scored,
-            //     nodes_to_score.len()
-            // )
-        }
-
         let n = tree.get(id);
         let mut score = match n.actor {
             Player::P1 => f32::MAX,
@@ -194,7 +181,6 @@ fn score_tree(tree: &mut GameTree) {
             }
 
             tree.set_score(id, score);
-            nodes_scored += 1;
         }
     }
 }
