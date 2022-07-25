@@ -61,7 +61,7 @@ fn main() {
             name: "IncorporateBetAgent".to_string(),
         };
 
-        let agents: Vec<Box<dyn Agent<LPGameState, LPAction>>> = vec![
+        let agents: Vec<Box<dyn Agent<LPGameState>>> = vec![
             Box::new(ra),
             Box::new(mma),
             Box::new(meta),
@@ -93,8 +93,8 @@ fn main() {
             }
         }
     } else {
-        let p1 = &AlwaysFirstAgent {} as &dyn Agent<RPSState, RPSAction>;
-        let p2 = &CFRAgent::new() as &dyn Agent<RPSState, RPSAction>;
+        let p1 = &AlwaysFirstAgent {} as &dyn Agent<RPSState>;
+        let p2 = &CFRAgent::new() as &dyn Agent<RPSState>;
 
         let mut running_score = 0;
         for _ in 0..args.num_games {

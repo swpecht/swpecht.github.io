@@ -5,7 +5,10 @@ use log::{debug, info};
 /// Game implementation for liars poker.
 use rand::Rng;
 
-use crate::{agents::Agent, game::Game};
+use crate::{
+    agents::Agent,
+    game::{Game, GameState},
+};
 
 pub const NUM_DICE: usize = 4;
 pub const DICE_SIDES: usize = 3;
@@ -78,6 +81,22 @@ pub struct LPGameState {
     pub call_state: Option<Player>,
 }
 
+impl GameState for LPGameState {
+    type Action = LPAction;
+
+    fn get_actions(&self) -> Vec<Self::Action> {
+        todo!()
+    }
+
+    fn apply(&mut self, a: &Self::Action) {
+        todo!()
+    }
+
+    fn evaluate(&self) -> i32 {
+        todo!()
+    }
+}
+
 impl std::fmt::Debug for LPGameState {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
@@ -93,7 +112,7 @@ pub struct LiarsPoker {
 }
 
 impl Game for LiarsPoker {
-    type GameState = LPGameState;
+    type G = LPGameState;
     type Action = LPAction;
 
     fn new() -> Self {
@@ -117,8 +136,8 @@ impl Game for LiarsPoker {
     // Play through a game. Positive if P1 wins, negative is P2 wins
     fn play(
         &mut self,
-        p1: &(impl Agent<LPGameState, LPAction> + ?Sized),
-        p2: &(impl Agent<LPGameState, LPAction> + ?Sized),
+        p1: &(impl Agent<LPGameState> + ?Sized),
+        p2: &(impl Agent<LPGameState> + ?Sized),
     ) -> i32 {
         info!("{} playing {}", p1.name(), p2.name());
         let mut score = 0;
@@ -140,7 +159,7 @@ impl Game for LiarsPoker {
 impl LiarsPoker {
     /// Play 1 step of the game, return score. 1 if P1 wins, -1 if P2,
     /// 0 is no winner
-    fn step(&mut self, agent: &(impl Agent<LPGameState, LPAction> + ?Sized)) -> i32 {
+    fn step(&mut self, agent: &(impl Agent<LPGameState> + ?Sized)) -> i32 {
         let filtered_state = filter_state(&self.game_state);
         let possible_actions = get_possible_actions(&filtered_state);
         debug!("{} sees game state of {:?}", agent.name(), filtered_state);

@@ -102,7 +102,7 @@ impl CFRAgent {
     }
 }
 
-impl Agent<RPSState, RPSAction> for CFRAgent {
+impl Agent<RPSState> for CFRAgent {
     fn name(&self) -> &str {
         return "CFRAgent";
     }

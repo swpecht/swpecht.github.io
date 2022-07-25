@@ -3,24 +3,28 @@ use std::cmp::min;
 use log::debug;
 use rand::prelude::SliceRandom;
 
-use crate::liars_poker::{
-    parse_bet, parse_highest_bet, DiceState, LPAction, LPGameState, NUM_DICE,
+use crate::{
+    game::GameState,
+    liars_poker::{parse_bet, parse_highest_bet, DiceState, LPAction, LPGameState, NUM_DICE},
 };
 
-pub trait Agent<GameState, Action: Clone> {
+pub trait Agent<G>
+where
+    G: GameState,
+{
     fn name(&self) -> &str;
-    fn play(&self, g: &GameState, possible_moves: &Vec<Action>) -> Action;
+    fn play(&self, g: &G, possible_moves: &Vec<G::Action>) -> G::Action;
 }
 
 /// Agent that randomly chooses moves
 pub struct RandomAgent {}
 
-impl<GameState, Action: Clone> Agent<GameState, Action> for RandomAgent {
+impl<G: GameState> Agent<G> for RandomAgent {
     fn name(&self) -> &str {
         return &"RandomAgent";
     }
 
-    fn play(&self, _: &GameState, possible_moves: &Vec<Action>) -> Action {
+    fn play(&self, _: &G, possible_moves: &Vec<G::Action>) -> G::Action {
         let mut rng = rand::thread_rng();
         return possible_moves.choose(&mut rng).unwrap().clone();
     }
@@ -29,12 +33,12 @@ impl<GameState, Action: Clone> Agent<GameState, Action> for RandomAgent {
 /// Agent always plays the first action
 pub struct AlwaysFirstAgent {}
 
-impl<GameState, Action: Clone> Agent<GameState, Action> for AlwaysFirstAgent {
+impl<G: GameState> Agent<G> for AlwaysFirstAgent {
     fn name(&self) -> &str {
         return &"AlwaysFirstAgent";
     }
 
-    fn play(&self, _: &GameState, possible_moves: &Vec<Action>) -> Action {
+    fn play(&self, _: &G, possible_moves: &Vec<G::Action>) -> G::Action {
         return possible_moves[0].clone();
     }
 }
@@ -43,7 +47,7 @@ pub struct OwnDiceAgent {
     pub name: String,
 }
 
-impl Agent<LPGameState, LPAction> for OwnDiceAgent {
+impl Agent<LPGameState> for OwnDiceAgent {
     fn name(&self) -> &str {
         return &self.name;
     }
@@ -86,7 +90,7 @@ pub struct IncorporateBetAgent {
     pub name: String,
 }
 
-impl Agent<LPGameState, LPAction> for IncorporateBetAgent {
+impl Agent<LPGameState> for IncorporateBetAgent {
     fn name(&self) -> &str {
         return &self.name;
     }

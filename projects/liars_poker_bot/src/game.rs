@@ -3,21 +3,21 @@ use log::info;
 use crate::agents::Agent;
 
 pub trait GameState {
-    type Action;
+    type Action: Clone;
     fn get_actions(&self) -> Vec<Self::Action>;
     fn apply(&mut self, a: &Self::Action);
     fn evaluate(&self) -> i32;
 }
 
 pub trait Game {
-    type GameState;
+    type G: GameState;
     type Action: Clone;
 
     fn new() -> Self;
     fn play(
         &mut self,
-        p1: &(impl Agent<Self::GameState, Self::Action> + ?Sized),
-        p2: &(impl Agent<Self::GameState, Self::Action> + ?Sized),
+        p1: &(impl Agent<Self::G> + ?Sized),
+        p2: &(impl Agent<Self::G> + ?Sized),
     ) -> i32;
 }
 
@@ -74,7 +74,7 @@ impl RPSState {
 pub struct RPS {}
 
 impl Game for RPS {
-    type GameState = RPSState;
+    type G = RPSState;
     type Action = RPSAction;
 
     fn new() -> Self {
@@ -83,8 +83,8 @@ impl Game for RPS {
 
     fn play(
         &mut self,
-        p1: &(impl Agent<RPSState, RPSAction> + ?Sized),
-        p2: &(impl Agent<RPSState, RPSAction> + ?Sized),
+        p1: &(impl Agent<RPSState> + ?Sized),
+        p2: &(impl Agent<RPSState> + ?Sized),
     ) -> i32 {
         let mut state = RPSState::new();
         let actions = state.get_actions();

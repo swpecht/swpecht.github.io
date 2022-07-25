@@ -12,7 +12,7 @@ use crate::{
 
 pub struct MinimaxAgent {}
 
-impl Agent<LPGameState, LPAction> for MinimaxAgent {
+impl Agent<LPGameState> for MinimaxAgent {
     fn name(&self) -> &str {
         return "MinimaxAgent";
     }
@@ -54,7 +54,7 @@ impl Agent<LPGameState, LPAction> for MinimaxAgent {
 /// dice.
 pub struct MetaMinimaxAgent {}
 
-impl Agent<LPGameState, LPAction> for MetaMinimaxAgent {
+impl Agent<LPGameState> for MetaMinimaxAgent {
     fn name(&self) -> &str {
         return "MetaMiniMaxAgent";
     }
