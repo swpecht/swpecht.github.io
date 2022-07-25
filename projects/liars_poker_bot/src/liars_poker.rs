@@ -85,15 +85,64 @@ impl GameState for LPGameState {
     type Action = LPAction;
 
     fn get_actions(&self) -> Vec<Self::Action> {
-        todo!()
+        let mut actions = Vec::new();
+
+        // Check for call
+        if self.call_state != None {
+            return actions; // no possible moves
+        }
+
+        let last_bet = get_last_bet(self);
+        let start_index = match last_bet {
+            None => 0,
+            Some(x) => x + 1,
+        };
+
+        // Increasing bets
+        for i in start_index..self.bet_state.len() {
+            actions.push(LPAction::Bet(i));
+        }
+
+        // Call bluff, only possible if another bet has been made
+        if self.bet_state.iter().any(|&x| x != None) {
+            actions.push(LPAction::Call);
+        }
+
+        return actions;
     }
 
     fn apply(&mut self, a: &Self::Action) {
-        todo!()
+        let acting_player = get_acting_player(self);
+        match a {
+            LPAction::Bet(i) => self.bet_state[*i] = Some(acting_player),
+            LPAction::Call => self.call_state = Some(acting_player),
+        };
     }
 
     fn evaluate(&self) -> i32 {
-        todo!()
+        if self.call_state == None {
+            return 0; // game isn't over
+        }
+
+        let (num_dice, state) = parse_highest_bet(self).unwrap();
+
+        let mut counted_dice = 0;
+        for d in self.dice_state {
+            match d {
+                DiceState::K(x) if x == state => counted_dice += 1,
+                _ => {}
+            }
+        }
+
+        let call_is_correct = counted_dice < num_dice;
+
+        match (self.call_state, call_is_correct) {
+            (Some(Player::P1), true) => return 1,
+            (Some(Player::P2), true) => return -1,
+            (Some(Player::P1), false) => return -1,
+            (Some(Player::P2), false) => return 1,
+            (None, _) => return 0,
+        }
     }
 }
 
@@ -161,7 +210,7 @@ impl LiarsPoker {
     /// 0 is no winner
     fn step(&mut self, agent: &(impl Agent<LPGameState> + ?Sized)) -> i32 {
         let filtered_state = filter_state(&self.game_state);
-        let possible_actions = get_possible_actions(&filtered_state);
+        let possible_actions = filtered_state.get_actions();
         debug!("{} sees game state of {:?}", agent.name(), filtered_state);
         debug!("{} evaluating moves: {:?}", agent.name(), possible_actions);
         let a = agent.play(&filtered_state, &possible_actions);
@@ -174,46 +223,21 @@ impl LiarsPoker {
             panic!("Agent attempted invalid action")
         }
 
-        self.game_state = apply_action(&self.game_state, &a);
+        self.game_state.apply(&a);
 
-        let winner = get_winner(&self.game_state);
+        let score = self.game_state.evaluate();
 
-        if let Some(_) = winner {
+        if score != 0 {
+            let winner = match score {
+                x if x > 0 => Player::P1,
+                x if x < 0 => Player::P2,
+                _ => panic!("invalid winner"),
+            };
+
             info!("Winner: {:?}; {:?}", winner, self.game_state);
         }
 
-        let score = match winner {
-            Some(Player::P1) => 1,
-            Some(Player::P2) => -1,
-            None => 0,
-        };
-
         return score;
-    }
-}
-
-pub fn get_winner(g: &LPGameState) -> Option<Player> {
-    if g.call_state == None {
-        return None; // game isn't over
-    }
-
-    let (num_dice, state) = parse_highest_bet(g).unwrap();
-
-    let mut counted_dice = 0;
-    for d in g.dice_state {
-        match d {
-            DiceState::K(x) if x == state => counted_dice += 1,
-            _ => {}
-        }
-    }
-
-    let call_is_correct = counted_dice < num_dice;
-
-    match (g.call_state, call_is_correct) {
-        (Some(x), true) => return Some(x),
-        (Some(Player::P1), false) => return Some(Player::P2),
-        (Some(Player::P2), false) => return Some(Player::P1),
-        (None, _) => return None,
     }
 }
 
@@ -290,51 +314,12 @@ pub fn get_acting_player(g: &LPGameState) -> Player {
     return next_guesser;
 }
 
-pub fn apply_action(g: &LPGameState, a: &LPAction) -> LPGameState {
-    let mut f = g.clone();
-    let acting_player = get_acting_player(g);
-    match a {
-        LPAction::Bet(i) => f.bet_state[*i] = Some(acting_player),
-        LPAction::Call => f.call_state = Some(acting_player),
-    };
-
-    return f;
-}
-
-pub fn get_possible_actions(g: &LPGameState) -> Vec<LPAction> {
-    let mut actions = Vec::new();
-
-    // Check for call
-    if g.call_state != None {
-        return actions; // no possible moves
-    }
-
-    let last_bet = get_last_bet(g);
-    let start_index = match last_bet {
-        None => 0,
-        Some(x) => x + 1,
-    };
-
-    // Increasing bets
-    for i in start_index..g.bet_state.len() {
-        actions.push(LPAction::Bet(i));
-    }
-
-    // Call bluff, only possible if another bet has been made
-    if g.bet_state.iter().any(|&x| x != None) {
-        actions.push(LPAction::Call);
-    }
-
-    return actions;
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::liars_poker::{
-        get_possible_actions, DiceState, LPGameState, Player, DICE_SIDES, NUM_DICE,
+    use crate::{
+        game::GameState,
+        liars_poker::{DiceState, LPGameState, Player, DICE_SIDES, NUM_DICE},
     };
-
-    use super::get_winner;
 
     #[test]
     fn move_getter() {
@@ -344,15 +329,15 @@ mod tests {
             call_state: None,
         };
 
-        let moves = get_possible_actions(&g);
+        let moves = g.get_actions();
         assert_eq!(moves.len(), NUM_DICE * DICE_SIDES);
 
         g.bet_state[4] = Some(Player::P1);
-        let moves = get_possible_actions(&g);
+        let moves = g.get_actions();
         assert_eq!(moves.len(), NUM_DICE * DICE_SIDES - 5 + 1);
 
         g.bet_state[5] = Some(Player::P2);
-        let moves = get_possible_actions(&g);
+        let moves = g.get_actions();
         assert_eq!(moves.len(), NUM_DICE * DICE_SIDES - DICE_SIDES + 1);
     }
 
@@ -366,11 +351,11 @@ mod tests {
 
         g.bet_state[0] = Some(Player::P1);
         g.call_state = Some(Player::P2);
-        let winner = get_winner(&g);
-        assert_eq!(winner, Some(Player::P1));
+        let winner = g.evaluate();
+        assert!(winner > 0);
 
         g.dice_state = [DiceState::K(1); NUM_DICE];
-        let winner = get_winner(&g);
-        assert_eq!(winner, Some(Player::P2));
+        let winner = g.evaluate();
+        assert!(winner < 0);
     }
 }

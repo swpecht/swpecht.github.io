@@ -1,10 +1,13 @@
-use std::cmp::Ordering;
+use std::cmp::{max, Ordering};
 
 use itertools::Itertools;
 
-use crate::liars_poker::{
-    apply_action, get_acting_player, get_possible_actions, get_winner, parse_bet, DiceState,
-    LPAction, LPGameState, Player, DICE_SIDES, NUM_DICE,
+use crate::{
+    game::GameState,
+    liars_poker::{
+        get_acting_player, parse_bet, DiceState, LPAction, LPGameState, Player, DICE_SIDES,
+        NUM_DICE,
+    },
 };
 
 /// Arena tree implementation
@@ -36,10 +39,11 @@ impl GameTree {
         while let Some(parent_id) = nodes_to_process.pop() {
             let parent = tree.get(parent_id);
             let state = parent.state.clone();
-            let actions = get_possible_actions(&state);
+            let actions = state.get_actions();
 
             for a in actions {
-                let next_state = apply_action(&state, &a);
+                let mut next_state = state.clone();
+                next_state.apply(&a);
                 let child = tree.new_node(next_state, Some(a), Some(parent_id));
                 nodes_to_process.push(child);
             }
@@ -200,10 +204,9 @@ fn score_game_state(g: &LPGameState) -> f32 {
 
     let num_unknown = g.dice_state.iter().filter(|&x| *x == DiceState::U).count();
     if num_unknown == 0 {
-        return match get_winner(g) {
-            Some(Player::P1) => 1.0,
-            Some(Player::P2) => 0.0,
-            _ => panic!("Invalid state"),
+        return match g.evaluate() {
+            x if x > 0 => 1.0,
+            _ => 0.0,
         };
     }
 
@@ -227,10 +230,7 @@ fn score_game_state(g: &LPGameState) -> f32 {
         let mut state = g.clone();
         state.dice_state = dice_state;
 
-        wins += match get_winner(&state) {
-            Some(x) if x == Player::P1 => 1,
-            _ => 0,
-        };
+        wins += max(g.evaluate(), 0);
         games += 1;
     }
 

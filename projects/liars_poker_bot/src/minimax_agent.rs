@@ -3,10 +3,11 @@ use log::debug;
 
 use crate::{
     agents::Agent,
+    game::GameState,
     game_tree::GameTree,
     liars_poker::{
-        apply_action, get_acting_player, get_last_bet, get_possible_actions, DiceState, LPAction,
-        LPGameState, Player, DICE_SIDES, NUM_DICE,
+        get_acting_player, get_last_bet, DiceState, LPAction, LPGameState, Player, DICE_SIDES,
+        NUM_DICE,
     },
 };
 
@@ -26,7 +27,8 @@ impl Agent<LPGameState> for MinimaxAgent {
         };
         let mut cur_move = None;
         for a in possible_moves {
-            let f = apply_action(g, a);
+            let mut f = g.clone();
+            f.apply(&a);
             debug!("Evaluating: {:?}", f);
             let t = GameTree::new(&f);
             // print!("{:?}", t);
@@ -91,7 +93,7 @@ impl Agent<LPGameState> for MetaMinimaxAgent {
             }
 
             debug!("Meta agent testing dicestate {:?}", pg.dice_state);
-            let a = mma.play(&pg, &get_possible_actions(&pg));
+            let a = mma.play(&pg, &pg.get_actions());
             debug!("Meta agent suggests action {:?}", a);
             if a == last_bet {
                 found_match = true;
