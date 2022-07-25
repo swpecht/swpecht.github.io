@@ -11,12 +11,10 @@ use clap::Parser;
 use game::RPSState;
 
 use game::RPS;
-use liars_poker::{LPAction, LPGameState, LiarsPoker};
-use minimax_agent::MetaMinimaxAgent;
+use liars_poker::{LPGameState, LiarsPoker};
 
 use crate::agents::AlwaysFirstAgent;
 use crate::cfr_agent::CFRAgent;
-use crate::game::RPSAction;
 use crate::{
     agents::{Agent, OwnDiceAgent},
     game::Game,
@@ -50,9 +48,7 @@ fn main() {
 
     if args.benchmark {
         let ra = RandomAgent {};
-
         let mma = MinimaxAgent {};
-        let meta = MetaMinimaxAgent {};
         let oda = OwnDiceAgent {
             name: "OwnDiceAgent".to_string(),
         };
@@ -61,13 +57,8 @@ fn main() {
             name: "IncorporateBetAgent".to_string(),
         };
 
-        let agents: Vec<Box<dyn Agent<LPGameState>>> = vec![
-            Box::new(ra),
-            Box::new(mma),
-            Box::new(meta),
-            Box::new(oda),
-            Box::new(iba),
-        ];
+        let agents: Vec<Box<dyn Agent<LPGameState>>> =
+            vec![Box::new(ra), Box::new(mma), Box::new(oda), Box::new(iba)];
 
         for i in 0..agents.len() {
             for j in 0..agents.len() {
