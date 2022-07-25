@@ -2,6 +2,13 @@ use log::info;
 
 use crate::agents::Agent;
 
+pub trait GameState {
+    type Action;
+    fn get_actions(&self) -> Vec<Self::Action>;
+    fn apply(&mut self, a: &Self::Action);
+    fn evaluate(&self) -> i32;
+}
+
 pub trait Game {
     type GameState;
     type Action: Clone;
@@ -12,7 +19,6 @@ pub trait Game {
         p1: &(impl Agent<Self::GameState, Self::Action> + ?Sized),
         p2: &(impl Agent<Self::GameState, Self::Action> + ?Sized),
     ) -> i32;
-    fn get_possible_actions(&self, g: &Self::GameState) -> Vec<Self::Action>;
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -22,8 +28,38 @@ pub enum RPSAction {
     Scissors,
 }
 
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub struct RPSState {
     actions: [Option<RPSAction>; 2],
+}
+
+impl GameState for RPSState {
+    type Action = RPSAction;
+
+    fn get_actions(&self) -> Vec<Self::Action> {
+        return vec![RPSAction::Rock, RPSAction::Paper, RPSAction::Scissors];
+    }
+
+    fn apply(&mut self, a: &Self::Action) {
+        match self.actions {
+            [None, None] => self.actions[0] = Some(*a),
+            [Some(_), None] => self.actions[1] = Some(*a),
+            _ => panic!("applied invalid action"),
+        }
+    }
+
+    fn evaluate(&self) -> i32 {
+        return match (self.actions[0], self.actions[1]) {
+            (Some(x), Some(y)) if x == y => 0,
+            (Some(RPSAction::Paper), Some(RPSAction::Rock)) => 1,
+            (Some(RPSAction::Paper), Some(RPSAction::Scissors)) => -2,
+            (Some(RPSAction::Rock), Some(RPSAction::Scissors)) => 2,
+            (Some(RPSAction::Rock), Some(RPSAction::Paper)) => -1,
+            (Some(RPSAction::Scissors), Some(RPSAction::Paper)) => 2,
+            (Some(RPSAction::Scissors), Some(RPSAction::Rock)) => -2,
+            _ => panic!("invalid state: both players must play"),
+        };
+    }
 }
 
 impl RPSState {
@@ -51,9 +87,9 @@ impl Game for RPS {
         p2: &(impl Agent<RPSState, RPSAction> + ?Sized),
     ) -> i32 {
         let mut state = RPSState::new();
-        let actions = self.get_possible_actions(&state);
-        state.actions[0] = Some(p1.play(&state, &actions));
-        state.actions[1] = Some(p2.play(&state, &actions));
+        let actions = state.get_actions();
+        state.apply(&p1.play(&state, &actions));
+        state.apply(&p2.play(&state, &actions));
 
         info!(
             "{} played {:?}, {} played {:?}",
@@ -63,21 +99,8 @@ impl Game for RPS {
             state.actions[1]
         );
 
-        let score = match (state.actions[0], state.actions[1]) {
-            (Some(x), Some(y)) if x == y => 0,
-            (Some(RPSAction::Paper), Some(RPSAction::Rock)) => 1,
-            (Some(RPSAction::Paper), Some(RPSAction::Scissors)) => -2,
-            (Some(RPSAction::Rock), Some(RPSAction::Scissors)) => 2,
-            (Some(RPSAction::Rock), Some(RPSAction::Paper)) => -1,
-            (Some(RPSAction::Scissors), Some(RPSAction::Paper)) => 2,
-            (Some(RPSAction::Scissors), Some(RPSAction::Rock)) => -2,
-            _ => panic!("invalid state: both players must play"),
-        };
+        let score = state.evaluate();
         info!("Score: {:?}", score);
         return score;
-    }
-
-    fn get_possible_actions(&self, _: &Self::GameState) -> Vec<Self::Action> {
-        return vec![RPSAction::Rock, RPSAction::Paper, RPSAction::Scissors];
     }
 }

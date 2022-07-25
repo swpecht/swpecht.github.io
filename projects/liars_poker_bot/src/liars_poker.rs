@@ -135,10 +135,6 @@ impl Game for LiarsPoker {
 
         return score;
     }
-
-    fn get_possible_actions(&self, g: &Self::GameState) -> Vec<Self::Action> {
-        todo!()
-    }
 }
 
 impl LiarsPoker {
