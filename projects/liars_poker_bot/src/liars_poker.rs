@@ -1,6 +1,7 @@
 use core::panic;
 use std::ops;
 
+use itertools::Itertools;
 use log::{debug, info};
 /// Game implementation for liars poker.
 use rand::Rng;
@@ -112,7 +113,7 @@ impl GameState for LPGameState {
     }
 
     fn apply(&mut self, a: &Self::Action) {
-        let acting_player = get_acting_player(self);
+        let acting_player = self.get_acting_player();
         match a {
             LPAction::Bet(i) => self.bet_state[*i] = Some(acting_player),
             LPAction::Call => self.call_state = Some(acting_player),
@@ -143,6 +144,80 @@ impl GameState for LPGameState {
             (Some(Player::P2), false) => return 1,
             (None, _) => return 0,
         }
+    }
+
+    fn get_acting_player(&self) -> Player {
+        // Check for a call
+        match self.call_state {
+            Some(Player::P1) => return Player::P2,
+            Some(Player::P2) => return Player::P1,
+            _ => {}
+        }
+
+        // Get the last guesser
+        let mut last_guesser = None;
+        for i in 0..self.bet_state.len() {
+            match self.bet_state[i] {
+                Some(Player::P1) => {
+                    last_guesser = Some(Player::P1);
+                }
+                Some(Player::P2) => {
+                    last_guesser = Some(Player::P2);
+                }
+                _ => {}
+            }
+        }
+
+        let next_guesser = match last_guesser {
+            Some(Player::P1) => Player::P2,
+            Some(Player::P2) => Player::P1,
+            None => Player::P1,
+        };
+
+        return next_guesser;
+    }
+
+    fn get_possible_states(&self) -> Vec<Self> {
+        let known_dice = self
+            .dice_state
+            .iter()
+            .filter(|&x| match x {
+                DiceState::K(_) => true,
+                _ => false,
+            })
+            .collect_vec();
+
+        let num_unknown = self
+            .dice_state
+            .iter()
+            .filter(|&x| *x == DiceState::U)
+            .count();
+        if num_unknown == 0 {
+            return vec![self.clone()];
+        }
+
+        let unknown_dice = (0..num_unknown)
+            .map(|_| 0..DICE_SIDES)
+            .multi_cartesian_product();
+        let mut dice_state = [DiceState::K(1); NUM_DICE];
+
+        for i in 0..known_dice.len() {
+            dice_state[i] = *known_dice[i];
+        }
+
+        let mut states = Vec::new();
+        for p in unknown_dice {
+            let mut guess = p.iter();
+            for i in known_dice.len()..NUM_DICE {
+                dice_state[i] = DiceState::K(*guess.next().unwrap());
+            }
+
+            let mut state = self.clone();
+            state.dice_state = dice_state;
+            states.push(state);
+        }
+
+        return states;
     }
 }
 
@@ -215,7 +290,7 @@ impl LiarsPoker {
         debug!("{} evaluating moves: {:?}", agent.name(), possible_actions);
         let a = agent.play(&filtered_state, &possible_actions);
 
-        let acting_player = get_acting_player(&self.game_state);
+        let acting_player = self.game_state.get_acting_player();
         info!("{:?} tried to play {:?}", acting_player, a);
 
         // Verify the action is allowed
@@ -259,7 +334,7 @@ pub fn parse_bet(i: usize) -> (usize, usize) {
 /// Returns a filtered version of the gamestate hiding private information
 fn filter_state(g: &LPGameState) -> LPGameState {
     let mut f = g.clone();
-    let acting_player = get_acting_player(g);
+    let acting_player = g.get_acting_player();
 
     let filter_start = match acting_player {
         Player::P1 => NUM_DICE / 2,
@@ -283,37 +358,6 @@ pub fn get_last_bet(g: &LPGameState) -> Option<usize> {
     return None;
 }
 
-pub fn get_acting_player(g: &LPGameState) -> Player {
-    // Check for a call
-    match g.call_state {
-        Some(Player::P1) => return Player::P2,
-        Some(Player::P2) => return Player::P1,
-        _ => {}
-    }
-
-    // Get the last guesser
-    let mut last_guesser = None;
-    for i in 0..g.bet_state.len() {
-        match g.bet_state[i] {
-            Some(Player::P1) => {
-                last_guesser = Some(Player::P1);
-            }
-            Some(Player::P2) => {
-                last_guesser = Some(Player::P2);
-            }
-            _ => {}
-        }
-    }
-
-    let next_guesser = match last_guesser {
-        Some(Player::P1) => Player::P2,
-        Some(Player::P2) => Player::P1,
-        None => Player::P1,
-    };
-
-    return next_guesser;
-}
-
 #[cfg(test)]
 mod tests {
     use crate::{
@@ -324,7 +368,7 @@ mod tests {
     #[test]
     fn move_getter() {
         let mut g = LPGameState {
-            dice_state: [DiceState::K(1); NUM_DICE],
+            dice_state: [DiceState::K(0); NUM_DICE],
             bet_state: [None; NUM_DICE * DICE_SIDES],
             call_state: None,
         };
@@ -338,7 +382,7 @@ mod tests {
 
         g.bet_state[5] = Some(Player::P2);
         let moves = g.get_actions();
-        assert_eq!(moves.len(), NUM_DICE * DICE_SIDES - DICE_SIDES + 1);
+        assert_eq!(moves.len(), NUM_DICE * DICE_SIDES - 6 + 1);
     }
 
     #[test]

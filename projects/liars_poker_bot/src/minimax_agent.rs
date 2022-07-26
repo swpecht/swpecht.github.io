@@ -1,21 +1,19 @@
 use log::debug;
 
-use crate::{
-    agents::Agent,
-    game::GameState,
-    game_tree::GameTree,
-    liars_poker::{get_acting_player, LPAction, LPGameState, Player},
-};
+use crate::{agents::Agent, game::GameState, game_tree::GameTree, liars_poker::Player};
 
 pub struct MinimaxAgent {}
 
-impl Agent<LPGameState> for MinimaxAgent {
+impl<G: Clone> Agent<G> for MinimaxAgent
+where
+    G: GameState + std::fmt::Debug,
+{
     fn name(&self) -> &str {
         return "MinimaxAgent";
     }
 
-    fn play(&self, g: &LPGameState, possible_moves: &Vec<LPAction>) -> LPAction {
-        let acting_player = get_acting_player(g);
+    fn play(&self, g: &G, possible_moves: &Vec<G::Action>) -> G::Action {
+        let acting_player = g.get_acting_player();
 
         let mut cur_max = match acting_player {
             Player::P1 => f32::MIN,
@@ -44,6 +42,6 @@ impl Agent<LPGameState> for MinimaxAgent {
             }
         }
 
-        return *cur_move.unwrap();
+        return cur_move.unwrap().clone();
     }
 }

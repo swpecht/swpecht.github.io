@@ -1,12 +1,15 @@
 use log::info;
 
-use crate::agents::Agent;
+use crate::{agents::Agent, liars_poker::Player};
 
-pub trait GameState {
+pub trait GameState: Sized {
     type Action: Clone;
     fn get_actions(&self) -> Vec<Self::Action>;
     fn apply(&mut self, a: &Self::Action);
     fn evaluate(&self) -> i32;
+    fn get_acting_player(&self) -> Player;
+    /// Return all poassible game states given hidden information
+    fn get_possible_states(&self) -> Vec<Self>;
 }
 
 pub trait Game {
@@ -59,6 +62,14 @@ impl GameState for RPSState {
             (Some(RPSAction::Scissors), Some(RPSAction::Rock)) => -2,
             _ => panic!("invalid state: both players must play"),
         };
+    }
+
+    fn get_acting_player(&self) -> Player {
+        todo!()
+    }
+
+    fn get_possible_states(&self) -> Vec<Self> {
+        todo!()
     }
 }
 
