@@ -22,14 +22,18 @@ where
             Player::P2 => f32::MAX,
         };
         let mut cur_move = None;
+
+        // Shuffle the order of evaluating moves to choose a random one if multiple have
+        // the same utility
         let mut rng = thread_rng();
-        Finish shuffling moves so get a random best move
-        for a in possible_moves.shuffle(&mut rng).iter() {
+        let mut shuffled_moves = possible_moves.clone();
+        shuffled_moves.shuffle(&mut rng);
+        for a in shuffled_moves {
             let mut f = g.clone();
             f.apply(&a);
             debug!("Evaluating: {:?}", f);
             let t = GameTree::new(&f);
-            print!("{:?}", t);
+            // print!("{:?}", t);
 
             let value = t.get(0).score.unwrap();
 

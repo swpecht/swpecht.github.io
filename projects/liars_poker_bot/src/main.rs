@@ -8,6 +8,7 @@ pub mod minimax_agent;
 use agents::{IncorporateBetAgent, RandomAgent};
 use clap::Parser;
 
+use clap::clap_derive::ArgEnum;
 use game::RPSState;
 
 use game::RPS;
@@ -19,6 +20,12 @@ use crate::{
     game::Game,
     minimax_agent::MinimaxAgent,
 };
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ArgEnum, Debug)]
+enum GameType {
+    RPS,
+    LP,
+}
 
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
@@ -32,6 +39,9 @@ struct Args {
 
     #[clap(short, long, action)]
     benchmark: bool,
+
+    #[clap(arg_enum, value_parser, default_value_t = GameType::RPS)]
+    game: GameType,
 }
 
 fn main() {
@@ -44,6 +54,12 @@ fn main() {
         .timestamp(stderrlog::Timestamp::Second)
         .init()
         .unwrap();
+
+    // let get_game = match args.game {
+    //     GameType::RPS => || -> dyn Game {
+    //         RPS::new();
+    //     },
+    // };
 
     if args.benchmark {
         let ra = RandomAgent {};
@@ -83,7 +99,7 @@ fn main() {
             }
         }
     } else {
-        let p1 = &AlwaysFirstAgent {} as &dyn Agent<RPSState>;
+        let p1 = &RandomAgent {} as &dyn Agent<RPSState>;
         let p2 = &MinimaxAgent {} as &dyn Agent<RPSState>;
 
         let mut running_score = 0;
