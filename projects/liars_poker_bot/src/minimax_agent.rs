@@ -1,4 +1,5 @@
 use log::debug;
+use rand::{prelude::SliceRandom, thread_rng};
 
 use crate::{agents::Agent, game::GameState, game_tree::GameTree, liars_poker::Player};
 
@@ -7,6 +8,7 @@ pub struct MinimaxAgent {}
 impl<G: Clone> Agent<G> for MinimaxAgent
 where
     G: GameState + std::fmt::Debug,
+    <G as GameState>::Action: std::fmt::Debug,
 {
     fn name(&self) -> &str {
         return "MinimaxAgent";
@@ -20,12 +22,14 @@ where
             Player::P2 => f32::MAX,
         };
         let mut cur_move = None;
-        for a in possible_moves {
+        let mut rng = thread_rng();
+        Finish shuffling moves so get a random best move
+        for a in possible_moves.shuffle(&mut rng).iter() {
             let mut f = g.clone();
             f.apply(&a);
             debug!("Evaluating: {:?}", f);
             let t = GameTree::new(&f);
-            // print!("{:?}", t);
+            print!("{:?}", t);
 
             let value = t.get(0).score.unwrap();
 

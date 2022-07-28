@@ -1,7 +1,7 @@
-use std::cmp::max;
+use std::{cmp::max, fmt::Debug};
 
 use crate::{
-    game::GameState,
+    game::{Game, GameState, RPSState},
     liars_poker::{parse_bet, LPAction, LPGameState, Player},
 };
 
@@ -142,7 +142,11 @@ impl<G: GameState + Clone> GameTree<G> {
     }
 }
 
-impl std::fmt::Debug for GameTree<LPGameState> {
+impl<G> std::fmt::Debug for GameTree<G>
+where
+    G: Clone + GameState + Debug,
+    <G as GameState>::Action: std::fmt::Debug,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         const START: char = '├';
         const V: char = '|'; // vertical
@@ -155,14 +159,7 @@ impl std::fmt::Debug for GameTree<LPGameState> {
                 output.push(V);
             }
             let node = self.get(id);
-            let action_string = match node.action {
-                Some(LPAction::Bet(x)) => {
-                    let (n, v) = parse_bet(x);
-                    format!("{} {}s", n, v)
-                }
-                Some(LPAction::Call) => "C".to_string(),
-                _ => String::new(),
-            };
+            let action_string = format!("{:?}", node.action);
 
             output.push_str(&format!("{} {:?} {:?}", START, node.actor, action_string));
 

@@ -14,7 +14,6 @@ use game::RPS;
 use liars_poker::{LPGameState, LiarsPoker};
 
 use crate::agents::AlwaysFirstAgent;
-use crate::cfr_agent::CFRAgent;
 use crate::{
     agents::{Agent, OwnDiceAgent},
     game::Game,
@@ -85,7 +84,7 @@ fn main() {
         }
     } else {
         let p1 = &AlwaysFirstAgent {} as &dyn Agent<RPSState>;
-        let p2 = &CFRAgent::new() as &dyn Agent<RPSState>;
+        let p2 = &MinimaxAgent {} as &dyn Agent<RPSState>;
 
         let mut running_score = 0;
         for _ in 0..args.num_games {
