@@ -13,16 +13,9 @@ pub trait GameState: Sized {
     fn get_possible_states(&self) -> Vec<Self>;
 }
 
-pub trait Game {
-    type G: GameState;
-    type Action: Clone;
-
-    fn new() -> Self;
-    fn play(
-        &mut self,
-        p1: &(impl Agent<Self::G> + ?Sized),
-        p2: &(impl Agent<Self::G> + ?Sized),
-    ) -> i32;
+pub trait Game<State: GameState> {
+    fn play(&mut self, p1: &(impl Agent<State> + ?Sized), p2: &(impl Agent<State> + ?Sized))
+        -> i32;
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -114,14 +107,7 @@ impl RPSState {
 /// https://arxiv.org/pdf/2007.13544.pdf
 pub struct RPS {}
 
-impl Game for RPS {
-    type G = RPSState;
-    type Action = RPSAction;
-
-    fn new() -> Self {
-        return Self {};
-    }
-
+impl Game<RPSState> for RPS {
     fn play(
         &mut self,
         p1: &(impl Agent<RPSState> + ?Sized),

@@ -235,28 +235,7 @@ pub struct LiarsPoker {
     game_state: LPGameState,
 }
 
-impl Game for LiarsPoker {
-    type G = LPGameState;
-    type Action = LPAction;
-
-    fn new() -> Self {
-        let mut rng = rand::thread_rng();
-        let mut dice_state = [DiceState::U; NUM_DICE];
-        for i in 0..NUM_DICE {
-            dice_state[i] = DiceState::K(rng.gen_range(0..DICE_SIDES));
-        }
-
-        let s = LPGameState {
-            dice_state: dice_state,
-            bet_state: [None; NUM_DICE * DICE_SIDES],
-            call_state: None,
-        };
-
-        info!("Game created: {:?}", s);
-
-        Self { game_state: s }
-    }
-
+impl Game<LPGameState> for LiarsPoker {
     // Play through a game. Positive if P1 wins, negative is P2 wins
     fn play(
         &mut self,
@@ -281,6 +260,24 @@ impl Game for LiarsPoker {
 }
 
 impl LiarsPoker {
+    pub fn new() -> Self {
+        let mut rng = rand::thread_rng();
+        let mut dice_state = [DiceState::U; NUM_DICE];
+        for i in 0..NUM_DICE {
+            dice_state[i] = DiceState::K(rng.gen_range(0..DICE_SIDES));
+        }
+
+        let s = LPGameState {
+            dice_state: dice_state,
+            bet_state: [None; NUM_DICE * DICE_SIDES],
+            call_state: None,
+        };
+
+        info!("Game created: {:?}", s);
+
+        Self { game_state: s }
+    }
+
     /// Play 1 step of the game, return score. 1 if P1 wins, -1 if P2,
     /// 0 is no winner
     fn step(&mut self, agent: &(impl Agent<LPGameState> + ?Sized)) -> i32 {
