@@ -130,24 +130,18 @@ fn run_rps_benchmark(args: Args) {
 
     for i in 0..agents.len() {
         for j in 0..agents.len() {
-            let mut p1_wins = 0;
-            let mut p2_wins = 0;
+            let mut total_score = 0;
             for _ in 0..args.num_games {
                 let mut game = RPS {};
                 let score = game.play(agents[i].as_ref(), agents[j].as_ref());
-                if score == 1 {
-                    p1_wins += 1;
-                } else {
-                    p2_wins += 1;
-                }
+                total_score += score;
             }
 
             print!(
-                "{} wins: {},  {} wins: {}\n",
+                "{} vs {}: {}\n",
                 &agents[i].name(),
-                p1_wins,
                 &agents[j].name(),
-                p2_wins
+                total_score
             );
         }
     }
