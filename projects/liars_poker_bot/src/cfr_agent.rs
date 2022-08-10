@@ -3,7 +3,7 @@ use rand::{prelude::SliceRandom, thread_rng};
 
 use crate::{
     agents::Agent,
-    game::{RPSAction, RPSState},
+    game::{GameState, RPSAction, RPSState},
 };
 
 const NUM_ACTIONS: usize = 3;

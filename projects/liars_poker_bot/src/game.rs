@@ -1,21 +1,23 @@
+use std::fmt::Debug;
+
 use itertools::Itertools;
-use log::info;
+use log::{debug, info};
 
 use crate::{agents::Agent, liars_poker::Player};
 
 pub trait GameState: Sized {
     type Action: Clone;
+    fn new() -> Self;
     fn get_actions(&self) -> Vec<Self::Action>;
-    fn apply(&mut self, a: &Self::Action);
+    fn apply(&mut self, p: Player, a: &Self::Action);
     fn evaluate(&self) -> i32;
     fn get_acting_player(&self) -> Player;
+    /// Return true is the gamestate is terminal
+    fn is_terminal(&self) -> bool;
+    /// Return the gamestate with only the information a given player can see
+    fn get_filtered_state(&self, player: Player) -> Self;
     /// Return all poassible game states given hidden information
     fn get_possible_states(&self) -> Vec<Self>;
-}
-
-pub trait Game<State: GameState> {
-    fn play(&mut self, p1: &(impl Agent<State> + ?Sized), p2: &(impl Agent<State> + ?Sized))
-        -> i32;
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -25,6 +27,9 @@ pub enum RPSAction {
     Scissors,
 }
 
+/// Implementation of weighted RPS. Any game involving scissors means the payoff is doubled
+///
+/// https://arxiv.org/pdf/2007.13544.pdf
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct RPSState {
     actions: [Option<RPSAction>; 2],
@@ -40,11 +45,10 @@ impl GameState for RPSState {
         };
     }
 
-    fn apply(&mut self, a: &Self::Action) {
-        match self.actions {
-            [None, None] => self.actions[0] = Some(*a),
-            [Some(_), None] => self.actions[1] = Some(*a),
-            _ => panic!("applied invalid action"),
+    fn apply(&mut self, p: Player, a: &Self::Action) {
+        match p {
+            Player::P1 => self.actions[0] = Some(*a),
+            Player::P2 => self.actions[1] = Some(*a),
         }
     }
 
@@ -57,7 +61,7 @@ impl GameState for RPSState {
             (Some(RPSAction::Rock), Some(RPSAction::Paper)) => -1,
             (Some(RPSAction::Scissors), Some(RPSAction::Paper)) => 2,
             (Some(RPSAction::Scissors), Some(RPSAction::Rock)) => -2,
-            _ => panic!("invalid state: both players must play"),
+            _ => 0,
         };
     }
 
@@ -94,43 +98,76 @@ impl GameState for RPSState {
 
         return states;
     }
-}
 
-impl RPSState {
-    pub fn new() -> Self {
+    fn get_filtered_state(&self, player: Player) -> Self {
+        let mut filtered_state = self.clone();
+        match player {
+            Player::P1 => filtered_state.actions[1] = None,
+            Player::P2 => filtered_state.actions[0] = None,
+        }
+        return filtered_state;
+    }
+
+    fn new() -> Self {
         return Self { actions: [None; 2] };
     }
+
+    fn is_terminal(&self) -> bool {
+        match self.actions {
+            [Some(_), Some(_)] => true,
+            _ => false,
+        }
+    }
 }
 
-/// Implementation of weighted RPS. Any game involving scissors means the payoff is doubled
-///
-/// https://arxiv.org/pdf/2007.13544.pdf
-pub struct RPS {}
+pub fn play<G>(p1: &(impl Agent<G> + ?Sized), p2: &(impl Agent<G> + ?Sized)) -> i32
+where
+    G: GameState + Debug,
+    G::Action: Debug + PartialEq,
+{
+    let mut g = G::new();
+    info!("{} playing {}", p1.name(), p2.name());
+    let mut is_player1_turn = true;
+    while !g.is_terminal() {
+        match is_player1_turn {
+            true => step(&mut g, p1, Player::P1),
+            false => step(&mut g, p2, Player::P2),
+        }
 
-impl Game<RPSState> for RPS {
-    fn play(
-        &mut self,
-        p1: &(impl Agent<RPSState> + ?Sized),
-        p2: &(impl Agent<RPSState> + ?Sized),
-    ) -> i32 {
-        info!("{} playing {}", p1.name(), p2.name());
-        let mut state = RPSState::new();
-        let actions = state.get_actions();
-        state.apply(&p1.play(&state, &actions));
-        let mut filtered_state = state.clone();
-        filtered_state.actions[0] = None;
-        state.apply(&p2.play(&filtered_state, &actions));
-
-        info!(
-            "{} played {:?}, {} played {:?}",
-            p1.name(),
-            state.actions[0],
-            p2.name(),
-            state.actions[1]
-        );
-
-        let score = state.evaluate();
-        info!("Score: {:?}", score);
-        return score;
+        is_player1_turn = !is_player1_turn;
+        debug!("Game state: {:?}", g);
     }
+
+    let score = g.evaluate();
+    match score {
+        x if x > 0 => info!("P1 wins"),
+        x if x < 0 => info!("P2 wins"),
+        0 => info!("tie"),
+        _ => panic!("invalid winner"),
+    };
+
+    return score;
+}
+
+fn step<G>(g: &mut G, agent: &(impl Agent<G> + ?Sized), p: Player)
+where
+    G: GameState + Debug,
+    G::Action: Debug + PartialEq,
+{
+    let acting_player = p;
+
+    let filtered_state = g.get_filtered_state(acting_player);
+    let possible_actions = filtered_state.get_actions();
+    debug!("{} sees game state of {:?}", agent.name(), filtered_state);
+    debug!("{} evaluating moves: {:?}", agent.name(), possible_actions);
+    let a = agent.play(&filtered_state, &possible_actions);
+
+    info!("{:?} tried to play {:?}", acting_player, a);
+
+    // Verify the action is allowed
+    if !possible_actions.contains(&a) {
+        panic!("Agent attempted invalid action")
+    }
+
+    g.apply(p, &a);
 }

@@ -15,9 +15,9 @@ where
     }
 
     fn play(&self, g: &G, possible_moves: &Vec<G::Action>) -> G::Action {
-        let acting_player = g.get_acting_player();
+        let p = g.get_acting_player();
 
-        let mut cur_max = match acting_player {
+        let mut cur_max = match p {
             Player::P1 => f32::MIN,
             Player::P2 => f32::MAX,
         };
@@ -30,7 +30,7 @@ where
         shuffled_moves.shuffle(&mut rng);
         for a in shuffled_moves {
             let mut f = g.clone();
-            f.apply(&a);
+            f.apply(p, &a);
             debug!("Evaluating: {:?}", f);
             let t = GameTree::new(&f);
             // print!("{:?}", t);
@@ -39,7 +39,7 @@ where
 
             debug!("value: {:?}", value);
 
-            let is_better = match acting_player {
+            let is_better = match p {
                 Player::P1 => value > cur_max,
                 Player::P2 => value < cur_max,
             };

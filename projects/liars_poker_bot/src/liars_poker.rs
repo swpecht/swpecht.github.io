@@ -1,15 +1,10 @@
-use core::panic;
 use std::ops;
 
 use itertools::Itertools;
-use log::{debug, info};
 /// Game implementation for liars poker.
 use rand::Rng;
 
-use crate::{
-    agents::Agent,
-    game::{Game, GameState},
-};
+use crate::game::GameState;
 
 pub const NUM_DICE: usize = 4;
 pub const DICE_SIDES: usize = 3;
@@ -112,11 +107,10 @@ impl GameState for LPGameState {
         return actions;
     }
 
-    fn apply(&mut self, a: &Self::Action) {
-        let acting_player = self.get_acting_player();
+    fn apply(&mut self, p: Player, a: &Self::Action) {
         match a {
-            LPAction::Bet(i) => self.bet_state[*i] = Some(acting_player),
-            LPAction::Call => self.call_state = Some(acting_player),
+            LPAction::Bet(i) => self.bet_state[*i] = Some(p),
+            LPAction::Call => self.call_state = Some(p),
         };
     }
 
@@ -219,6 +213,41 @@ impl GameState for LPGameState {
 
         return states;
     }
+
+    fn get_filtered_state(&self, player: Player) -> Self {
+        let mut f = self.clone();
+        let filter_start = match player {
+            Player::P1 => NUM_DICE / 2,
+            Player::P2 => 0,
+        };
+
+        for i in filter_start..filter_start + NUM_DICE / 2 {
+            f.dice_state[i] = DiceState::U;
+        }
+
+        return f;
+    }
+
+    fn new() -> Self {
+        let mut rng = rand::thread_rng();
+        let mut dice_state = [DiceState::U; NUM_DICE];
+        for i in 0..NUM_DICE {
+            dice_state[i] = DiceState::K(rng.gen_range(0..DICE_SIDES));
+        }
+
+        LPGameState {
+            dice_state: dice_state,
+            bet_state: [None; NUM_DICE * DICE_SIDES],
+            call_state: None,
+        }
+    }
+
+    fn is_terminal(&self) -> bool {
+        match self.call_state {
+            Some(_) => true,
+            _ => false,
+        }
+    }
 }
 
 impl std::fmt::Debug for LPGameState {
@@ -228,88 +257,6 @@ impl std::fmt::Debug for LPGameState {
             "{:?}, {:?}, {:?}",
             self.dice_state, self.bet_state, self.call_state
         )
-    }
-}
-
-pub struct LiarsPoker {
-    game_state: LPGameState,
-}
-
-impl Game<LPGameState> for LiarsPoker {
-    // Play through a game. Positive if P1 wins, negative is P2 wins
-    fn play(
-        &mut self,
-        p1: &(impl Agent<LPGameState> + ?Sized),
-        p2: &(impl Agent<LPGameState> + ?Sized),
-    ) -> i32 {
-        info!("{} playing {}", p1.name(), p2.name());
-        let mut score = 0;
-        let mut is_player1_turn = true;
-        while score == 0 {
-            match is_player1_turn {
-                true => score = self.step(p1),
-                false => score = self.step(p2),
-            }
-
-            is_player1_turn = !is_player1_turn;
-            debug!("Game state: {:?}", self.game_state);
-        }
-
-        return score;
-    }
-}
-
-impl LiarsPoker {
-    pub fn new() -> Self {
-        let mut rng = rand::thread_rng();
-        let mut dice_state = [DiceState::U; NUM_DICE];
-        for i in 0..NUM_DICE {
-            dice_state[i] = DiceState::K(rng.gen_range(0..DICE_SIDES));
-        }
-
-        let s = LPGameState {
-            dice_state: dice_state,
-            bet_state: [None; NUM_DICE * DICE_SIDES],
-            call_state: None,
-        };
-
-        info!("Game created: {:?}", s);
-
-        Self { game_state: s }
-    }
-
-    /// Play 1 step of the game, return score. 1 if P1 wins, -1 if P2,
-    /// 0 is no winner
-    fn step(&mut self, agent: &(impl Agent<LPGameState> + ?Sized)) -> i32 {
-        let filtered_state = filter_state(&self.game_state);
-        let possible_actions = filtered_state.get_actions();
-        debug!("{} sees game state of {:?}", agent.name(), filtered_state);
-        debug!("{} evaluating moves: {:?}", agent.name(), possible_actions);
-        let a = agent.play(&filtered_state, &possible_actions);
-
-        let acting_player = self.game_state.get_acting_player();
-        info!("{:?} tried to play {:?}", acting_player, a);
-
-        // Verify the action is allowed
-        if !possible_actions.contains(&a) {
-            panic!("Agent attempted invalid action")
-        }
-
-        self.game_state.apply(&a);
-
-        let score = self.game_state.evaluate();
-
-        if score != 0 {
-            let winner = match score {
-                x if x > 0 => Player::P1,
-                x if x < 0 => Player::P2,
-                _ => panic!("invalid winner"),
-            };
-
-            info!("Winner: {:?}; {:?}", winner, self.game_state);
-        }
-
-        return score;
     }
 }
 
@@ -326,23 +273,6 @@ pub fn parse_bet(i: usize) -> (usize, usize) {
     let value = i % DICE_SIDES;
     let num_dice = i / DICE_SIDES + 1;
     return (num_dice, value);
-}
-
-/// Returns a filtered version of the gamestate hiding private information
-fn filter_state(g: &LPGameState) -> LPGameState {
-    let mut f = g.clone();
-    let acting_player = g.get_acting_player();
-
-    let filter_start = match acting_player {
-        Player::P1 => NUM_DICE / 2,
-        Player::P2 => 0,
-    };
-
-    for i in filter_start..filter_start + NUM_DICE / 2 {
-        f.dice_state[i] = DiceState::U;
-    }
-
-    return f;
 }
 
 pub fn get_last_bet(g: &LPGameState) -> Option<usize> {

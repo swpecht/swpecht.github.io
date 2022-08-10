@@ -12,12 +12,11 @@ use clap::Parser;
 use clap::clap_derive::ArgEnum;
 use game::RPSState;
 
-use game::RPS;
-use liars_poker::{LPGameState, LiarsPoker};
+use liars_poker::LPGameState;
 
+use crate::game::play;
 use crate::{
     agents::{Agent, OwnDiceAgent},
-    game::Game,
     minimax_agent::MinimaxAgent,
 };
 
@@ -66,8 +65,7 @@ fn main() {
 
         let mut running_score = 0;
         for _ in 0..args.num_games {
-            let mut game = RPS {};
-            running_score += game.play(p1, p2);
+            running_score += play(p1, p2);
         }
 
         // TODO: figure out why the CFR agent isn't winning more;
@@ -101,8 +99,7 @@ fn run_lp_benchmark(args: Args) {
             let mut p1_wins = 0;
             let mut p2_wins = 0;
             for _ in 0..args.num_games {
-                let mut game = LiarsPoker::new();
-                let score = game.play(agents[i].as_ref(), agents[j].as_ref());
+                let score = play(agents[i].as_ref(), agents[j].as_ref());
                 if score == 1 {
                     p1_wins += 1;
                 } else {
@@ -132,8 +129,7 @@ fn run_rps_benchmark(args: Args) {
         for j in 0..agents.len() {
             let mut total_score = 0;
             for _ in 0..args.num_games {
-                let mut game = RPS {};
-                let score = game.play(agents[i].as_ref(), agents[j].as_ref());
+                let score = play(agents[i].as_ref(), agents[j].as_ref());
                 total_score += score;
             }
 

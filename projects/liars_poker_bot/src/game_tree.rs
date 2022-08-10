@@ -32,10 +32,14 @@ impl<G: GameState + Clone> GameTree<G> {
             let parent = tree.get(parent_id);
             let state = parent.state.clone();
             let actions = state.get_actions();
+            let p = match parent.actor {
+                Player::P1 => Player::P2,
+                Player::P2 => Player::P1,
+            };
 
             for a in actions {
                 let mut next_state = state.clone();
-                next_state.apply(&a);
+                next_state.apply(p, &a);
                 let child = tree.new_node(next_state, Some(a), Some(parent_id));
                 nodes_to_process.push(child);
             }
