@@ -113,6 +113,7 @@ impl Game<RPSState> for RPS {
         p1: &(impl Agent<RPSState> + ?Sized),
         p2: &(impl Agent<RPSState> + ?Sized),
     ) -> i32 {
+        info!("{} playing {}", p1.name(), p2.name());
         let mut state = RPSState::new();
         let actions = state.get_actions();
         state.apply(&p1.play(&state, &actions));
