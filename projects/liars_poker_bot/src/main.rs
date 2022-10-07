@@ -7,6 +7,7 @@ pub mod minimax_agent;
 
 use agents::AlwaysFirstAgent;
 use agents::{IncorporateBetAgent, RandomAgent};
+use cfr_agent::CFRAgent;
 use clap::Parser;
 
 use clap::clap_derive::ArgEnum;
@@ -122,8 +123,10 @@ fn run_rps_benchmark(args: Args) {
     let ra = RandomAgent {};
     let mma = MinimaxAgent {};
     let af = AlwaysFirstAgent {};
+    let cfr = CFRAgent::new();
 
-    let agents: Vec<Box<dyn Agent<RPSState>>> = vec![Box::new(ra), Box::new(mma), Box::new(af)];
+    let agents: Vec<Box<dyn Agent<RPSState>>> =
+        vec![Box::new(ra), Box::new(mma), Box::new(af), Box::new(cfr)];
 
     for i in 0..agents.len() {
         for j in 0..agents.len() {
