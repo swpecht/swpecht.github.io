@@ -24,10 +24,16 @@ Going to use Liar's poker bots to illustrate why.
     *Alternatively, could just minimax agent play out the entire game to see which lines and then outcomes are most likely
 [X] Implement weighted rock paper scisors or similar game where nash equilibrium varies between minimax and CFR
     * <https://arxiv.org/pdf/2007.13544.pdf>
-[ ] Implement minimax for RPS -- show that this converges to the random agent
-    * TODO: add a way for gamestate to return all the possible hidden states, that with eval should enable a generic score function for GameTree
-
+[X] Implement minimax for RPS -- show that this converges to the random agent
+    *TODO: add a way for gamestate to return all the possible hidden states, that with eval should enable a generic score function for GameTree
 [X] Implement counter factual regret minimization
+[X] Add state filtering to GameState rather than as part of the game
+[ ] Implement CFR for liars poker -- need to extend to multiple turns
+    * Look up how ReBel does this -- is it just normal CFR applied multiple times w/ bottom up search?
+    *<https://justinsermeno.com/posts/cfr/>
+    * <https://xyzml.medium.com/learn-ai-game-playing-algorithm-part-iii-counterfactual-regret-minimization-b182a7ec85fb#ede8>
+[ ] Redo agents to be based on game tree evaluation? -- could all agents be done this way? -- then have a "scorer" be the thing that changes?
+    * Removes the complexity of storing state, because the "score" can be kept in the game tree
 
 Results as of July 19 for 1k games:
 Random wins: 475,  Random wins: 525
