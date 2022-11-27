@@ -6,10 +6,7 @@ use log::{debug, info};
 use crate::{agents::Agent, liars_poker::Player};
 
 pub trait GameState: Sized {
-    type Action: Clone;
     fn new() -> Self;
-    fn get_actions(&self) -> Vec<Self::Action>;
-    fn apply(&mut self, p: Player, a: &Self::Action);
     fn evaluate(&self) -> i32;
     fn get_acting_player(&self) -> Player;
     /// Return true is the gamestate is terminal
@@ -18,9 +15,11 @@ pub trait GameState: Sized {
     fn get_filtered_state(&self, player: Player) -> Self;
     /// Return all poassible game states given hidden information
     fn get_possible_states(&self) -> Vec<Self>;
+    /// Returns all possible children gamestates
+    fn get_children(&self) -> Vec<Self>;
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub enum RPSAction {
     Rock,
     Paper,
@@ -30,28 +29,12 @@ pub enum RPSAction {
 /// Implementation of weighted RPS. Any game involving scissors means the payoff is doubled
 ///
 /// https://arxiv.org/pdf/2007.13544.pdf
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub struct RPSState {
     actions: [Option<RPSAction>; 2],
 }
 
 impl GameState for RPSState {
-    type Action = RPSAction;
-
-    fn get_actions(&self) -> Vec<Self::Action> {
-        return match self.actions {
-            [Some(_), Some(_)] => Vec::new(),
-            _ => vec![RPSAction::Rock, RPSAction::Paper, RPSAction::Scissors],
-        };
-    }
-
-    fn apply(&mut self, p: Player, a: &Self::Action) {
-        match p {
-            Player::P1 => self.actions[0] = Some(*a),
-            Player::P2 => self.actions[1] = Some(*a),
-        }
-    }
-
     fn evaluate(&self) -> i32 {
         return match (self.actions[0], self.actions[1]) {
             (Some(x), Some(y)) if x == y => 0,
@@ -118,12 +101,40 @@ impl GameState for RPSState {
             _ => false,
         }
     }
+
+    fn get_children(&self) -> Vec<Self> {
+        let actions = vec![RPSAction::Rock, RPSAction::Paper, RPSAction::Scissors];
+        let mut possibilities = Vec::new();
+
+        if let Some(_) = self.actions[1] {
+            return possibilities;
+        }
+
+        for a in actions {
+            let mut g = self.clone();
+            match g.actions[0] {
+                None => g.actions[0] = Some(a),
+                _ => g.actions[1] = Some(a),
+            }
+            possibilities.push(g);
+        }
+
+        return possibilities;
+    }
 }
 
-pub fn play<G>(p1: &(impl Agent<G> + ?Sized), p2: &(impl Agent<G> + ?Sized)) -> i32
+impl RPSState {
+    pub fn get_last_action(&self) -> Option<RPSAction> {
+        return match self.actions[1] {
+            None => self.actions[0],
+            _ => self.actions[1],
+        };
+    }
+}
+
+pub fn play<G: Eq>(p1: &(impl Agent<G> + ?Sized), p2: &(impl Agent<G> + ?Sized)) -> i32
 where
     G: GameState + Debug,
-    G::Action: Debug + PartialEq,
 {
     let mut g = G::new();
     info!("{} playing {}", p1.name(), p2.name());
@@ -149,25 +160,28 @@ where
     return score;
 }
 
-fn step<G>(g: &mut G, agent: &(impl Agent<G> + ?Sized), p: Player)
+fn step<G: Eq>(g: &mut G, agent: &(impl Agent<G> + ?Sized), p: Player)
 where
     G: GameState + Debug,
-    G::Action: Debug + PartialEq,
 {
     let acting_player = p;
 
     let filtered_state = g.get_filtered_state(acting_player);
-    let possible_actions = filtered_state.get_actions();
+    let possible_children = filtered_state.get_children();
     debug!("{} sees game state of {:?}", agent.name(), filtered_state);
-    debug!("{} evaluating moves: {:?}", agent.name(), possible_actions);
-    let a = agent.play(&filtered_state, &possible_actions);
+    debug!(
+        "{} evaluating future states: {:?}",
+        agent.name(),
+        possible_children
+    );
+    let new_g = agent.play(&filtered_state, &possible_children);
 
-    info!("{:?} tried to play {:?}", acting_player, a);
+    info!("{:?} tried to play {:?}", acting_player, new_g);
 
     // Verify the action is allowed
-    if !possible_actions.contains(&a) {
+    if !possible_children.contains(&new_g) {
         panic!("Agent attempted invalid action")
     }
 
-    g.apply(p, &a);
+    *g = new_g;
 }

@@ -24,13 +24,13 @@ impl std::fmt::Debug for LPAction {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub enum Player {
     P1,
     P2,
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum DiceState {
     U,        // unknown
     K(usize), // Known
@@ -65,7 +65,7 @@ impl std::fmt::Debug for DiceState {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct LPGameState {
     pub dice_state: [DiceState; NUM_DICE],
 
@@ -77,43 +77,16 @@ pub struct LPGameState {
     pub call_state: Option<Player>,
 }
 
-impl GameState for LPGameState {
-    type Action = LPAction;
-
-    fn get_actions(&self) -> Vec<Self::Action> {
-        let mut actions = Vec::new();
-
-        // Check for call
-        if self.call_state != None {
-            return actions; // no possible moves
-        }
-
-        let last_bet = get_last_bet(self);
-        let start_index = match last_bet {
-            None => 0,
-            Some(x) => x + 1,
-        };
-
-        // Increasing bets
-        for i in start_index..self.bet_state.len() {
-            actions.push(LPAction::Bet(i));
-        }
-
-        // Call bluff, only possible if another bet has been made
-        if self.bet_state.iter().any(|&x| x != None) {
-            actions.push(LPAction::Call);
-        }
-
-        return actions;
-    }
-
-    fn apply(&mut self, p: Player, a: &Self::Action) {
+impl LPGameState {
+    pub fn apply(&mut self, p: Player, a: &LPAction) {
         match a {
             LPAction::Bet(i) => self.bet_state[*i] = Some(p),
             LPAction::Call => self.call_state = Some(p),
         };
     }
+}
 
+impl GameState for LPGameState {
     fn evaluate(&self) -> i32 {
         if self.call_state == None {
             return 0; // game isn't over
@@ -248,6 +221,38 @@ impl GameState for LPGameState {
             _ => false,
         }
     }
+
+    fn get_children(&self) -> Vec<Self> {
+        let mut children = Vec::new();
+        let p = self.get_acting_player();
+
+        // Check for call
+        if self.call_state != None {
+            return children; // no possible moves
+        }
+
+        let last_bet = get_last_bet(self);
+        let start_index = match last_bet {
+            None => 0,
+            Some(x) => x + 1,
+        };
+
+        // Increasing bets
+        for i in start_index..self.bet_state.len() {
+            let mut c = self.clone();
+            c.bet_state[i] = Some(p);
+            children.push(c);
+        }
+
+        // Call bluff, only possible if another bet has been made
+        if self.bet_state.iter().any(|&x| x != None) {
+            let mut c = self.clone();
+            c.call_state = Some(p);
+            children.push(c);
+        }
+
+        return children;
+    }
 }
 
 impl std::fmt::Debug for LPGameState {
@@ -300,15 +305,15 @@ mod tests {
             call_state: None,
         };
 
-        let moves = g.get_actions();
+        let moves = g.get_children();
         assert_eq!(moves.len(), NUM_DICE * DICE_SIDES);
 
         g.bet_state[4] = Some(Player::P1);
-        let moves = g.get_actions();
+        let moves = g.get_children();
         assert_eq!(moves.len(), NUM_DICE * DICE_SIDES - 5 + 1);
 
         g.bet_state[5] = Some(Player::P2);
-        let moves = g.get_actions();
+        let moves = g.get_children();
         assert_eq!(moves.len(), NUM_DICE * DICE_SIDES - 6 + 1);
     }
 

@@ -8,13 +8,12 @@ pub struct MinimaxAgent {}
 impl<G: Clone> Agent<G> for MinimaxAgent
 where
     G: GameState + std::fmt::Debug,
-    <G as GameState>::Action: std::fmt::Debug,
 {
     fn name(&self) -> &str {
         return "MinimaxAgent";
     }
 
-    fn play(&self, g: &G, possible_moves: &Vec<G::Action>) -> G::Action {
+    fn play(&self, g: &G, possible_moves: &Vec<G>) -> G {
         let p = g.get_acting_player();
 
         let mut cur_max = match p {
@@ -28,11 +27,9 @@ where
         let mut rng = thread_rng();
         let mut shuffled_moves = possible_moves.clone();
         shuffled_moves.shuffle(&mut rng);
-        for a in shuffled_moves {
-            let mut f = g.clone();
-            f.apply(p, &a);
-            debug!("Evaluating: {:?}", f);
-            let t = GameTree::new(&f);
+        for g_next in shuffled_moves {
+            debug!("Evaluating: {:?}", g_next);
+            let t = GameTree::new(&g_next);
             // print!("{:?}", t);
 
             let value = t.get(0).score.unwrap();
@@ -46,7 +43,7 @@ where
 
             if is_better {
                 cur_max = value;
-                cur_move = Some(a)
+                cur_move = Some(g_next)
             }
         }
 

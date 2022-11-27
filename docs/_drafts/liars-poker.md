@@ -33,7 +33,25 @@ Going to use Liar's poker bots to illustrate why.
     *<https://justinsermeno.com/posts/cfr/>
     * <https://xyzml.medium.com/learn-ai-game-playing-algorithm-part-iii-counterfactual-regret-minimization-b182a7ec85fb#ede8>
 [ ] Redo agents to be based on game tree evaluation? -- could all agents be done this way? -- then have a "scorer" be the thing that changes?
-    * Removes the complexity of storing state, because the "score" can be kept in the game tree
+    *Removes the complexity of storing state, because the "score" can be kept in the game tree
+    * To do this, going to remove GameState action as first class citizen -- too confusing, instead the gamestate will just say which children states are reachable. Actions are still concepts, but they aren't associated types for GameStates
+    *Removing CFR agent for now, to make it simpler to refactor things
+    * Need to finish clean-up and refactor the agents to just be scorers for the game tree? Or do they take in certain functionality from for the tree as well, e.g. which algo to propogate scores up the tree? Could always be added later?
+        * Seems better as would be composing the functionality rather than inheriting it
+
+## Design
+
+* score leaf node
+* propogate score
+
+Algorithm | score_leaf_node | propogate_score |
+|---------|-----------------|-----------------|
+| Random    | random    | minimax |
+| Minimax   | rollout expected value    | minimax   |
+| CFR   | CFR / regret matching | ???? Minimax? |
+| Owndice agent |
+
+## Results
 
 Results as of July 19 for 1k games:
 Random wins: 475,  Random wins: 525

@@ -21,7 +21,6 @@ impl<G: GameState + Clone> GameTree<G> {
         tree.nodes.push(GameTreeNode {
             children: Vec::new(),
             state: g.clone(),
-            action: None,
             score: None,
             actor: actor,
         });
@@ -31,16 +30,14 @@ impl<G: GameState + Clone> GameTree<G> {
         while let Some(parent_id) = nodes_to_process.pop() {
             let parent = tree.get(parent_id);
             let state = parent.state.clone();
-            let actions = state.get_actions();
+            let children = state.get_children();
             let p = match parent.actor {
                 Player::P1 => Player::P2,
                 Player::P2 => Player::P1,
             };
 
-            for a in actions {
-                let mut next_state = state.clone();
-                next_state.apply(p, &a);
-                let child = tree.new_node(next_state, Some(a), Some(parent_id));
+            for c in children {
+                let child = tree.new_node(c, Some(parent_id));
                 nodes_to_process.push(child);
             }
         }
@@ -49,7 +46,7 @@ impl<G: GameState + Clone> GameTree<G> {
         return tree;
     }
 
-    fn new_node(&mut self, state: G, action: Option<G::Action>, parent: Option<usize>) -> usize {
+    fn new_node(&mut self, state: G, parent: Option<usize>) -> usize {
         // Get the next free index
         let next_index = self.nodes.len();
 
@@ -69,7 +66,6 @@ impl<G: GameState + Clone> GameTree<G> {
         self.nodes.push(GameTreeNode {
             children: Vec::new(),
             state: state,
-            action: action,
             score: None,
             actor: actor,
         });
@@ -108,7 +104,7 @@ impl<G: GameState + Clone> GameTree<G> {
 
             if n.children.len() == 0 {
                 // leaf node
-                let score = self.score_game_state(&n.state);
+                let score = self.score_leaf_expectation(&n.state);
                 self.set_score(id, score);
             } else {
                 for &c in &n.children {
@@ -130,8 +126,9 @@ impl<G: GameState + Clone> GameTree<G> {
         }
     }
 
-    /// Returns the chance of P1 winning from this game state
-    fn score_game_state(&self, g: &G) -> f32 {
+    /// Returns the score for a leafnode based on the expected
+    /// win-rate for P1
+    fn score_leaf_expectation(&self, g: &G) -> f32 {
         let mut wins = 0;
         let mut games = 0;
         for s in g.get_possible_states() {
@@ -146,7 +143,6 @@ impl<G: GameState + Clone> GameTree<G> {
 impl<G> std::fmt::Debug for GameTree<G>
 where
     G: Clone + GameState + Debug,
-    <G as GameState>::Action: std::fmt::Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         const START: char = '├';
@@ -160,7 +156,7 @@ where
                 output.push(V);
             }
             let node = self.get(id);
-            let action_string = format!("{:?}", node.action);
+            let action_string = format!("{:?}", node.state);
 
             output.push_str(&format!("{} {:?} {:?}", START, node.actor, action_string));
 
@@ -183,7 +179,6 @@ where
 pub struct GameTreeNode<G: Clone + GameState> {
     children: Vec<usize>,
     pub state: G,
-    pub action: Option<G::Action>,
     pub actor: Player,
     pub score: Option<f32>,
 }
@@ -206,18 +201,18 @@ mod tests {
 
         g.bet_state[0] = Some(Player::P1);
         let t = GameTree::new(&g);
-        let score = t.score_game_state(&g);
+        let score = t.score_leaf_expectation(&g);
         assert_eq!(score, 1.0);
 
         g.bet_state[2 * DICE_SIDES] = Some(Player::P1);
-        let score = t.score_game_state(&g);
+        let score = t.score_leaf_expectation(&g);
         assert_eq!(
             score,
             2.0 / DICE_SIDES as f32 - 1.0 / DICE_SIDES as f32 / DICE_SIDES as f32
         );
 
         g.bet_state[2 * DICE_SIDES + 1] = Some(Player::P1);
-        let score = t.score_game_state(&g);
+        let score = t.score_leaf_expectation(&g);
         assert_eq!(score, 0.0);
     }
 }

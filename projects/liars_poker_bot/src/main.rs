@@ -1,13 +1,11 @@
 pub mod agents;
-pub mod cfr_agent;
 pub mod game;
 pub mod game_tree;
 pub mod liars_poker;
 pub mod minimax_agent;
 
 use agents::AlwaysFirstAgent;
-use agents::{IncorporateBetAgent, RandomAgent};
-use cfr_agent::CFRAgent;
+use agents::RandomAgent;
 use clap::Parser;
 
 use clap::clap_derive::ArgEnum;
@@ -88,12 +86,7 @@ fn run_lp_benchmark(args: Args) {
         name: "OwnDiceAgent".to_string(),
     };
 
-    let iba = IncorporateBetAgent {
-        name: "IncorporateBetAgent".to_string(),
-    };
-
-    let agents: Vec<Box<dyn Agent<LPGameState>>> =
-        vec![Box::new(ra), Box::new(mma), Box::new(oda), Box::new(iba)];
+    let agents: Vec<Box<dyn Agent<LPGameState>>> = vec![Box::new(ra), Box::new(mma), Box::new(oda)];
 
     for i in 0..agents.len() {
         for j in 0..agents.len() {
@@ -123,10 +116,8 @@ fn run_rps_benchmark(args: Args) {
     let ra = RandomAgent {};
     let mma = MinimaxAgent {};
     let af = AlwaysFirstAgent {};
-    let cfr = CFRAgent::new();
 
-    let agents: Vec<Box<dyn Agent<RPSState>>> =
-        vec![Box::new(ra), Box::new(mma), Box::new(af), Box::new(cfr)];
+    let agents: Vec<Box<dyn Agent<RPSState>>> = vec![Box::new(ra), Box::new(mma), Box::new(af)];
 
     for i in 0..agents.len() {
         for j in 0..agents.len() {
