@@ -1,5 +1,6 @@
-use std::marker::PhantomData;
+use std::{fmt::Debug, marker::PhantomData};
 
+use log::debug;
 use rand::{prelude::SliceRandom, thread_rng, Rng};
 
 use crate::{
@@ -18,14 +19,16 @@ pub struct TreeAgent<G: GameState + Clone> {
     propogate: fn(&mut GameTree<G>),
 }
 
-impl<G: GameState + Clone + PartialEq> Agent<G> for TreeAgent<G> {
+impl<G: GameState + Clone + PartialEq + Debug> Agent<G> for TreeAgent<G> {
     fn name(&self) -> &str {
         return &self.name;
     }
 
     fn play(&mut self, g: &G, _possible_children: &Vec<G>) -> G {
         // Pass of the rollout
+        debug!("tree state before rollout: \n {:?}", self.tree);
         (self.rollout)(&mut self.tree);
+        debug!("tree state after rollout: \n {:?}", self.tree);
 
         // Pass of the scorer to score all leaf nodes
         let mut i = 0;
