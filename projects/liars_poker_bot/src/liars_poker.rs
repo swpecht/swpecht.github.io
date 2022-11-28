@@ -9,7 +9,7 @@ use crate::game::GameState;
 pub const NUM_DICE: usize = 4;
 pub const DICE_SIDES: usize = 3;
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum LPAction {
     Bet(usize),
     Call,

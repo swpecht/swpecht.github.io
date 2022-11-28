@@ -132,17 +132,16 @@ impl RPSState {
     }
 }
 
-pub fn play<G: Eq>(p1: &(impl Agent<G> + ?Sized), p2: &(impl Agent<G> + ?Sized)) -> i32
+pub fn play<G>(g: &mut G, p1: &mut dyn Agent<G>, p2: &mut dyn Agent<G>) -> i32
 where
-    G: GameState + Debug,
+    G: GameState + Debug + Eq,
 {
-    let mut g = G::new();
     info!("{} playing {}", p1.name(), p2.name());
     let mut is_player1_turn = true;
     while !g.is_terminal() {
         match is_player1_turn {
-            true => step(&mut g, p1, Player::P1),
-            false => step(&mut g, p2, Player::P2),
+            true => step(g, p1, Player::P1),
+            false => step(g, p2, Player::P2),
         }
 
         is_player1_turn = !is_player1_turn;
@@ -160,7 +159,7 @@ where
     return score;
 }
 
-fn step<G: Eq>(g: &mut G, agent: &(impl Agent<G> + ?Sized), p: Player)
+fn step<G: Eq>(g: &mut G, agent: &mut (impl Agent<G> + ?Sized), p: Player)
 where
     G: GameState + Debug,
 {

@@ -13,7 +13,12 @@ use game::RPSState;
 
 use liars_poker::LPGameState;
 
+use crate::agents::full_rollout;
+use crate::agents::minimax_propogation;
+use crate::agents::random_scorer;
+use crate::agents::TreeAgent;
 use crate::game::play;
+use crate::game::GameState;
 use crate::{
     agents::{Agent, OwnDiceAgent},
     minimax_agent::MinimaxAgent,
@@ -59,41 +64,48 @@ fn main() {
             GameType::RPS => run_rps_benchmark(args),
         }
     } else {
-        let p1 = &RandomAgent {} as &dyn Agent<RPSState>;
-        let p2 = &MinimaxAgent {} as &dyn Agent<RPSState>;
-
         let mut running_score = 0;
         for _ in 0..args.num_games {
-            running_score += play(p1, p2);
-        }
+            let mut g = RPSState::new();
 
-        // TODO: figure out why the CFR agent isn't winning more;
+            let mut p1 = TreeAgent::new(
+                "random_tree",
+                &g,
+                full_rollout,
+                random_scorer,
+                minimax_propogation,
+            );
+            let mut p2 = RandomAgent::new(&g);
+
+            running_score += play(&mut g, &mut p1, &mut p2);
+        }
 
         println!(
             "{} vs {}, score over {} games: {}",
-            p1.name(),
-            p2.name(),
-            args.num_games,
-            running_score
+            "p1", "p2", args.num_games, running_score
         );
     }
 }
 
 fn run_lp_benchmark(args: Args) {
-    let ra = RandomAgent {};
-    let mma = MinimaxAgent {};
-    let oda = OwnDiceAgent {
-        name: "OwnDiceAgent".to_string(),
-    };
-
-    let agents: Vec<Box<dyn Agent<LPGameState>>> = vec![Box::new(ra), Box::new(mma), Box::new(oda)];
+    let agents = agents!(
+        LPGameState,
+        RandomAgent<LPGameState>,
+        MinimaxAgent<LPGameState>,
+        OwnDiceAgent
+    );
 
     for i in 0..agents.len() {
         for j in 0..agents.len() {
             let mut p1_wins = 0;
             let mut p2_wins = 0;
             for _ in 0..args.num_games {
-                let score = play(agents[i].as_ref(), agents[j].as_ref());
+                let g = LPGameState::new();
+                let score = play(
+                    &mut g.clone(),
+                    agents[i](&g).as_mut(),
+                    agents[j](&g).as_mut(),
+                );
                 if score == 1 {
                     p1_wins += 1;
                 } else {
@@ -101,11 +113,12 @@ fn run_lp_benchmark(args: Args) {
                 }
             }
 
+            let g = LPGameState::new();
             print!(
                 "{} wins: {},  {} wins: {}\n",
-                &agents[i].name(),
+                &agents[i](&g).name(),
                 p1_wins,
-                &agents[j].name(),
+                &agents[j](&g).name(),
                 p2_wins
             );
         }
@@ -113,26 +126,48 @@ fn run_lp_benchmark(args: Args) {
 }
 
 fn run_rps_benchmark(args: Args) {
-    let ra = RandomAgent {};
-    let mma = MinimaxAgent {};
-    let af = AlwaysFirstAgent {};
-
-    let agents: Vec<Box<dyn Agent<RPSState>>> = vec![Box::new(ra), Box::new(mma), Box::new(af)];
+    let agents = agents!(
+        RPSState,
+        RandomAgent<RPSState>,
+        MinimaxAgent<RPSState>,
+        AlwaysFirstAgent<RPSState>
+    );
 
     for i in 0..agents.len() {
         for j in 0..agents.len() {
             let mut total_score = 0;
             for _ in 0..args.num_games {
-                let score = play(agents[i].as_ref(), agents[j].as_ref());
+                let g = RPSState::new();
+                let score = play(
+                    &mut g.clone(),
+                    agents[i](&g).as_mut(),
+                    agents[j](&g).as_mut(),
+                );
                 total_score += score;
             }
 
+            let g = RPSState::new();
             print!(
                 "{} vs {}: {}\n",
-                &agents[i].name(),
-                &agents[j].name(),
+                &agents[i](&g).name(),
+                &agents[j](&g).name(),
                 total_score
             );
         }
     }
+}
+
+#[macro_export]
+macro_rules! agents {
+    ( $game:ty, $( $x:ty ),* ) => {
+        {
+            let mut temp_vec: Vec<fn(&$game) -> Box<dyn Agent<$game>>> = Vec::new();
+            $(
+                temp_vec.push(|g: &$game| -> Box<dyn Agent<$game>> {
+                    Box::new(<$x>::new(g))
+                });
+            )*
+            temp_vec
+        }
+    };
 }

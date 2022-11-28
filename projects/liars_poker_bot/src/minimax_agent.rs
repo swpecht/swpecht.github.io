@@ -1,11 +1,15 @@
+use std::marker::PhantomData;
+
 use log::debug;
 use rand::{prelude::SliceRandom, thread_rng};
 
 use crate::{agents::Agent, game::GameState, game_tree::GameTree, liars_poker::Player};
 
-pub struct MinimaxAgent {}
+pub struct MinimaxAgent<G: GameState> {
+    state_type: PhantomData<G>,
+}
 
-impl<G: Clone> Agent<G> for MinimaxAgent
+impl<G: Clone> Agent<G> for MinimaxAgent<G>
 where
     G: GameState + std::fmt::Debug,
 {
@@ -13,7 +17,7 @@ where
         return "MinimaxAgent";
     }
 
-    fn play(&self, g: &G, possible_moves: &Vec<G>) -> G {
+    fn play(&mut self, g: &G, possible_moves: &Vec<G>) -> G {
         let p = g.get_acting_player();
 
         let mut cur_max = match p {
@@ -32,7 +36,7 @@ where
             let t = GameTree::new(&g_next);
             // print!("{:?}", t);
 
-            let value = t.get(0).score.unwrap();
+            let value = t.get(0).unwrap().score.unwrap();
 
             debug!("value: {:?}", value);
 
@@ -48,5 +52,13 @@ where
         }
 
         return cur_move.unwrap().clone();
+    }
+}
+
+impl<G: GameState> MinimaxAgent<G> {
+    pub fn new(_: &G) -> Self {
+        return Self {
+            state_type: PhantomData,
+        };
     }
 }

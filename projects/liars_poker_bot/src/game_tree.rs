@@ -28,7 +28,7 @@ impl<G: GameState + Clone> GameTree<G> {
         nodes_to_process.push(0);
 
         while let Some(parent_id) = nodes_to_process.pop() {
-            let parent = tree.get(parent_id);
+            let parent = tree.get(parent_id).unwrap();
             let state = parent.state.clone();
             let children = state.get_children();
 
@@ -42,14 +42,14 @@ impl<G: GameState + Clone> GameTree<G> {
         return tree;
     }
 
-    fn new_node(&mut self, state: G, parent: Option<usize>) -> usize {
+    pub fn new_node(&mut self, state: G, parent: Option<usize>) -> usize {
         // Get the next free index
         let next_index = self.nodes.len();
 
         let parent_actor = match parent {
             None => Player::P1,
             Some(id) => {
-                let p = self.get(id);
+                let p = self.get(id).unwrap();
                 p.actor
             }
         };
@@ -74,16 +74,37 @@ impl<G: GameState + Clone> GameTree<G> {
         return next_index;
     }
 
-    pub fn get(&self, id: usize) -> &GameTreeNode<G> {
-        return &self.nodes[id];
+    pub fn get(&self, id: usize) -> Option<&GameTreeNode<G>> {
+        if id < self.nodes.len() {
+            return Some(&self.nodes[id]);
+        } else {
+            return None;
+        }
     }
 
-    fn set_score(&mut self, id: usize, score: f32) {
+    pub fn get_mut(&mut self, id: usize) -> Option<&mut GameTreeNode<G>> {
+        if id < self.nodes.len() {
+            return Some(&mut self.nodes[id]);
+        } else {
+            return None;
+        }
+    }
+
+    pub fn set_score(&mut self, id: usize, score: f32) {
         self.nodes[id].score = Some(score);
     }
 
     pub fn len(&self) -> usize {
         return self.nodes.len();
+    }
+
+    pub fn get_children(&self, id: usize) -> Vec<usize> {
+        let mut children = Vec::new();
+        let n = self.get(id).unwrap();
+        for i in n.children.clone() {
+            children.push(i);
+        }
+        return children;
     }
 
     /// Use minimax algorithm to propogate scores up the tree
@@ -92,7 +113,7 @@ impl<G: GameState + Clone> GameTree<G> {
         nodes_to_score.push(0);
 
         'processor: while let Some(id) = nodes_to_score.pop() {
-            let n = self.get(id);
+            let n = self.get(id).unwrap();
             let mut score = match n.actor {
                 Player::P1 => f32::MAX,
                 Player::P2 => f32::MIN,
@@ -104,7 +125,7 @@ impl<G: GameState + Clone> GameTree<G> {
                 self.set_score(id, score);
             } else {
                 for &c in &n.children {
-                    let cn = self.get(c);
+                    let cn = self.get(c).unwrap();
                     if let Some(cn_score) = cn.score {
                         score = match n.actor {
                             Player::P1 => score.min(cn_score),
@@ -151,7 +172,7 @@ where
             for _ in 0..depth {
                 output.push(V);
             }
-            let node = self.get(id);
+            let node = self.get(id).unwrap();
             let action_string = format!("{:?}", node.state);
 
             output.push_str(&format!("{} {:?} {:?}", START, node.actor, action_string));
