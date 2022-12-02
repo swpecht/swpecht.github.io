@@ -29,7 +29,7 @@ pub enum RPSAction {
 /// Implementation of weighted RPS. Any game involving scissors means the payoff is doubled
 ///
 /// https://arxiv.org/pdf/2007.13544.pdf
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct RPSState {
     actions: [Option<RPSAction>; 2],
 }
@@ -132,9 +132,15 @@ impl RPSState {
     }
 }
 
+impl Debug for RPSState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}, {:?}", self.actions[0], self.actions[1])
+    }
+}
+
 pub fn play<G>(g: &mut G, p1: &mut dyn Agent<G>, p2: &mut dyn Agent<G>) -> i32
 where
-    G: GameState + Debug + Eq,
+    G: GameState + Debug + Eq + Clone,
 {
     info!("{} playing {}", p1.name(), p2.name());
     let mut is_player1_turn = true;
@@ -161,26 +167,29 @@ where
 
 fn step<G: Eq>(g: &mut G, agent: &mut (impl Agent<G> + ?Sized), p: Player)
 where
-    G: GameState + Debug,
+    G: GameState + Debug + Clone,
 {
     let acting_player = p;
-
+    let possible_children = g.get_children();
+    let filtered_children = possible_children
+        .iter()
+        .map(|s| s.get_filtered_state(acting_player))
+        .collect_vec();
     let filtered_state = g.get_filtered_state(acting_player);
-    let possible_children = filtered_state.get_children();
+
     debug!("{} sees game state of {:?}", agent.name(), filtered_state);
     debug!(
         "{} evaluating future states: {:?}",
         agent.name(),
-        possible_children
+        filtered_children
     );
-    let new_g = agent.play(&filtered_state, &possible_children);
+    let new_g = agent.play(&filtered_state, &filtered_children);
 
     info!("{:?} tried to play {:?}", acting_player, new_g);
 
-    // Verify the action is allowed
-    if !possible_children.contains(&new_g) {
-        panic!("Agent attempted invalid action")
+    let choice = filtered_children.iter().position(|s| *s == new_g);
+    match choice {
+        None => panic!("Agent attempted invalid action"),
+        Some(i) => *g = possible_children[i].clone(),
     }
-
-    *g = new_g;
 }

@@ -19,6 +19,7 @@ use crate::agents::random_scorer;
 use crate::agents::TreeAgent;
 use crate::game::play;
 use crate::game::GameState;
+use crate::liars_poker::Player;
 use crate::{
     agents::{Agent, OwnDiceAgent},
     minimax_agent::MinimaxAgent,
@@ -66,16 +67,18 @@ fn main() {
     } else {
         let mut running_score = 0;
         for _ in 0..args.num_games {
-            let mut g = RPSState::new();
+            let mut g = LPGameState::new();
 
+            // TODO: Move the initialization of agents into the play function, will take care of filtering
+            // for hidden state
             let mut p1 = TreeAgent::new(
                 "random_tree",
-                &g,
+                &g.get_filtered_state(Player::P1),
                 full_rollout,
                 random_scorer,
                 minimax_propogation,
             );
-            let mut p2 = RandomAgent::new(&g);
+            let mut p2 = RandomAgent::new(&g.get_filtered_state(Player::P2));
 
             running_score += play(&mut g, &mut p1, &mut p2);
         }

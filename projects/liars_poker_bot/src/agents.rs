@@ -26,9 +26,9 @@ impl<G: GameState + Clone + PartialEq + Debug> Agent<G> for TreeAgent<G> {
 
     fn play(&mut self, g: &G, _possible_children: &Vec<G>) -> G {
         // Pass of the rollout
-        debug!("tree state before rollout: \n {:?}", self.tree);
+        debug!("tree state at start of play loop: \n{:?}", self.tree);
         (self.rollout)(&mut self.tree);
-        debug!("tree state after rollout: \n {:?}", self.tree);
+        debug!("tree state after rollout: \n{:?}", self.tree);
 
         // Pass of the scorer to score all leaf nodes
         let mut i = 0;
@@ -43,9 +43,11 @@ impl<G: GameState + Clone + PartialEq + Debug> Agent<G> for TreeAgent<G> {
             }
             i += 1;
         }
+        debug!("tree state after scorer: \n{:?}", self.tree);
 
         // Pass of the propogator
         (self.propogate)(&mut self.tree);
+        debug!("tree state after propogator: \n{:?}", self.tree);
 
         // Find the target gamestate and find the move with the highest score
         let id = self.find_state(g).unwrap();

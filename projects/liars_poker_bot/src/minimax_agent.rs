@@ -33,7 +33,8 @@ where
         shuffled_moves.shuffle(&mut rng);
         for g_next in shuffled_moves {
             debug!("Evaluating: {:?}", g_next);
-            let t = GameTree::new(&g_next);
+            let mut t = GameTree::new(&g_next);
+            t.score_tree();
             // print!("{:?}", t);
 
             let value = t.get(0).unwrap().score.unwrap();

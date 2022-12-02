@@ -9,8 +9,6 @@ pub struct GameTree<G: Clone + GameState> {
 
 impl<G: GameState + Clone> GameTree<G> {
     pub fn new(g: &G) -> GameTree<G> {
-        let mut nodes_to_process = Vec::new();
-
         let mut tree = Self { nodes: Vec::new() };
         let actor = match g.get_acting_player() {
             Player::P1 => Player::P2,
@@ -24,20 +22,6 @@ impl<G: GameState + Clone> GameTree<G> {
             score: None,
             actor: actor,
         });
-
-        nodes_to_process.push(0);
-
-        while let Some(parent_id) = nodes_to_process.pop() {
-            let parent = tree.get(parent_id).unwrap();
-            let state = parent.state.clone();
-            let children = state.get_children();
-
-            for c in children {
-                let child = tree.new_node(c, Some(parent_id));
-                nodes_to_process.push(child);
-            }
-        }
-        tree.score_tree();
 
         return tree;
     }
@@ -108,7 +92,7 @@ impl<G: GameState + Clone> GameTree<G> {
     }
 
     /// Use minimax algorithm to propogate scores up the tree
-    fn score_tree(&mut self) {
+    pub fn score_tree(&mut self) {
         let mut nodes_to_score = Vec::new();
         nodes_to_score.push(0);
 

@@ -6,8 +6,8 @@ use rand::Rng;
 
 use crate::game::GameState;
 
-pub const NUM_DICE: usize = 4;
-pub const DICE_SIDES: usize = 3;
+pub const NUM_DICE: usize = 2;
+pub const DICE_SIDES: usize = 2;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum LPAction {
