@@ -104,8 +104,8 @@ impl GameState for RPSState {
     }
 
     fn is_terminal(&self) -> bool {
-        match self.actions {
-            [Some(_), Some(_)] => true,
+        match self.has_played {
+            [true, true] => true,
             _ => false,
         }
     }
