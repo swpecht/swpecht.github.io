@@ -93,9 +93,9 @@ fn main() {
 fn run_lp_benchmark(args: Args) {
     let agents = agents!(
         LPGameState,
-        RandomAgent<LPGameState>,
-        MinimaxAgent<LPGameState>,
-        OwnDiceAgent
+        RandomAgent::new,
+        MinimaxAgent::new,
+        OwnDiceAgent::new
     );
 
     for i in 0..agents.len() {
@@ -106,8 +106,8 @@ fn run_lp_benchmark(args: Args) {
                 let g = LPGameState::new();
                 let score = play(
                     &mut g.clone(),
-                    agents[i](&g).as_mut(),
-                    agents[j](&g).as_mut(),
+                    agents[i](&g.get_filtered_state(Player::P1)).as_mut(),
+                    agents[j](&g.get_filtered_state(Player::P2)).as_mut(),
                 );
                 if score == 1 {
                     p1_wins += 1;
@@ -131,10 +131,22 @@ fn run_lp_benchmark(args: Args) {
 fn run_rps_benchmark(args: Args) {
     let agents = agents!(
         RPSState,
-        RandomAgent<RPSState>,
-        MinimaxAgent<RPSState>,
-        AlwaysFirstAgent<RPSState>
+        RandomAgent::new,
+        |g: &RPSState| {
+            TreeAgent::new(
+                "random_tree",
+                g,
+                full_rollout,
+                random_scorer,
+                minimax_propogation,
+            )
+        },
+        MinimaxAgent::new,
+        AlwaysFirstAgent::new
     );
+
+    let mut temp_vec: Vec<fn(&RPSState) -> Box<dyn Agent<RPSState>>> = Vec::new();
+    temp_vec.push(|x: &RPSState| -> Box<dyn Agent<RPSState>> { Box::new(MinimaxAgent::new(x)) });
 
     for i in 0..agents.len() {
         for j in 0..agents.len() {
@@ -143,8 +155,8 @@ fn run_rps_benchmark(args: Args) {
                 let g = RPSState::new();
                 let score = play(
                     &mut g.clone(),
-                    agents[i](&g).as_mut(),
-                    agents[j](&g).as_mut(),
+                    agents[i](&g.get_filtered_state(Player::P1)).as_mut(),
+                    agents[j](&g.get_filtered_state(Player::P2)).as_mut(),
                 );
                 total_score += score;
             }
@@ -162,12 +174,12 @@ fn run_rps_benchmark(args: Args) {
 
 #[macro_export]
 macro_rules! agents {
-    ( $game:ty, $( $x:ty ),* ) => {
+    ( $game:ty, $( $x:expr ),* ) => {
         {
             let mut temp_vec: Vec<fn(&$game) -> Box<dyn Agent<$game>>> = Vec::new();
             $(
                 temp_vec.push(|g: &$game| -> Box<dyn Agent<$game>> {
-                    Box::new(<$x>::new(g))
+                    Box::new($x(g))
                 });
             )*
             temp_vec

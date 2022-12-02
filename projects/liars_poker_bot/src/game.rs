@@ -32,6 +32,7 @@ pub enum RPSAction {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct RPSState {
     actions: [Option<RPSAction>; 2],
+    has_played: [bool; 2],
 }
 
 impl GameState for RPSState {
@@ -86,13 +87,20 @@ impl GameState for RPSState {
         let mut filtered_state = self.clone();
         match player {
             Player::P1 => filtered_state.actions[1] = None,
-            Player::P2 => filtered_state.actions[0] = None,
+            Player::P2 => {
+                filtered_state.actions[0] = None;
+                filtered_state.has_played[0] = true;
+            }
         }
+
         return filtered_state;
     }
 
     fn new() -> Self {
-        return Self { actions: [None; 2] };
+        return Self {
+            actions: [None; 2],
+            has_played: [false; 2],
+        };
     }
 
     fn is_terminal(&self) -> bool {
@@ -106,16 +114,19 @@ impl GameState for RPSState {
         let actions = vec![RPSAction::Rock, RPSAction::Paper, RPSAction::Scissors];
         let mut possibilities = Vec::new();
 
-        if let Some(_) = self.actions[1] {
+        if self.has_played[1] {
             return possibilities;
         }
 
         for a in actions {
             let mut g = self.clone();
-            match g.actions[0] {
-                None => g.actions[0] = Some(a),
-                _ => g.actions[1] = Some(a),
-            }
+            let acting_player = match g.has_played[0] {
+                false => 0,
+                true => 1,
+            };
+
+            g.actions[acting_player] = Some(a);
+            g.has_played[acting_player] = true;
             possibilities.push(g);
         }
 
@@ -134,7 +145,11 @@ impl RPSState {
 
 impl Debug for RPSState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}, {:?}", self.actions[0], self.actions[1])
+        write!(
+            f,
+            "[{:?}, {:?}], [{:?}, {:?}]",
+            self.actions[0], self.actions[1], self.has_played[0], self.has_played[1]
+        )
     }
 }
 
@@ -189,7 +204,12 @@ where
 
     let choice = filtered_children.iter().position(|s| *s == new_g);
     match choice {
-        None => panic!("Agent attempted invalid action"),
+        None => panic!(
+            "{} attempted invalid action: {:?}\nvalid actions are: {:?}",
+            agent.name(),
+            new_g,
+            filtered_children
+        ),
         Some(i) => *g = possible_children[i].clone(),
     }
 }
