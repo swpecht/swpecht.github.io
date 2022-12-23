@@ -35,3 +35,26 @@ impl Agent for AlwaysFirstAgent {
         return s.legal_actions()[0];
     }
 }
+
+/// Agent plays the actions in the order provided and then starts from beginning
+pub struct RecordedAgent {
+    actions: Vec<Action>,
+    cur_action: usize,
+}
+
+impl RecordedAgent {
+    pub fn new(actions: Vec<Action>) -> Self {
+        return RecordedAgent {
+            actions,
+            cur_action: 0,
+        };
+    }
+}
+
+impl Agent for RecordedAgent {
+    fn step(&mut self, s: &dyn GameState) -> Action {
+        let a = self.actions[self.cur_action];
+        self.cur_action = (self.cur_action + 1) % self.actions.len();
+        return a;
+    }
+}

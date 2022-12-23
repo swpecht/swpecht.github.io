@@ -1,6 +1,7 @@
 pub mod agents;
 pub mod game;
 pub mod kuhn_poker;
+pub mod qagent;
 
 use agents::RandomAgent;
 use clap::Parser;

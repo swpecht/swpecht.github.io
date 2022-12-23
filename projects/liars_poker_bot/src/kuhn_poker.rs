@@ -227,24 +227,39 @@ impl GameState for KPGameState {
 
 #[cfg(test)]
 mod tests {
+    use std::vec;
+
     use crate::{
-        agents::AlwaysFirstAgent,
-        game::{run_game, GameState},
-        kuhn_poker::KuhnPoker,
+        agents::{AlwaysFirstAgent, RecordedAgent},
+        game::{run_game, Action, GameState},
+        kuhn_poker::{KPAction, KuhnPoker},
     };
     use rand_pcg::Pcg64;
     use rand_seeder::Seeder;
 
     #[test]
-    fn kuhn_poker_test() {
+    fn kuhn_poker_test_bb() {
         let mut g = KuhnPoker::new();
         let mut rng: Pcg64 = Seeder::from("test").make_rng();
-        let mut a1 = AlwaysFirstAgent {};
-        let mut a2 = AlwaysFirstAgent {};
+        let mut a1 = RecordedAgent::new(vec![KPAction::Bet as Action; 1]);
+        let mut a2 = RecordedAgent::new(vec![KPAction::Bet as Action; 1]);
 
         run_game(&mut g, &mut vec![&mut a1, &mut a2], &mut rng);
 
         assert_eq!(format!("{}", g), "[21]bb");
         assert_eq!(g.evaluate(), vec![4.0, 0.0])
+    }
+
+    #[test]
+    fn kuhn_poker_test_pbp() {
+        let mut g = KuhnPoker::new();
+        let mut rng: Pcg64 = Seeder::from("test").make_rng();
+        let mut a1 = RecordedAgent::new(vec![KPAction::Pass as Action; 2]);
+        let mut a2 = RecordedAgent::new(vec![KPAction::Bet as Action; 1]);
+
+        run_game(&mut g, &mut vec![&mut a1, &mut a2], &mut rng);
+
+        assert_eq!(format!("{}", g), "[21]pbp");
+        assert_eq!(g.evaluate(), vec![0.0, 3.0])
     }
 }
