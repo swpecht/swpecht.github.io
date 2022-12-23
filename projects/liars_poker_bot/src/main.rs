@@ -1,39 +1,18 @@
 pub mod agents;
 pub mod game;
-pub mod game_tree;
 pub mod kuhn_poker;
-pub mod liars_poker;
-pub mod minimax_agent;
 
-use agents::AlwaysFirstAgent;
-use agents::RandomAgent;
+use agents::{Agent, AlwaysFirstAgent, RandomAgent};
 use clap::Parser;
 
 use clap::clap_derive::ArgEnum;
-use game::RPSState;
 
-use kuhn_poker::run_game;
+use game::{run_game, GameState};
 use kuhn_poker::KuhnPoker;
-use liars_poker::LPGameState;
-use rand::seq::SliceRandom;
 use rand::thread_rng;
-
-use crate::agents::full_rollout;
-use crate::agents::minimax_propogation;
-use crate::agents::random_scorer;
-use crate::agents::TreeAgent;
-use crate::game::play;
-use crate::game::GameState;
-use crate::liars_poker::Player;
-use crate::{
-    agents::{Agent, OwnDiceAgent},
-    minimax_agent::MinimaxAgent,
-};
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ArgEnum, Debug)]
 enum GameType {
-    RPS,
-    LP,
     KP,
 }
 
@@ -50,7 +29,7 @@ struct Args {
     #[clap(short, long, action)]
     benchmark: bool,
 
-    #[clap(arg_enum, value_parser, default_value_t = GameType::RPS)]
+    #[clap(arg_enum, value_parser, default_value_t = GameType::KP)]
     game: GameType,
 }
 
@@ -66,124 +45,22 @@ fn main() {
         .unwrap();
 
     if args.benchmark {
-        match args.game {
-            GameType::LP => run_lp_benchmark(args),
-            GameType::RPS => run_rps_benchmark(args),
-            GameType::KP => run_kuhn_poker_test(),
-        }
+        todo!()
     } else {
-        let mut running_score = 0;
+        let mut score = [0.0; 2];
         for _ in 0..args.num_games {
-            let mut g = LPGameState::new();
+            let mut g = KuhnPoker::new();
+            let mut a1 = RandomAgent { rng: thread_rng() };
+            let mut a2 = RandomAgent { rng: thread_rng() };
 
-            // TODO: Move the initialization of agents into the play function, will take care of filtering
-            // for hidden state
-            let mut p1 = TreeAgent::new(
-                "random_tree",
-                &g.get_filtered_state(Player::P1),
-                full_rollout,
-                random_scorer,
-                minimax_propogation,
-            );
-            let mut p2 = RandomAgent::new(&g.get_filtered_state(Player::P2));
+            run_game(&mut g, &mut vec![&mut a1, &mut a2]);
 
-            running_score += play(&mut g, &mut p1, &mut p2);
+            let result = g.evaluate();
+            score[0] += result[0];
+            score[1] += result[1];
         }
 
-        println!(
-            "{} vs {}, score over {} games: {}",
-            "p1", "p2", args.num_games, running_score
-        );
-    }
-}
-
-fn run_kuhn_poker_test() {
-    let mut g = KuhnPoker::new();
-    let mut a1 = kuhn_poker::RandomAgent { rng: thread_rng() };
-    let mut a2 = kuhn_poker::RandomAgent { rng: thread_rng() };
-
-    run_game(&mut g, &mut vec![&mut a1, &mut a2]);
-}
-
-fn run_lp_benchmark(args: Args) {
-    let agents = agents!(
-        LPGameState,
-        RandomAgent::new,
-        MinimaxAgent::new,
-        OwnDiceAgent::new
-    );
-
-    for i in 0..agents.len() {
-        for j in 0..agents.len() {
-            let mut p1_wins = 0;
-            let mut p2_wins = 0;
-            for _ in 0..args.num_games {
-                let g = LPGameState::new();
-                let score = play(
-                    &mut g.clone(),
-                    agents[i](&g.get_filtered_state(Player::P1)).as_mut(),
-                    agents[j](&g.get_filtered_state(Player::P2)).as_mut(),
-                );
-                if score == 1 {
-                    p1_wins += 1;
-                } else {
-                    p2_wins += 1;
-                }
-            }
-
-            let g = LPGameState::new();
-            print!(
-                "{} wins: {},  {} wins: {}\n",
-                &agents[i](&g).name(),
-                p1_wins,
-                &agents[j](&g).name(),
-                p2_wins
-            );
-        }
-    }
-}
-
-fn run_rps_benchmark(args: Args) {
-    let agents = agents!(
-        RPSState,
-        RandomAgent::new,
-        |g: &RPSState| {
-            TreeAgent::new(
-                "random_tree",
-                g,
-                full_rollout,
-                random_scorer,
-                minimax_propogation,
-            )
-        },
-        MinimaxAgent::new,
-        AlwaysFirstAgent::new
-    );
-
-    let mut temp_vec: Vec<fn(&RPSState) -> Box<dyn Agent<RPSState>>> = Vec::new();
-    temp_vec.push(|x: &RPSState| -> Box<dyn Agent<RPSState>> { Box::new(MinimaxAgent::new(x)) });
-
-    for i in 0..agents.len() {
-        for j in 0..agents.len() {
-            let mut total_score = 0;
-            for _ in 0..args.num_games {
-                let g = RPSState::new();
-                let score = play(
-                    &mut g.clone(),
-                    agents[i](&g.get_filtered_state(Player::P1)).as_mut(),
-                    agents[j](&g.get_filtered_state(Player::P2)).as_mut(),
-                );
-                total_score += score;
-            }
-
-            let g = RPSState::new();
-            print!(
-                "{} vs {}: {}\n",
-                &agents[i](&g).name(),
-                &agents[j](&g).name(),
-                total_score
-            );
-        }
+        println!("{} vs {}", score[0], score[1])
     }
 }
 

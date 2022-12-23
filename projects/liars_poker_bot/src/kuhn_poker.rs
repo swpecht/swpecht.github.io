@@ -1,11 +1,7 @@
 use std::fmt::Display;
 
+use crate::game::{Action, GameState, IState, Player};
 use log::info;
-use rand::{rngs::ThreadRng, seq::SliceRandom, thread_rng};
-
-type Action = i64;
-type IState = f64;
-type Player = usize;
 
 #[derive(Debug)]
 pub enum KPAction {
@@ -72,13 +68,6 @@ impl KuhnPoker {
 }
 
 impl KPGameState {
-    pub fn apply_action(&mut self, a: Action) {
-        match self.phase {
-            KPPhase::Dealing => self.apply_action_dealing(a),
-            KPPhase::Playing => self.apply_action_playing(a),
-        }
-    }
-
     fn apply_action_dealing(&mut self, card: Action) {
         info!("player {} dealt card {}", self.cur_player, card);
         self.hands.push(card);
@@ -111,21 +100,6 @@ impl KPGameState {
         self.cur_player = self.cur_player % self.num_players;
     }
 
-    pub fn legal_actions(&self) -> Vec<Action> {
-        let mut actions = Vec::new();
-
-        if self.is_terminal {
-            return actions;
-        }
-
-        match self.phase {
-            KPPhase::Dealing => self.get_dealing_actions(&mut actions),
-            KPPhase::Playing => self.get_betting_actions(&mut actions),
-        }
-
-        return actions;
-    }
-
     fn get_dealing_actions(&self, actions: &mut Vec<Action>) {
         for i in 0..self.num_players + 1 {
             let card = i as Action;
@@ -141,10 +115,34 @@ impl KPGameState {
         actions.push(KPAction::Bet as Action);
         actions.push(KPAction::Pass as Action);
     }
+}
+
+impl GameState for KPGameState {
+    fn legal_actions(&self) -> Vec<Action> {
+        let mut actions = Vec::new();
+
+        if self.is_terminal {
+            return actions;
+        }
+
+        match self.phase {
+            KPPhase::Dealing => self.get_dealing_actions(&mut actions),
+            KPPhase::Playing => self.get_betting_actions(&mut actions),
+        }
+
+        return actions;
+    }
+
+    fn apply_action(&mut self, a: Action) {
+        match self.phase {
+            KPPhase::Dealing => self.apply_action_dealing(a),
+            KPPhase::Playing => self.apply_action_playing(a),
+        }
+    }
 
     /// Returns a vector of the score for each player
     /// at the end of the game
-    pub fn evaluate(&self) -> Vec<f32> {
+    fn evaluate(&self) -> Vec<f32> {
         if !self.is_terminal {
             return vec![0.0; self.num_players]; // No one gets points
         }
@@ -200,84 +198,37 @@ impl KPGameState {
     /// Returns an information state with the following data at each index:
     /// 0: Card dealt
     /// 1+: History of play
-    pub fn information_state(self, player: Player) -> Vec<IState> {
+    fn information_state(&self, player: Player) -> Vec<IState> {
         let mut i_state = Vec::new();
         i_state.push(self.hands[player] as IState);
 
-        for h in self.history {
+        for &h in &self.history {
             i_state.push(h as IState);
         }
         return i_state;
     }
 
-    pub fn is_terminal(&self) -> bool {
+    fn is_terminal(&self) -> bool {
         self.is_terminal
     }
 
-    pub fn is_chance_node(&self) -> bool {
+    fn is_chance_node(&self) -> bool {
         self.is_chance_node
     }
 
-    pub fn num_players(&self) -> usize {
+    fn num_players(&self) -> usize {
         self.num_players
     }
 
-    pub fn cur_player(&self) -> usize {
+    fn cur_player(&self) -> usize {
         self.cur_player
     }
 }
 
-struct QLearningAgent {}
-
-pub trait Agent {
-    fn step(&mut self, s: &KPGameState) -> Action;
-}
-
-pub struct RandomAgent {
-    pub rng: ThreadRng,
-}
-impl Agent for RandomAgent {
-    fn step(&mut self, s: &KPGameState) -> Action {
-        return *s.legal_actions().choose(&mut self.rng).unwrap();
-    }
-}
-
-pub fn run_game(s: &mut KPGameState, agents: &mut Vec<&mut dyn Agent>) {
-    let mut rng = thread_rng();
-
-    if s.num_players() != agents.len() {
-        panic!(
-            "Number of players doesn't equal the number of agents, {} players and {} agents",
-            s.num_players(),
-            agents.len()
-        );
-    }
-
-    while !s.is_terminal() {
-        info!("game state: {}", s);
-
-        if s.is_chance_node {
-            let actions = s.legal_actions();
-            let a = *actions.choose(&mut rng).unwrap();
-            info!("chance action: {}", a);
-            s.apply_action(a);
-        } else {
-            let agent = &mut agents[s.cur_player()];
-            let a = agent.step(s);
-            info!("player {} taking action {}", s.cur_player(), a);
-            s.apply_action(a);
-        }
-    }
-
-    info!("game state: {}", s);
-    info!("game over, rewards: {:?}", s.evaluate());
-}
-
 #[cfg(test)]
 mod tests {
+    use crate::{agents::RandomAgent, game::run_game, kuhn_poker::KuhnPoker};
     use rand::thread_rng;
-
-    use crate::kuhn_poker::{run_game, KuhnPoker, RandomAgent};
 
     #[test]
     fn kuhn_poker_test() {
