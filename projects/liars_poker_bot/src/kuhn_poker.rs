@@ -227,16 +227,24 @@ impl GameState for KPGameState {
 
 #[cfg(test)]
 mod tests {
-    use crate::{agents::RandomAgent, game::run_game, kuhn_poker::KuhnPoker};
-    use rand::thread_rng;
+    use crate::{
+        agents::AlwaysFirstAgent,
+        game::{run_game, GameState},
+        kuhn_poker::KuhnPoker,
+    };
+    use rand_pcg::Pcg64;
+    use rand_seeder::Seeder;
 
     #[test]
     fn kuhn_poker_test() {
         let mut g = KuhnPoker::new();
-        let mut a1 = RandomAgent { rng: thread_rng() };
-        let mut a2 = RandomAgent { rng: thread_rng() };
+        let mut rng: Pcg64 = Seeder::from("test").make_rng();
+        let mut a1 = AlwaysFirstAgent {};
+        let mut a2 = AlwaysFirstAgent {};
 
-        run_game(&mut g, &mut vec![&mut a1, &mut a2]);
-        todo!("not implemented");
+        run_game(&mut g, &mut vec![&mut a1, &mut a2], &mut rng);
+
+        assert_eq!(format!("{}", g), "[21]bb");
+        assert_eq!(g.evaluate(), vec![4.0, 0.0])
     }
 }

@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use log::info;
-use rand::{seq::SliceRandom, thread_rng};
+use rand::{seq::SliceRandom, Rng};
 
 use crate::agents::Agent;
 
@@ -24,9 +24,10 @@ pub trait GameState: Display {
     fn cur_player(&self) -> Player;
 }
 
-pub fn run_game(s: &mut (dyn GameState), agents: &mut Vec<&mut dyn Agent>) {
-    let mut rng = thread_rng();
-
+pub fn run_game<R>(s: &mut (dyn GameState), agents: &mut Vec<&mut dyn Agent>, rng: &mut R)
+where
+    R: Rng + ?Sized,
+{
     if s.num_players() != agents.len() {
         panic!(
             "Number of players doesn't equal the number of agents, {} players and {} agents",
@@ -40,7 +41,7 @@ pub fn run_game(s: &mut (dyn GameState), agents: &mut Vec<&mut dyn Agent>) {
 
         if s.is_chance_node() {
             let actions = s.legal_actions();
-            let a = *actions.choose(&mut rng).unwrap();
+            let a = *actions.choose(rng).unwrap();
             info!("chance action: {}", a);
             s.apply_action(a);
         } else {

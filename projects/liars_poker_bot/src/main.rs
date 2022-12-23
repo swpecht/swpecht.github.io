@@ -2,7 +2,7 @@ pub mod agents;
 pub mod game;
 pub mod kuhn_poker;
 
-use agents::{Agent, AlwaysFirstAgent, RandomAgent};
+use agents::RandomAgent;
 use clap::Parser;
 
 use clap::clap_derive::ArgEnum;
@@ -52,8 +52,9 @@ fn main() {
             let mut g = KuhnPoker::new();
             let mut a1 = RandomAgent { rng: thread_rng() };
             let mut a2 = RandomAgent { rng: thread_rng() };
+            let mut rng = thread_rng();
 
-            run_game(&mut g, &mut vec![&mut a1, &mut a2]);
+            run_game(&mut g, &mut vec![&mut a1, &mut a2], &mut rng);
 
             let result = g.evaluate();
             score[0] += result[0];
