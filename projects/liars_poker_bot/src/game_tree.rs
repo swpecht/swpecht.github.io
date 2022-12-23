@@ -194,7 +194,7 @@ mod tests {
     #[test]
     fn test_score_game_state() {
         let mut g = LPGameState {
-            dice_state: [DiceState::K(0), DiceState::K(0), DiceState::U, DiceState::U],
+            dice_state: [DiceState::K(0), DiceState::U],
             bet_state: [None; NUM_DICE * DICE_SIDES],
             call_state: None,
         };

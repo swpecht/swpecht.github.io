@@ -1,6 +1,7 @@
 pub mod agents;
 pub mod game;
 pub mod game_tree;
+pub mod kuhn_poker;
 pub mod liars_poker;
 pub mod minimax_agent;
 
@@ -11,7 +12,11 @@ use clap::Parser;
 use clap::clap_derive::ArgEnum;
 use game::RPSState;
 
+use kuhn_poker::run_game;
+use kuhn_poker::KuhnPoker;
 use liars_poker::LPGameState;
+use rand::seq::SliceRandom;
+use rand::thread_rng;
 
 use crate::agents::full_rollout;
 use crate::agents::minimax_propogation;
@@ -29,6 +34,7 @@ use crate::{
 enum GameType {
     RPS,
     LP,
+    KP,
 }
 
 /// Simple program to greet a person
@@ -63,6 +69,7 @@ fn main() {
         match args.game {
             GameType::LP => run_lp_benchmark(args),
             GameType::RPS => run_rps_benchmark(args),
+            GameType::KP => run_kuhn_poker_test(),
         }
     } else {
         let mut running_score = 0;
@@ -88,6 +95,14 @@ fn main() {
             "p1", "p2", args.num_games, running_score
         );
     }
+}
+
+fn run_kuhn_poker_test() {
+    let mut g = KuhnPoker::new();
+    let mut a1 = kuhn_poker::RandomAgent { rng: thread_rng() };
+    let mut a2 = kuhn_poker::RandomAgent { rng: thread_rng() };
+
+    run_game(&mut g, &mut vec![&mut a1, &mut a2]);
 }
 
 fn run_lp_benchmark(args: Args) {

@@ -308,13 +308,13 @@ mod tests {
         let moves = g.get_children();
         assert_eq!(moves.len(), NUM_DICE * DICE_SIDES);
 
-        g.bet_state[4] = Some(Player::P1);
+        g.bet_state[1] = Some(Player::P1);
         let moves = g.get_children();
-        assert_eq!(moves.len(), NUM_DICE * DICE_SIDES - 5 + 1);
+        assert_eq!(moves.len(), NUM_DICE * DICE_SIDES - 2 + 1);
 
-        g.bet_state[5] = Some(Player::P2);
+        g.bet_state[2] = Some(Player::P2);
         let moves = g.get_children();
-        assert_eq!(moves.len(), NUM_DICE * DICE_SIDES - 6 + 1);
+        assert_eq!(moves.len(), NUM_DICE * DICE_SIDES - 3 + 1);
     }
 
     #[test]
