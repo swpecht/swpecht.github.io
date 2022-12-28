@@ -5,9 +5,15 @@ use rand::{seq::SliceRandom, Rng};
 
 use crate::agents::Agent;
 
-pub type Action = i64;
+pub type Action = usize;
 pub type IState = f64;
 pub type Player = usize;
+
+pub struct Game {
+    // pub new: fn() -> Box<dyn GameState>,
+    pub max_players: usize,
+    pub max_actions: usize,
+}
 
 pub trait GameState: Display {
     /// Applies an action in place
@@ -18,6 +24,7 @@ pub trait GameState: Display {
     /// at the end of the game
     fn evaluate(&self) -> Vec<f32>;
     fn information_state(&self, player: Player) -> Vec<IState>;
+    fn information_state_string(&self, player: Player) -> String;
     fn is_terminal(&self) -> bool;
     fn is_chance_node(&self) -> bool;
     fn num_players(&self) -> usize;

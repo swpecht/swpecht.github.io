@@ -9,7 +9,7 @@ pub enum KPAction {
     Pass,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum KPPhase {
     Dealing,
     Playing,
@@ -18,11 +18,11 @@ pub enum KPPhase {
 /// Adapted from: https://github.com/deepmind/open_spiel/blob/master/open_spiel/games/kuhn_poker.cc
 /// All of the randomness occurs outside of the gamestate. Instead some game states are change nodes. And the
 /// "Game runner" will choose of of the random, valid actions
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct KPGameState {
     num_players: usize,
     /// Holds the cards for each player in the game
-    hands: Vec<i64>,
+    hands: Vec<Action>,
     is_chance_node: bool,
     is_terminal: bool,
     phase: KPPhase,
@@ -64,6 +64,11 @@ impl KuhnPoker {
             history: Vec::new(),
             is_terminal: false,
         }
+    }
+
+    /// Max possible actions are the cards being dealt
+    pub fn max_actions() -> usize {
+        return 3;
     }
 }
 
@@ -147,14 +152,6 @@ impl GameState for KPGameState {
             return vec![0.0; self.num_players]; // No one gets points
         }
 
-        // get pot
-        let mut pot = self.num_players; // capture the antes
-        for &h in &self.history {
-            if h == KPAction::Bet as Action {
-                pot += 1;
-            }
-        }
-
         if self.num_players != 2 {
             panic!("game logic only implemented for 2 players")
         }
@@ -188,9 +185,37 @@ impl GameState for KPGameState {
             _ => panic!("invalid game state"),
         };
 
+        let p0_bets = self
+            .history
+            .iter()
+            .map(|&x| (x == KPAction::Bet as Action))
+            .enumerate()
+            .filter(|(i, is_bet)| *is_bet && *i % 2 == 0)
+            .count() as f32;
+
+        let mut total_bets = 0.0;
+        for &h in &self.history {
+            if h == KPAction::Bet as Action {
+                total_bets += 1.0;
+            }
+        }
+
+        let p1_bets = total_bets - p0_bets;
+
         // The winnder gets the whole pot, everyone else gets nothing
         let mut payoffs = vec![0.0; self.num_players];
-        payoffs[winner] = pot as f32;
+
+        match winner {
+            0 => {
+                payoffs[1] = -1.0 * p1_bets - 1.0;
+                payoffs[0] = p1_bets + 1.0;
+            }
+            1 => {
+                payoffs[0] = -1.0 * p0_bets - 1.0;
+                payoffs[1] = p0_bets + 1.0;
+            }
+            _ => panic!("only supports 2 players"),
+        }
 
         return payoffs;
     }
@@ -223,6 +248,23 @@ impl GameState for KPGameState {
     fn cur_player(&self) -> usize {
         self.cur_player
     }
+
+    fn information_state_string(&self, player: Player) -> String {
+        let istate = self.information_state(player);
+        let mut result = String::new();
+        result.push_str(format!("{}", istate[0]).as_str());
+
+        for i in 1..istate.len() {
+            let char = match istate[i] {
+                x if x == KPAction::Bet as i64 as f64 => 'b',
+                x if x == KPAction::Pass as i64 as f64 => 'p',
+                _ => panic!("invalid history"),
+            };
+            result.push(char)
+        }
+
+        return result;
+    }
 }
 
 #[cfg(test)]
@@ -230,7 +272,7 @@ mod tests {
     use std::vec;
 
     use crate::{
-        agents::{AlwaysFirstAgent, RecordedAgent},
+        agents::RecordedAgent,
         game::{run_game, Action, GameState},
         kuhn_poker::{KPAction, KuhnPoker},
     };
@@ -247,7 +289,7 @@ mod tests {
         run_game(&mut g, &mut vec![&mut a1, &mut a2], &mut rng);
 
         assert_eq!(format!("{}", g), "[21]bb");
-        assert_eq!(g.evaluate(), vec![4.0, 0.0])
+        assert_eq!(g.evaluate(), vec![2.0, -2.0])
     }
 
     #[test]
@@ -260,6 +302,6 @@ mod tests {
         run_game(&mut g, &mut vec![&mut a1, &mut a2], &mut rng);
 
         assert_eq!(format!("{}", g), "[21]pbp");
-        assert_eq!(g.evaluate(), vec![0.0, 3.0])
+        assert_eq!(g.evaluate(), vec![-1.0, 1.0])
     }
 }

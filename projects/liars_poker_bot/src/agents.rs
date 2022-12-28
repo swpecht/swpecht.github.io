@@ -52,7 +52,7 @@ impl RecordedAgent {
 }
 
 impl Agent for RecordedAgent {
-    fn step(&mut self, s: &dyn GameState) -> Action {
+    fn step(&mut self, _: &dyn GameState) -> Action {
         let a = self.actions[self.cur_action];
         self.cur_action = (self.cur_action + 1) % self.actions.len();
         return a;
