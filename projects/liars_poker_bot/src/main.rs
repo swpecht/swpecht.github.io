@@ -1,7 +1,7 @@
 pub mod agents;
 pub mod game;
 pub mod kuhn_poker;
-pub mod qagent;
+pub mod cfragent;
 
 use clap::Parser;
 
@@ -9,7 +9,7 @@ use clap::clap_derive::ArgEnum;
 
 use game::{run_game, GameState};
 use kuhn_poker::KuhnPoker;
-use qagent::QAgent;
+use cfragent::CFRAgent;
 use rand::thread_rng;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ArgEnum, Debug)]
@@ -48,9 +48,8 @@ fn main() {
         todo!()
     } else {
         let mut score = [0.0; 2];
-        let mut a1 = QAgent::new(0);
-        print!("{:?}", a1.get_weight());
-        let mut a2 = QAgent::new(1);
+        let mut a1 = CFRAgent::new(0, 1000);
+        let mut a2 = CFRAgent::new(1, 1000);
         let mut rng = thread_rng();
         for _ in 0..args.num_games {
             let mut g = KuhnPoker::new();
