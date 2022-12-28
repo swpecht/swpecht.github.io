@@ -276,13 +276,12 @@ mod tests {
         game::{run_game, Action, GameState},
         kuhn_poker::{KPAction, KuhnPoker},
     };
-    use rand_pcg::Pcg64;
-    use rand_seeder::Seeder;
+    use rand::{rngs::StdRng, SeedableRng};
 
     #[test]
     fn kuhn_poker_test_bb() {
         let mut g = KuhnPoker::new();
-        let mut rng: Pcg64 = Seeder::from("test").make_rng();
+        let mut rng: StdRng = SeedableRng::seed_from_u64(0);
         let mut a1 = RecordedAgent::new(vec![KPAction::Bet as Action; 1]);
         let mut a2 = RecordedAgent::new(vec![KPAction::Bet as Action; 1]);
 
@@ -295,7 +294,7 @@ mod tests {
     #[test]
     fn kuhn_poker_test_pbp() {
         let mut g = KuhnPoker::new();
-        let mut rng: Pcg64 = Seeder::from("test").make_rng();
+        let mut rng: StdRng = SeedableRng::seed_from_u64(0);
         let mut a1 = RecordedAgent::new(vec![KPAction::Pass as Action; 2]);
         let mut a2 = RecordedAgent::new(vec![KPAction::Bet as Action; 1]);
 
