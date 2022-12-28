@@ -14,5 +14,4 @@ log = "0.4"
 stderrlog = "0.5"
 clap = { version = "3.2", features = ["derive"] }
 itertools = "0.10"
-rand_pcg = "0.3"
-rand_seeder = "0.2"
+
