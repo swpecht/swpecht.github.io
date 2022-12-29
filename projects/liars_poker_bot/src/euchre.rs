@@ -80,6 +80,7 @@ impl EuchreGameState {
         self.face_up = a;
         self.phase = EPhase::Pickup;
         self.cur_player = 0;
+        self.is_chance_node = false;
     }
 
     fn apply_action_pickup(&mut self, a: Action) {
@@ -203,7 +204,9 @@ mod tests {
         s.apply_action(21);
 
         assert_eq!(s.phase, EPhase::Pickup);
-        for _ in 0..4 {
+        assert!(!s.is_chance_node);
+        for i in 0..4 {
+            assert_eq!(s.cur_player, i);
             s.apply_action(EAction::Pass as usize);
         }
 
@@ -227,6 +230,7 @@ mod tests {
         s.apply_action(21);
 
         assert_eq!(s.phase, EPhase::Pickup);
+        assert!(!s.is_chance_node);
         for _ in 0..3 {
             s.apply_action(EAction::Pass as usize);
         }
@@ -236,5 +240,6 @@ mod tests {
         s.apply_action(3);
 
         assert_eq!(s.phase, EPhase::Play);
+        assert_eq!(s.cur_player, 0);
     }
 }
