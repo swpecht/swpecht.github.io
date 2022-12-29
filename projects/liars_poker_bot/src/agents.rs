@@ -4,6 +4,9 @@ use crate::game::{Action, GameState};
 
 pub trait Agent {
     fn step(&mut self, s: &dyn GameState) -> Action;
+    fn get_name(&self) -> String {
+        return format!("{}", std::any::type_name::<Self>());
+    }
 }
 
 pub struct RandomAgent {

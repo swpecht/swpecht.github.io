@@ -9,6 +9,7 @@ pub type Action = usize;
 pub type IState = f64;
 pub type Player = usize;
 
+#[derive(Clone)]
 pub struct Game {
     // pub new: fn() -> Box<dyn GameState>,
     pub max_players: usize,

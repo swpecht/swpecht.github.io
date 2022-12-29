@@ -10,6 +10,7 @@ use crate::{
     kuhn_poker::{KPGameState, KuhnPoker},
 };
 
+#[derive(Clone)]
 pub struct CFRAgent {
     game: Game,
     rng: StdRng,
@@ -60,6 +61,9 @@ impl CFRAgent {
         return agent;
     }
 
+    /// Recursive CFR implementation
+    ///
+    /// Adapted from: https://towardsdatascience.com/counterfactual-regret-minimization-ff4204bf4205
     fn cfr(&mut self, s: &KPGameState, history: Vec<usize>, p0: f32, p1: f32) -> f32 {
         let cur_player = s.cur_player();
         if s.is_terminal() {
@@ -124,7 +128,7 @@ impl CFRAgent {
 }
 
 /// Adapted from: https://towardsdatascience.com/counterfactual-regret-minimization-ff4204bf4205
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct CFRNode {
     info_set: String,
     regret_sum: Vec<f32>,
@@ -211,12 +215,16 @@ impl Agent for CFRAgent {
 #[cfg(test)]
 mod tests {
     use super::CFRAgent;
-    use crate::kuhn_poker::KPAction;
+    use crate::{
+        agents::Agent,
+        game::GameState,
+        kuhn_poker::{KPAction, KuhnPoker},
+    };
 
     #[test]
-    fn cfragent_test() {
-        let qa = CFRAgent::new(42, 10000);
+    fn cfragent_nash_test() {
         // Verify the nash equilibrium is reached. From https://en.wikipedia.org/wiki/Kuhn_poker
+        let qa = CFRAgent::new(42, 10000);
 
         // The second player has a single equilibrium strategy:
         // Always betting or calling when having a King
@@ -269,5 +277,26 @@ mod tests {
             (x * (10.0f32).powi(i)).round() / (10.0f32).powi(i),
             (y * (10.0f32).powi(i)).round() / (10.0f32).powi(i)
         );
+    }
+
+    #[test]
+    fn cfragent_sample_test() {
+        let mut qa = CFRAgent::new(42, 10000);
+        let mut s = KuhnPoker::new();
+        s.apply_action(1);
+        s.apply_action(0);
+        s.apply_action(KPAction::Pass as usize);
+
+        assert_eq!(s.information_state_string(1), "0p");
+
+        let mut action_counter = vec![0; 2];
+        for _ in 0..1000 {
+            let a = qa.step(&s);
+            action_counter[a] += 1;
+        }
+
+        // For state 0p, should bet about 33% of the time in nash equilibrium
+        assert!(action_counter[KPAction::Bet as usize] > 300);
+        assert!(action_counter[KPAction::Bet as usize] < 400);
     }
 }

@@ -1,15 +1,16 @@
 pub mod agents;
+pub mod cfragent;
 pub mod game;
 pub mod kuhn_poker;
-pub mod cfragent;
 
+use agents::{Agent, RandomAgent};
 use clap::Parser;
 
 use clap::clap_derive::ArgEnum;
 
+use cfragent::CFRAgent;
 use game::{run_game, GameState};
 use kuhn_poker::KuhnPoker;
-use cfragent::CFRAgent;
 use rand::thread_rng;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ArgEnum, Debug)]
@@ -47,19 +48,37 @@ fn main() {
     if args.benchmark {
         todo!()
     } else {
-        let mut score = [0.0; 2];
-        let mut a1 = CFRAgent::new(0, 1000);
-        let mut a2 = CFRAgent::new(1, 1000);
-        let mut rng = thread_rng();
-        for _ in 0..args.num_games {
-            let mut g = KuhnPoker::new();
-            run_game(&mut g, &mut vec![&mut a1, &mut a2], &mut rng);
-            let result = g.evaluate();
-            score[0] += result[0];
-            score[1] += result[1];
-        }
+        let cfr = CFRAgent::new(0, 100000);
+        let mut agents: Vec<Box<dyn Fn() -> Box<dyn Agent>>> = Vec::new();
+        agents.push(Box::new(|| -> Box<dyn Agent> {
+            Box::new(RandomAgent::new())
+        }));
+        agents.push(Box::new(|| -> Box<dyn Agent> { Box::new(cfr.clone()) }));
 
-        println!("{} vs {}", score[0], score[1])
+        let mut rng = thread_rng();
+        for p0 in 0..agents.len() {
+            for p1 in 0..agents.len() {
+                let mut score = [0.0; 2];
+                for _ in 0..args.num_games {
+                    let mut g = KuhnPoker::new();
+                    run_game(
+                        &mut g,
+                        &mut vec![agents[p0]().as_mut(), agents[p1]().as_mut()],
+                        &mut rng,
+                    );
+                    let result = g.evaluate();
+                    score[0] += result[0];
+                    score[1] += result[1];
+                }
+                println!(
+                    "{} vs {}: {} to {}",
+                    agents[p0]().get_name(),
+                    agents[p1]().get_name(),
+                    score[0],
+                    score[1]
+                )
+            }
+        }
     }
 }
 

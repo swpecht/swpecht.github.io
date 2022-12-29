@@ -20,8 +20,8 @@
                 }
             },
             "args": [
-                "-b",
-                "kp"
+                "-n",
+                "1000"
             ],
             "cwd": "${workspaceFolder}",
             "env": {
