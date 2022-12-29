@@ -3,7 +3,7 @@ use std::fmt::Display;
 use crate::game::{Action, GameState, IState, Player};
 use log::info;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub enum KPAction {
     Bet,
     Pass,
@@ -27,7 +27,7 @@ pub struct KPGameState {
     is_terminal: bool,
     phase: KPPhase,
     cur_player: usize,
-    history: Vec<Action>,
+    history: Vec<KPAction>,
 }
 
 impl Display for KPGameState {
@@ -41,8 +41,8 @@ impl Display for KPGameState {
 
         for &h in &self.history {
             let char = match h {
-                x if x == KPAction::Bet as Action => 'b',
-                x if x == KPAction::Pass as Action => 'p',
+                KPAction::Bet => 'b',
+                KPAction::Pass => 'p',
                 _ => panic!("invalid history"),
             };
             result.push(char)
@@ -88,14 +88,15 @@ impl KPGameState {
 
     fn apply_action_playing(&mut self, a: Action) {
         match a {
-            0 | 1 => self.history.push(a), // only bet or pass allowed
+            x if x == KPAction::Bet as usize => self.history.push(KPAction::Bet),
+            x if x == KPAction::Pass as usize => self.history.push(KPAction::Pass),
             _ => panic!("attempted invalid action"),
         }
 
-        if (self.history.len() == self.num_players && self.history[0] == KPAction::Bet as Action)
+        if (self.history.len() == self.num_players && self.history[0] == KPAction::Bet)
             || (self.history.len() == self.num_players
-                && self.history[0] == KPAction::Pass as Action
-                && self.history[1] == KPAction::Pass as Action)
+                && self.history[0] == KPAction::Pass
+                && self.history[1] == KPAction::Pass)
             || self.history.len() == 3
         {
             self.is_terminal = true;
@@ -156,68 +157,27 @@ impl GameState for KPGameState {
             panic!("game logic only implemented for 2 players")
         }
 
-        let s: Vec<String> = self
-            .history
-            .iter()
-            .map(|&x| {
-                format!(
-                    "{}",
-                    match x {
-                        a if a == KPAction::Bet as Action => "b",
-                        a if a == KPAction::Pass as Action => "p",
-                        _ => panic!("invalid game state"),
-                    }
-                )
-            })
-            .collect();
-        let s = s.join("");
-
-        let winner = match s.as_str() {
-            "pp" | "bb" | "pbb" => {
+        let payoffs = match self.history[..] {
+            [KPAction::Pass, KPAction::Pass] => {
                 if self.hands[0] > self.hands[1] {
-                    0
+                    [1.0, -1.0]
                 } else {
-                    1
+                    [-1.0, 1.0]
                 }
             }
-            "pbp" => 1,
-            "bp" => 0,
-            _ => panic!("invalid game state"),
+            [KPAction::Bet, KPAction::Bet] | [KPAction::Pass, KPAction::Bet, KPAction::Bet] => {
+                if self.hands[0] > self.hands[1] {
+                    [2.0, -2.0]
+                } else {
+                    [-2.0, 2.0]
+                }
+            }
+            [KPAction::Pass, KPAction::Bet, KPAction::Pass] => [-1.0, 1.0],
+            [KPAction::Bet, KPAction::Pass] => [1.0, -1.0],
+            _ => panic!("invalid history"),
         };
 
-        let p0_bets = self
-            .history
-            .iter()
-            .map(|&x| (x == KPAction::Bet as Action))
-            .enumerate()
-            .filter(|(i, is_bet)| *is_bet && *i % 2 == 0)
-            .count() as f32;
-
-        let mut total_bets = 0.0;
-        for &h in &self.history {
-            if h == KPAction::Bet as Action {
-                total_bets += 1.0;
-            }
-        }
-
-        let p1_bets = total_bets - p0_bets;
-
-        // The winnder gets the whole pot, everyone else gets nothing
-        let mut payoffs = vec![0.0; self.num_players];
-
-        match winner {
-            0 => {
-                payoffs[1] = -1.0 * p1_bets - 1.0;
-                payoffs[0] = p1_bets + 1.0;
-            }
-            1 => {
-                payoffs[0] = -1.0 * p0_bets - 1.0;
-                payoffs[1] = p0_bets + 1.0;
-            }
-            _ => panic!("only supports 2 players"),
-        }
-
-        return payoffs;
+        return payoffs.to_vec();
     }
 
     /// Returns an information state with the following data at each index:
@@ -228,7 +188,8 @@ impl GameState for KPGameState {
         i_state.push(self.hands[player] as IState);
 
         for &h in &self.history {
-            i_state.push(h as IState);
+            let u = h as usize;
+            i_state.push(u as IState);
         }
         return i_state;
     }
