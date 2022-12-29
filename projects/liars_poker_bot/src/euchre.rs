@@ -1,10 +1,15 @@
 use std::fmt::Display;
 
-use crate::game::{Action, GameState};
+use crate::game::{self, Action, GameState, Player};
 
 pub struct Euchre {}
 impl Euchre {
     pub fn new() -> EuchreGameState {
+        let mut deck = Vec::new();
+        for i in 0..24 {
+            deck.push(i);
+        }
+
         EuchreGameState {
             num_players: 4,
             hands: Vec::new(),
@@ -15,6 +20,7 @@ impl Euchre {
             trump: Suit::Clubs, // Default to one for now
             face_up: 0,         // Default for now
             history: Vec::new(),
+            deck: deck,
         }
     }
 }
@@ -24,6 +30,8 @@ pub struct EuchreGameState {
     num_players: usize,
     /// Holds the cards for each player in the game
     hands: Vec<Vec<Action>>,
+    /// Undealt cards
+    deck: Vec<Action>,
     trump: Suit,
     face_up: Action,
     is_chance_node: bool,
@@ -63,6 +71,9 @@ enum Suit {
 
 impl EuchreGameState {
     fn apply_action_deal_hands(&mut self, a: Action) {
+        let index = self.deck.iter().position(|&x| x == a).unwrap();
+        self.deck.remove(index);
+
         if self.hands.len() <= self.cur_player {
             self.hands.push(Vec::new());
         }
@@ -120,8 +131,8 @@ impl EuchreGameState {
 
     /// Can only be done by the dealer (player 3)
     fn apply_action_discard(&mut self, a: Action) {
-        let index = self.hands[3].iter().find(|&&x| x == a);
-        if let Some(&index) = index {
+        let index = self.hands[3].iter().position(|&x| x == a);
+        if let Some(index) = index {
             self.hands[3][index] = self.face_up;
         } else {
             panic!("attempted to discard a card not in hand")
@@ -132,6 +143,10 @@ impl EuchreGameState {
     }
 
     fn apply_action_play(&mut self, a: Action) {}
+
+    fn legal_actions_dealing(&self) -> Vec<Action> {
+        return self.deck.clone();
+    }
 }
 
 impl Display for EuchreGameState {
@@ -153,18 +168,21 @@ impl GameState for EuchreGameState {
     }
 
     fn legal_actions(&self) -> Vec<Action> {
-        todo!()
+        match self.phase {
+            EPhase::DealHands | EPhase::DealFaceUp => self.legal_actions_dealing(),
+            _ => todo!(),
+        }
     }
 
     fn evaluate(&self) -> Vec<f32> {
         todo!()
     }
 
-    fn information_state(&self, player: crate::game::Player) -> Vec<crate::game::IState> {
+    fn information_state(&self, player: Player) -> Vec<game::IState> {
         todo!()
     }
 
-    fn information_state_string(&self, player: crate::game::Player) -> String {
+    fn information_state_string(&self, player: Player) -> String {
         todo!()
     }
 
@@ -180,7 +198,7 @@ impl GameState for EuchreGameState {
         self.num_players
     }
 
-    fn cur_player(&self) -> crate::game::Player {
+    fn cur_player(&self) -> Player {
         self.cur_player
     }
 }
@@ -201,7 +219,7 @@ mod tests {
         }
 
         assert_eq!(s.phase, EPhase::DealFaceUp);
-        s.apply_action(21);
+        s.apply_action(20);
 
         assert_eq!(s.phase, EPhase::Pickup);
         assert!(!s.is_chance_node);
@@ -227,7 +245,7 @@ mod tests {
         }
 
         assert_eq!(s.phase, EPhase::DealFaceUp);
-        s.apply_action(21);
+        s.apply_action(20);
 
         assert_eq!(s.phase, EPhase::Pickup);
         assert!(!s.is_chance_node);
@@ -241,5 +259,17 @@ mod tests {
 
         assert_eq!(s.phase, EPhase::Play);
         assert_eq!(s.cur_player, 0);
+    }
+
+    #[test]
+    fn euchre_test_dealing() {
+        let mut s = Euchre::new();
+
+        for i in 0..20 {
+            s.apply_action(i);
+            let legal = s.legal_actions();
+            let index = legal.iter().position(|&x| x == i);
+            assert_eq!(index, None);
+        }
     }
 }
