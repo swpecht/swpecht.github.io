@@ -11,7 +11,7 @@ pub type Player = usize;
 
 #[derive(Clone)]
 pub struct Game {
-    // pub new: fn() -> Box<dyn GameState>,
+    // pub new: Box<dyn Fn() -> Box<dyn GameState>>,
     pub max_players: usize,
     pub max_actions: usize,
 }
