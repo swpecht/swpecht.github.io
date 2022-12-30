@@ -1,8 +1,9 @@
+use core::num;
 use std::fmt::Display;
 
 use itertools::Itertools;
 
-use crate::game::{self, Action, GameState, Player};
+use crate::game::{self, Action, GameState, IState, Player};
 
 const JACK: usize = 2;
 const CARD_PER_SUIT: usize = 6;
@@ -317,6 +318,30 @@ impl Display for EuchreGameState {
     }
 }
 
+fn format_card(c: Action) -> String {
+    let suit_char = match c / CARD_PER_SUIT {
+        x if x == Suit::Clubs as usize => 'C',
+        x if x == Suit::Hearts as usize => 'H',
+        x if x == Suit::Spades as usize => 'S',
+        x if x == Suit::Diamonds as usize => 'D',
+        _ => panic!("invalid card"),
+    };
+
+    let mut num_char = match c % CARD_PER_SUIT {
+        0 => "9",
+        1 => "10",
+        2 => "J",
+        3 => "Q",
+        4 => "K",
+        5 => "A",
+        _ => panic!("invalid card"),
+    }
+    .to_string();
+
+    num_char.push(suit_char);
+    return num_char;
+}
+
 impl GameState for EuchreGameState {
     fn apply_action(&mut self, a: Action) {
         match self.phase {
@@ -362,12 +387,58 @@ impl GameState for EuchreGameState {
         }
     }
 
+    /// Returns an information state with the following format:
+    /// * 0-4: hand
+    /// * 5: face up card
+    /// * 6: Calling player
+    /// * 7: trump
+    /// * 8+: play history
     fn information_state(&self, player: Player) -> Vec<game::IState> {
-        todo!()
+        let mut istate = Vec::new();
+        for &c in &self.hands[player] {
+            istate.push(c as IState);
+        }
+
+        if self.hands[player].len() < 5 || self.phase == EPhase::DealFaceUp {
+            return istate;
+        }
+
+        // Add the phase up card
+        istate.push(self.face_up as IState);
+
+        if self.phase == EPhase::Discard || self.phase == EPhase::Play {
+            istate.push(self.trump_caller as IState);
+            istate.push(self.trump.clone() as usize as IState);
+        }
+
+        for c in &self.play_history {
+            istate.push(*c as IState);
+        }
+
+        return istate;
     }
 
     fn information_state_string(&self, player: Player) -> String {
-        todo!()
+        let istate = self.information_state(player);
+        let mut r = String::new();
+
+        for i in 0..5 {
+            let card = format_card(istate[i] as Action);
+            r.push_str(&card)
+        }
+
+        if istate.len() <= 5 {
+            return r;
+        }
+        let face_up = format_card(istate[5] as Action);
+        r.push_str(&face_up);
+
+        if istate.len() <= 6 {
+            return r;
+        }
+        r.push_str(&format!("{}", istate[6] as usize));
+
+        return r;
     }
 
     fn is_terminal(&self) -> bool {
@@ -483,7 +554,7 @@ mod tests {
     }
 
     #[test]
-    fn test_suit() {
+    fn euchre_test_suit() {
         let mut s = Euchre::new();
 
         assert_eq!(s.get_suit(0), Suit::Clubs);
@@ -504,5 +575,28 @@ mod tests {
         // Jack of spades is now a club since it's trump
         assert_eq!(s.get_suit(8), Suit::Clubs);
         assert_eq!(s.get_suit(7), Suit::Spades);
+    }
+
+    #[test]
+    fn euchre_test_istate() {
+        let mut s = Euchre::new();
+        // Deal the cards
+        for i in 0..20 {
+            s.apply_action(i);
+        }
+
+        assert_eq!(s.information_state_string(0), "9CKCJS9HKH");
+        assert_eq!(s.information_state_string(1), "10CACQS10HAH");
+        assert_eq!(s.information_state_string(2), "JC9SKSJH9D");
+        assert_eq!(s.information_state_string(3), "QC10SASQH10D");
+
+        s.apply_action(20);
+        assert_eq!(s.information_state_string(0), "9CKCJS9HKHJD");
+        assert_eq!(s.information_state_string(1), "10CACQS10HAHJD");
+        assert_eq!(s.information_state_string(2), "JC9SKSJH9DJD");
+        assert_eq!(s.information_state_string(3), "QC10SASQH10DJD");
+
+        s.apply_action(EAction::Pickup as usize);
+        assert_eq!(s.information_state_string(0), "9CKCJS9HKHJD0");
     }
 }
