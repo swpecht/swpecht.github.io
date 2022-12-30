@@ -28,6 +28,7 @@ impl Euchre {
             play_history: Vec::new(),
             deck: deck,
             trump_caller: 0,
+            starting_hands: Vec::new(),
         }
     }
 }
@@ -37,6 +38,7 @@ pub struct EuchreGameState {
     num_players: usize,
     /// Holds the cards for each player in the game
     hands: Vec<Vec<Action>>,
+    starting_hands: Vec<Vec<Action>>,
     /// Undealt cards
     deck: Vec<Action>,
     trump: Suit,
@@ -87,6 +89,9 @@ impl EuchreGameState {
         }
 
         self.hands[self.cur_player].push(a);
+        self.hands[self.cur_player].sort();
+
+        self.starting_hands = self.hands.clone();
 
         self.cur_player = (self.cur_player + 1) % self.num_players;
 
@@ -113,6 +118,7 @@ impl EuchreGameState {
             }
             x if x == EAction::Pickup as usize => {
                 self.trump_caller = self.cur_player;
+                self.trump = self.get_suit(self.face_up);
                 self.cur_player = 4; // dealers turn
                 self.phase = EPhase::Discard;
             }
@@ -148,13 +154,28 @@ impl EuchreGameState {
             panic!("attempted to discard a card not in hand")
         }
 
+        self.starting_hands = self.hands.clone();
         self.cur_player = 0;
         self.phase = EPhase::Play;
     }
 
     fn apply_action_play(&mut self, a: Action) {
         self.play_history.push(a);
-        self.cur_player = self.cur_player + 1 % self.num_players;
+        let index = self.hands[self.cur_player]
+            .iter()
+            .position(|&x| x == a)
+            .unwrap();
+        self.hands[self.cur_player].remove(index);
+
+        // Set acting player based on who won last trick
+        if self.play_history.len() % 4 == 0 {
+            let starter = (self.cur_player + 3) % self.num_players;
+            let trick = &self.play_history[self.play_history.len() - 4..];
+            let winner = self.evaluate_trick(trick, starter);
+            self.cur_player = winner;
+        }
+
+        self.cur_player = (self.cur_player + 1) % self.num_players;
         if self.play_history.len() >= self.num_players * 5 {
             self.is_terminal = true;
         }
@@ -216,7 +237,7 @@ impl EuchreGameState {
     }
 
     /// Returns the player who won the trick
-    fn evaluate_trick(&self, cards: &[Action]) -> usize {
+    fn evaluate_trick(&self, cards: &[Action], trick_starter: Player) -> usize {
         assert_eq!(cards.len(), 4); // only support 4 players
 
         let mut winner = 0;
@@ -226,7 +247,7 @@ impl EuchreGameState {
             let suit = self.get_suit(cards[i]);
             // Player can't win if not following suit or playing trump
             // The winning suit can only ever be trump or the lead suit
-            if suit != winning_suit || suit != self.trump {
+            if suit != winning_suit && suit != self.trump {
                 continue;
             }
 
@@ -259,7 +280,7 @@ impl EuchreGameState {
             }
         }
 
-        return winner;
+        return (trick_starter + winner) % self.num_players;
     }
 
     /// Gets the suit of a given card. Accounts for the weird scoring of the trump suit
@@ -370,20 +391,24 @@ impl GameState for EuchreGameState {
         }
 
         let mut won_tricks = [0; 2];
+        let mut starter = 0;
         for i in 0..5 {
-            let trick = &self.play_history[i * 4..i + 4];
-            let winner = self.evaluate_trick(trick);
+            let trick = &self.play_history[i * 4..4 * i + 4];
+            let winner = self.evaluate_trick(trick, starter);
+            starter = winner;
             won_tricks[winner % 2] += 1;
         }
 
         let team_0_win = won_tricks[0] > won_tricks[1];
         let team_0_call = self.trump_caller % 2 == 0;
 
-        match (team_0_win, team_0_call) {
-            (true, true) => vec![1.0, 0.0, 1.0, 0.0],
-            (true, false) => vec![2.0, 0.0, 2.0, 0.0],
-            (false, false) => vec![0.0, 1.0, 0.0, 1.0],
-            (false, true) => vec![0.0, 2.0, 0.0, 2.0],
+        match (team_0_win, team_0_call, won_tricks[0]) {
+            (true, true, 5) => vec![2.0, 0.0, 2.0, 0.0],
+            (true, true, _) => vec![1.0, 0.0, 1.0, 0.0],
+            (true, false, _) => vec![2.0, 0.0, 2.0, 0.0],
+            (false, false, 0) => vec![0.0, 2.0, 0.0, 2.0],
+            (false, false, _) => vec![0.0, 1.0, 0.0, 1.0],
+            (false, true, _) => vec![0.0, 2.0, 0.0, 2.0],
         }
     }
 
@@ -395,11 +420,11 @@ impl GameState for EuchreGameState {
     /// * 8+: play history
     fn information_state(&self, player: Player) -> Vec<game::IState> {
         let mut istate = Vec::new();
-        for &c in &self.hands[player] {
+        for &c in &self.starting_hands[player] {
             istate.push(c as IState);
         }
 
-        if self.hands[player].len() < 5 || self.phase == EPhase::DealFaceUp {
+        if self.starting_hands[player].len() < 5 || self.phase == EPhase::DealFaceUp {
             return istate;
         }
 
@@ -437,6 +462,23 @@ impl GameState for EuchreGameState {
             return r;
         }
         r.push_str(&format!("{}", istate[6] as usize));
+
+        let trump_char = match istate[7] as usize {
+            x if x == Suit::Clubs as usize => 'C',
+            x if x == Suit::Spades as usize => 'S',
+            x if x == Suit::Diamonds as usize => 'D',
+            x if x == Suit::Hearts as usize => 'H',
+            _ => panic!("invalid trump"),
+        };
+
+        r.push(trump_char);
+
+        for i in 0..self.play_history.len() {
+            if i % self.num_players == 0 {
+                r.push('|');
+            }
+            r.push_str(&format_card(self.play_history[i]));
+        }
 
         return r;
     }
@@ -597,6 +639,23 @@ mod tests {
         assert_eq!(s.information_state_string(3), "QC10SASQH10DJD");
 
         s.apply_action(EAction::Pickup as usize);
-        assert_eq!(s.information_state_string(0), "9CKCJS9HKHJD0");
+        assert_eq!(s.information_state_string(0), "9CKCJS9HKHJD0D");
+
+        // Dealer discards the QC
+        s.apply_action(3);
+        assert_eq!(s.information_state_string(3), "JD10SASQH10DJD0D");
+
+        for _ in 0..4 {
+            let a = s.legal_actions()[0];
+            s.apply_action(a);
+        }
+        assert_eq!(s.information_state_string(0), "9CKCJS9HKHJD0D|9C10CJCJD");
+
+        while !s.is_terminal() {
+            let a = s.legal_actions()[0];
+            s.apply_action(a);
+        }
+
+        assert_eq!(s.evaluate(), vec![0.0, 2.0, 0.0, 2.0])
     }
 }
