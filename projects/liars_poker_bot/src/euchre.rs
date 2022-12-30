@@ -1,4 +1,3 @@
-use core::num;
 use std::fmt::Display;
 
 use itertools::Itertools;
@@ -114,12 +113,12 @@ impl EuchreGameState {
                     // Dealer has passed, move to choosing
                     self.phase = EPhase::ChooseTrump;
                 }
-                self.cur_player = self.cur_player + 1 % self.num_players
+                self.cur_player = (self.cur_player + 1) % self.num_players;
             }
             x if x == EAction::Pickup as usize => {
                 self.trump_caller = self.cur_player;
                 self.trump = self.get_suit(self.face_up);
-                self.cur_player = 4; // dealers turn
+                self.cur_player = 3; // dealers turn
                 self.phase = EPhase::Discard;
             }
             _ => panic!("invalid action"),
@@ -335,7 +334,19 @@ impl EuchreGameState {
 
 impl Display for EuchreGameState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
+        match self.phase {
+            EPhase::DealHands | EPhase::DealFaceUp => {
+                write!(f, "{:?}: {:?}", self.phase, self.hands,)
+            }
+            _ => write!(
+                f,
+                "{:?}: {:?} {:?} {:?}",
+                self.phase,
+                self.hands,
+                format_card(self.face_up),
+                self.play_history
+            ),
+        }
     }
 }
 
@@ -528,8 +539,10 @@ mod tests {
         }
 
         assert_eq!(s.phase, EPhase::ChooseTrump);
+        assert_eq!(s.cur_player, 0);
         s.apply_action(EAction::Pass as usize);
         s.apply_action(EAction::Diamonds as usize);
+        assert_eq!(s.cur_player, 0);
 
         assert_eq!(s.phase, EPhase::Play);
     }

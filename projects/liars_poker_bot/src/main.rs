@@ -10,6 +10,7 @@ use clap::Parser;
 use clap::clap_derive::ArgEnum;
 
 use cfragent::CFRAgent;
+use euchre::Euchre;
 use game::{run_game, GameState};
 use kuhn_poker::KuhnPoker;
 use rand::thread_rng;
@@ -17,6 +18,7 @@ use rand::thread_rng;
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ArgEnum, Debug)]
 enum GameType {
     KP,
+    Euchre,
 }
 
 /// Simple program to greet a person
@@ -47,7 +49,45 @@ fn main() {
         .unwrap();
 
     if args.benchmark {
-        todo!()
+        let g = match args.game {
+            GameType::Euchre => Box::new(|| -> Box<dyn GameState> { Box::new(Euchre::new()) }),
+            _ => todo!(),
+        };
+
+        let mut agents: Vec<Box<dyn Fn() -> Box<dyn Agent>>> = Vec::new();
+        agents.push(Box::new(|| -> Box<dyn Agent> {
+            Box::new(RandomAgent::new())
+        }));
+
+        let mut rng = thread_rng();
+        for p0 in 0..agents.len() {
+            for p1 in 0..agents.len() {
+                let mut score = [0.0; 2];
+                for _ in 0..args.num_games {
+                    let mut s = g();
+                    run_game(
+                        s.as_mut(),
+                        &mut vec![
+                            agents[p0]().as_mut(),
+                            agents[p1]().as_mut(),
+                            agents[p0]().as_mut(),
+                            agents[p1]().as_mut(),
+                        ],
+                        &mut rng,
+                    );
+                    let result = s.evaluate();
+                    score[0] += result[0];
+                    score[1] += result[1];
+                }
+                println!(
+                    "{} vs {}: {} to {}",
+                    agents[p0]().get_name(),
+                    agents[p1]().get_name(),
+                    score[0],
+                    score[1]
+                )
+            }
+        }
     } else {
         let cfr = CFRAgent::new(0, 100000);
         let mut agents: Vec<Box<dyn Fn() -> Box<dyn Agent>>> = Vec::new();

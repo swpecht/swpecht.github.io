@@ -43,7 +43,6 @@ impl Display for KPGameState {
             let char = match h {
                 KPAction::Bet => 'b',
                 KPAction::Pass => 'p',
-                _ => panic!("invalid history"),
             };
             result.push(char)
         }
