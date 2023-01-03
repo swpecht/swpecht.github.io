@@ -1,5 +1,6 @@
 use std::fmt::Display;
 
+use dyn_clone::DynClone;
 use log::info;
 use rand::{seq::SliceRandom, Rng};
 
@@ -11,12 +12,12 @@ pub type Player = usize;
 
 #[derive(Clone)]
 pub struct Game {
-    // pub new: Box<dyn Fn() -> Box<dyn GameState>>,
+    pub new: Box<fn() -> Box<dyn GameState>>,
     pub max_players: usize,
     pub max_actions: usize,
 }
 
-pub trait GameState: Display {
+pub trait GameState: Display + DynClone {
     /// Applies an action in place
     fn apply_action(&mut self, a: Action);
     /// Returns all legal actions at a given game state

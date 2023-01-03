@@ -7,7 +7,6 @@ use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 use crate::{
     agents::Agent,
     game::{Action, Game, GameState},
-    kuhn_poker::{KPGameState, KuhnPoker},
 };
 
 #[derive(Clone)]
@@ -19,12 +18,7 @@ pub struct CFRAgent {
 }
 
 impl CFRAgent {
-    pub fn new(seed: u64, iterations: usize) -> Self {
-        let game = Game {
-            max_players: 2,
-            max_actions: 3,
-        };
-
+    pub fn new(game: Game, seed: u64, iterations: usize) -> Self {
         let mut agent = Self {
             game,
             rng: SeedableRng::seed_from_u64(seed),
@@ -35,14 +29,14 @@ impl CFRAgent {
         // Use CFR to train the agent
         info!("Starting self play for CFR");
         for i in 0..iterations {
-            let mut s = KuhnPoker::new();
+            let mut s = (agent.game.new)();
             while s.is_chance_node() {
                 let actions = s.legal_actions();
                 let a = *actions.choose(&mut agent.rng).unwrap();
                 s.apply_action(a);
             }
             let history = Vec::new();
-            agent.cfr(&s, history, 1.0, 1.0);
+            agent.cfr(s, history, 1.0, 1.0);
             trace!(
                 "Finished iteration {} for CFR, nodes: {:#?}",
                 i,
@@ -64,7 +58,7 @@ impl CFRAgent {
     /// Recursive CFR implementation
     ///
     /// Adapted from: https://towardsdatascience.com/counterfactual-regret-minimization-ff4204bf4205
-    fn cfr(&mut self, s: &KPGameState, history: Vec<usize>, p0: f32, p1: f32) -> f32 {
+    fn cfr(&mut self, s: Box<dyn GameState>, history: Vec<usize>, p0: f32, p1: f32) -> f32 {
         let cur_player = s.cur_player();
         if s.is_terminal() {
             return s.evaluate()[cur_player];
@@ -87,13 +81,13 @@ impl CFRAgent {
             0 => p0,
             _ => p1,
         };
-        let strategy = node.get_strategy(param, s);
+        let strategy = node.get_strategy(param, s.as_ref());
         let actions = s.legal_actions();
         let mut util = vec![0.0; self.game.max_actions];
 
         let mut node_util = 0.0;
         for &a in &actions {
-            let mut new_s = s.clone();
+            let mut new_s = dyn_clone::clone_box(&*s);
             new_s.apply_action(a);
             let mut next_history = history.clone();
             next_history.push(a);
@@ -104,8 +98,8 @@ impl CFRAgent {
             // so we pass reach probability = p0 * strategy[a], likewise if this is player == 1 then reach probability = p1 * strategy[a]
             // https://colab.research.google.com/drive/1SYNxGdR7UmoxbxY-NSpVsKywLX7YwQMN?usp=sharing#scrollTo=NamPieNiykz1
             util[a] = match cur_player {
-                0 => -self.cfr(&new_s, next_history, p0 * strategy[a], p1),
-                _ => -self.cfr(&new_s, next_history, p0, p1 * strategy[a]),
+                0 => -self.cfr(new_s, next_history, p0 * strategy[a], p1),
+                _ => -self.cfr(new_s, next_history, p0, p1 * strategy[a]),
             };
             node_util += strategy[a] * util[a];
         }
@@ -223,8 +217,9 @@ mod tests {
 
     #[test]
     fn cfragent_nash_test() {
+        let game = KuhnPoker::game();
         // Verify the nash equilibrium is reached. From https://en.wikipedia.org/wiki/Kuhn_poker
-        let qa = CFRAgent::new(42, 10000);
+        let qa = CFRAgent::new(game, 42, 10000);
 
         // The second player has a single equilibrium strategy:
         // Always betting or calling when having a King
@@ -281,8 +276,8 @@ mod tests {
 
     #[test]
     fn cfragent_sample_test() {
-        let mut qa = CFRAgent::new(42, 10000);
-        let mut s = KuhnPoker::new();
+        let mut qa = CFRAgent::new(KuhnPoker::game(), 42, 10000);
+        let mut s = KuhnPoker::new_state();
         s.apply_action(1);
         s.apply_action(0);
         s.apply_action(KPAction::Pass as usize);

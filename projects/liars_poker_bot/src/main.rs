@@ -50,7 +50,9 @@ fn main() {
 
     if args.benchmark {
         let g = match args.game {
-            GameType::Euchre => Box::new(|| -> Box<dyn GameState> { Box::new(Euchre::new()) }),
+            GameType::Euchre => {
+                Box::new(|| -> Box<dyn GameState> { Box::new(Euchre::new_state()) })
+            }
             _ => todo!(),
         };
 
@@ -89,7 +91,7 @@ fn main() {
             }
         }
     } else {
-        let cfr = CFRAgent::new(0, 100000);
+        let cfr = CFRAgent::new(Euchre::game(), 0, 100000);
         let mut agents: Vec<Box<dyn Fn() -> Box<dyn Agent>>> = Vec::new();
         agents.push(Box::new(|| -> Box<dyn Agent> {
             Box::new(RandomAgent::new())
@@ -101,7 +103,7 @@ fn main() {
             for p1 in 0..agents.len() {
                 let mut score = [0.0; 2];
                 for _ in 0..args.num_games {
-                    let mut g = KuhnPoker::new();
+                    let mut g = KuhnPoker::new_state();
                     run_game(
                         &mut g,
                         &mut vec![agents[p0]().as_mut(), agents[p1]().as_mut()],

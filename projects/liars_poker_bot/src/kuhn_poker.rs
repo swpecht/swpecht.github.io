@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::game::{Action, GameState, IState, Player};
+use crate::game::{Action, Game, GameState, IState, Player};
 use log::info;
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
@@ -53,7 +53,7 @@ impl Display for KPGameState {
 
 pub struct KuhnPoker {}
 impl KuhnPoker {
-    pub fn new() -> KPGameState {
+    pub fn new_state() -> KPGameState {
         KPGameState {
             hands: Vec::new(),
             phase: KPPhase::Dealing,
@@ -65,9 +65,12 @@ impl KuhnPoker {
         }
     }
 
-    /// Max possible actions are the cards being dealt
-    pub fn max_actions() -> usize {
-        return 3;
+    pub fn game() -> Game {
+        Game {
+            new: Box::new(|| -> Box<dyn GameState> { Box::new(Self::new_state()) }),
+            max_players: 2,
+            max_actions: 3, // 1 for each card dealt
+        }
     }
 }
 
@@ -240,7 +243,7 @@ mod tests {
 
     #[test]
     fn kuhn_poker_test_bb() {
-        let mut g = KuhnPoker::new();
+        let mut g = KuhnPoker::new_state();
         let mut rng: StdRng = SeedableRng::seed_from_u64(0);
         let mut a1 = RecordedAgent::new(vec![KPAction::Bet as Action; 1]);
         let mut a2 = RecordedAgent::new(vec![KPAction::Bet as Action; 1]);
@@ -253,7 +256,7 @@ mod tests {
 
     #[test]
     fn kuhn_poker_test_pbp() {
-        let mut g = KuhnPoker::new();
+        let mut g = KuhnPoker::new_state();
         let mut rng: StdRng = SeedableRng::seed_from_u64(0);
         let mut a1 = RecordedAgent::new(vec![KPAction::Pass as Action; 2]);
         let mut a2 = RecordedAgent::new(vec![KPAction::Bet as Action; 1]);

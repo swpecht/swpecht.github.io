@@ -2,14 +2,14 @@ use std::fmt::Display;
 
 use itertools::Itertools;
 
-use crate::game::{self, Action, GameState, IState, Player};
+use crate::game::{self, Action, Game, GameState, IState, Player};
 
 const JACK: usize = 2;
 const CARD_PER_SUIT: usize = 6;
 
 pub struct Euchre {}
 impl Euchre {
-    pub fn new() -> EuchreGameState {
+    pub fn new_state() -> EuchreGameState {
         let mut deck = Vec::new();
         for i in 0..24 {
             deck.push(i);
@@ -28,6 +28,14 @@ impl Euchre {
             deck: deck,
             trump_caller: 0,
             starting_hands: Vec::new(),
+        }
+    }
+
+    pub fn game() -> Game {
+        Game {
+            new: Box::new(|| -> Box<dyn GameState> { Box::new(Self::new_state()) }),
+            max_players: 2,
+            max_actions: 24, // 1 for each card dealt
         }
     }
 }
@@ -521,7 +529,7 @@ mod tests {
 
     #[test]
     fn euchre_test_phases_choose_trump() {
-        let mut s = Euchre::new();
+        let mut s = Euchre::new_state();
 
         assert_eq!(s.phase, EPhase::DealHands);
         for i in 0..20 {
@@ -549,7 +557,7 @@ mod tests {
 
     #[test]
     fn euchre_test_phases_pickup() {
-        let mut s = Euchre::new();
+        let mut s = Euchre::new_state();
 
         assert_eq!(s.phase, EPhase::DealHands);
         for i in 0..20 {
@@ -575,7 +583,7 @@ mod tests {
 
     #[test]
     fn euchre_test_legal_actions() {
-        let mut s = Euchre::new();
+        let mut s = Euchre::new_state();
 
         for i in 0..20 {
             s.apply_action(i);
@@ -610,7 +618,7 @@ mod tests {
 
     #[test]
     fn euchre_test_suit() {
-        let mut s = Euchre::new();
+        let mut s = Euchre::new_state();
 
         assert_eq!(s.get_suit(0), Suit::Clubs);
         // Jack of spades is still a spade
@@ -634,7 +642,7 @@ mod tests {
 
     #[test]
     fn euchre_test_istate() {
-        let mut s = Euchre::new();
+        let mut s = Euchre::new_state();
         // Deal the cards
         for i in 0..20 {
             s.apply_action(i);
