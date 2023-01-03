@@ -359,6 +359,8 @@ impl Display for EuchreGameState {
 }
 
 fn format_card(c: Action) -> String {
+    let mut r = String::with_capacity(3);
+
     let suit_char = match c / CARD_PER_SUIT {
         x if x == Suit::Clubs as usize => 'C',
         x if x == Suit::Hearts as usize => 'H',
@@ -367,7 +369,7 @@ fn format_card(c: Action) -> String {
         _ => panic!("invalid card"),
     };
 
-    let mut num_char = match c % CARD_PER_SUIT {
+    let num_char = match c % CARD_PER_SUIT {
         0 => "9",
         1 => "10",
         2 => "J",
@@ -375,11 +377,11 @@ fn format_card(c: Action) -> String {
         4 => "K",
         5 => "A",
         _ => panic!("invalid card"),
-    }
-    .to_string();
+    };
 
-    num_char.push(suit_char);
-    return num_char;
+    r.push_str(num_char);
+    r.push(suit_char);
+    return r;
 }
 
 impl GameState for EuchreGameState {
