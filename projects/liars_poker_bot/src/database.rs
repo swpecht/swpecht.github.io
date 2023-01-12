@@ -1,12 +1,8 @@
-use cached::proc_macro::cached;
-use cached::SizedCache;
 use log::trace;
 use sqlite::{Connection, State, Value};
 
-use crate::cfragent::CFRNode;
-
 const INSERT_QUERY: &str = "INSERT OR REPLACE INTO nodes (istate, node) VALUES (:istate, :node);";
-const GET_QUERY: &str = "SELECT * FROM nodes WHERE istate = :istate";
+const GET_QUERY: &str = "SELECT * FROM nodes WHERE istate = :istate;";
 
 pub fn get_connection() -> Connection {
     trace!("creating connection to sqlite...");
@@ -32,7 +28,8 @@ pub fn get_node_mut(istate: &str, connection: &Connection) -> Option<String> {
         .unwrap();
 
     // Check if node found
-    if statement.next().unwrap() != State::Row {
+    let r = statement.next();
+    if r.unwrap() != State::Row {
         return None;
     };
     let node_ser = statement.read::<String, _>("node").unwrap();
@@ -44,8 +41,8 @@ pub fn insert_node(istate: String, s: String, connection: &Connection) -> Option
     statement
         .bind::<&[(_, Value)]>(&[(":istate", istate.into()), (":node", s.clone().into())][..])
         .unwrap();
-
-    let r = statement.next().unwrap();
+    let r = statement.next();
+    assert!(r.is_ok());
 
     return Some(s);
 }
