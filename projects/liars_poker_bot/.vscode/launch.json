@@ -21,9 +21,9 @@
             },
             "args": [
                 "-n",
-                "1000",
-                "euchre",
-                "-b"
+                "1",
+                "-v",
+                "4",
             ],
             "cwd": "${workspaceFolder}",
             "env": {

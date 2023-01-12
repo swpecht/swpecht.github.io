@@ -1,20 +1,21 @@
-use std::{collections::HashMap, iter::zip};
+use std::iter::zip;
 
 use itertools::Itertools;
-use log::{debug, info, trace, warn};
+use log::{debug, info, trace};
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
+use serde::{Deserialize, Serialize};
+use sqlite::Connection;
 
 use crate::{
     agents::Agent,
+    database::{contains_node, get_connection, get_node_mut, insert_node},
     game::{Action, Game, GameState},
 };
 
-#[derive(Clone)]
 pub struct CFRAgent {
     game: Game,
     rng: StdRng,
-    policy: HashMap<String, Vec<f32>>,
-    nodes: HashMap<String, CFRNode>,
+    connection: Connection,
 }
 
 impl CFRAgent {
@@ -22,8 +23,7 @@ impl CFRAgent {
         let mut agent = Self {
             game,
             rng: SeedableRng::seed_from_u64(seed),
-            policy: HashMap::new(),
-            nodes: HashMap::new(),
+            connection: get_connection(),
         };
 
         // Use CFR to train the agent
@@ -37,20 +37,11 @@ impl CFRAgent {
             }
             let history = Vec::new();
             agent.cfr(s, history, 1.0, 1.0);
-            trace!(
-                "Finished iteration {} for CFR, nodes: {:#?}",
-                i,
-                agent.nodes
-            );
+            trace!("Finished iteration {} for CFR", i);
         }
 
         // Save the trained policy
-        for (_, n) in &agent.nodes {
-            agent
-                .policy
-                .insert(n.info_set.clone(), n.get_average_strategy());
-        }
-        debug!("finished training, policy: {:#?}", agent.policy);
+        debug!("finished training policy");
 
         return agent;
     }
@@ -66,16 +57,16 @@ impl CFRAgent {
 
         // Get or create the node
         let info_set = s.information_state_string(cur_player);
-        if !self.nodes.contains_key(&info_set) {
+        if !self.contains_node(&info_set) {
             let node = CFRNode {
                 info_set: info_set.clone(),
                 regret_sum: vec![0.0; self.game.max_actions],
                 strategy: vec![0.0; self.game.max_actions],
                 strategy_sum: vec![0.0; self.game.max_actions],
             };
-            self.nodes.insert(info_set.clone(), node);
+            self.insert_node(info_set.clone(), node);
         }
-        let node = self.nodes.get_mut(&info_set).unwrap();
+        let mut node = self.get_node_mut(&info_set).unwrap();
 
         let param = match cur_player {
             0 => p0,
@@ -104,7 +95,7 @@ impl CFRAgent {
             node_util += strategy[a] * util[a];
         }
 
-        let node = self.nodes.get_mut(&info_set).unwrap();
+        let mut node = self.get_node_mut(&info_set).unwrap();
         // For each action, compute and accumulate counterfactual regret
         for a in actions {
             let regret = util[a] - node_util;
@@ -119,11 +110,47 @@ impl CFRAgent {
 
         return node_util;
     }
+
+    fn get_node_mut(&mut self, istate: &str) -> Option<CFRNode> {
+        let s = get_node_mut(istate, &self.connection);
+        if s == None {
+            return None;
+        }
+        let node: Option<CFRNode> = Some(serde_json::from_str(&s.unwrap()).unwrap());
+        return node;
+    }
+
+    fn contains_node(&self, istate: &String) -> bool {
+        return contains_node(istate, &self.connection);
+    }
+    fn insert_node(&mut self, istate: String, node: CFRNode) -> Option<CFRNode> {
+        let s = serde_json::to_string(&node).unwrap();
+        return match insert_node(istate, s, &self.connection) {
+            Some(_) => Some(node),
+            None => None,
+        };
+    }
+
+    fn get_policy(&mut self, istate: &str) -> Vec<f32> {
+        let n = self.get_node_mut(istate).unwrap();
+        let p = n.get_average_strategy();
+        return p;
+    }
+}
+
+impl Clone for CFRAgent {
+    fn clone(&self) -> Self {
+        Self {
+            game: self.game.clone(),
+            rng: self.rng.clone(),
+            connection: get_connection(),
+        }
+    }
 }
 
 /// Adapted from: https://towardsdatascience.com/counterfactual-regret-minimization-ff4204bf4205
-#[derive(Debug, Clone)]
-struct CFRNode {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CFRNode {
     info_set: String,
     regret_sum: Vec<f32>,
     strategy: Vec<f32>,
@@ -182,17 +209,17 @@ impl Agent for CFRAgent {
     fn step(&mut self, s: &dyn GameState) -> Action {
         // Populate new istates with default value
         let istate = s.information_state_string(s.cur_player());
-        if !self.policy.contains_key(&istate) {
-            // populate an empty state
-            warn!("new istate encountered during play: {}", istate);
-            self.policy.insert(
-                istate.clone(),
-                vec![1.0 / self.game.max_actions as f32; self.game.max_actions],
-            );
-        }
+        // if !self.contains_node(&istate) {
+        //     // populate an empty state
+        //     warn!("new istate encountered during play: {}", istate);
+        //     self.policy.insert(
+        //         istate.clone(),
+        //         vec![1.0 / self.game.max_actions as f32; self.game.max_actions],
+        //     );
+        // }
 
-        // Otherwise we choose the action with the highest value
-        let p = self.policy.get(&istate).unwrap().clone();
+        // Otherwise we choose the action based on weights
+        let p = self.get_policy(&istate);
         trace!("evaluating istate {} for {:?}", istate, p);
         let mut weights = vec![0.0; s.legal_actions().len()];
         for &a in &s.legal_actions() {
@@ -219,26 +246,26 @@ mod tests {
     fn cfragent_nash_test() {
         let game = KuhnPoker::game();
         // Verify the nash equilibrium is reached. From https://en.wikipedia.org/wiki/Kuhn_poker
-        let qa = CFRAgent::new(game, 42, 10000);
+        let mut qa = CFRAgent::new(game, 42, 10000);
 
         // The second player has a single equilibrium strategy:
         // Always betting or calling when having a King
-        let w = qa.policy.get("2b").unwrap();
+        let w = qa.get_policy("2b");
         check_floats(w[KPAction::Bet as usize], 1.0, 2);
 
-        let w = qa.policy.get("2p").unwrap();
+        let w = qa.get_policy("2p");
         check_floats(w[KPAction::Bet as usize], 1.0, 2);
 
         // when having a Queen, checking if possible, otherwise calling with the probability of 1/3
-        let w = qa.policy.get("1p").unwrap();
+        let w = qa.get_policy("1p");
         check_floats(w[KPAction::Pass as usize], 1.0, 2);
-        let w = qa.policy.get("1b").unwrap();
+        let w = qa.get_policy("1b");
         check_floats(w[KPAction::Bet as usize], 0.3333, 1);
 
         // when having a Jack, never calling and betting with the probability of 1/3.
-        let w = qa.policy.get("0b").unwrap();
+        let w = qa.get_policy("0b");
         check_floats(w[KPAction::Pass as usize], 1.0, 2);
-        let w = qa.policy.get("0p").unwrap();
+        let w = qa.get_policy("0p");
         check_floats(w[KPAction::Bet as usize], 0.3333, 1);
 
         // First player equilibrium
@@ -246,23 +273,23 @@ mod tests {
         // {\displaystyle \alpha \in [0,1/3]}{\displaystyle \alpha \in [0,1/3]}
         // with which he will bet when having a Jack (otherwise he checks; if the
         //other player bets, he should always fold).
-        let alpha = qa.policy.get("0").unwrap()[KPAction::Bet as usize];
+        let alpha = qa.get_policy("0")[KPAction::Bet as usize];
         assert!(alpha < 0.4);
 
-        let w = qa.policy.get("0pb").unwrap();
+        let w = qa.get_policy("0pb");
         check_floats(w[KPAction::Pass as usize], 1.0, 2);
 
         // When having a King, he should bet with the probability of {\displaystyle 3\alpha }3\alpha
         // (otherwise he checks; if the other player bets, he should always call)
-        let w = qa.policy.get("2").unwrap();
+        let w = qa.get_policy("2");
         check_floats(w[KPAction::Bet as usize], 3.0 * alpha, 1);
 
         // He should always check when having a Queen, and if the other player bets after this check,
         // he should call with the probability of {\displaystyle \alpha +1/3}{\displaystyle \alpha +1/3}.
-        let w = qa.policy.get("1").unwrap();
+        let w = qa.get_policy("1");
         check_floats(w[KPAction::Pass as usize], 1.0, 2);
 
-        let w = qa.policy.get("1pb").unwrap();
+        let w = qa.get_policy("1pb");
         // We nudge the optimal weight here to save on iterations for convergence
         check_floats(w[KPAction::Bet as usize], alpha + 0.35, 1);
     }

@@ -1,5 +1,6 @@
 pub mod agents;
 pub mod cfragent;
+pub mod database;
 pub mod euchre;
 pub mod game;
 pub mod kuhn_poker;
@@ -91,7 +92,7 @@ fn main() {
             }
         }
     } else {
-        let cfr = CFRAgent::new(Euchre::game(), 0, 100000);
+        let cfr = CFRAgent::new(KuhnPoker::game(), 0, 100);
         let mut agents: Vec<Box<dyn Fn() -> Box<dyn Agent>>> = Vec::new();
         agents.push(Box::new(|| -> Box<dyn Agent> {
             Box::new(RandomAgent::new())
