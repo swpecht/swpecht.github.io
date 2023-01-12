@@ -1,9 +1,12 @@
-use log::trace;
+use std::collections::HashMap;
+
+use log::{debug, trace};
 use sqlite::{Connection, State, Value};
 use tempfile::{NamedTempFile, TempPath};
 
 const INSERT_QUERY: &str = "INSERT OR REPLACE INTO nodes (istate, node) VALUES (:istate, :node);";
 const GET_QUERY: &str = "SELECT * FROM nodes WHERE istate = :istate;";
+const CACHE_SIZE: usize = 100000;
 
 #[derive(Clone)]
 pub enum Storage {
@@ -15,13 +18,16 @@ pub enum Storage {
 pub struct NodeStore {
     connection: Connection,
     storage: Storage,
-    temp_file: Option<TempPath>,
+    cache: HashMap<String, String>,
+    // hold this so the temp file isn't detroyed
+    _temp_file: Option<TempPath>,
 }
 
+/// NodeStore is a cache for istates and their associated game nodes.
+///
+/// It stores data in an in memory cache that is occasionally flushed to a sqlite database
 impl NodeStore {
     pub fn new(storage: Storage) -> Self {
-        trace!("creating connection to sqlite...");
-
         let mut temp_file = None;
         let path = match storage {
             Storage::Memory => ":memory:".to_string(),
@@ -32,7 +38,7 @@ impl NodeStore {
             }
             Storage::Namedfile => todo!(),
         };
-
+        trace!("creating connection to sqlite at {}...", path);
         let connection = sqlite::open(path).unwrap();
 
         let query = "CREATE TABLE nodes (istate TEXT PRIMARY KEY, node TEXT);";
@@ -41,12 +47,17 @@ impl NodeStore {
 
         Self {
             connection,
-            temp_file,
+            _temp_file: temp_file,
             storage,
+            cache: HashMap::new(),
         }
     }
 
     pub fn get_node_mut(&mut self, istate: &str) -> Option<String> {
+        if self.cache.contains_key(istate) {
+            return self.cache.get(istate).cloned();
+        }
+
         let mut statement = self.connection.prepare(GET_QUERY).unwrap();
         statement
             .bind::<&[(_, Value)]>(&[(":istate", istate.clone().into())][..])
@@ -62,17 +73,18 @@ impl NodeStore {
     }
 
     pub fn insert_node(&mut self, istate: String, s: String) -> Option<String> {
-        let mut statement = self.connection.prepare(INSERT_QUERY).unwrap();
-        statement
-            .bind::<&[(_, Value)]>(&[(":istate", istate.into()), (":node", s.clone().into())][..])
-            .unwrap();
-        let r = statement.next();
-        assert!(r.is_ok());
+        if self.cache.len() > CACHE_SIZE {
+            self.flush();
+        }
 
-        return Some(s);
+        self.cache.insert(istate, s)
     }
 
     pub fn contains_node(&self, istate: &String) -> bool {
+        if self.cache.contains_key(istate) {
+            return true;
+        }
+
         let mut statement = self.connection.prepare(GET_QUERY).unwrap();
         statement
             .bind::<&[(_, Value)]>(&[(":istate", istate.to_string().into())][..])
@@ -81,6 +93,44 @@ impl NodeStore {
         let r = statement.next();
 
         return r.unwrap() == State::Row;
+    }
+
+    /// Writes all data in the cache to sqlite and clears the cache
+    fn flush(&mut self) {
+        debug!("flushing cache...");
+        const BATCH_SIZE: usize = 1000;
+        let mut i = 0;
+
+        // Use a transaction for performance reasons
+        self.connection.execute("BEGIN TRANSACTION;").unwrap();
+
+        for (k, v) in self.cache.iter() {
+            self.write_node(k.clone(), v.clone());
+
+            if i % BATCH_SIZE == 0 {
+                self.connection
+                    .execute("COMMIT; BEGIN TRANSACTION;")
+                    .unwrap();
+            }
+
+            i += 1;
+        }
+
+        self.connection.execute("COMMIT;").unwrap();
+        debug!("flush complete");
+
+        self.cache.clear();
+    }
+
+    fn write_node(&self, istate: String, s: String) -> Option<String> {
+        let mut statement = self.connection.prepare(INSERT_QUERY).unwrap();
+        statement
+            .bind::<&[(_, Value)]>(&[(":istate", istate.into()), (":node", s.clone().into())][..])
+            .unwrap();
+        let r = statement.next();
+        assert!(r.is_ok());
+
+        return Some(s);
     }
 }
 

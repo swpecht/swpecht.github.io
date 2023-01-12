@@ -4,11 +4,11 @@ use liars_poker_bot::{cfragent::CFRAgent, kuhn_poker::KuhnPoker};
 fn train_cfr_kp() {
     let game = KuhnPoker::game();
     // Verify the nash equilibrium is reached. From https://en.wikipedia.org/wiki/Kuhn_poker
-    CFRAgent::new(game, 42, 10);
+    CFRAgent::new(game, 42, 100);
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
-    c.bench_function("cfr kp 10", |b| b.iter(|| train_cfr_kp()));
+    c.bench_function("cfr kp 100", |b| b.iter(|| train_cfr_kp()));
 }
 
 criterion_group!(benches, criterion_benchmark);
