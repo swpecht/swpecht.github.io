@@ -1,80 +1,128 @@
 use log::trace;
 use sqlite::{Connection, State, Value};
+use tempfile::{NamedTempFile, TempPath};
 
 const INSERT_QUERY: &str = "INSERT OR REPLACE INTO nodes (istate, node) VALUES (:istate, :node);";
 const GET_QUERY: &str = "SELECT * FROM nodes WHERE istate = :istate;";
 
-pub fn get_connection() -> Connection {
-    trace!("creating connection to sqlite...");
-
-    let connection = sqlite::open(":memory:").unwrap();
-
-    let query = "CREATE TABLE nodes (istate TEXT PRIMARY KEY, node TEXT);";
-    connection.execute(query).unwrap();
-    trace!("table created sucessfully");
-
-    return connection;
+#[derive(Clone)]
+pub enum Storage {
+    Memory,
+    Tempfile,
+    Namedfile,
 }
 
-// #[cached(
-//     type = "SizedCache<String, Option<CFRNode>>",
-//     create = "{ SizedCache::with_size(3000000) }",
-//     convert = r#"{ format!("{}", istate) }"#
-// )]
-pub fn get_node_mut(istate: &str, connection: &Connection) -> Option<String> {
-    let mut statement = connection.prepare(GET_QUERY).unwrap();
-    statement
-        .bind::<&[(_, Value)]>(&[(":istate", istate.clone().into())][..])
-        .unwrap();
-
-    // Check if node found
-    let r = statement.next();
-    if r.unwrap() != State::Row {
-        return None;
-    };
-    let node_ser = statement.read::<String, _>("node").unwrap();
-    return Some(node_ser);
+pub struct NodeStore {
+    connection: Connection,
+    storage: Storage,
+    temp_file: Option<TempPath>,
 }
 
-pub fn insert_node(istate: String, s: String, connection: &Connection) -> Option<String> {
-    let mut statement = connection.prepare(INSERT_QUERY).unwrap();
-    statement
-        .bind::<&[(_, Value)]>(&[(":istate", istate.into()), (":node", s.clone().into())][..])
-        .unwrap();
-    let r = statement.next();
-    assert!(r.is_ok());
+impl NodeStore {
+    pub fn new(storage: Storage) -> Self {
+        trace!("creating connection to sqlite...");
 
-    return Some(s);
+        let mut temp_file = None;
+        let path = match storage {
+            Storage::Memory => ":memory:".to_string(),
+            Storage::Tempfile => {
+                let f = NamedTempFile::new().unwrap();
+                temp_file = Some(f.into_temp_path());
+                temp_file.as_ref().unwrap().to_str().unwrap().to_string()
+            }
+            Storage::Namedfile => todo!(),
+        };
+
+        let connection = sqlite::open(path).unwrap();
+
+        let query = "CREATE TABLE nodes (istate TEXT PRIMARY KEY, node TEXT);";
+        connection.execute(query).unwrap();
+        trace!("table created sucessfully");
+
+        Self {
+            connection,
+            temp_file,
+            storage,
+        }
+    }
+
+    pub fn get_node_mut(&mut self, istate: &str) -> Option<String> {
+        let mut statement = self.connection.prepare(GET_QUERY).unwrap();
+        statement
+            .bind::<&[(_, Value)]>(&[(":istate", istate.clone().into())][..])
+            .unwrap();
+
+        // Check if node found
+        let r = statement.next();
+        if r.unwrap() != State::Row {
+            return None;
+        };
+        let node_ser = statement.read::<String, _>("node").unwrap();
+        return Some(node_ser);
+    }
+
+    pub fn insert_node(&mut self, istate: String, s: String) -> Option<String> {
+        let mut statement = self.connection.prepare(INSERT_QUERY).unwrap();
+        statement
+            .bind::<&[(_, Value)]>(&[(":istate", istate.into()), (":node", s.clone().into())][..])
+            .unwrap();
+        let r = statement.next();
+        assert!(r.is_ok());
+
+        return Some(s);
+    }
+
+    pub fn contains_node(&self, istate: &String) -> bool {
+        let mut statement = self.connection.prepare(GET_QUERY).unwrap();
+        statement
+            .bind::<&[(_, Value)]>(&[(":istate", istate.to_string().into())][..])
+            .unwrap();
+
+        let r = statement.next();
+
+        return r.unwrap() == State::Row;
+    }
 }
 
-pub fn contains_node(istate: &String, connection: &Connection) -> bool {
-    let mut statement = connection.prepare(GET_QUERY).unwrap();
-    statement
-        .bind::<&[(_, Value)]>(&[(":istate", istate.to_string().into())][..])
-        .unwrap();
-
-    let r = statement.next();
-
-    return r.unwrap() == State::Row;
+impl Clone for NodeStore {
+    fn clone(&self) -> Self {
+        NodeStore::new(self.storage.clone())
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{get_connection, get_node_mut, insert_node};
+    use crate::database::{NodeStore, Storage};
 
     #[test]
-    fn test_write_read() {
-        let con = &get_connection();
+    fn test_write_read_memory() {
+        let mut store = NodeStore::new(Storage::Memory);
         let istate = "test".to_string();
 
         let s = "test node 1".to_string();
-        insert_node(istate.clone(), s, con);
-        let r = get_node_mut(&istate, con);
+        store.insert_node(istate.clone(), s);
+        let r = store.get_node_mut(&istate);
         assert_eq!(r.unwrap(), "test node 1");
 
         let s = "test node 2".to_string();
-        insert_node(istate.clone(), s, con);
-        let r = get_node_mut(&istate, con);
+        store.insert_node(istate.clone(), s);
+        let r = store.get_node_mut(&istate);
+        assert_eq!(r.unwrap(), "test node 2");
+    }
+
+    #[test]
+    fn test_write_read_tempfile() {
+        let mut store = NodeStore::new(Storage::Tempfile);
+        let istate = "test".to_string();
+
+        let s = "test node 1".to_string();
+        store.insert_node(istate.clone(), s);
+        let r = store.get_node_mut(&istate);
+        assert_eq!(r.unwrap(), "test node 1");
+
+        let s = "test node 2".to_string();
+        store.insert_node(istate.clone(), s);
+        let r = store.get_node_mut(&istate);
         assert_eq!(r.unwrap(), "test node 2");
     }
 }

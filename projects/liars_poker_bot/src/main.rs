@@ -1,19 +1,12 @@
-pub mod agents;
-pub mod cfragent;
-pub mod database;
-pub mod euchre;
-pub mod game;
-pub mod kuhn_poker;
-
-use agents::{Agent, RandomAgent};
 use clap::Parser;
 
 use clap::clap_derive::ArgEnum;
 
-use cfragent::CFRAgent;
-use euchre::Euchre;
-use game::{run_game, GameState};
-use kuhn_poker::KuhnPoker;
+use liars_poker_bot::agents::{Agent, RandomAgent};
+use liars_poker_bot::cfragent::CFRAgent;
+use liars_poker_bot::euchre::Euchre;
+use liars_poker_bot::game::{run_game, GameState};
+use liars_poker_bot::kuhn_poker::KuhnPoker;
 use rand::thread_rng;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ArgEnum, Debug)]
@@ -92,7 +85,7 @@ fn main() {
             }
         }
     } else {
-        let cfr = CFRAgent::new(KuhnPoker::game(), 0, 100);
+        let cfr = CFRAgent::new(Euchre::game(), 0, 2);
         let mut agents: Vec<Box<dyn Fn() -> Box<dyn Agent>>> = Vec::new();
         agents.push(Box::new(|| -> Box<dyn Agent> {
             Box::new(RandomAgent::new())

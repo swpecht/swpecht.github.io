@@ -3,6 +3,7 @@ name = "liars_poker_bot"
 version = "0.1.0"
 edition = "2021"
 
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [profile.release]
@@ -19,4 +20,12 @@ sqlite = "0.30"
 cached = "0.42"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+tempfile = "3.3"
+
+[dev-dependencies]
+criterion = "0.4"
+
+[[bench]]
+name = "kuhn_poker_benchmark"
+harness = false
 

@@ -4,18 +4,18 @@ use itertools::Itertools;
 use log::{debug, info, trace};
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 use serde::{Deserialize, Serialize};
-use sqlite::Connection;
 
 use crate::{
     agents::Agent,
-    database::{contains_node, get_connection, get_node_mut, insert_node},
+    database::{NodeStore, Storage},
     game::{Action, Game, GameState},
 };
 
+#[derive(Clone)]
 pub struct CFRAgent {
     game: Game,
     rng: StdRng,
-    connection: Connection,
+    store: NodeStore,
 }
 
 impl CFRAgent {
@@ -23,7 +23,7 @@ impl CFRAgent {
         let mut agent = Self {
             game,
             rng: SeedableRng::seed_from_u64(seed),
-            connection: get_connection(),
+            store: NodeStore::new(Storage::Tempfile),
         };
 
         // Use CFR to train the agent
@@ -117,7 +117,7 @@ impl CFRAgent {
     }
 
     fn get_node_mut(&mut self, istate: &str) -> Option<CFRNode> {
-        let s = get_node_mut(istate, &self.connection);
+        let s = self.store.get_node_mut(istate);
         if s == None {
             return None;
         }
@@ -126,11 +126,11 @@ impl CFRAgent {
     }
 
     fn contains_node(&self, istate: &String) -> bool {
-        return contains_node(istate, &self.connection);
+        return self.store.contains_node(istate);
     }
     fn insert_node(&mut self, istate: String, node: CFRNode) -> Option<CFRNode> {
         let s = serde_json::to_string(&node).unwrap();
-        return match insert_node(istate, s, &self.connection) {
+        return match self.store.insert_node(istate, s) {
             Some(_) => Some(node),
             None => None,
         };
@@ -140,16 +140,6 @@ impl CFRAgent {
         let n = self.get_node_mut(istate).unwrap();
         let p = n.get_average_strategy();
         return p;
-    }
-}
-
-impl Clone for CFRAgent {
-    fn clone(&self) -> Self {
-        Self {
-            game: self.game.clone(),
-            rng: self.rng.clone(),
-            connection: get_connection(),
-        }
     }
 }
 
