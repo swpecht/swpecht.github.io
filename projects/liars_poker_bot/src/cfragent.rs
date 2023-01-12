@@ -73,6 +73,8 @@ impl CFRAgent {
             _ => p1,
         };
         let strategy = node.get_strategy(param, s.as_ref());
+        // Save the results
+        self.insert_node(info_set.clone(), node);
         let actions = s.legal_actions();
         let mut util = vec![0.0; self.game.max_actions];
 
@@ -107,6 +109,9 @@ impl CFRAgent {
                 _ => p0,
             } * regret;
         }
+
+        // Save the results
+        self.insert_node(info_set, node);
 
         return node_util;
     }
