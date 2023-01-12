@@ -4,6 +4,8 @@ use log::{debug, trace};
 use sqlite::{Connection, State, Value};
 use tempfile::{NamedTempFile, TempPath};
 
+use crate::cfragent::CFRNode;
+
 const INSERT_QUERY: &str = "INSERT OR REPLACE INTO nodes (istate, node) VALUES (:istate, :node);";
 const GET_QUERY: &str = "SELECT * FROM nodes WHERE istate = :istate;";
 const CACHE_SIZE: usize = 100000;
@@ -18,7 +20,7 @@ pub enum Storage {
 pub struct NodeStore {
     connection: Connection,
     storage: Storage,
-    cache: HashMap<String, String>,
+    cache: HashMap<String, CFRNode>,
     // hold this so the temp file isn't detroyed
     _temp_file: Option<TempPath>,
 }
@@ -53,7 +55,7 @@ impl NodeStore {
         }
     }
 
-    pub fn get_node_mut(&mut self, istate: &str) -> Option<String> {
+    pub fn get_node_mut(&mut self, istate: &str) -> Option<CFRNode> {
         if self.cache.contains_key(istate) {
             return self.cache.get(istate).cloned();
         }
@@ -69,15 +71,17 @@ impl NodeStore {
             return None;
         };
         let node_ser = statement.read::<String, _>("node").unwrap();
-        return Some(node_ser);
+
+        let node: Option<CFRNode> = Some(serde_json::from_str(&node_ser).unwrap());
+        return node;
     }
 
-    pub fn insert_node(&mut self, istate: String, s: String) -> Option<String> {
+    pub fn insert_node(&mut self, istate: String, n: CFRNode) -> Option<CFRNode> {
         if self.cache.len() > CACHE_SIZE {
             self.flush();
         }
 
-        self.cache.insert(istate, s)
+        self.cache.insert(istate, n)
     }
 
     pub fn contains_node(&self, istate: &String) -> bool {
@@ -105,7 +109,8 @@ impl NodeStore {
         self.connection.execute("BEGIN TRANSACTION;").unwrap();
 
         for (k, v) in self.cache.iter() {
-            self.write_node(k.clone(), v.clone());
+            let s = serde_json::to_string(v).unwrap();
+            self.write_node(k.clone(), s);
 
             if i % BATCH_SIZE == 0 {
                 self.connection
@@ -142,22 +147,35 @@ impl Clone for NodeStore {
 
 #[cfg(test)]
 mod tests {
-    use crate::database::{NodeStore, Storage};
+    use crate::{
+        cfragent::CFRNode,
+        database::{NodeStore, Storage},
+    };
 
     #[test]
     fn test_write_read_memory() {
         let mut store = NodeStore::new(Storage::Memory);
         let istate = "test".to_string();
 
-        let s = "test node 1".to_string();
-        store.insert_node(istate.clone(), s);
+        let n = CFRNode {
+            info_set: istate.clone(),
+            regret_sum: vec![0.0],
+            strategy: vec![0.0],
+            strategy_sum: vec![0.0],
+        };
+        store.insert_node(istate.clone(), n);
         let r = store.get_node_mut(&istate);
-        assert_eq!(r.unwrap(), "test node 1");
+        assert_eq!(r.unwrap().regret_sum, vec![0.0]);
 
-        let s = "test node 2".to_string();
-        store.insert_node(istate.clone(), s);
+        let n = CFRNode {
+            info_set: istate.clone(),
+            regret_sum: vec![1.0],
+            strategy: vec![0.0],
+            strategy_sum: vec![0.0],
+        };
+        store.insert_node(istate.clone(), n);
         let r = store.get_node_mut(&istate);
-        assert_eq!(r.unwrap(), "test node 2");
+        assert_eq!(r.unwrap().regret_sum, vec![1.0]);
     }
 
     #[test]
@@ -165,14 +183,24 @@ mod tests {
         let mut store = NodeStore::new(Storage::Tempfile);
         let istate = "test".to_string();
 
-        let s = "test node 1".to_string();
-        store.insert_node(istate.clone(), s);
+        let n = CFRNode {
+            info_set: istate.clone(),
+            regret_sum: vec![0.0],
+            strategy: vec![0.0],
+            strategy_sum: vec![0.0],
+        };
+        store.insert_node(istate.clone(), n);
         let r = store.get_node_mut(&istate);
-        assert_eq!(r.unwrap(), "test node 1");
+        assert_eq!(r.unwrap().regret_sum, vec![0.0]);
 
-        let s = "test node 2".to_string();
-        store.insert_node(istate.clone(), s);
+        let n = CFRNode {
+            info_set: istate.clone(),
+            regret_sum: vec![1.0],
+            strategy: vec![0.0],
+            strategy_sum: vec![0.0],
+        };
+        store.insert_node(istate.clone(), n);
         let r = store.get_node_mut(&istate);
-        assert_eq!(r.unwrap(), "test node 2");
+        assert_eq!(r.unwrap().regret_sum, vec![1.0]);
     }
 }

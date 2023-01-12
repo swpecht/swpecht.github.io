@@ -117,23 +117,14 @@ impl CFRAgent {
     }
 
     fn get_node_mut(&mut self, istate: &str) -> Option<CFRNode> {
-        let s = self.store.get_node_mut(istate);
-        if s == None {
-            return None;
-        }
-        let node: Option<CFRNode> = Some(serde_json::from_str(&s.unwrap()).unwrap());
-        return node;
+        self.store.get_node_mut(istate)
     }
 
     fn contains_node(&self, istate: &String) -> bool {
         return self.store.contains_node(istate);
     }
     fn insert_node(&mut self, istate: String, node: CFRNode) -> Option<CFRNode> {
-        let s = serde_json::to_string(&node).unwrap();
-        return match self.store.insert_node(istate, s) {
-            Some(_) => Some(node),
-            None => None,
-        };
+        self.store.insert_node(istate, node)
     }
 
     fn get_policy(&mut self, istate: &str) -> Vec<f32> {
@@ -146,10 +137,10 @@ impl CFRAgent {
 /// Adapted from: https://towardsdatascience.com/counterfactual-regret-minimization-ff4204bf4205
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CFRNode {
-    info_set: String,
-    regret_sum: Vec<f32>,
-    strategy: Vec<f32>,
-    strategy_sum: Vec<f32>,
+    pub info_set: String,
+    pub regret_sum: Vec<f32>,
+    pub strategy: Vec<f32>,
+    pub strategy_sum: Vec<f32>,
 }
 
 impl CFRNode {
