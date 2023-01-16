@@ -23,6 +23,7 @@ pub struct NodeStore {
     cache: HashMap<String, CFRNode>,
     // hold this so the temp file isn't detroyed
     _temp_file: Option<TempPath>,
+    access_count: usize,
 }
 
 /// NodeStore is a cache for istates and their associated game nodes.
@@ -52,6 +53,7 @@ impl NodeStore {
             _temp_file: temp_file,
             storage,
             cache: HashMap::new(),
+            access_count: 0,
         }
     }
 
@@ -84,19 +86,25 @@ impl NodeStore {
         self.cache.insert(istate, n)
     }
 
-    pub fn contains_node(&self, istate: &String) -> bool {
+    pub fn contains_node(&mut self, istate: &String) -> bool {
         if self.cache.contains_key(istate) {
             return true;
         }
 
-        let mut statement = self.connection.prepare(GET_QUERY).unwrap();
-        statement
-            .bind::<&[(_, Value)]>(&[(":istate", istate.to_string().into())][..])
-            .unwrap();
+        let result;
+        {
+            let mut statement = self.connection.prepare(GET_QUERY).unwrap();
+            statement
+                .bind::<&[(_, Value)]>(&[(":istate", istate.to_string().into())][..])
+                .unwrap();
 
-        let r = statement.next();
+            let r = statement.next();
+            result = r.unwrap() == State::Row;
+        }
 
-        return r.unwrap() == State::Row;
+        self.handle_db_access();
+
+        return result;
     }
 
     /// Writes all data in the cache to sqlite and clears the cache
@@ -137,11 +145,24 @@ impl NodeStore {
 
         return Some(s);
     }
+
+    fn handle_db_access(&mut self) {
+        self.access_count += 1;
+        if self.access_count % 10000 == 0 {
+            debug!("db read {} times", self.access_count);
+        }
+    }
 }
 
 impl Clone for NodeStore {
     fn clone(&self) -> Self {
         NodeStore::new(self.storage.clone())
+    }
+}
+
+impl Drop for NodeStore {
+    fn drop(&mut self) {
+        println!("dropping...")
     }
 }
 

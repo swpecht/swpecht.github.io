@@ -16,6 +16,7 @@ pub struct CFRAgent {
     game: Game,
     rng: StdRng,
     store: NodeStore,
+    call_count: usize,
 }
 
 impl CFRAgent {
@@ -24,6 +25,7 @@ impl CFRAgent {
             game,
             rng: SeedableRng::seed_from_u64(seed),
             store: NodeStore::new(Storage::Tempfile),
+            call_count: 0,
         };
 
         // Use CFR to train the agent
@@ -50,6 +52,11 @@ impl CFRAgent {
     ///
     /// Adapted from: https://towardsdatascience.com/counterfactual-regret-minimization-ff4204bf4205
     fn cfr(&mut self, s: Box<dyn GameState>, history: Vec<usize>, p0: f32, p1: f32) -> f32 {
+        self.call_count += 1;
+        if self.call_count % 10000 == 0 {
+            debug!("cfr called {} times", self.call_count);
+        }
+
         let cur_player = s.cur_player();
         if s.is_terminal() {
             return s.evaluate()[cur_player];
@@ -120,7 +127,7 @@ impl CFRAgent {
         self.store.get_node_mut(istate)
     }
 
-    fn contains_node(&self, istate: &String) -> bool {
+    fn contains_node(&mut self, istate: &String) -> bool {
         return self.store.contains_node(istate);
     }
     fn insert_node(&mut self, istate: String, node: CFRNode) -> Option<CFRNode> {
