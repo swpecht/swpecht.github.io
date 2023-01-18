@@ -64,6 +64,7 @@ impl CFRAgent {
 
         // Get or create the node
         let info_set = s.information_state_string(cur_player);
+        trace!("cfr processing: {}", info_set);
         if !self.contains_node(&info_set) {
             let node = CFRNode {
                 info_set: info_set.clone(),
