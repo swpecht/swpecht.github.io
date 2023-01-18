@@ -371,7 +371,7 @@ fn format_card(c: Action) -> String {
 
     let num_char = match c % CARD_PER_SUIT {
         0 => "9",
-        1 => "10",
+        1 => "T",
         2 => "J",
         3 => "Q",
         4 => "K",
@@ -651,28 +651,28 @@ mod tests {
         }
 
         assert_eq!(s.information_state_string(0), "9CKCJS9HKH");
-        assert_eq!(s.information_state_string(1), "10CACQS10HAH");
+        assert_eq!(s.information_state_string(1), "TCACQSTHAH");
         assert_eq!(s.information_state_string(2), "JC9SKSJH9D");
-        assert_eq!(s.information_state_string(3), "QC10SASQH10D");
+        assert_eq!(s.information_state_string(3), "QCTSASQHTD");
 
         s.apply_action(20);
         assert_eq!(s.information_state_string(0), "9CKCJS9HKHJD");
-        assert_eq!(s.information_state_string(1), "10CACQS10HAHJD");
+        assert_eq!(s.information_state_string(1), "TCACQSTHAHJD");
         assert_eq!(s.information_state_string(2), "JC9SKSJH9DJD");
-        assert_eq!(s.information_state_string(3), "QC10SASQH10DJD");
+        assert_eq!(s.information_state_string(3), "QCTSASQHTDJD");
 
         s.apply_action(EAction::Pickup as usize);
         assert_eq!(s.information_state_string(0), "9CKCJS9HKHJD0D");
 
         // Dealer discards the QC
         s.apply_action(3);
-        assert_eq!(s.information_state_string(3), "JD10SASQH10DJD0D");
+        assert_eq!(s.information_state_string(3), "JDTSASQHTDJD0D");
 
         for _ in 0..4 {
             let a = s.legal_actions()[0];
             s.apply_action(a);
         }
-        assert_eq!(s.information_state_string(0), "9CKCJS9HKHJD0D|9C10CJCJD");
+        assert_eq!(s.information_state_string(0), "9CKCJS9HKHJD0D|9CTCJCJD");
 
         while !s.is_terminal() {
             let a = s.legal_actions()[0];

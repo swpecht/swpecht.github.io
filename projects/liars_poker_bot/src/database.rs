@@ -13,7 +13,11 @@ const INSERT_QUERY: &str = "INSERT OR REPLACE INTO nodes (istate, node) VALUES (
 const LOAD_PAGE_QUERY: &str = "SELECT * FROM nodes 
                                 WHERE istate LIKE :istate || '%'
                                 AND LENGTH(istate) <= :maxlen;";
-const PAGE_TRIM: usize = 50; // 3 levels of 2 chars each
+/// Magic number dependant on the format of the istate. Should choose a number that has a meaningful break.
+/// For example:
+///     ASTDJDQDKDKH3C|ASTSKSAC|9C9HTDQC|
+/// Is 33 characters. This creates a clean break between rounds
+const PAGE_TRIM: usize = 33;
 
 #[derive(Clone)]
 pub enum Storage {
@@ -73,7 +77,7 @@ impl Debug for Page {
 pub struct NodeStore {
     connection: Connection,
     storage: Storage,
-    max_pages: usize,
+    max_nodes: usize,
     pages: VecDeque<Page>,
     // hold this so the temp file isn't detroyed
     _temp_file: Option<TempPath>,
@@ -81,7 +85,7 @@ pub struct NodeStore {
 }
 
 impl NodeStore {
-    fn new_with_pages(storage: Storage, max_pages: usize) -> Self {
+    fn new_with_pages(storage: Storage, max_nodes: usize) -> Self {
         let mut temp_file = None;
         let path = match storage {
             Storage::Memory => ":memory:".to_string(),
@@ -105,12 +109,12 @@ impl NodeStore {
             storage,
             pages: VecDeque::new(),
             access_count: 0,
-            max_pages: max_pages,
+            max_nodes: max_nodes,
         }
     }
 
     pub fn new(storage: Storage) -> Self {
-        NodeStore::new_with_pages(storage, 1000)
+        NodeStore::new_with_pages(storage, 1000000)
     }
 
     pub fn get_node_mut(&mut self, istate: &str) -> Option<CFRNode> {
@@ -191,7 +195,7 @@ impl NodeStore {
 
     /// Loads the specified cursor into memory, flushing the previous cache
     fn load_page(&mut self, istate: &str) {
-        trace!("page fault for: {}", istate);
+        trace!("page fault for:\t{}", istate);
 
         // find the page istate
         let len = istate.len();
@@ -219,11 +223,16 @@ impl NodeStore {
             }
         }
 
-        trace!("page loaded: {} items for {}", p.cache.len(), p.istate);
+        trace!("page loaded: {}\t{}", p.cache.len(), p.istate);
 
         // Implement a FIFO cache
         self.pages.push_back(p);
-        if self.pages.len() > self.max_pages {
+        let mut cur_nodes = 0;
+        for p in &self.pages {
+            cur_nodes += p.cache.len();
+        }
+
+        if cur_nodes > self.max_nodes {
             let dropped = self.pages.pop_front();
             if let Some(dropped) = dropped {
                 self.commit(dropped);
@@ -236,7 +245,7 @@ impl NodeStore {
 
 impl Clone for NodeStore {
     fn clone(&self) -> Self {
-        NodeStore::new_with_pages(self.storage.clone(), self.max_pages)
+        NodeStore::new_with_pages(self.storage.clone(), self.max_nodes)
     }
 }
 
@@ -338,5 +347,11 @@ mod tests {
         assert!(p.contains("AC9HJHQHAHKH3C|AS10SKSAC|9CQHQDJS|JDAD"));
         assert!(!p.contains("AC9HJHQHAHKH3C|AS10SKSAC|9CQHQDJS|JDADKCAH|"));
         assert!(!p.contains("XXXXXXXXXXXXXX|AS10SKSAC|9CQHQDJS|JDADKCAH|"));
+
+        let istate = "9CTCJCKCKSKH3C|ASTSKSAC|9C9HTDQC|JD9DTCJH|JSJCQHQD|AD";
+        let excess = istate.len() % 33;
+        let page_istate = &istate[0..istate.len() - excess];
+        let p = Page::new(page_istate, 33);
+        assert!(p.contains("9CTCJCKCKSKH3C|ASTSKSAC|9C9HTDQC|JD9DTCJH|JSKCQHQD|KDAD"));
     }
 }
