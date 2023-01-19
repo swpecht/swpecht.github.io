@@ -57,6 +57,16 @@ impl CFRAgent {
             debug!("cfr called {} times", self.call_count);
         }
 
+        // If there is only 1 legal move, can skip most of the steps
+        if s.legal_actions().len() == 1 {
+            let mut new_s = dyn_clone::clone_box(&*s);
+            let a = s.legal_actions()[0];
+            new_s.apply_action(a);
+            let mut new_h = history.clone();
+            new_h.push(a);
+            return -self.cfr(new_s, new_h, p0, p1);
+        }
+
         let cur_player = s.cur_player();
 
         // Get or create the node
