@@ -15,6 +15,13 @@ enum GameType {
     Euchre,
 }
 
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ArgEnum, Debug)]
+enum Mode {
+    Run,
+    Benchmark,
+    Analyze,
+}
+
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -25,10 +32,10 @@ struct Args {
     #[clap(short, long, action, default_value_t = 0)]
     verbosity: usize,
 
-    #[clap(short, long, action)]
-    benchmark: bool,
+    #[clap(arg_enum, long, value_parser, default_value_t = Mode::Run)]
+    mode: Mode,
 
-    #[clap(arg_enum, value_parser, default_value_t = GameType::KP)]
+    #[clap(arg_enum, value_parser, default_value_t = GameType::Euchre)]
     game: GameType,
 
     #[clap(short, long, action, default_value = "")]
@@ -45,71 +52,98 @@ fn main() {
         .init()
         .unwrap();
 
-    if args.benchmark {
-        let g = match args.game {
-            GameType::Euchre => {
-                Box::new(|| -> Box<dyn GameState> { Box::new(Euchre::new_state()) })
-            }
-            _ => todo!(),
-        };
-
-        let cfr = CFRAgent::new(Euchre::game(), 0, 2, Storage::Tempfile);
-        let mut agents: Vec<Box<dyn Fn() -> Box<dyn Agent>>> = Vec::new();
-        agents.push(Box::new(|| -> Box<dyn Agent> {
-            Box::new(RandomAgent::new())
-        }));
-
-        agents.push(Box::new(|| -> Box<dyn Agent> { Box::new(cfr.clone()) }));
-
-        let mut rng = thread_rng();
-        for p0 in 0..agents.len() {
-            for p1 in 0..agents.len() {
-                let mut score = [0.0; 2];
-                for _ in 0..args.num_games {
-                    let mut s = g();
-                    run_game(
-                        s.as_mut(),
-                        &mut vec![
-                            agents[p0]().as_mut(),
-                            agents[p1]().as_mut(),
-                            agents[p0]().as_mut(),
-                            agents[p1]().as_mut(),
-                        ],
-                        &mut rng,
-                    );
-                    let result = s.evaluate();
-                    score[0] += result[0];
-                    score[1] += result[1];
-                }
-                println!(
-                    "{} vs {}: {} to {}",
-                    agents[p0]().get_name(),
-                    agents[p1]().get_name(),
-                    score[0],
-                    score[1]
-                )
-            }
-        }
-    } else {
-        let storage = match args.file.as_str() {
-            "" => Storage::Tempfile,
-            _ => Storage::Namedfile(args.file),
-        };
-        let _cfr = CFRAgent::new(Euchre::game(), 0, 2, storage);
+    match args.mode {
+        Mode::Run => run(args),
+        Mode::Benchmark => run_benchmark(args),
+        Mode::Analyze => run_analyze(args),
     }
 }
 
-#[macro_export]
-macro_rules! agents {
-    ( $game:ty, $( $x:expr ),* ) => {
-        {
-            let mut temp_vec: Vec<fn(&$game) -> Box<dyn Agent<$game>>> = Vec::new();
-            $(
-                temp_vec.push(|g: &$game| -> Box<dyn Agent<$game>> {
-                    Box::new($x(g))
-                });
-            )*
-            temp_vec
+fn run_analyze(args: Args) {
+    assert_eq!(args.game, GameType::Euchre);
+
+    let mut total_pre_deal_states = 0;
+    let mut total_post_deal_states = 0;
+    let runs = 100000;
+    let mut agent = RandomAgent::new();
+
+    for _ in 0..runs {
+        let mut pre_deal_states = 1;
+        let mut post_deal_states = 1;
+        let mut s = Euchre::new_state();
+        while !s.is_terminal() {
+            if s.is_chance_node() {
+                let legal_move_count = s.legal_actions().len();
+                // possible_states *= legal_move_count;
+                let a = agent.step(&s);
+                s.apply_action(a);
+            } else {
+                let legal_move_count = s.legal_actions().len();
+                post_deal_states *= legal_move_count;
+                let a = agent.step(&s);
+                s.apply_action(a);
+            }
         }
+        total_pre_deal_states += pre_deal_states;
+        total_post_deal_states += post_deal_states;
+    }
+
+    println!("average total states: {}", total_pre_deal_states / runs);
+    println!(
+        "average post deal states: {}",
+        total_post_deal_states / runs
+    );
+}
+
+fn run(args: Args) {
+    let storage = match args.file.as_str() {
+        "" => Storage::Tempfile,
+        _ => Storage::Namedfile(args.file),
     };
+    let _cfr = CFRAgent::new(Euchre::game(), 0, 2, storage);
+}
+
+fn run_benchmark(args: Args) {
+    let g = match args.game {
+        GameType::Euchre => Box::new(|| -> Box<dyn GameState> { Box::new(Euchre::new_state()) }),
+        _ => todo!(),
+    };
+
+    let cfr = CFRAgent::new(Euchre::game(), 0, 2, Storage::Tempfile);
+    let mut agents: Vec<Box<dyn Fn() -> Box<dyn Agent>>> = Vec::new();
+    agents.push(Box::new(|| -> Box<dyn Agent> {
+        Box::new(RandomAgent::new())
+    }));
+
+    agents.push(Box::new(|| -> Box<dyn Agent> { Box::new(cfr.clone()) }));
+
+    let mut rng = thread_rng();
+    for p0 in 0..agents.len() {
+        for p1 in 0..agents.len() {
+            let mut score = [0.0; 2];
+            for _ in 0..args.num_games {
+                let mut s = g();
+                run_game(
+                    s.as_mut(),
+                    &mut vec![
+                        agents[p0]().as_mut(),
+                        agents[p1]().as_mut(),
+                        agents[p0]().as_mut(),
+                        agents[p1]().as_mut(),
+                    ],
+                    &mut rng,
+                );
+                let result = s.evaluate();
+                score[0] += result[0];
+                score[1] += result[1];
+            }
+            println!(
+                "{} vs {}: {} to {}",
+                agents[p0]().get_name(),
+                agents[p1]().get_name(),
+                score[0],
+                score[1]
+            )
+        }
+    }
 }

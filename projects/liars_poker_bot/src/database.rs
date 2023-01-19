@@ -15,9 +15,9 @@ const LOAD_PAGE_QUERY: &str = "SELECT * FROM nodes
                                 AND LENGTH(istate) <= :maxlen;";
 /// Magic number dependant on the format of the istate. Should choose a number that has a meaningful break.
 /// For example:
-///     ASTDJDQDKDKH3C|ASTSKSAC|9C9HTDQC|9C9HTDQC|
-/// Is 42 characters. This creates a clean break between rounds
-const PAGE_TRIM: usize = 42;
+///     ASTDJDQDKDKH3C|ASTSKSAC|9C9HTDQC|
+/// Is 33 characters. This creates a clean break between rounds
+const PAGE_TRIM: usize = 33;
 
 #[derive(Clone)]
 pub enum Storage {
@@ -156,6 +156,7 @@ impl NodeStore {
     /// Commits all data in the pages to sqlite
     fn commit(&mut self, page: Page) {
         debug!("commiting {} for page {}", page.cache.len(), page.istate);
+        debug!("total pages: {}", self.pages.len());
         const BATCH_SIZE: usize = 1000;
         let mut i = 0;
 
