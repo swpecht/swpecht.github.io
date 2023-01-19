@@ -20,11 +20,11 @@ pub struct CFRAgent {
 }
 
 impl CFRAgent {
-    pub fn new(game: Game, seed: u64, iterations: usize) -> Self {
+    pub fn new(game: Game, seed: u64, iterations: usize, storage: Storage) -> Self {
         let mut agent = Self {
             game,
             rng: SeedableRng::seed_from_u64(seed),
-            store: NodeStore::new(Storage::Tempfile),
+            store: NodeStore::new(storage),
             call_count: 0,
         };
 
@@ -234,6 +234,7 @@ mod tests {
     use super::CFRAgent;
     use crate::{
         agents::Agent,
+        database::Storage,
         game::GameState,
         kuhn_poker::{KPAction, KuhnPoker},
     };
@@ -242,7 +243,7 @@ mod tests {
     fn cfragent_nash_test() {
         let game = KuhnPoker::game();
         // Verify the nash equilibrium is reached. From https://en.wikipedia.org/wiki/Kuhn_poker
-        let mut qa = CFRAgent::new(game, 42, 10000);
+        let mut qa = CFRAgent::new(game, 42, 10000, Storage::Memory);
 
         // The second player has a single equilibrium strategy:
         // Always betting or calling when having a King
@@ -299,7 +300,7 @@ mod tests {
 
     #[test]
     fn cfragent_sample_test() {
-        let mut qa = CFRAgent::new(KuhnPoker::game(), 42, 10000);
+        let mut qa = CFRAgent::new(KuhnPoker::game(), 42, 10000, Storage::Memory);
         let mut s = KuhnPoker::new_state();
         s.apply_action(1);
         s.apply_action(0);

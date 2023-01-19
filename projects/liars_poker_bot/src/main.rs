@@ -4,6 +4,7 @@ use clap::clap_derive::ArgEnum;
 
 use liars_poker_bot::agents::{Agent, RandomAgent};
 use liars_poker_bot::cfragent::CFRAgent;
+use liars_poker_bot::database::Storage;
 use liars_poker_bot::euchre::Euchre;
 use liars_poker_bot::game::{run_game, GameState};
 use rand::thread_rng;
@@ -29,6 +30,9 @@ struct Args {
 
     #[clap(arg_enum, value_parser, default_value_t = GameType::KP)]
     game: GameType,
+
+    #[clap(short, long, action, default_value = "")]
+    file: String,
 }
 
 fn main() {
@@ -49,7 +53,7 @@ fn main() {
             _ => todo!(),
         };
 
-        let cfr = CFRAgent::new(Euchre::game(), 0, 2);
+        let cfr = CFRAgent::new(Euchre::game(), 0, 2, Storage::Tempfile);
         let mut agents: Vec<Box<dyn Fn() -> Box<dyn Agent>>> = Vec::new();
         agents.push(Box::new(|| -> Box<dyn Agent> {
             Box::new(RandomAgent::new())
@@ -87,7 +91,11 @@ fn main() {
             }
         }
     } else {
-        let _cfr = CFRAgent::new(Euchre::game(), 0, 2);
+        let storage = match args.file.as_str() {
+            "" => Storage::Tempfile,
+            _ => Storage::Namedfile(args.file),
+        };
+        let _cfr = CFRAgent::new(Euchre::game(), 0, 2, storage);
     }
 }
 

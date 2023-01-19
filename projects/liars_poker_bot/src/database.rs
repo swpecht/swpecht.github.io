@@ -15,15 +15,15 @@ const LOAD_PAGE_QUERY: &str = "SELECT * FROM nodes
                                 AND LENGTH(istate) <= :maxlen;";
 /// Magic number dependant on the format of the istate. Should choose a number that has a meaningful break.
 /// For example:
-///     ASTDJDQDKDKH3C|ASTSKSAC|9C9HTDQC|
-/// Is 33 characters. This creates a clean break between rounds
-const PAGE_TRIM: usize = 33;
+///     ASTDJDQDKDKH3C|ASTSKSAC|9C9HTDQC|9C9HTDQC|
+/// Is 42 characters. This creates a clean break between rounds
+const PAGE_TRIM: usize = 42;
 
 #[derive(Clone)]
 pub enum Storage {
     Memory,
     Tempfile,
-    Namedfile,
+    Namedfile(String),
 }
 
 /// Represents a collection of istates that are loaded into the cache.
@@ -87,26 +87,26 @@ pub struct NodeStore {
 impl NodeStore {
     fn new_with_pages(storage: Storage, max_nodes: usize) -> Self {
         let mut temp_file = None;
-        let path = match storage {
+        let path = match storage.clone() {
             Storage::Memory => ":memory:".to_string(),
             Storage::Tempfile => {
                 let f = NamedTempFile::new().unwrap();
                 temp_file = Some(f.into_temp_path());
                 temp_file.as_ref().unwrap().to_str().unwrap().to_string()
             }
-            Storage::Namedfile => todo!(),
+            Storage::Namedfile(x) => x,
         };
         trace!("creating connection to sqlite at {}...", path);
         let connection = sqlite::open(path).unwrap();
 
-        let query = "CREATE TABLE nodes (istate TEXT PRIMARY KEY, node TEXT);";
+        let query = "CREATE TABLE IF NOT EXISTS nodes (istate TEXT PRIMARY KEY, node TEXT);";
         connection.execute(query).unwrap();
         trace!("table created sucessfully");
 
         Self {
             connection,
             _temp_file: temp_file,
-            storage,
+            storage: storage.clone(),
             pages: VecDeque::new(),
             access_count: 0,
             max_nodes: max_nodes,
@@ -155,7 +155,7 @@ impl NodeStore {
 
     /// Commits all data in the pages to sqlite
     fn commit(&mut self, page: Page) {
-        trace!("commiting {} for page {}", page.cache.len(), page.istate);
+        debug!("commiting {} for page {}", page.cache.len(), page.istate);
         const BATCH_SIZE: usize = 1000;
         let mut i = 0;
 
