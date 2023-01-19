@@ -56,7 +56,10 @@ impl CFRAgent {
             debug!("cfr called {} times", self.call_count);
         }
 
-        // If there is only 1 legal move, can skip most of the steps
+        // If there is only 1 legal move, can skip most of the steps. No need
+        // to store the nodes with only a single action. And the probability to
+        // reach the next level is 1 * current probability since there are no
+        // other optios.
         if s.legal_actions().len() == 1 {
             let mut new_s = dyn_clone::clone_box(&*s);
             let a = s.legal_actions()[0];
