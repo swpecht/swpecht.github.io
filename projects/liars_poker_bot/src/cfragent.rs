@@ -37,8 +37,7 @@ impl CFRAgent {
                 let a = *actions.choose(&mut agent.rng).unwrap();
                 s.apply_action(a);
             }
-            let history = Vec::new();
-            agent.cfr(s, history, 1.0, 1.0);
+            agent.cfr(s, 1.0, 1.0);
             trace!("Finished iteration {} for CFR", i);
         }
 
@@ -51,7 +50,7 @@ impl CFRAgent {
     /// Recursive CFR implementation
     ///
     /// Adapted from: https://towardsdatascience.com/counterfactual-regret-minimization-ff4204bf4205
-    fn cfr(&mut self, s: Box<dyn GameState>, history: Vec<usize>, p0: f32, p1: f32) -> f32 {
+    fn cfr(&mut self, s: Box<dyn GameState>, p0: f32, p1: f32) -> f32 {
         self.call_count += 1;
         if self.call_count % 10000 == 0 {
             debug!("cfr called {} times", self.call_count);
@@ -62,9 +61,7 @@ impl CFRAgent {
             let mut new_s = dyn_clone::clone_box(&*s);
             let a = s.legal_actions()[0];
             new_s.apply_action(a);
-            let mut new_h = history.clone();
-            new_h.push(a);
-            return -self.cfr(new_s, new_h, p0, p1);
+            return -self.cfr(new_s, p0, p1);
         }
 
         let cur_player = s.cur_player();
@@ -102,8 +99,6 @@ impl CFRAgent {
         for &a in &actions {
             let mut new_s = dyn_clone::clone_box(&*s);
             new_s.apply_action(a);
-            let mut next_history = history.clone();
-            next_history.push(a);
 
             // the sign of the util received is the opposite of the one computed one layer below
             // because what is positive for one player, is neagtive for the other
@@ -111,8 +106,8 @@ impl CFRAgent {
             // so we pass reach probability = p0 * strategy[a], likewise if this is player == 1 then reach probability = p1 * strategy[a]
             // https://colab.research.google.com/drive/1SYNxGdR7UmoxbxY-NSpVsKywLX7YwQMN?usp=sharing#scrollTo=NamPieNiykz1
             util[a] = match cur_player {
-                0 => -self.cfr(new_s, next_history, p0 * strategy[a], p1),
-                _ => -self.cfr(new_s, next_history, p0, p1 * strategy[a]),
+                0 => -self.cfr(new_s, p0 * strategy[a], p1),
+                _ => -self.cfr(new_s, p0, p1 * strategy[a]),
             };
             node_util += strategy[a] * util[a];
         }
