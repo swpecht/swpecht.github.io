@@ -1,3 +1,5 @@
+pub mod page;
+
 use std::{
     collections::{HashMap, VecDeque},
     fmt::Debug,
@@ -7,68 +9,19 @@ use log::{debug, trace};
 use sqlite::{Connection, State, Value};
 use tempfile::{NamedTempFile, TempPath};
 
-use crate::cfragent::CFRNode;
+use crate::database::page::Page;
+use crate::{cfragent::CFRNode, database::page::PAGE_TRIM};
 
 const INSERT_QUERY: &str = "INSERT OR REPLACE INTO nodes (istate, node) VALUES (:istate, :node);";
 const LOAD_PAGE_QUERY: &str = "SELECT * FROM nodes 
                                 WHERE istate LIKE :istate || '%'
                                 AND LENGTH(istate) <= :maxlen;";
-/// Magic number dependant on the format of the istate. Should choose a number that has a meaningful break.
-/// For example:
-///     ASTDJDQDKDKH3C|ASTSKSAC|9C9HTDQC|
-/// Is 33 characters. This creates a clean break between rounds
-const PAGE_TRIM: usize = 33;
 
 #[derive(Clone)]
 pub enum Storage {
     Memory,
     Tempfile,
     Namedfile(String),
-}
-
-/// Represents a collection of istates that are loaded into the cache.
-///
-/// It includes all children and parents of the `istate` it stores. The
-/// `trim` variable determins how large the page is. It determins how many
-/// istate characters must math
-struct Page {
-    istate: String,
-    depth: usize,
-    cache: HashMap<String, CFRNode>,
-}
-
-impl Page {
-    fn new(istate: &str, depth: usize) -> Self {
-        Self {
-            istate: istate.to_string(),
-            depth: depth,
-            cache: HashMap::new(),
-        }
-    }
-
-    fn contains(&self, istate: &str) -> bool {
-        // Parent of the current page
-        if istate.len() < self.istate.len() {
-            return false;
-        }
-
-        // Different parent
-        let target_parent = &istate[0..self.istate.len()];
-        if target_parent != self.istate {
-            return false;
-        }
-
-        return istate.len() <= self.istate.len() + self.depth;
-    }
-}
-
-impl Debug for Page {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Page")
-            .field("istate", &self.istate)
-            .field("depth", &self.depth)
-            .finish()
-    }
 }
 
 struct NodeStoreStats {
@@ -360,21 +313,5 @@ mod tests {
         store.insert_node(istate.clone(), n);
         let r = store.get_node_mut(&istate);
         assert_eq!(r.unwrap().regret_sum, vec![1.0]);
-    }
-
-    #[test]
-    fn test_page_contains() {
-        let p = Page::new("AC9HJHQHAHKH3C|AS10SKSAC|9CQHQDJS|JD", 6);
-
-        assert!(p.contains("AC9HJHQHAHKH3C|AS10SKSAC|9CQHQDJS|JD"));
-        assert!(p.contains("AC9HJHQHAHKH3C|AS10SKSAC|9CQHQDJS|JDAD"));
-        assert!(!p.contains("AC9HJHQHAHKH3C|AS10SKSAC|9CQHQDJS|JDADKCAH|"));
-        assert!(!p.contains("XXXXXXXXXXXXXX|AS10SKSAC|9CQHQDJS|JDADKCAH|"));
-
-        let istate = "9CTCJCKCKSKH3C|ASTSKSAC|9C9HTDQC|JD9DTCJH|JSJCQHQD|AD";
-        let excess = istate.len() % 33;
-        let page_istate = &istate[0..istate.len() - excess];
-        let p = Page::new(page_istate, 33);
-        assert!(p.contains("9CTCJCKCKSKH3C|ASTSKSAC|9C9HTDQC|JD9DTCJH|JSKCQHQD|KDAD"));
     }
 }
