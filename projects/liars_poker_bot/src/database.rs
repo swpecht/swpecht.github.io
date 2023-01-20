@@ -71,6 +71,18 @@ impl Debug for Page {
     }
 }
 
+struct NodeStoreStats {
+    page_loads: HashMap<String, usize>,
+}
+
+impl NodeStoreStats {
+    fn new() -> Self {
+        Self {
+            page_loads: HashMap::new(),
+        }
+    }
+}
+
 /// NodeStore is a cache for istates and their associated game nodes.
 ///
 /// It stores an LRU of Pages. When a page is evicted, it's written to the database.
@@ -82,6 +94,8 @@ pub struct NodeStore {
     // hold this so the temp file isn't detroyed
     _temp_file: Option<TempPath>,
     access_count: usize,
+    // Keeps count of how often a given page is loaded into memory
+    stats: NodeStoreStats,
 }
 
 impl NodeStore {
@@ -110,6 +124,7 @@ impl NodeStore {
             pages: VecDeque::new(),
             access_count: 0,
             max_nodes: max_nodes,
+            stats: NodeStoreStats::new(),
         }
     }
 
@@ -224,7 +239,14 @@ impl NodeStore {
             }
         }
 
+        let count = *self.stats.page_loads.get(page_istate).unwrap_or(&0);
+        self.stats
+            .page_loads
+            .insert(page_istate.to_string(), count + 1);
+
         trace!("page loaded: {}\t{}", p.cache.len(), p.istate);
+        trace!("page {} loaded {} times", p.istate, count + 1);
+        trace!("{} pages loaded", self.pages.len());
 
         // Implement a FIFO cache
         self.pages.push_back(p);
