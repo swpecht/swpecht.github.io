@@ -62,37 +62,32 @@ fn main() {
 fn run_analyze(args: Args) {
     assert_eq!(args.game, GameType::Euchre);
 
-    let mut total_pre_deal_states = 0;
-    let mut total_post_deal_states = 0;
-    let runs = 100000;
+    let mut total_end_states = 0;
+    let mut total_states = 0;
+    let runs = 10000;
     let mut agent = RandomAgent::new();
 
     for _ in 0..runs {
-        let mut pre_deal_states = 1;
-        let mut post_deal_states = 1;
+        let round = 0;
+        let mut end_states = 1;
         let mut s = Euchre::new_state();
         while !s.is_terminal() {
             if s.is_chance_node() {
-                let legal_move_count = s.legal_actions().len();
-                // possible_states *= legal_move_count;
                 let a = agent.step(&s);
                 s.apply_action(a);
             } else {
                 let legal_move_count = s.legal_actions().len();
-                post_deal_states *= legal_move_count;
+                end_states *= legal_move_count;
+                total_states = total_states + end_states;
                 let a = agent.step(&s);
                 s.apply_action(a);
             }
         }
-        total_pre_deal_states += pre_deal_states;
-        total_post_deal_states += post_deal_states;
+        total_end_states += end_states;
     }
 
-    println!("average total states: {}", total_pre_deal_states / runs);
-    println!(
-        "average post deal states: {}",
-        total_post_deal_states / runs
-    );
+    println!("average post deal end states: {}", total_end_states / runs);
+    println!("average post deal states: {}", total_states / runs);
 }
 
 fn run(args: Args) {

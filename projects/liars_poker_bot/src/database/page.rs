@@ -7,13 +7,31 @@ use crate::cfragent::CFRNode;
 /// For example:
 ///     ASTDJDQDKDKH3C|ASTSKSAC|9C9HTDQC|
 /// Is 33 characters. This creates a clean break between rounds
-pub(super) const PAGE_TRIM: usize = 33;
+
+/// Determines where the page-breaks are for a euchre istate
+/// For example:
+///     9CTCJCKCKSKH3C|ASTSKSAC|9C9HTDQC|JD9DTCJH|JSKCQHQD|KDADXXXX|
+///     |    A    | B |   1    |     2  |    3   |   4    |    5   |
+/// Where:
+///     A) 11 characters for the hand
+///     b) 5 characters for the flip and the call
+///     1-5) 9 characters for cards that have been played
+///
+/// A has 304 possible direct children:
+///     19 cards * 4 suits * 4 possible calls = 304
+///
+/// B has X possible direct children:
+///     18 Choose 5 = 8568
+///
+/// For B-5, there are ~27M ways the game can be played out. Implies that 1-5 have 90k end states.
+///     27M / 304 = 90k
+pub(super) const EUCHRE_PAGE_TRIM: usize = 15;
+// Need to eventually implement another cut, can't have all nodes loaded to ""
 
 /// Represents a collection of istates that are loaded into the cache.
 ///
 /// It includes all children and parents of the `istate` it stores. The
-/// `trim` variable determins how large the page is. It determins how many
-/// istate characters must math
+/// `trim` variable determins where the cut happens to split istates into pages.
 pub(super) struct Page {
     pub istate: String,
     depth: usize,
@@ -22,8 +40,13 @@ pub(super) struct Page {
 
 impl Page {
     pub fn new(istate: &str, depth: usize) -> Self {
+        let page_istate = match istate.len() > depth {
+            true => istate[0..depth].to_string(),
+            false => "".to_string(),
+        };
+
         Self {
-            istate: istate.to_string(),
+            istate: page_istate,
             depth: depth,
             cache: HashMap::new(),
         }
@@ -41,7 +64,10 @@ impl Page {
             return false;
         }
 
-        return istate.len() <= self.istate.len() + self.depth;
+        if self.istate == "" {
+            return istate.len() < self.depth;
+        }
+        return true;
     }
 }
 
@@ -60,17 +86,17 @@ mod tests {
 
     #[test]
     fn test_page_contains() {
-        let p = Page::new("AC9HJHQHAHKH3C|AS10SKSAC|9CQHQDJS|JD", 6);
+        let p = Page::new("AC9HJHQHAHKH3C|AS10SKSAC|9CQHQDJS|JD", 15);
+        assert_eq!(p.istate, "AC9HJHQHAHKH3C|");
 
         assert!(p.contains("AC9HJHQHAHKH3C|AS10SKSAC|9CQHQDJS|JD"));
         assert!(p.contains("AC9HJHQHAHKH3C|AS10SKSAC|9CQHQDJS|JDAD"));
-        assert!(!p.contains("AC9HJHQHAHKH3C|AS10SKSAC|9CQHQDJS|JDADKCAH|"));
+        assert!(p.contains("AC9HJHQHAHKH3C|AS10SKSAC|9CQHQDJS|JDADKCAH|XXXXXXXXXXXXXXXXXXXXXXX"));
         assert!(!p.contains("XXXXXXXXXXXXXX|AS10SKSAC|9CQHQDJS|JDADKCAH|"));
+        assert!(!p.contains("AC9HJHQHAHKH"));
 
-        let istate = "9CTCJCKCKSKH3C|ASTSKSAC|9C9HTDQC|JD9DTCJH|JSJCQHQD|AD";
-        let excess = istate.len() % 33;
-        let page_istate = &istate[0..istate.len() - excess];
-        let p = Page::new(page_istate, 33);
-        assert!(p.contains("9CTCJCKCKSKH3C|ASTSKSAC|9C9HTDQC|JD9DTCJH|JSKCQHQD|KDAD"));
+        let p = Page::new("AC9HJHQHA", 15);
+        assert_eq!(p.istate, "");
+        assert!(!p.contains("AC9HJHQHAHKH3C|AS10SKSAC|9CQHQDJS|JD"))
     }
 }

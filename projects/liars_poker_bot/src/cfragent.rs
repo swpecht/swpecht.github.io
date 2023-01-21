@@ -52,7 +52,7 @@ impl CFRAgent {
     /// Adapted from: https://towardsdatascience.com/counterfactual-regret-minimization-ff4204bf4205
     fn cfr(&mut self, s: Box<dyn GameState>, p0: f32, p1: f32) -> f32 {
         self.call_count += 1;
-        if self.call_count % 10000 == 0 {
+        if self.call_count % 1000000 == 0 {
             debug!("cfr called {} times", self.call_count);
         }
 

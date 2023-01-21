@@ -1,16 +1,13 @@
 pub mod page;
 
-use std::{
-    collections::{HashMap, VecDeque},
-    fmt::Debug,
-};
+use std::collections::{HashMap, VecDeque};
 
 use log::{debug, trace};
 use sqlite::{Connection, State, Value};
 use tempfile::{NamedTempFile, TempPath};
 
 use crate::database::page::Page;
-use crate::{cfragent::CFRNode, database::page::PAGE_TRIM};
+use crate::{cfragent::CFRNode, database::page::EUCHRE_PAGE_TRIM};
 
 const INSERT_QUERY: &str = "INSERT OR REPLACE INTO nodes (istate, node) VALUES (:istate, :node);";
 const LOAD_PAGE_QUERY: &str = "SELECT * FROM nodes 
@@ -63,7 +60,7 @@ impl NodeStore {
             }
             Storage::Namedfile(x) => x,
         };
-        trace!("creating connection to sqlite at {}...", path);
+        debug!("creating connection to sqlite at {}", path);
         let connection = sqlite::open(path).unwrap();
 
         let query = "CREATE TABLE IF NOT EXISTS nodes (istate TEXT PRIMARY KEY, node TEXT);";
@@ -167,18 +164,18 @@ impl NodeStore {
         trace!("page fault for:\t{}", istate);
 
         // find the page istate
-        let len = istate.len();
-        let excess = len % PAGE_TRIM;
-        let page_istate = &istate[0..len - excess];
-        let mut p = Page::new(page_istate, PAGE_TRIM);
-        let max_len = page_istate.len() + PAGE_TRIM;
+        let mut p = Page::new(istate, EUCHRE_PAGE_TRIM);
+        let max_len = match p.istate.as_str() {
+            "" => EUCHRE_PAGE_TRIM,
+            _ => 99999999, // a very long gamestate
+        };
 
         {
             let mut statement = self.connection.prepare(LOAD_PAGE_QUERY).unwrap();
             statement
                 .bind::<&[(_, Value)]>(
                     &[
-                        (":istate", page_istate.to_string().into()),
+                        (":istate", p.istate.clone().into()),
                         (":maxlen", (max_len as i64).into()),
                     ][..],
                 )
@@ -192,13 +189,11 @@ impl NodeStore {
             }
         }
 
-        let count = *self.stats.page_loads.get(page_istate).unwrap_or(&0);
-        self.stats
-            .page_loads
-            .insert(page_istate.to_string(), count + 1);
+        let count = *self.stats.page_loads.get(&p.istate).unwrap_or(&0);
+        self.stats.page_loads.insert(p.istate.clone(), count + 1);
 
         trace!("page loaded: {}\t{}", p.cache.len(), p.istate);
-        trace!("page {} loaded {} times", p.istate, count + 1);
+        debug!("page '{}' loaded {} times", p.istate, count + 1);
         trace!("{} pages loaded", self.pages.len());
 
         // Implement a FIFO cache
@@ -231,8 +226,6 @@ mod tests {
         cfragent::CFRNode,
         database::{NodeStore, Storage},
     };
-
-    use super::Page;
 
     #[test]
     fn test_write_read_memory() {
