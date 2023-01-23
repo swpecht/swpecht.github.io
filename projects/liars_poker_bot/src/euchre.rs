@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, rc::Rc};
 
 use itertools::Itertools;
 
@@ -27,7 +27,7 @@ impl Euchre {
             play_history: Vec::new(),
             deck: deck,
             trump_caller: 0,
-            starting_hands: Vec::new(),
+            starting_hands: Rc::new(Vec::new()),
         }
     }
 
@@ -40,12 +40,14 @@ impl Euchre {
     }
 }
 
-#[derive(Debug, Clone)]
+/// We use Rc for the starting hand information since these values rarely change
+/// and are consistent across all children of the given state
+#[derive(Debug)]
 pub struct EuchreGameState {
     num_players: usize,
     /// Holds the cards for each player in the game
     hands: Vec<Vec<Action>>,
-    starting_hands: Vec<Vec<Action>>,
+    starting_hands: Rc<Vec<Vec<Action>>>,
     /// Undealt cards
     deck: Vec<Action>,
     trump: Suit,
@@ -56,6 +58,45 @@ pub struct EuchreGameState {
     phase: EPhase,
     cur_player: usize,
     play_history: Vec<Action>,
+}
+
+impl Clone for EuchreGameState {
+    fn clone(&self) -> Self {
+        if self.phase == EPhase::Play {
+            // if we're in the playing phase, can avoid copying the starting hand memory and
+            // instead just keep a single reference. Doing this led to a ~15% improvement on the euchre
+            // game tree traversal benchmark
+            Self {
+                num_players: self.num_players.clone(),
+                hands: self.hands.clone(),
+                starting_hands: Rc::clone(&self.starting_hands),
+                deck: self.deck.clone(),
+                trump: self.trump.clone(),
+                trump_caller: self.trump_caller.clone(),
+                face_up: self.face_up.clone(),
+                is_chance_node: self.is_chance_node.clone(),
+                is_terminal: self.is_terminal.clone(),
+                phase: self.phase.clone(),
+                cur_player: self.cur_player.clone(),
+                play_history: self.play_history.clone(),
+            }
+        } else {
+            Self {
+                num_players: self.num_players.clone(),
+                hands: self.hands.clone(),
+                starting_hands: self.starting_hands.clone(),
+                deck: self.deck.clone(),
+                trump: self.trump.clone(),
+                trump_caller: self.trump_caller.clone(),
+                face_up: self.face_up.clone(),
+                is_chance_node: self.is_chance_node.clone(),
+                is_terminal: self.is_terminal.clone(),
+                phase: self.phase.clone(),
+                cur_player: self.cur_player.clone(),
+                play_history: self.play_history.clone(),
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -98,7 +139,7 @@ impl EuchreGameState {
         self.hands[self.cur_player].push(a);
         self.hands[self.cur_player].sort();
 
-        self.starting_hands = self.hands.clone();
+        self.starting_hands = Rc::new(self.hands.clone());
 
         self.cur_player = (self.cur_player + 1) % self.num_players;
 
@@ -161,7 +202,7 @@ impl EuchreGameState {
             panic!("attempted to discard a card not in hand")
         }
 
-        self.starting_hands = self.hands.clone();
+        self.starting_hands = Rc::new(self.hands.clone());
         self.cur_player = 0;
         self.phase = EPhase::Play;
     }
