@@ -1,3 +1,4 @@
+use core::num;
 use std::fmt::Display;
 
 use itertools::Itertools;
@@ -358,8 +359,15 @@ impl Display for EuchreGameState {
     }
 }
 
+/// Populates a string buffer with formated card. Must be 2 characters long
 fn format_card(c: Action) -> String {
-    let mut r = String::with_capacity(3);
+    let mut out = "XX".to_string();
+    put_card(c, &mut out);
+    return out.to_string();
+}
+
+fn put_card(c: Action, out: &mut str) {
+    assert_eq!(out.len(), 2);
 
     let suit_char = match c / CARD_PER_SUIT {
         x if x == Suit::Clubs as usize => 'C',
@@ -370,18 +378,20 @@ fn format_card(c: Action) -> String {
     };
 
     let num_char = match c % CARD_PER_SUIT {
-        0 => "9",
-        1 => "T",
-        2 => "J",
-        3 => "Q",
-        4 => "K",
-        5 => "A",
+        0 => '9',
+        1 => 'T',
+        2 => 'J',
+        3 => 'Q',
+        4 => 'K',
+        5 => 'A',
         _ => panic!("invalid card"),
     };
 
-    r.push_str(num_char);
-    r.push(suit_char);
-    return r;
+    let s_bytes: &mut [u8] = unsafe { out.as_bytes_mut() };
+    assert_eq!(s_bytes.len(), 2);
+    // we've made sure this is safe.
+    s_bytes[0] = num_char as u8;
+    s_bytes[1] = suit_char as u8;
 }
 
 impl GameState for EuchreGameState {
@@ -440,7 +450,7 @@ impl GameState for EuchreGameState {
     /// * 7: trump
     /// * 8+: play history
     fn information_state(&self, player: Player) -> Vec<game::IState> {
-        let mut istate = Vec::new();
+        let mut istate = Vec::with_capacity(27);
         for &c in &self.starting_hands[player] {
             istate.push(c as IState);
         }
@@ -466,18 +476,26 @@ impl GameState for EuchreGameState {
 
     fn information_state_string(&self, player: Player) -> String {
         let istate = self.information_state(player);
-        let mut r = String::new();
+        // Full game state:
+        // 9CTCJCKCKSKH3C|ASTSKSAC|9C9HTDQC|JD9DTCJH|JSKCQHQD|KDADXXXX|
+        let mut r = String::with_capacity(60);
 
         for i in 0..5 {
-            let card = format_card(istate[i] as Action);
-            r.push_str(&card)
+            r.push_str("XX");
+            let len = r.len();
+            let s = r[len - 2..].as_mut();
+            // let card = format_card(istate[i] as Action);
+            // r.push_str(&card)
+            put_card(istate[i] as Action, s);
         }
 
         if istate.len() <= 5 {
             return r;
         }
-        let face_up = format_card(istate[5] as Action);
-        r.push_str(&face_up);
+        r.push_str("XX");
+        let len = r.len();
+        let s = r[len - 2..].as_mut();
+        put_card(istate[5] as Action, s);
 
         if istate.len() <= 6 {
             return r;
@@ -498,7 +516,10 @@ impl GameState for EuchreGameState {
             if i % self.num_players == 0 {
                 r.push('|');
             }
-            r.push_str(&format_card(self.play_history[i]));
+            r.push_str("XX");
+            let len = r.len();
+            let s = r[len - 2..].as_mut();
+            put_card(self.play_history[i], s);
         }
 
         return r;

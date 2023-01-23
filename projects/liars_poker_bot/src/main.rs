@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use clap::Parser;
 
 use clap::clap_derive::ArgEnum;
@@ -64,11 +66,13 @@ fn run_analyze(args: Args) {
 
     let mut total_end_states = 0;
     let mut total_states = 0;
+    let mut total_rounds = 0;
+    let mut children = [0.0; 28];
     let runs = 10000;
     let mut agent = RandomAgent::new();
 
     for _ in 0..runs {
-        let round = 0;
+        let mut round = 0;
         let mut end_states = 1;
         let mut s = Euchre::new_state();
         while !s.is_terminal() {
@@ -79,15 +83,29 @@ fn run_analyze(args: Args) {
                 let legal_move_count = s.legal_actions().len();
                 end_states *= legal_move_count;
                 total_states = total_states + end_states;
+                children[round] += legal_move_count as f64;
+                round += 1;
                 let a = agent.step(&s);
                 s.apply_action(a);
             }
         }
         total_end_states += end_states;
+        total_rounds += round;
     }
 
     println!("average post deal end states: {}", total_end_states / runs);
     println!("average post deal states: {}", total_states / runs);
+    println!("rounds: {}", total_rounds / runs);
+    let mut sum = 1.0;
+    for i in 0..children.len() {
+        println!(
+            "round {} has {} children, {} peers",
+            i,
+            children[i] / runs as f64,
+            sum
+        );
+        sum *= (children[i] / runs as f64).max(1.0);
+    }
 }
 
 fn run(args: Args) {
