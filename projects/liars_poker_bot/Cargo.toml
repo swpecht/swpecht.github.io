@@ -29,3 +29,6 @@ criterion = "0.4"
 name = "kuhn_poker_benchmark"
 harness = false
 
+[[bench]]
+name = "euchre_benchmark"
+harness = false
