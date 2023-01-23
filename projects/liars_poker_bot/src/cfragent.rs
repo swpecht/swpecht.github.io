@@ -60,7 +60,8 @@ impl CFRAgent {
         // to store the nodes with only a single action. And the probability to
         // reach the next level is 1 * current probability since there are no
         // other optios.
-        if s.legal_actions().len() == 1 {
+        let actions = s.legal_actions();
+        if actions.len() == 1 {
             let mut new_s = dyn_clone::clone_box(&*s);
             let a = s.legal_actions()[0];
             new_s.apply_action(a);
@@ -95,7 +96,7 @@ impl CFRAgent {
         let strategy = node.get_strategy(param, s.as_ref());
         // Save the results
         self.insert_node(info_set.clone(), node);
-        let actions = s.legal_actions();
+
         let mut util = vec![0.0; self.game.max_actions];
 
         let mut node_util = 0.0;

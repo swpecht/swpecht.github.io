@@ -24,7 +24,7 @@ impl Euchre {
             cur_player: 0,
             trump: Suit::Clubs, // Default to one for now
             face_up: 0,         // Default for now
-            play_history: Vec::new(),
+            play_history: Vec::with_capacity(20),
             deck: deck,
             trump_caller: 0,
             starting_hands: Rc::new(Vec::new()),
