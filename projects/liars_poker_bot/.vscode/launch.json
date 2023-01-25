@@ -21,7 +21,7 @@
             },
             "args": [
                 "-v",
-                "3",
+                "4",
             ],
             "cwd": "${workspaceFolder}",
             "env": {

@@ -27,6 +27,7 @@ impl Euchre {
             play_history: Vec::with_capacity(20),
             deck: deck,
             trump_caller: 0,
+            trump_call_history: [EAction::Pass as usize; 8],
             starting_hands: Rc::new(Vec::new()),
         }
     }
@@ -58,6 +59,7 @@ pub struct EuchreGameState {
     phase: EPhase,
     cur_player: usize,
     play_history: Vec<Action>,
+    trump_call_history: [Action; 8],
 }
 
 impl Clone for EuchreGameState {
@@ -79,12 +81,13 @@ impl Clone for EuchreGameState {
                 phase: self.phase.clone(),
                 cur_player: self.cur_player.clone(),
                 play_history: self.play_history.clone(),
+                trump_call_history: self.trump_call_history.clone(),
             }
         } else {
             Self {
                 num_players: self.num_players.clone(),
                 hands: self.hands.clone(),
-                starting_hands: self.starting_hands.clone(),
+                starting_hands: Rc::new((*self.starting_hands).clone()),
                 deck: self.deck.clone(),
                 trump: self.trump.clone(),
                 trump_caller: self.trump_caller.clone(),
@@ -94,6 +97,7 @@ impl Clone for EuchreGameState {
                 phase: self.phase.clone(),
                 cur_player: self.cur_player.clone(),
                 play_history: self.play_history.clone(),
+                trump_call_history: self.trump_call_history.clone(),
             }
         }
     }
@@ -166,6 +170,7 @@ impl EuchreGameState {
             }
             x if x == EAction::Pickup as usize => {
                 self.trump_caller = self.cur_player;
+                self.trump_call_history[self.cur_player] = a;
                 self.trump = self.get_suit(self.face_up);
                 self.cur_player = 3; // dealers turn
                 self.phase = EPhase::Discard;
@@ -188,6 +193,7 @@ impl EuchreGameState {
             self.cur_player += 1;
         } else {
             self.trump_caller = self.cur_player;
+            self.trump_call_history[4 + self.cur_player] = a; // in the second round of calling trump
             self.cur_player = 0;
             self.phase = EPhase::Play;
         }
@@ -486,9 +492,10 @@ impl GameState for EuchreGameState {
     /// Returns an information state with the following format:
     /// * 0-4: hand
     /// * 5: face up card
-    /// * 6: Calling player
-    /// * 7: trump
-    /// * 8+: play history
+    /// * 6-13: calling and passing for trump call
+    /// * 14: Calling player
+    /// * 15: trump
+    /// * 16+: play history
     fn information_state(&self, player: Player) -> Vec<game::IState> {
         let mut istate = Vec::with_capacity(27);
         for &c in &self.starting_hands[player] {
@@ -499,8 +506,19 @@ impl GameState for EuchreGameState {
             return istate;
         }
 
-        // Add the phase up card
+        // Add the face up card
         istate.push(self.face_up as IState);
+
+        if self.phase != EPhase::DealHands && self.phase != EPhase::DealFaceUp {
+            istate.extend(self.trump_call_history[0..4].iter().map(|&x| x as IState));
+        }
+
+        if self.phase != EPhase::DealHands
+            && self.phase != EPhase::DealFaceUp
+            && self.phase != EPhase::Pickup
+        {
+            istate.extend(self.trump_call_history[4..8].iter().map(|&x| x as IState));
+        }
 
         if self.phase == EPhase::Discard || self.phase == EPhase::Play {
             istate.push(self.trump_caller as IState);
@@ -517,8 +535,8 @@ impl GameState for EuchreGameState {
     fn information_state_string(&self, player: Player) -> String {
         let istate = self.information_state(player);
         // Full game state:
-        // 9CTCJCKCKSKH3C|ASTSKSAC|9C9HTDQC|JD9DTCJH|JSKCQHQD|KDADXXXX|
-        let mut r = String::with_capacity(60);
+        // 9CTCJCKCKS|KH|PPPPPPCP|3H|ASTSKSAC|9C9HTDQC|JD9DTCJH|JSKCQHQD|KDADXXXX|
+        let mut r = String::with_capacity(71);
 
         for i in 0..5 {
             r.push_str("XX");
@@ -532,17 +550,59 @@ impl GameState for EuchreGameState {
         if istate.len() <= 5 {
             return r;
         }
+
+        // Face up card
+        r.push('|');
         r.push_str("XX");
         let len = r.len();
         let s = r[len - 2..].as_mut();
         put_card(istate[5] as Action, s);
+        r.push('|');
 
         if istate.len() <= 6 {
             return r;
         }
-        r.push_str(&format!("{}", istate[6] as usize));
 
-        let trump_char = match istate[7] as usize {
+        // Pickup round
+        for i in 0..4 {
+            let c = match self.trump_call_history[i] {
+                x if x == EAction::Clubs as usize => 'C',
+                x if x == EAction::Spades as usize => 'S',
+                x if x == EAction::Hearts as usize => 'H',
+                x if x == EAction::Diamonds as usize => 'D',
+                x if x == EAction::Pass as usize => 'P',
+                x if x == EAction::Pickup as usize => 'T',
+                _ => panic!("invalid action"),
+            };
+            r.push(c);
+        }
+
+        if istate.len() <= 10 {
+            return r;
+        }
+        for i in 4..8 {
+            let c = match self.trump_call_history[i] {
+                x if x == EAction::Clubs as usize => 'C',
+                x if x == EAction::Spades as usize => 'S',
+                x if x == EAction::Hearts as usize => 'H',
+                x if x == EAction::Diamonds as usize => 'D',
+                x if x == EAction::Pass as usize => 'P',
+                x if x == EAction::Pickup as usize => 'T',
+                _ => panic!("invalid action"),
+            };
+            r.push(c);
+        }
+
+        r.push('|');
+
+        if istate.len() <= 14 {
+            return r;
+        }
+
+        // Calling player
+        r.push_str(&format!("{}", istate[14] as usize));
+
+        let trump_char = match istate[15] as usize {
             x if x == Suit::Clubs as usize => 'C',
             x if x == Suit::Spades as usize => 'S',
             x if x == Suit::Diamonds as usize => 'D',
@@ -584,9 +644,12 @@ impl GameState for EuchreGameState {
 
 #[cfg(test)]
 mod tests {
-    use std::vec;
+    use std::{collections::HashSet, vec};
 
-    use crate::euchre::{EAction, EPhase, Euchre, Suit};
+    use crate::{
+        agents::{Agent, RandomAgent},
+        euchre::{EAction, EPhase, Euchre, Suit},
+    };
 
     use super::GameState;
 
@@ -717,23 +780,26 @@ mod tests {
         assert_eq!(s.information_state_string(3), "QCTSASQHTD");
 
         s.apply_action(20);
-        assert_eq!(s.information_state_string(0), "9CKCJS9HKHJD");
-        assert_eq!(s.information_state_string(1), "TCACQSTHAHJD");
-        assert_eq!(s.information_state_string(2), "JC9SKSJH9DJD");
-        assert_eq!(s.information_state_string(3), "QCTSASQHTDJD");
+        assert_eq!(s.information_state_string(0), "9CKCJS9HKH|JD|PPPP");
+        assert_eq!(s.information_state_string(1), "TCACQSTHAH|JD|PPPP");
+        assert_eq!(s.information_state_string(2), "JC9SKSJH9D|JD|PPPP");
+        assert_eq!(s.information_state_string(3), "QCTSASQHTD|JD|PPPP");
 
         s.apply_action(EAction::Pickup as usize);
-        assert_eq!(s.information_state_string(0), "9CKCJS9HKHJD0D");
+        assert_eq!(s.information_state_string(0), "9CKCJS9HKH|JD|TPPPPPPP|0D");
 
         // Dealer discards the QC
         s.apply_action(3);
-        assert_eq!(s.information_state_string(3), "JDTSASQHTDJD0D");
+        assert_eq!(s.information_state_string(3), "JDTSASQHTD|JD|TPPPPPPP|0D");
 
         for _ in 0..4 {
             let a = s.legal_actions()[0];
             s.apply_action(a);
         }
-        assert_eq!(s.information_state_string(0), "9CKCJS9HKHJD0D|9CTCJCJD");
+        assert_eq!(
+            s.information_state_string(0),
+            "9CKCJS9HKH|JD|TPPPPPPP|0D|9CTCJCJD"
+        );
 
         while !s.is_terminal() {
             let a = s.legal_actions()[0];
@@ -741,5 +807,28 @@ mod tests {
         }
 
         assert_eq!(s.evaluate(), vec![0.0, 2.0, 0.0, 2.0])
+    }
+
+    #[test]
+    fn euchre_test_unique_istate() {
+        let mut ra = RandomAgent::new();
+
+        for _ in 0..10000 {
+            let mut s = Euchre::new_state();
+            let mut istates = HashSet::new();
+            while s.is_chance_node() {
+                let a = ra.step(&s);
+                s.apply_action(a);
+            }
+
+            istates.insert(s.information_state_string(s.cur_player));
+            while !s.is_terminal() {
+                let a = ra.step(&s);
+                s.apply_action(a);
+                let istate = s.information_state_string(s.cur_player);
+                assert!(!istates.contains(&istate));
+                istates.insert(istate);
+            }
+        }
     }
 }

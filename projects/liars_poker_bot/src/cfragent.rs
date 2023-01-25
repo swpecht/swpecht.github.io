@@ -1,4 +1,5 @@
-use std::iter::zip;
+use core::num;
+use std::{fmt::Debug, iter::zip};
 
 use itertools::Itertools;
 use log::{debug, info, trace};
@@ -73,18 +74,14 @@ impl CFRAgent {
         // Get or create the node
         let info_set = s.information_state_string(cur_player);
         trace!("cfr processing:\t{}", info_set);
+        trace!("node:\t{}", s);
 
         if s.is_terminal() {
             return s.evaluate()[cur_player];
         }
 
         if !self.contains_node(&info_set) {
-            let node = CFRNode {
-                info_set: info_set.clone(),
-                regret_sum: vec![0.0; self.game.max_actions],
-                strategy: vec![0.0; self.game.max_actions],
-                strategy_sum: vec![0.0; self.game.max_actions],
-            };
+            let node = CFRNode::new(info_set.clone(), &actions);
             self.insert_node(info_set.clone(), node);
         }
         let mut node = self.get_node_mut(&info_set).unwrap();
@@ -93,37 +90,40 @@ impl CFRAgent {
             0 => p0,
             _ => p1,
         };
-        let strategy = node.get_strategy(param, s.as_ref());
+        let strategy = node.get_strategy(param);
         // Save the results
-        self.insert_node(info_set.clone(), node);
+        self.insert_node(info_set.clone(), node.clone());
 
-        let mut util = vec![0.0; self.game.max_actions];
+        let mut util = [0.0; 5];
 
         let mut node_util = 0.0;
         for &a in &actions {
             let mut new_s = dyn_clone::clone_box(&*s);
             new_s.apply_action(a);
+            assert_eq!(node.info_set, s.information_state_string(s.cur_player()));
+            let idx = node.get_index(a);
 
             // the sign of the util received is the opposite of the one computed one layer below
             // because what is positive for one player, is neagtive for the other
             // if player == 0 is making the call, the reach probability of the node below depends on the strategy of player 0
             // so we pass reach probability = p0 * strategy[a], likewise if this is player == 1 then reach probability = p1 * strategy[a]
             // https://colab.research.google.com/drive/1SYNxGdR7UmoxbxY-NSpVsKywLX7YwQMN?usp=sharing#scrollTo=NamPieNiykz1
-            util[a] = match cur_player {
-                0 => -self.cfr(new_s, p0 * strategy[a], p1),
-                _ => -self.cfr(new_s, p0, p1 * strategy[a]),
+            util[idx] = match cur_player {
+                0 => -self.cfr(new_s, p0 * strategy[idx], p1),
+                _ => -self.cfr(new_s, p0, p1 * strategy[idx]),
             };
-            node_util += strategy[a] * util[a];
+            node_util += strategy[idx] * util[idx];
         }
 
         let mut node = self.get_node_mut(&info_set).unwrap();
         // For each action, compute and accumulate counterfactual regret
         for a in actions {
-            let regret = util[a] - node_util;
+            let idx = node.get_index(a);
+            let regret = util[idx] - node_util;
             // for the regret of player 0 is multiplied by the reach p1 of player 1
             // because it is the action of player 1 at the layer above that made the current node reachable
             // conversly if this player 1, then the reach p0 is used.
-            node.regret_sum[a] += match cur_player {
+            node.regret_sum[idx] += match cur_player {
                 0 => p1,
                 _ => p0,
             } * regret;
@@ -157,32 +157,52 @@ impl CFRAgent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CFRNode {
     pub info_set: String,
-    pub regret_sum: Vec<f32>,
-    pub strategy: Vec<f32>,
-    pub strategy_sum: Vec<f32>,
+    /// Stores what action each index represents.
+    /// There are at most 5 actions (one for each card in hand)
+    pub actions: [usize; 5],
+    pub num_actions: usize,
+    pub regret_sum: [f32; 5],
+    pub strategy: [f32; 5],
+    pub strategy_sum: [f32; 5],
 }
 
 impl CFRNode {
+    pub fn new(info_set: String, legal_moves: &Vec<Action>) -> Self {
+        let num_actions = legal_moves.len();
+        let mut actions = [0; 5];
+        for i in 0..num_actions {
+            actions[i] = legal_moves[i]
+        }
+
+        Self {
+            info_set: info_set.clone(),
+            actions: actions,
+            num_actions: num_actions,
+            regret_sum: [0.0; 5],
+            strategy: [0.0; 5],
+            strategy_sum: [0.0; 5],
+        }
+    }
+
     /// Combine the positive regrets into a strategy.
     ///
     /// Defaults to a uniform action strategy if no regrets are present
-    fn get_strategy(&mut self, realization_weight: f32, s: &dyn GameState) -> Vec<f32> {
-        let actions = s.legal_actions();
-        let num_actions = actions.len();
+    fn get_strategy(&mut self, realization_weight: f32) -> [f32; 5] {
+        let num_actions = self.num_actions;
         let mut normalizing_sum = 0.0;
 
-        for &a in &actions {
-            self.strategy[a] = self.regret_sum[a].max(0.0);
-            normalizing_sum += self.strategy[a];
+        for i in 0..num_actions {
+            self.strategy[i] = self.regret_sum[i].max(0.0);
+            normalizing_sum += self.strategy[i];
         }
 
-        for &a in &actions {
+        for i in 0..num_actions {
             if normalizing_sum > 0.0 {
-                self.strategy[a] = self.strategy[a] / normalizing_sum;
+                self.strategy[i] = self.strategy[i] / normalizing_sum;
             } else {
-                self.strategy[a] = 1.0 / num_actions as f32;
+                self.strategy[i] = 1.0 / num_actions as f32;
             }
-            self.strategy_sum[a] += realization_weight * self.strategy[a];
+            self.strategy_sum[i] += realization_weight * self.strategy[i];
         }
 
         return self.strategy.clone();
@@ -191,19 +211,29 @@ impl CFRNode {
     fn get_average_strategy(&self) -> Vec<f32> {
         let mut avg_strat = vec![0.0; self.strategy.len()];
         let mut normalizing_sum = 0.0;
-        for a in 0..self.strategy.len() {
-            normalizing_sum += self.strategy_sum[a];
+        for i in 0..self.strategy.len() {
+            normalizing_sum += self.strategy_sum[i];
         }
 
-        for a in 0..self.strategy.len() {
+        for i in 0..self.strategy.len() {
             if normalizing_sum > 0.0 {
-                avg_strat[a] = self.strategy_sum[a] / normalizing_sum;
+                avg_strat[i] = self.strategy_sum[i] / normalizing_sum;
             } else {
-                avg_strat[a] = 1.0 / self.strategy.len() as f32;
+                avg_strat[i] = 1.0 / self.strategy.len() as f32;
             }
         }
 
         return avg_strat;
+    }
+
+    /// Returns the index storing a given action
+    fn get_index(&self, action: Action) -> usize {
+        for i in 0..self.actions.len() {
+            if action == self.actions[i] {
+                return i;
+            }
+        }
+        panic!("action not found")
     }
 }
 

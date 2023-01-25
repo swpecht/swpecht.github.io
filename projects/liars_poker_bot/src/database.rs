@@ -229,25 +229,15 @@ mod tests {
         let mut store = NodeStore::new(Storage::Memory);
         let istate = "test".to_string();
 
-        let n = CFRNode {
-            info_set: istate.clone(),
-            regret_sum: vec![0.0],
-            strategy: vec![0.0],
-            strategy_sum: vec![0.0],
-        };
-        store.insert_node(istate.clone(), n);
+        let mut n = CFRNode::new(istate.clone(), &vec![0]);
+        store.insert_node(istate.clone(), n.clone());
         let r = store.get_node_mut(&istate);
-        assert_eq!(r.unwrap().regret_sum, vec![0.0]);
+        assert_eq!(r.unwrap().regret_sum, [0.0; 5]);
 
-        let n = CFRNode {
-            info_set: istate.clone(),
-            regret_sum: vec![1.0],
-            strategy: vec![0.0],
-            strategy_sum: vec![0.0],
-        };
+        n.regret_sum = [1.0; 5];
         store.insert_node(istate.clone(), n);
         let r = store.get_node_mut(&istate);
-        assert_eq!(r.unwrap().regret_sum, vec![1.0]);
+        assert_eq!(r.unwrap().regret_sum, [1.0; 5]);
     }
 
     #[test]
@@ -255,28 +245,18 @@ mod tests {
         let mut store = NodeStore::new_with_pages(Storage::Tempfile, 1);
         let istate = "test".to_string();
 
-        let n = CFRNode {
-            info_set: istate.clone(),
-            regret_sum: vec![0.0],
-            strategy: vec![0.0],
-            strategy_sum: vec![0.0],
-        };
-        store.insert_node(istate.clone(), n);
+        let mut n = CFRNode::new(istate.clone(), &vec![0]);
+        store.insert_node(istate.clone(), n.clone());
         let r = store.get_node_mut(&istate);
-        assert_eq!(r.unwrap().regret_sum, vec![0.0]);
+        assert_eq!(r.unwrap().regret_sum, [0.0; 5]);
 
-        let n = CFRNode {
-            info_set: istate.clone(),
-            regret_sum: vec![1.0],
-            strategy: vec![0.0],
-            strategy_sum: vec![0.0],
-        };
+        n.regret_sum = [1.0; 5];
         store.insert_node(istate.clone(), n);
 
         // force a page out
         store.get_node_mut("different page because it's much longer");
         let r = store.get_node_mut(&istate);
-        assert_eq!(r.unwrap().regret_sum, vec![1.0]);
+        assert_eq!(r.unwrap().regret_sum, [1.0; 5]);
     }
 
     #[test]
@@ -284,24 +264,14 @@ mod tests {
         let mut store = NodeStore::new(Storage::Tempfile);
         let istate = "test".to_string();
 
-        let n = CFRNode {
-            info_set: istate.clone(),
-            regret_sum: vec![0.0],
-            strategy: vec![0.0],
-            strategy_sum: vec![0.0],
-        };
-        store.insert_node(istate.clone(), n);
+        let mut n = CFRNode::new(istate.clone(), &vec![0]);
+        store.insert_node(istate.clone(), n.clone());
         let r = store.get_node_mut(&istate);
-        assert_eq!(r.unwrap().regret_sum, vec![0.0]);
+        assert_eq!(r.unwrap().regret_sum, [0.0; 5]);
 
-        let n = CFRNode {
-            info_set: istate.clone(),
-            regret_sum: vec![1.0],
-            strategy: vec![0.0],
-            strategy_sum: vec![0.0],
-        };
+        n.regret_sum = [1.0; 5];
         store.insert_node(istate.clone(), n);
         let r = store.get_node_mut(&istate);
-        assert_eq!(r.unwrap().regret_sum, vec![1.0]);
+        assert_eq!(r.unwrap().regret_sum, [1.0; 5]);
     }
 }
