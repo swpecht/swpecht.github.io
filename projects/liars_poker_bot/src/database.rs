@@ -165,10 +165,7 @@ impl NodeStore {
 
         // find the page istate
         let mut p = Page::new(istate, EUCHRE_PAGE_TRIM);
-        let max_len = match p.istate.as_str() {
-            "" => EUCHRE_PAGE_TRIM,
-            _ => 99999999, // a very long gamestate
-        };
+        let max_len = p.max_length;
 
         {
             let mut statement = self.connection.prepare(LOAD_PAGE_QUERY).unwrap();

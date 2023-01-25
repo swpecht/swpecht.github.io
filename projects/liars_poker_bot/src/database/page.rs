@@ -20,12 +20,12 @@ use crate::cfragent::CFRNode;
 /// A has 304 possible direct children:
 ///     19 cards * 4 suits * 4 possible calls = 304
 ///
-/// B has X possible direct children:
+/// B has 8568 possible direct children:
 ///     18 Choose 5 = 8568
 ///
 /// For B-5, there are ~27M ways the game can be played out. Implies that 1-5 have 90k end states.
 ///     27M / 304 = 90k
-pub(super) const EUCHRE_PAGE_TRIM: usize = 15;
+pub(super) const EUCHRE_PAGE_TRIM: &[usize] = &[15, 9];
 // Need to eventually implement another cut, can't have all nodes loaded to ""
 
 /// Represents a collection of istates that are loaded into the cache.
@@ -34,27 +34,43 @@ pub(super) const EUCHRE_PAGE_TRIM: usize = 15;
 /// `trim` variable determins where the cut happens to split istates into pages.
 pub(super) struct Page {
     pub istate: String,
-    depth: usize,
+    pub max_length: usize,
     pub cache: HashMap<String, CFRNode>,
 }
 
 impl Page {
-    pub fn new(istate: &str, depth: usize) -> Self {
-        let page_istate = match istate.len() > depth {
-            true => istate[0..depth].to_string(),
+    pub fn new(istate: &str, depth: &[usize]) -> Self {
+        let mut total_depth = 0;
+        let mut max_length = total_depth;
+        for d in depth {
+            if total_depth + d < istate.len() {
+                total_depth += d;
+                max_length = total_depth;
+            } else {
+                max_length += d;
+                break;
+            }
+        }
+
+        if max_length == total_depth {
+            max_length = 999999; // very long game state, at end of the tree
+        }
+
+        let page_istate = match istate.len() > total_depth {
+            true => istate[0..total_depth].to_string(),
             false => "".to_string(),
         };
 
         Self {
             istate: page_istate,
-            depth: depth,
+            max_length: max_length,
             cache: HashMap::new(),
         }
     }
 
     pub fn contains(&self, istate: &str) -> bool {
         // Parent of the current page
-        if istate.len() < self.istate.len() {
+        if istate.len() < self.istate.len() || istate.len() > self.max_length {
             return false;
         }
 
@@ -64,9 +80,6 @@ impl Page {
             return false;
         }
 
-        if self.istate == "" {
-            return istate.len() < self.depth;
-        }
         return true;
     }
 }
@@ -75,7 +88,7 @@ impl Debug for Page {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Page")
             .field("istate", &self.istate)
-            .field("depth", &self.depth)
+            .field("max_length", &self.max_length)
             .finish()
     }
 }
@@ -86,7 +99,7 @@ mod tests {
 
     #[test]
     fn test_page_contains() {
-        let p = Page::new("AC9HJHQHAHKH3C|AS10SKSAC|9CQHQDJS|JD", 15);
+        let p = Page::new("AC9HJHQHAHKH3C|AS10SKSAC|9CQHQDJS|JD", &[15]);
         assert_eq!(p.istate, "AC9HJHQHAHKH3C|");
 
         assert!(p.contains("AC9HJHQHAHKH3C|AS10SKSAC|9CQHQDJS|JD"));
@@ -95,8 +108,14 @@ mod tests {
         assert!(!p.contains("XXXXXXXXXXXXXX|AS10SKSAC|9CQHQDJS|JDADKCAH|"));
         assert!(!p.contains("AC9HJHQHAHKH"));
 
-        let p = Page::new("AC9HJHQHA", 15);
+        let p = Page::new("AC9HJHQHA", &[15]);
         assert_eq!(p.istate, "");
-        assert!(!p.contains("AC9HJHQHAHKH3C|AS10SKSAC|9CQHQDJS|JD"))
+        assert!(!p.contains("AC9HJHQHAHKH3C|AS10SKSAC|9CQHQDJS|JD"));
+
+        let p = Page::new("AC9HJHQHAHKH3C|ASTSKSAC|9CQHQDJS|JD", &[15, 9]);
+        assert_eq!(p.istate, "AC9HJHQHAHKH3C|ASTSKSAC|");
+
+        let p = Page::new("test", &[15, 9]);
+        assert!(p.contains("test"));
     }
 }
