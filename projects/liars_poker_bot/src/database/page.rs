@@ -10,6 +10,7 @@ use crate::cfragent::CFRNode;
 
 /// Determines where the page-breaks are for a euchre istate
 /// For example:
+///     9CTCJCKCKS|KH|PPPPPPCP|3H|ASTSKSAC|9C9HTDQC|JD9DTCJH|JSKCQHQD|KDADXXXX|
 ///     9CTCJCKCKSKH3C|ASTSKSAC|9C9HTDQC|JD9DTCJH|JSKCQHQD|KDADXXXX|
 ///     |    A    | B |   1    |     2  |    3   |   4    |    5   |
 /// Where:
@@ -25,7 +26,7 @@ use crate::cfragent::CFRNode;
 ///
 /// For B-5, there are ~27M ways the game can be played out. Implies that 1-5 have 90k end states.
 ///     27M / 304 = 90k
-pub(super) const EUCHRE_PAGE_TRIM: &[usize] = &[15, 2];
+pub(super) const EUCHRE_PAGE_TRIM: &[usize] = &[26, 2];
 // Need to eventually implement another cut, can't have all nodes loaded to ""
 
 /// Represents a collection of istates that are loaded into the cache.
