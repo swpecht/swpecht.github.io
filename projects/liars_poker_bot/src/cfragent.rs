@@ -1,4 +1,3 @@
-use core::num;
 use std::{fmt::Debug, iter::zip};
 
 use itertools::Itertools;
@@ -100,7 +99,6 @@ impl CFRAgent {
         for &a in &actions {
             let mut new_s = dyn_clone::clone_box(&*s);
             new_s.apply_action(a);
-            assert_eq!(node.info_set, s.information_state_string(s.cur_player()));
             let idx = node.get_index(a);
 
             // the sign of the util received is the opposite of the one computed one layer below

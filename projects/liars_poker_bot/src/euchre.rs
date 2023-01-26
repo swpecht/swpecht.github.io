@@ -29,6 +29,7 @@ impl Euchre {
             trump_caller: 0,
             trump_call_history: [EAction::Pass as usize; 8],
             starting_hands: Rc::new(Vec::new()),
+            public_history: Vec::new(),
         }
     }
 
@@ -60,6 +61,7 @@ pub struct EuchreGameState {
     cur_player: usize,
     play_history: Vec<Action>,
     trump_call_history: [Action; 8],
+    public_history: Vec<Action>,
 }
 
 impl Clone for EuchreGameState {
@@ -82,6 +84,7 @@ impl Clone for EuchreGameState {
                 cur_player: self.cur_player.clone(),
                 play_history: self.play_history.clone(),
                 trump_call_history: self.trump_call_history.clone(),
+                public_history: self.public_history.clone(),
             }
         } else {
             Self {
@@ -98,6 +101,7 @@ impl Clone for EuchreGameState {
                 cur_player: self.cur_player.clone(),
                 play_history: self.play_history.clone(),
                 trump_call_history: self.trump_call_history.clone(),
+                public_history: self.public_history.clone(),
             }
         }
     }
@@ -442,6 +446,11 @@ fn put_card(c: Action, out: &mut str) {
 
 impl GameState for EuchreGameState {
     fn apply_action(&mut self, a: Action) {
+        // Don't want hands in the public history
+        if self.phase != EPhase::DealHands {
+            self.public_history.push(a);
+        }
+
         match self.phase {
             EPhase::DealHands => self.apply_action_deal_hands(a),
             EPhase::DealFaceUp => self.apply_action_deal_face_up(a),
@@ -449,6 +458,21 @@ impl GameState for EuchreGameState {
             EPhase::ChooseTrump => self.apply_action_choose_trump(a),
             EPhase::Discard => self.apply_action_discard(a),
             EPhase::Play => self.apply_action_play(a),
+        }
+
+        // Buffer the history if necessary
+        // Everyone didn't pass choosing trump or pickup
+        // 1 for face up, 4 for pickup, 4 for choosing trump
+        if (self.phase == EPhase::Play || self.phase == EPhase::Discard)
+            && self.public_history.len() < 11
+        {
+            for _ in 0..9 - self.public_history.len() {
+                self.public_history.push(EAction::Pass as usize);
+            }
+
+            self.public_history.push(self.trump_caller);
+            self.public_history.push(self.trump.clone() as usize);
+            assert_eq!(self.public_history.len(), 11)
         }
     }
 
@@ -497,36 +521,14 @@ impl GameState for EuchreGameState {
     /// * 15: trump
     /// * 16+: play history
     fn information_state(&self, player: Player) -> Vec<game::IState> {
-        let mut istate = Vec::with_capacity(27);
-        for &c in &self.starting_hands[player] {
-            istate.push(c as IState);
-        }
+        let mut istate = Vec::with_capacity(36);
 
-        if self.starting_hands[player].len() < 5 || self.phase == EPhase::DealFaceUp {
-            return istate;
-        }
-
-        // Add the face up card
-        istate.push(self.face_up as IState);
-
-        if self.phase != EPhase::DealHands && self.phase != EPhase::DealFaceUp {
-            istate.extend(self.trump_call_history[0..4].iter().map(|&x| x as IState));
-        }
-
-        if self.phase != EPhase::DealHands
-            && self.phase != EPhase::DealFaceUp
-            && self.phase != EPhase::Pickup
-        {
-            istate.extend(self.trump_call_history[4..8].iter().map(|&x| x as IState));
-        }
+        istate.extend(self.starting_hands[player].iter().map(|&x| x as IState));
+        assert_eq!(istate.len(), 5);
+        istate.extend(self.public_history.iter().map(|&x| x as IState));
 
         if self.phase == EPhase::Discard || self.phase == EPhase::Play {
-            istate.push(self.trump_caller as IState);
-            istate.push(self.trump.clone() as usize as IState);
-        }
-
-        for c in &self.play_history {
-            istate.push(*c as IState);
+            assert!(istate.len() >= 15)
         }
 
         return istate;
@@ -595,7 +597,7 @@ impl GameState for EuchreGameState {
 
         r.push('|');
 
-        if istate.len() <= 14 {
+        if istate.len() <= 15 {
             return r;
         }
 
@@ -780,10 +782,10 @@ mod tests {
         assert_eq!(s.information_state_string(3), "QCTSASQHTD");
 
         s.apply_action(20);
-        assert_eq!(s.information_state_string(0), "9CKCJS9HKH|JD|PPPP");
-        assert_eq!(s.information_state_string(1), "TCACQSTHAH|JD|PPPP");
-        assert_eq!(s.information_state_string(2), "JC9SKSJH9D|JD|PPPP");
-        assert_eq!(s.information_state_string(3), "QCTSASQHTD|JD|PPPP");
+        assert_eq!(s.information_state_string(0), "9CKCJS9HKH|JD|");
+        assert_eq!(s.information_state_string(1), "TCACQSTHAH|JD|");
+        assert_eq!(s.information_state_string(2), "JC9SKSJH9D|JD|");
+        assert_eq!(s.information_state_string(3), "QCTSASQHTD|JD|");
 
         s.apply_action(EAction::Pickup as usize);
         assert_eq!(s.information_state_string(0), "9CKCJS9HKH|JD|TPPPPPPP|0D");
