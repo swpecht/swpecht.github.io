@@ -6,6 +6,7 @@ use crate::game::{self, Action, Game, GameState, IState, Player};
 
 const JACK: usize = 2;
 const CARD_PER_SUIT: usize = 6;
+const PRE_PLAY_PUBLIC_ACTIONS: usize = 11;
 
 pub struct Euchre {}
 impl Euchre {
@@ -24,10 +25,8 @@ impl Euchre {
             cur_player: 0,
             trump: Suit::Clubs, // Default to one for now
             face_up: 0,         // Default for now
-            play_history: Vec::with_capacity(20),
             deck: deck,
             trump_caller: 0,
-            trump_call_history: [EAction::Pass as usize; 8],
             starting_hands: Rc::new(Vec::new()),
             public_history: Vec::new(),
         }
@@ -59,8 +58,6 @@ pub struct EuchreGameState {
     is_terminal: bool,
     phase: EPhase,
     cur_player: usize,
-    play_history: Vec<Action>,
-    trump_call_history: [Action; 8],
     public_history: Vec<Action>,
 }
 
@@ -82,8 +79,6 @@ impl Clone for EuchreGameState {
                 is_terminal: self.is_terminal.clone(),
                 phase: self.phase.clone(),
                 cur_player: self.cur_player.clone(),
-                play_history: self.play_history.clone(),
-                trump_call_history: self.trump_call_history.clone(),
                 public_history: self.public_history.clone(),
             }
         } else {
@@ -99,8 +94,6 @@ impl Clone for EuchreGameState {
                 is_terminal: self.is_terminal.clone(),
                 phase: self.phase.clone(),
                 cur_player: self.cur_player.clone(),
-                play_history: self.play_history.clone(),
-                trump_call_history: self.trump_call_history.clone(),
                 public_history: self.public_history.clone(),
             }
         }
@@ -174,7 +167,6 @@ impl EuchreGameState {
             }
             x if x == EAction::Pickup as usize => {
                 self.trump_caller = self.cur_player;
-                self.trump_call_history[self.cur_player] = a;
                 self.trump = self.get_suit(self.face_up);
                 self.cur_player = 3; // dealers turn
                 self.phase = EPhase::Discard;
@@ -197,7 +189,6 @@ impl EuchreGameState {
             self.cur_player += 1;
         } else {
             self.trump_caller = self.cur_player;
-            self.trump_call_history[4 + self.cur_player] = a; // in the second round of calling trump
             self.cur_player = 0;
             self.phase = EPhase::Play;
         }
@@ -218,7 +209,6 @@ impl EuchreGameState {
     }
 
     fn apply_action_play(&mut self, a: Action) {
-        self.play_history.push(a);
         let index = self.hands[self.cur_player]
             .iter()
             .position(|&x| x == a)
@@ -226,15 +216,15 @@ impl EuchreGameState {
         self.hands[self.cur_player].remove(index);
 
         // Set acting player based on who won last trick
-        if self.play_history.len() % 4 == 0 {
+        if self.play_history().len() % 4 == 0 {
             let starter = (self.cur_player + 3) % self.num_players;
-            let trick = &self.play_history[self.play_history.len() - 4..];
+            let trick = &self.play_history()[self.play_history().len() - 4..];
             let winner = self.evaluate_trick(trick, starter);
             self.cur_player = winner;
         }
 
         self.cur_player = (self.cur_player + 1) % self.num_players;
-        if self.play_history.len() >= self.num_players * 5 {
+        if self.play_history().len() >= self.num_players * 5 {
             self.is_terminal = true;
         }
     }
@@ -273,11 +263,11 @@ impl EuchreGameState {
     /// Can only play cards from hand
     fn legal_actions_play(&self) -> Vec<Action> {
         // If they are the first to act on a trick then can play any card in hand
-        if self.play_history.len() % self.num_players == 0 {
+        if self.play_history().len() % self.num_players == 0 {
             return self.hands[self.cur_player].clone();
         }
 
-        let leading_card = self.play_history[self.play_history.len() / 4 * 4];
+        let leading_card = self.play_history()[self.play_history().len() / 4 * 4];
         let suit = self.get_suit(leading_card);
 
         let actions = self.hands[self.cur_player]
@@ -389,6 +379,10 @@ impl EuchreGameState {
             false => CARD_PER_SUIT + 1, // left
         };
     }
+
+    fn play_history(&self) -> &[Action] {
+        return &self.public_history[PRE_PLAY_PUBLIC_ACTIONS..];
+    }
 }
 
 impl Display for EuchreGameState {
@@ -403,7 +397,7 @@ impl Display for EuchreGameState {
                 self.phase,
                 self.hands,
                 format_card(self.face_up),
-                self.play_history
+                self.play_history()
             ),
         }
     }
@@ -447,7 +441,7 @@ fn put_card(c: Action, out: &mut str) {
 impl GameState for EuchreGameState {
     fn apply_action(&mut self, a: Action) {
         // Don't want hands in the public history
-        if self.phase != EPhase::DealHands {
+        if self.phase != EPhase::DealHands && self.phase != EPhase::Discard {
             self.public_history.push(a);
         }
 
@@ -464,15 +458,14 @@ impl GameState for EuchreGameState {
         // Everyone didn't pass choosing trump or pickup
         // 1 for face up, 4 for pickup, 4 for choosing trump
         if (self.phase == EPhase::Play || self.phase == EPhase::Discard)
-            && self.public_history.len() < 11
+            && self.public_history.len() < PRE_PLAY_PUBLIC_ACTIONS
         {
-            for _ in 0..9 - self.public_history.len() {
+            for _ in 0..PRE_PLAY_PUBLIC_ACTIONS - 2 - self.public_history.len() {
                 self.public_history.push(EAction::Pass as usize);
             }
 
             self.public_history.push(self.trump_caller);
             self.public_history.push(self.trump.clone() as usize);
-            assert_eq!(self.public_history.len(), 11)
         }
     }
 
@@ -494,7 +487,7 @@ impl GameState for EuchreGameState {
         let mut won_tricks = [0; 2];
         let mut starter = 0;
         for i in 0..5 {
-            let trick = &self.play_history[i * 4..4 * i + 4];
+            let trick = &self.play_history()[i * 4..4 * i + 4];
             let winner = self.evaluate_trick(trick, starter);
             starter = winner;
             won_tricks[winner % 2] += 1;
@@ -565,25 +558,9 @@ impl GameState for EuchreGameState {
             return r;
         }
 
-        // Pickup round
-        for i in 0..4 {
-            let c = match self.trump_call_history[i] {
-                x if x == EAction::Clubs as usize => 'C',
-                x if x == EAction::Spades as usize => 'S',
-                x if x == EAction::Hearts as usize => 'H',
-                x if x == EAction::Diamonds as usize => 'D',
-                x if x == EAction::Pass as usize => 'P',
-                x if x == EAction::Pickup as usize => 'T',
-                _ => panic!("invalid action"),
-            };
-            r.push(c);
-        }
-
-        if istate.len() <= 10 {
-            return r;
-        }
-        for i in 4..8 {
-            let c = match self.trump_call_history[i] {
+        // Pickup round and calling round
+        for i in 6..istate.len().min(14) {
+            let c = match istate[i] as usize {
                 x if x == EAction::Clubs as usize => 'C',
                 x if x == EAction::Spades as usize => 'S',
                 x if x == EAction::Hearts as usize => 'H',
@@ -611,17 +588,16 @@ impl GameState for EuchreGameState {
             x if x == Suit::Hearts as usize => 'H',
             _ => panic!("invalid trump"),
         };
-
         r.push(trump_char);
 
-        for i in 0..self.play_history.len() {
+        for i in 16..istate.len() {
             if i % self.num_players == 0 {
                 r.push('|');
             }
             r.push_str("XX");
             let len = r.len();
             let s = r[len - 2..].as_mut();
-            put_card(self.play_history[i], s);
+            put_card(istate[i] as usize, s);
         }
 
         return r;
@@ -721,9 +697,11 @@ mod tests {
                 assert_eq!(index, None);
             }
         }
+        assert_eq!(s.public_history.len(), 0);
 
         // Deal the face up card
         s.apply_action(21);
+        assert_eq!(s.public_history.len(), 1);
 
         assert_eq!(
             s.legal_actions(),
@@ -733,10 +711,11 @@ mod tests {
         s.apply_action(EAction::Pickup as usize);
         // Cards in dealers hand
         assert_eq!(s.legal_actions(), vec![3, 7, 11, 15, 19]);
-
+        assert_eq!(s.phase, EPhase::Discard);
         s.apply_action(3);
 
         // Cards player 0s hand
+        assert_eq!(s.phase, EPhase::Play);
         assert_eq!(s.legal_actions(), vec![0, 4, 8, 12, 16]);
 
         s.apply_action(0);
