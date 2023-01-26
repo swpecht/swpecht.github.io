@@ -33,11 +33,23 @@ fn traverse_game_tree(n: usize) {
     }
 }
 
-fn criterion_benchmark(c: &mut Criterion) {
+fn euchre_benchmark(c: &mut Criterion) {
     c.bench_function("traverse euchre game tree", |b| {
         b.iter(|| traverse_game_tree(black_box(10000)))
     });
 }
 
-criterion_group!(benches, criterion_benchmark);
+use liars_poker_bot::{cfragent::CFRAgent, database::Storage, kuhn_poker::KuhnPoker};
+
+fn train_cfr_kp() {
+    let game = KuhnPoker::game();
+    // Verify the nash equilibrium is reached. From https://en.wikipedia.org/wiki/Kuhn_poker
+    CFRAgent::new(game, 42, 100, Storage::Memory);
+}
+
+fn kuhn_poker_benchmark(c: &mut Criterion) {
+    c.bench_function("cfr kuhn poker 100", |b| b.iter(|| train_cfr_kp()));
+}
+
+criterion_group!(benches, euchre_benchmark, kuhn_poker_benchmark);
 criterion_main!(benches);

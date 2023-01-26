@@ -26,9 +26,5 @@ tempfile = "3.3"
 criterion = "0.4"
 
 [[bench]]
-name = "kuhn_poker_benchmark"
-harness = false
-
-[[bench]]
-name = "euchre_benchmark"
+name = "game_benchmarks"
 harness = false
