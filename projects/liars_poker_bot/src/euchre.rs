@@ -28,7 +28,7 @@ impl Euchre {
             deck: deck,
             trump_caller: 0,
             starting_hands: Rc::new(Vec::new()),
-            public_history: Vec::new(),
+            public_history: Vec::with_capacity(PRE_PLAY_PUBLIC_ACTIONS + 20),
         }
     }
 

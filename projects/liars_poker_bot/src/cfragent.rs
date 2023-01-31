@@ -79,19 +79,16 @@ impl CFRAgent {
             return s.evaluate()[cur_player];
         }
 
-        if !self.contains_node(&info_set) {
-            let node = CFRNode::new(info_set.clone(), &actions);
-            self.insert_node(info_set.clone(), node);
-        }
-        let mut node = self.get_node_mut(&info_set).unwrap();
+        let mut node = match self.contains_node(&info_set) {
+            true => self.get_node_mut(&info_set).unwrap(),
+            false => CFRNode::new(info_set.clone(), &actions),
+        };
 
         let param = match cur_player {
             0 => p0,
             _ => p1,
         };
         let strategy = node.get_strategy(param);
-        // Save the results
-        self.insert_node(info_set.clone(), node.clone());
 
         let mut util = [0.0; 5];
 
@@ -113,7 +110,6 @@ impl CFRAgent {
             node_util += strategy[idx] * util[idx];
         }
 
-        let mut node = self.get_node_mut(&info_set).unwrap();
         // For each action, compute and accumulate counterfactual regret
         for a in actions {
             let idx = node.get_index(a);
