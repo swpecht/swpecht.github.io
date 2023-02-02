@@ -221,9 +221,10 @@ impl EuchreGameState {
             let trick = &self.play_history()[self.play_history().len() - 4..];
             let winner = self.evaluate_trick(trick, starter);
             self.cur_player = winner;
+        } else {
+            self.cur_player = (self.cur_player + 1) % self.num_players;
         }
 
-        self.cur_player = (self.cur_player + 1) % self.num_players;
         if self.play_history().len() >= self.num_players * 5 {
             self.is_terminal = true;
         }

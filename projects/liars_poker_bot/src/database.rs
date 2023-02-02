@@ -49,7 +49,7 @@ pub struct NodeStore {
 }
 
 impl NodeStore {
-    fn new_with_pages(storage: Storage, max_nodes: usize) -> Self {
+    pub fn new_with_pages(storage: Storage, max_nodes: usize) -> Self {
         let mut temp_file = None;
         let path = match storage.clone() {
             Storage::Memory => ":memory:".to_string(),
