@@ -1,5 +1,6 @@
 use std::{fmt::Display, rc::Rc};
 
+use arrayvec::ArrayVec;
 use itertools::Itertools;
 
 use crate::game::{self, Action, Game, GameState, IState, Player};
@@ -18,7 +19,7 @@ impl Euchre {
 
         EuchreGameState {
             num_players: 4,
-            hands: Vec::new(),
+            hands: ArrayVec::new(),
             is_chance_node: true,
             is_terminal: false,
             phase: EPhase::DealHands,
@@ -27,7 +28,7 @@ impl Euchre {
             face_up: 0,         // Default for now
             deck: deck,
             trump_caller: 0,
-            starting_hands: Rc::new(Vec::new()),
+            starting_hands: Rc::new(ArrayVec::new()),
             public_history: Vec::with_capacity(PRE_PLAY_PUBLIC_ACTIONS + 20),
         }
     }
@@ -47,8 +48,8 @@ impl Euchre {
 pub struct EuchreGameState {
     num_players: usize,
     /// Holds the cards for each player in the game
-    hands: Vec<Vec<Action>>,
-    starting_hands: Rc<Vec<Vec<Action>>>,
+    hands: ArrayVec<ArrayVec<Action, 5>, 4>,
+    starting_hands: Rc<ArrayVec<ArrayVec<Action, 5>, 4>>,
     /// Undealt cards
     deck: Vec<Action>,
     trump: Suit,
@@ -134,7 +135,7 @@ impl EuchreGameState {
         self.deck.remove(index);
 
         if self.hands.len() <= self.cur_player {
-            self.hands.push(Vec::new());
+            self.hands.push(ArrayVec::new());
         }
 
         self.hands[self.cur_player].push(a);
@@ -265,7 +266,7 @@ impl EuchreGameState {
     fn legal_actions_play(&self) -> Vec<Action> {
         // If they are the first to act on a trick then can play any card in hand
         if self.play_history().len() % self.num_players == 0 {
-            return self.hands[self.cur_player].clone();
+            return self.hands[self.cur_player].to_vec();
         }
 
         let leading_card = self.play_history()[self.play_history().len() / 4 * 4];
@@ -279,7 +280,7 @@ impl EuchreGameState {
 
         if actions.len() == 0 {
             // no suit, can play any card
-            return self.hands[self.cur_player].clone();
+            return self.hands[self.cur_player].to_vec();
         } else {
             return actions;
         }
@@ -474,7 +475,7 @@ impl GameState for EuchreGameState {
         match self.phase {
             EPhase::DealHands | EPhase::DealFaceUp => self.legal_actions_dealing(),
             EPhase::Pickup => vec![EAction::Pass as usize, EAction::Pickup as usize],
-            EPhase::Discard => self.hands[3].clone(), // Dealer can discard any card
+            EPhase::Discard => self.hands[3].to_vec(), // Dealer can discard any card
             EPhase::ChooseTrump => self.legal_actions_choose_trump(),
             EPhase::Play => self.legal_actions_play(),
         }
