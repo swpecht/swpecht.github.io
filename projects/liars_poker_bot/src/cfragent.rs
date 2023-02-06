@@ -132,9 +132,6 @@ impl CFRAgent {
         self.store.get_node_mut(istate)
     }
 
-    fn contains_node(&mut self, istate: &String) -> bool {
-        return self.store.contains_node(istate);
-    }
     fn insert_node(&mut self, istate: String, node: CFRNode) -> Option<CFRNode> {
         self.store.insert_node(istate, node)
     }
