@@ -79,10 +79,9 @@ impl CFRAgent {
             return s.evaluate()[cur_player];
         }
 
-        let mut node = match self.contains_node(&info_set) {
-            true => self.get_node_mut(&info_set).unwrap(),
-            false => CFRNode::new(info_set.clone(), &actions),
-        };
+        let mut node = self
+            .get_node_mut(&info_set)
+            .unwrap_or(CFRNode::new(info_set.clone(), &actions));
 
         let param = match cur_player {
             0 => p0,

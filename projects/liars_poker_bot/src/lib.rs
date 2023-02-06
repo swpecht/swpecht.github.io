@@ -4,3 +4,4 @@ pub mod database;
 pub mod euchre;
 pub mod game;
 pub mod kuhn_poker;
+pub mod outcome_sampling;

@@ -143,7 +143,12 @@ impl NodeStore {
         self.stats.page_loads.insert(p.istate.clone(), count + 1);
 
         trace!("page loaded: {}\t{}", p.cache.len(), p.istate);
-        debug!("page '{}' loaded {} times", p.istate, count + 1);
+        debug!(
+            "page '{}' loaded {} times ({} items)",
+            p.istate,
+            count + 1,
+            p.cache.len()
+        );
         trace!("{} pages loaded", self.pages.len());
 
         // Implement a FIFO cache
