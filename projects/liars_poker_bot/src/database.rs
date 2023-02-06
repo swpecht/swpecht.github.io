@@ -12,7 +12,7 @@ use crate::{cfragent::CFRNode, database::page::EUCHRE_PAGE_TRIM};
 
 const INSERT_QUERY: &str = "INSERT OR REPLACE INTO nodes (istate, node) VALUES (:istate, :node);";
 const LOAD_PAGE_QUERY: &str = "SELECT * FROM nodes 
-                                WHERE istate LIKE :istate || '%'
+                                WHERE istate LIKE :istate
                                 AND LENGTH(istate) <= :maxlen;";
 
 #[derive(Clone)]
@@ -63,7 +63,7 @@ impl NodeStore {
     }
 
     pub fn new(storage: Storage) -> Self {
-        NodeStore::new_with_pages(storage, 1000000)
+        NodeStore::new_with_pages(storage, 2000000)
     }
 
     pub fn get_node_mut(&mut self, istate: &str) -> Option<CFRNode> {
@@ -118,11 +118,14 @@ impl NodeStore {
         let max_len = p.max_length;
 
         {
+            // We are manually concatenating the '%' character in rust code to ensure that we are
+            // performing the LIKE query against a string literal. This allows sqlite to use the
+            // index for this query.
             let mut statement = self.connection.prepare(LOAD_PAGE_QUERY).unwrap();
             statement
                 .bind::<&[(_, Value)]>(
                     &[
-                        (":istate", p.istate.clone().into()),
+                        (":istate", p.istate.clone().push('%').into()),
                         (":maxlen", (max_len as i64).into()),
                     ][..],
                 )
@@ -165,6 +168,11 @@ impl Clone for NodeStore {
     }
 }
 
+/// Writes the data to a database
+///
+/// This function uses a single transaction for thr write for performance reasons. Previous
+/// implementations put a cap on the max transaction size. Removing that cap resulted in 80%+
+/// speed up in benchmarks
 pub fn write_data<T: Serialize>(c: &Connection, items: HashMap<String, T>) {
     // Use a transaction for performance reasons
     c.execute("BEGIN TRANSACTION;").unwrap();
@@ -198,8 +206,21 @@ pub fn get_connection(storage: Storage) -> (Connection, Option<TempPath>) {
     debug!("creating connection to sqlite at {}", path);
     let connection = sqlite::open(path).unwrap();
 
-    let query = "CREATE TABLE IF NOT EXISTS nodes (istate TEXT PRIMARY KEY, node TEXT);";
+    // Turns off case insenstivity for like statements
+    // this enables indexes to be used for queries.
+    // https://stackoverflow.com/questions/8584499/sqlite-should-like-searchstr-use-an-index
+    connection
+        .execute("PRAGMA case_sensitive_like=OFF;")
+        .unwrap();
+
+    // We set `COLLATE NOCASE` to the istate filed to enable us to use an index
+    let query =
+        "CREATE TABLE IF NOT EXISTS nodes (istate TEXT PRIMARY KEY COLLATE NOCASE, node TEXT);";
     connection.execute(query).unwrap();
+
+    connection
+        .execute("CREATE INDEX IF NOT EXISTS istate_idx ON nodes(istate COLLATE NOCASE);")
+        .unwrap();
 
     return (connection, temp_file);
 }
