@@ -166,9 +166,6 @@ impl Clone for NodeStore {
 }
 
 pub fn write_data<T: Serialize>(c: &Connection, items: HashMap<String, T>) {
-    const BATCH_SIZE: usize = 10000;
-    let mut i = 0;
-
     // Use a transaction for performance reasons
     c.execute("BEGIN TRANSACTION;").unwrap();
 
@@ -182,11 +179,6 @@ pub fn write_data<T: Serialize>(c: &Connection, items: HashMap<String, T>) {
         if !r.is_ok() {
             panic!("{:?}", r);
         }
-
-        if i % BATCH_SIZE == 0 && i > 0 {
-            c.execute("COMMIT; BEGIN TRANSACTION;").unwrap();
-        }
-        i += 1;
     }
 
     c.execute("COMMIT;").unwrap();
