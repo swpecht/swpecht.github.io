@@ -3,6 +3,7 @@ pub mod page;
 use std::collections::{HashMap, VecDeque};
 
 use log::{debug, trace};
+use serde::Serialize;
 use sqlite::{Connection, State, Value};
 use tempfile::{NamedTempFile, TempPath};
 
@@ -43,36 +44,19 @@ pub struct NodeStore {
     pages: VecDeque<Page>,
     // hold this so the temp file isn't detroyed
     _temp_file: Option<TempPath>,
-    access_count: usize,
     // Keeps count of how often a given page is loaded into memory
     stats: NodeStoreStats,
 }
 
 impl NodeStore {
     pub fn new_with_pages(storage: Storage, max_nodes: usize) -> Self {
-        let mut temp_file = None;
-        let path = match storage.clone() {
-            Storage::Memory => ":memory:".to_string(),
-            Storage::Tempfile => {
-                let f = NamedTempFile::new().unwrap();
-                temp_file = Some(f.into_temp_path());
-                temp_file.as_ref().unwrap().to_str().unwrap().to_string()
-            }
-            Storage::Namedfile(x) => x,
-        };
-        debug!("creating connection to sqlite at {}", path);
-        let connection = sqlite::open(path).unwrap();
-
-        let query = "CREATE TABLE IF NOT EXISTS nodes (istate TEXT PRIMARY KEY, node TEXT);";
-        connection.execute(query).unwrap();
-        trace!("table created sucessfully");
+        let (connection, temp_file) = get_connection(storage.clone());
 
         Self {
             connection,
             _temp_file: temp_file,
             storage: storage.clone(),
             pages: VecDeque::new(),
-            access_count: 0,
             max_nodes: max_nodes,
             stats: NodeStoreStats::new(),
         }
@@ -122,41 +106,7 @@ impl NodeStore {
     fn commit(&mut self, page: Page) {
         debug!("commiting {} for page {}", page.cache.len(), page.istate);
         debug!("total pages: {}", self.pages.len());
-        const BATCH_SIZE: usize = 1000;
-        let mut i = 0;
-
-        // Use a transaction for performance reasons
-        self.connection.execute("BEGIN TRANSACTION;").unwrap();
-
-        for (k, v) in page.cache.iter() {
-            let s = serde_json::to_string(v).unwrap();
-            self.write_node(k.clone(), s);
-
-            if i % BATCH_SIZE == 0 && i > 0 {
-                self.connection
-                    .execute("COMMIT; BEGIN TRANSACTION;")
-                    .unwrap();
-            }
-            i += 1;
-        }
-
-        self.connection.execute("COMMIT;").unwrap();
-    }
-
-    fn write_node(&self, istate: String, s: String) {
-        let mut statement = self.connection.prepare(INSERT_QUERY).unwrap();
-        statement
-            .bind::<&[(_, Value)]>(&[(":istate", istate.into()), (":node", s.into())][..])
-            .unwrap();
-        let r = statement.next();
-        assert!(r.is_ok());
-    }
-
-    fn handle_db_access(&mut self) {
-        self.access_count += 1;
-        if self.access_count % 10000 == 0 {
-            debug!("db read {} times", self.access_count);
-        }
+        write_data(&self.connection, page.cache);
     }
 
     /// Loads the specified cursor into memory, flushing the previous cache
@@ -206,8 +156,6 @@ impl NodeStore {
                 self.commit(dropped);
             }
         }
-
-        self.handle_db_access();
     }
 }
 
@@ -215,6 +163,53 @@ impl Clone for NodeStore {
     fn clone(&self) -> Self {
         NodeStore::new_with_pages(self.storage.clone(), self.max_nodes)
     }
+}
+
+pub fn write_data<T: Serialize>(c: &Connection, items: HashMap<String, T>) {
+    const BATCH_SIZE: usize = 10000;
+    let mut i = 0;
+
+    // Use a transaction for performance reasons
+    c.execute("BEGIN TRANSACTION;").unwrap();
+
+    for (k, v) in items.iter() {
+        let s = serde_json::to_string(v).unwrap();
+        let mut statement = c.prepare(INSERT_QUERY).unwrap();
+        statement
+            .bind::<&[(_, Value)]>(&[(":istate", k.clone().into()), (":node", s.into())][..])
+            .unwrap();
+        let r = statement.next();
+        if !r.is_ok() {
+            panic!("{:?}", r);
+        }
+
+        if i % BATCH_SIZE == 0 && i > 0 {
+            c.execute("COMMIT; BEGIN TRANSACTION;").unwrap();
+        }
+        i += 1;
+    }
+
+    c.execute("COMMIT;").unwrap();
+}
+
+pub fn get_connection(storage: Storage) -> (Connection, Option<TempPath>) {
+    let mut temp_file = None;
+    let path = match storage.clone() {
+        Storage::Memory => ":memory:".to_string(),
+        Storage::Tempfile => {
+            let f = NamedTempFile::new().unwrap();
+            temp_file = Some(f.into_temp_path());
+            temp_file.as_ref().unwrap().to_str().unwrap().to_string()
+        }
+        Storage::Namedfile(x) => x,
+    };
+    debug!("creating connection to sqlite at {}", path);
+    let connection = sqlite::open(path).unwrap();
+
+    let query = "CREATE TABLE IF NOT EXISTS nodes (istate TEXT PRIMARY KEY, node TEXT);";
+    connection.execute(query).unwrap();
+
+    return (connection, temp_file);
 }
 
 #[cfg(test)]
