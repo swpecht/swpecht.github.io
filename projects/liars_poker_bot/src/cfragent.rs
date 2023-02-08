@@ -15,7 +15,7 @@ use crate::{
 pub struct CFRAgent {
     game: Game,
     rng: StdRng,
-    store: NodeStore<SqliteBackend>,
+    store: NodeStore<SqliteBackend<CFRNode>>,
     call_count: usize,
 }
 

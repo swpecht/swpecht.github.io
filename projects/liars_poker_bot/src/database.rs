@@ -34,15 +34,15 @@ impl NodeStoreStats {
 /// NodeStore is a cache for istates and their associated game nodes.
 ///
 /// It stores an FIFO queue of Pages. When a page is evicted, it's written by the diskbackend.
-pub struct NodeStore<T: DiskBackend> {
+pub struct NodeStore<T: DiskBackend<CFRNode>> {
     max_nodes: usize,
-    pages: VecDeque<Page>,
+    pages: VecDeque<Page<CFRNode>>,
     // Keeps count of how often a given page is loaded into memory
     stats: NodeStoreStats,
     backend: T,
 }
 
-impl<T: DiskBackend> NodeStore<T> {
+impl<T: DiskBackend<CFRNode>> NodeStore<T> {
     pub fn new_with_pages(backend: T, max_nodes: usize) -> Self {
         Self {
             pages: VecDeque::new(),
@@ -93,7 +93,7 @@ impl<T: DiskBackend> NodeStore<T> {
     }
 
     /// Commits all data in the pages to sqlite
-    fn commit(&mut self, page: Page) {
+    fn commit(&mut self, page: Page<CFRNode>) {
         debug!("commiting {} for page {}", page.cache.len(), page.istate);
         self.backend.write(page).unwrap();
     }
@@ -140,7 +140,7 @@ impl<T: DiskBackend> NodeStore<T> {
     }
 }
 
-impl<T: DiskBackend> Clone for NodeStore<T> {
+impl<T: DiskBackend<CFRNode>> Clone for NodeStore<T> {
     fn clone(&self) -> Self {
         NodeStore::new_with_pages(self.backend.clone(), self.max_nodes)
     }

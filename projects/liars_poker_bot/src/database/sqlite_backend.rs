@@ -11,19 +11,19 @@ use tempfile::{NamedTempFile, TempPath};
 
 use super::{disk_backend::DiskBackend, page::Page, Storage};
 
-pub struct SqliteBackend {
-    tx_write_page: SyncSender<Page>,
+pub struct SqliteBackend<T> {
+    tx_write_page: SyncSender<Page<T>>,
     tx_exit: Sender<bool>,
     connection: Connection,
     // Hold a reference so the file isn't deleted
     _temp: Option<TempPath>,
 }
 
-impl SqliteBackend {
+impl<T: DeserializeOwned + Serialize + Send + 'static> SqliteBackend<T> {
     pub fn new(storage: Storage) -> Self {
         let (connection, temp_file, mut c2) = get_connection(storage.clone());
 
-        let (tx_page, rx_page) = sync_channel::<Page>(0);
+        let (tx_page, rx_page) = sync_channel::<Page<T>>(0);
         let (tx_exit, rx_exit) = mpsc::channel();
 
         thread::spawn(move || {
@@ -47,27 +47,33 @@ impl SqliteBackend {
             _temp: temp_file,
         };
     }
+
+    /// Synchronous version of writing data for testing
+    pub fn write_sync(&mut self, p: Page<T>) -> Result<(), &'static str> {
+        write_data(&mut self.connection, p.cache);
+        Ok(())
+    }
 }
 
-impl DiskBackend for SqliteBackend {
-    fn write(&mut self, p: Page) -> Result<(), &'static str> {
+impl<T: DeserializeOwned + Serialize> DiskBackend<T> for SqliteBackend<T> {
+    fn write(&mut self, p: Page<T>) -> Result<(), &'static str> {
         self.tx_write_page.send(p).unwrap();
         Ok(())
     }
 
-    fn read(&self, mut p: Page) -> Page {
+    fn read(&self, mut p: Page<T>) -> Page<T> {
         read_data(&self.connection, &p.istate, p.max_length, &mut p.cache);
         return p;
     }
 }
 
-impl Clone for SqliteBackend {
+impl<T> Clone for SqliteBackend<T> {
     fn clone(&self) -> Self {
         todo!();
     }
 }
 
-impl Drop for SqliteBackend {
+impl<T> Drop for SqliteBackend<T> {
     fn drop(&mut self) {
         // Shut down the IO thread
         self.tx_exit.send(true).unwrap();

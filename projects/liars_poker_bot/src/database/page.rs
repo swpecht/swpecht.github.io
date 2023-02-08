@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
 
-use crate::cfragent::CFRNode;
-
 /// Magic number dependant on the format of the istate. Should choose a number that has a meaningful break.
 /// For example:
 ///     ASTDJDQDKDKH3C|ASTSKSAC|9C9HTDQC|
@@ -29,17 +27,20 @@ use crate::cfragent::CFRNode;
 pub(super) const EUCHRE_PAGE_TRIM: &[usize] = &[26, 2];
 // Need to eventually implement another cut, can't have all nodes loaded to ""
 
+const MAX_PAGE_LEN: usize = 999999;
+
 /// Represents a collection of istates that are loaded into the cache.
 ///
 /// It includes all children and parents of the `istate` it stores. The
 /// `trim` variable determins where the cut happens to split istates into pages.
-pub struct Page {
+#[derive(Clone)]
+pub struct Page<T> {
     pub istate: String,
     pub max_length: usize,
-    pub cache: HashMap<String, CFRNode>,
+    pub cache: HashMap<String, T>,
 }
 
-impl Page {
+impl<T> Page<T> {
     pub fn new(istate: &str, depth: &[usize]) -> Self {
         let mut total_depth = 0;
         let mut max_length = total_depth;
@@ -54,7 +55,7 @@ impl Page {
         }
 
         if max_length == total_depth {
-            max_length = 999999; // very long game state, at end of the tree
+            max_length = MAX_PAGE_LEN;
         }
 
         let page_istate = match istate.len() > total_depth {
@@ -85,7 +86,7 @@ impl Page {
     }
 }
 
-impl Debug for Page {
+impl<T> Debug for Page<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Page")
             .field("istate", &self.istate)
@@ -96,11 +97,13 @@ impl Debug for Page {
 
 #[cfg(test)]
 mod tests {
-    use super::Page;
+    use crate::cfragent::CFRNode;
+
+    use super::{Page, MAX_PAGE_LEN};
 
     #[test]
     fn test_page_contains() {
-        let p = Page::new("AC9HJHQHAHKH3C|AS10SKSAC|9CQHQDJS|JD", &[15]);
+        let p: Page<CFRNode> = Page::new("AC9HJHQHAHKH3C|AS10SKSAC|9CQHQDJS|JD", &[15]);
         assert_eq!(p.istate, "AC9HJHQHAHKH3C|");
 
         assert!(p.contains("AC9HJHQHAHKH3C|AS10SKSAC|9CQHQDJS|JD"));
@@ -109,14 +112,20 @@ mod tests {
         assert!(!p.contains("XXXXXXXXXXXXXX|AS10SKSAC|9CQHQDJS|JDADKCAH|"));
         assert!(!p.contains("AC9HJHQHAHKH"));
 
-        let p = Page::new("AC9HJHQHA", &[15]);
+        let p: Page<CFRNode> = Page::new("AC9HJHQHA", &[15]);
         assert_eq!(p.istate, "");
         assert!(!p.contains("AC9HJHQHAHKH3C|AS10SKSAC|9CQHQDJS|JD"));
 
-        let p = Page::new("AC9HJHQHAHKH3C|ASTSKSAC|9CQHQDJS|JD", &[15, 9]);
+        let p: Page<CFRNode> = Page::new("AC9HJHQHAHKH3C|ASTSKSAC|9CQHQDJS|JD", &[15, 9]);
         assert_eq!(p.istate, "AC9HJHQHAHKH3C|ASTSKSAC|");
 
-        let p = Page::new("test", &[15, 9]);
+        let p: Page<CFRNode> = Page::new("test", &[15, 9]);
         assert!(p.contains("test"));
+    }
+
+    #[test]
+    fn test_page_new() {
+        let p: Page<CFRNode> = Page::new("", &[]);
+        assert_eq!(p.max_length, MAX_PAGE_LEN);
     }
 }

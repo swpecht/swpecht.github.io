@@ -113,7 +113,7 @@ fn run_analyze(args: Args) {
     // let mut s = KuhnPoker::new_state();
 
     // TODO: A seed of 0 here seems to break things. Why?
-    let mut rng: StdRng = SeedableRng::seed_from_u64(1);
+    let mut rng: StdRng = SeedableRng::seed_from_u64(0);
     while s.is_chance_node() {
         let a = *s.legal_actions().choose(&mut rng).unwrap();
         s.apply_action(a);
