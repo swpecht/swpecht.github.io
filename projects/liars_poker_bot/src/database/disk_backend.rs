@@ -8,7 +8,13 @@ pub trait DiskBackend: Clone {
 
 /// Does no writing to disk
 #[derive(Clone)]
-struct NoOpBackend {}
+pub struct NoOpBackend {}
+
+impl NoOpBackend {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
 
 impl DiskBackend for NoOpBackend {
     fn write(&mut self, _: Page) -> Result<(), &'static str> {

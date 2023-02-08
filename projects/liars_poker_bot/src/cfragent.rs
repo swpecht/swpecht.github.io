@@ -25,6 +25,7 @@ impl CFRAgent {
             game,
             rng: SeedableRng::seed_from_u64(seed),
             store: NodeStore::new(SqliteBackend::new(storage)),
+            // store: NodeStore::new(NoOpBackend::new()),
             call_count: 0,
         };
 

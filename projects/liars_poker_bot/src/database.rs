@@ -33,8 +33,7 @@ impl NodeStoreStats {
 
 /// NodeStore is a cache for istates and their associated game nodes.
 ///
-/// It stores an LRU of Pages. When a page is evicted, it's written to the database.
-/// Writing pages is done on a separate thread.
+/// It stores an FIFO queue of Pages. When a page is evicted, it's written by the diskbackend.
 pub struct NodeStore<T: DiskBackend> {
     max_nodes: usize,
     pages: VecDeque<Page>,

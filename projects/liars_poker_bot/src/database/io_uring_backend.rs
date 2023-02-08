@@ -18,6 +18,12 @@ pub struct UringBackend {
     storage: Storage,
 }
 
+impl UringBackend {
+    pub fn new() -> Self {
+        todo!()
+    }
+}
+
 impl DiskBackend for UringBackend {
     fn write(&mut self, p: Page) -> Result<(), &'static str> {
         todo!()
