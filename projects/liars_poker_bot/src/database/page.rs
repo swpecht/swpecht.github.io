@@ -33,7 +33,7 @@ pub(super) const EUCHRE_PAGE_TRIM: &[usize] = &[26, 2];
 ///
 /// It includes all children and parents of the `istate` it stores. The
 /// `trim` variable determins where the cut happens to split istates into pages.
-pub(super) struct Page {
+pub struct Page {
     pub istate: String,
     pub max_length: usize,
     pub cache: HashMap<String, CFRNode>,

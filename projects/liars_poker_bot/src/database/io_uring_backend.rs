@@ -1,6 +1,50 @@
+/// Implements a node storage backend for io_uring
+///
+/// Each istate can be though of as a tree of data
+/// Require 2 parts for storage:
+///     * Lookup table to figure out where a given chunk exists
+///     * Storage of those chunk at the appropriate index
+/// Simplest to just store each page as it's own file?
+/// Pay some overhead on opening files, but should be minimal given we're constrained by
 use serde::Serialize;
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf};
 use tokio_uring::fs::File;
+
+use super::{disk_backend::DiskBackend, page::Page, Storage};
+
+pub struct UringBackend {
+    // Location of all files
+    dir: PathBuf,
+    storage: Storage,
+}
+
+impl DiskBackend for UringBackend {
+    fn write(&mut self, p: Page) -> Result<(), &'static str> {
+        todo!()
+    }
+
+    fn read(&self, p: Page) -> Page {
+        todo!()
+    }
+}
+
+impl Clone for UringBackend {
+    fn clone(&self) -> Self {
+        todo!();
+    }
+}
+
+// impl Connection {
+//     pub fn new(storage: Storage) -> Self {
+//         Self {
+//             dir: (),
+//             storage: (),
+//         }
+//     }
+
+//     /// Returns a file handle to the corresponding Page
+//     fn get_file(p: Page) -> File {}
+// }
 
 pub fn write_data<T: Serialize>(
     items: HashMap<String, T>,
@@ -8,11 +52,12 @@ pub fn write_data<T: Serialize>(
     tokio_uring::start(async {
         // Open a file
         let file = File::create("/tmp/io_uring_test").await?;
-        let mut buf = vec![0; 4096];
+        // Uses a 64kb buffer, this is 4-5x faster than using a 4kb buffer for a 1M recrod write
+        let mut buf = vec![0; 65536];
         let mut pos = 0;
         let s = serde_json::to_string(&items).unwrap();
         let bytes = s.into_bytes();
-        for c in bytes.chunks(4096) {
+        for c in bytes.chunks(65536) {
             buf[..c.len()].copy_from_slice(c);
             let res;
             (res, buf) = file.write_at(buf, pos).await;
@@ -52,6 +97,6 @@ mod tests {
             data.insert(k, v);
         }
 
-        write_data(data);
+        write_data(data).unwrap();
     }
 }

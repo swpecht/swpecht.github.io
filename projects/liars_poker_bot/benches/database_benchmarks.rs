@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use liars_poker_bot::database::{io_uring_backend, sqlite_backend, Storage};
+use liars_poker_bot::database::{
+    io_uring_backend::{self},
+    sqlite_backend, Storage,
+};
 use rand::{distributions::Alphanumeric, Rng};
 use sqlite::Connection;
 

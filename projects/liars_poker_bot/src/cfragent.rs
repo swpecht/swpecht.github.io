@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     agents::Agent,
-    database::{NodeStore, Storage},
+    database::{sqlite_backend::SqliteBackend, NodeStore, Storage},
     game::{Action, Game, GameState},
 };
 
@@ -15,7 +15,7 @@ use crate::{
 pub struct CFRAgent {
     game: Game,
     rng: StdRng,
-    store: NodeStore,
+    store: NodeStore<SqliteBackend>,
     call_count: usize,
 }
 
@@ -24,7 +24,7 @@ impl CFRAgent {
         let mut agent = Self {
             game,
             rng: SeedableRng::seed_from_u64(seed),
-            store: NodeStore::new(storage),
+            store: NodeStore::new(SqliteBackend::new(storage)),
             call_count: 0,
         };
 

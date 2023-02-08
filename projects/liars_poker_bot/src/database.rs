@@ -1,21 +1,16 @@
+pub mod disk_backend;
 pub mod io_uring_backend;
 pub mod page;
 pub mod sqlite_backend;
 
 use std::collections::{HashMap, VecDeque};
 
-use std::sync::mpsc::{self, Sender};
-use std::sync::mpsc::{sync_channel, SyncSender};
-
-use std::thread::{self};
-use std::time;
-
 use log::{debug, trace};
-use sqlite::Connection;
-use tempfile::TempPath;
 
 use crate::database::page::Page;
 use crate::{cfragent::CFRNode, database::page::EUCHRE_PAGE_TRIM};
+
+use self::disk_backend::DiskBackend;
 
 #[derive(Clone)]
 pub enum Storage {
@@ -40,54 +35,26 @@ impl NodeStoreStats {
 ///
 /// It stores an LRU of Pages. When a page is evicted, it's written to the database.
 /// Writing pages is done on a separate thread.
-pub struct NodeStore {
-    connection: Connection,
-    storage: Storage,
+pub struct NodeStore<T: DiskBackend> {
     max_nodes: usize,
     pages: VecDeque<Page>,
-    // hold this so the temp file isn't detroyed
-    _temp_file: Option<TempPath>,
     // Keeps count of how often a given page is loaded into memory
     stats: NodeStoreStats,
-    tx_write_page: SyncSender<Page>,
-    tx_exit: Sender<bool>,
+    backend: T,
 }
 
-impl NodeStore {
-    pub fn new_with_pages(storage: Storage, max_nodes: usize) -> Self {
-        let (connection, temp_file, mut c2) = sqlite_backend::get_connection(storage.clone());
-
-        let (tx_page, rx_page) = sync_channel::<Page>(0);
-        let (tx_exit, rx_exit) = mpsc::channel();
-
-        thread::spawn(move || {
-            debug!("starting IO thread");
-            while rx_exit.try_recv() != Ok(true) {
-                if let Ok(p) = rx_page.try_recv() {
-                    sqlite_backend::write_data(&mut c2, p.cache);
-                    debug!("commit finished for {}", p.istate);
-                }
-
-                let ten_millis = time::Duration::from_millis(10);
-                thread::sleep(ten_millis)
-            }
-            debug!("exiting IO thread");
-        });
-
+impl<T: DiskBackend> NodeStore<T> {
+    pub fn new_with_pages(backend: T, max_nodes: usize) -> Self {
         Self {
-            connection,
-            _temp_file: temp_file,
-            storage: storage.clone(),
             pages: VecDeque::new(),
             max_nodes: max_nodes,
             stats: NodeStoreStats::new(),
-            tx_write_page: tx_page,
-            tx_exit: tx_exit,
+            backend: backend,
         }
     }
 
-    pub fn new(storage: Storage) -> Self {
-        NodeStore::new_with_pages(storage, 2000000)
+    pub fn new(backend: T) -> Self {
+        NodeStore::new_with_pages(backend, 2000000)
     }
 
     pub fn get_node_mut(&mut self, istate: &str) -> Option<CFRNode> {
@@ -129,7 +96,7 @@ impl NodeStore {
     /// Commits all data in the pages to sqlite
     fn commit(&mut self, page: Page) {
         debug!("commiting {} for page {}", page.cache.len(), page.istate);
-        self.tx_write_page.send(page).unwrap();
+        self.backend.write(page).unwrap();
     }
 
     /// Loads the specified cursor into memory, flushing the previous cache
@@ -138,14 +105,13 @@ impl NodeStore {
 
         // find the page istate
         let mut p = Page::new(istate, EUCHRE_PAGE_TRIM);
-        let max_len = p.max_length;
 
         debug!(
             "starting page load for: {} length {}",
             p.istate, p.max_length
         );
 
-        sqlite_backend::read_data(&self.connection, &p.istate, max_len, &mut p.cache);
+        p = self.backend.read(p);
 
         let count = *self.stats.page_loads.get(&p.istate).unwrap_or(&0);
         self.stats.page_loads.insert(p.istate.clone(), count + 1);
@@ -175,16 +141,9 @@ impl NodeStore {
     }
 }
 
-impl Clone for NodeStore {
+impl<T: DiskBackend> Clone for NodeStore<T> {
     fn clone(&self) -> Self {
-        NodeStore::new_with_pages(self.storage.clone(), self.max_nodes)
-    }
-}
-
-impl Drop for NodeStore {
-    fn drop(&mut self) {
-        // Shut down the IO thread
-        self.tx_exit.send(true).unwrap();
+        NodeStore::new_with_pages(self.backend.clone(), self.max_nodes)
     }
 }
 
@@ -193,12 +152,12 @@ mod tests {
 
     use crate::{
         cfragent::CFRNode,
-        database::{NodeStore, Storage},
+        database::{sqlite_backend::SqliteBackend, NodeStore, Storage},
     };
 
     #[test]
     fn test_write_read_memory() {
-        let mut store = NodeStore::new(Storage::Memory);
+        let mut store = NodeStore::new(SqliteBackend::new(Storage::Memory));
         let istate = "test".to_string();
 
         let mut n = CFRNode::new(istate.clone(), &vec![0]);
@@ -214,7 +173,7 @@ mod tests {
 
     #[test]
     fn test_write_page_read() {
-        let mut store = NodeStore::new_with_pages(Storage::Tempfile, 1);
+        let mut store = NodeStore::new_with_pages(SqliteBackend::new(Storage::Tempfile), 1);
         let istate = "test".to_string();
 
         let mut n = CFRNode::new(istate.clone(), &vec![0]);
@@ -233,7 +192,7 @@ mod tests {
 
     #[test]
     fn test_write_read_tempfile() {
-        let mut store = NodeStore::new(Storage::Tempfile);
+        let mut store = NodeStore::new(SqliteBackend::new(Storage::Tempfile));
         let istate = "test".to_string();
 
         let mut n = CFRNode::new(istate.clone(), &vec![0]);

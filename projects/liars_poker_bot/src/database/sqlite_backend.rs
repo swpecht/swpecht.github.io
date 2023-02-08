@@ -1,11 +1,78 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::mpsc::{self, sync_channel, Sender, SyncSender},
+    thread, time,
+};
 
 use log::debug;
 use serde::{de::DeserializeOwned, Serialize};
 use sqlite::{Connection, State, Value};
 use tempfile::{NamedTempFile, TempPath};
 
-use super::Storage;
+use super::{disk_backend::DiskBackend, page::Page, Storage};
+
+pub struct SqliteBackend {
+    tx_write_page: SyncSender<Page>,
+    tx_exit: Sender<bool>,
+    connection: Connection,
+    // Hold a reference so the file isn't deleted
+    _temp: Option<TempPath>,
+}
+
+impl SqliteBackend {
+    pub fn new(storage: Storage) -> Self {
+        let (connection, temp_file, mut c2) = get_connection(storage.clone());
+
+        let (tx_page, rx_page) = sync_channel::<Page>(0);
+        let (tx_exit, rx_exit) = mpsc::channel();
+
+        thread::spawn(move || {
+            debug!("starting IO thread");
+            while rx_exit.try_recv() != Ok(true) {
+                if let Ok(p) = rx_page.try_recv() {
+                    write_data(&mut c2, p.cache);
+                    debug!("commit finished for {}", p.istate);
+                }
+
+                let ten_millis = time::Duration::from_millis(10);
+                thread::sleep(ten_millis)
+            }
+            debug!("exiting IO thread");
+        });
+
+        return Self {
+            connection: connection,
+            tx_write_page: tx_page,
+            tx_exit: tx_exit,
+            _temp: temp_file,
+        };
+    }
+}
+
+impl DiskBackend for SqliteBackend {
+    fn write(&mut self, p: Page) -> Result<(), &'static str> {
+        self.tx_write_page.send(p).unwrap();
+        Ok(())
+    }
+
+    fn read(&self, mut p: Page) -> Page {
+        read_data(&self.connection, &p.istate, p.max_length, &mut p.cache);
+        return p;
+    }
+}
+
+impl Clone for SqliteBackend {
+    fn clone(&self) -> Self {
+        todo!();
+    }
+}
+
+impl Drop for SqliteBackend {
+    fn drop(&mut self) {
+        // Shut down the IO thread
+        self.tx_exit.send(true).unwrap();
+    }
+}
 
 /// Writes the data to a database
 ///
