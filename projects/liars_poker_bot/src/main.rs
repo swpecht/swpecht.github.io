@@ -5,9 +5,12 @@ use clap::clap_derive::ArgEnum;
 use liars_poker_bot::agents::{Agent, RandomAgent};
 use liars_poker_bot::cfragent::CFRAgent;
 use liars_poker_bot::database::Storage;
-use liars_poker_bot::euchre::Euchre;
+use liars_poker_bot::euchre::{Euchre, EuchreGameState};
 use liars_poker_bot::game::{run_game, GameState};
-use rand::thread_rng;
+use liars_poker_bot::kuhn_poker::KuhnPoker;
+use rand::rngs::StdRng;
+use rand::seq::SliceRandom;
+use rand::{thread_rng, SeedableRng};
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ArgEnum, Debug)]
 enum GameType {
@@ -104,6 +107,38 @@ fn run_analyze(args: Args) {
         );
         sum *= (children[i] / runs as f64).max(1.0);
     }
+
+    // traverse gametress
+    let mut s = Euchre::new_state();
+    // let mut s = KuhnPoker::new_state();
+
+    // TODO: A seed of 0 here seems to break things. Why?
+    let mut rng: StdRng = SeedableRng::seed_from_u64(1);
+    while s.is_chance_node() {
+        let a = *s.legal_actions().choose(&mut rng).unwrap();
+        s.apply_action(a);
+    }
+
+    println!("total nodes: {}", traverse_game_tree(s, 0));
+}
+
+fn traverse_game_tree<T: GameState + Clone>(s: T, depth: usize) -> usize {
+    if s.is_terminal() {
+        return 1;
+    }
+
+    let mut count = 1;
+    for a in s.legal_actions() {
+        if depth <= 2 {
+            println!("depth: {}, nodes: {}", depth, count)
+        }
+
+        let mut new_s = s.clone();
+        new_s.apply_action(a);
+        count += traverse_game_tree(new_s, depth + 1);
+    }
+
+    return count;
 }
 
 fn run(args: Args) {
@@ -111,7 +146,7 @@ fn run(args: Args) {
         "" => Storage::Tempfile,
         _ => Storage::Namedfile(args.file),
     };
-    let _cfr = CFRAgent::new(Euchre::game(), 0, 2, storage);
+    let _cfr = CFRAgent::new(Euchre::game(), 1, 1, storage);
 }
 
 fn run_benchmark(args: Args) {
