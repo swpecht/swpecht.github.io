@@ -1,3 +1,4 @@
+pub mod io_uring_backend;
 pub mod page;
 pub mod sqlite_backend;
 
