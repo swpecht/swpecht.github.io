@@ -1,19 +1,20 @@
 pub mod page;
+pub mod sqlite_backend;
 
 use std::collections::{HashMap, VecDeque};
 
+use std::sync::mpsc::{self, Sender};
+use std::sync::mpsc::{sync_channel, SyncSender};
+
+use std::thread::{self};
+use std::time;
+
 use log::{debug, trace};
-use serde::de::DeserializeOwned;
-use serde::Serialize;
-use sqlite::{Connection, State, Statement, Value};
-use tempfile::{NamedTempFile, TempPath};
+use sqlite::Connection;
+use tempfile::TempPath;
 
 use crate::database::page::Page;
 use crate::{cfragent::CFRNode, database::page::EUCHRE_PAGE_TRIM};
-
-const INSERT_QUERY: &str = "INSERT OR REPLACE INTO nodes (istate, node) VALUES (:istate, :node);";
-const LOAD_PAGE_QUERY: &str =
-    "SELECT * FROM nodes WHERE istate LIKE :like AND LENGTH(istate) <= :maxlen;";
 
 #[derive(Clone)]
 pub enum Storage {
@@ -37,6 +38,7 @@ impl NodeStoreStats {
 /// NodeStore is a cache for istates and their associated game nodes.
 ///
 /// It stores an LRU of Pages. When a page is evicted, it's written to the database.
+/// Writing pages is done on a separate thread.
 pub struct NodeStore {
     connection: Connection,
     storage: Storage,
@@ -46,11 +48,30 @@ pub struct NodeStore {
     _temp_file: Option<TempPath>,
     // Keeps count of how often a given page is loaded into memory
     stats: NodeStoreStats,
+    tx_write_page: SyncSender<Page>,
+    tx_exit: Sender<bool>,
 }
 
 impl NodeStore {
     pub fn new_with_pages(storage: Storage, max_nodes: usize) -> Self {
-        let (connection, temp_file) = get_connection(storage.clone());
+        let (connection, temp_file, mut c2) = sqlite_backend::get_connection(storage.clone());
+
+        let (tx_page, rx_page) = sync_channel::<Page>(0);
+        let (tx_exit, rx_exit) = mpsc::channel();
+
+        thread::spawn(move || {
+            debug!("starting IO thread");
+            while rx_exit.try_recv() != Ok(true) {
+                if let Ok(p) = rx_page.try_recv() {
+                    sqlite_backend::write_data(&mut c2, p.cache);
+                    debug!("commit finished for {}", p.istate);
+                }
+
+                let ten_millis = time::Duration::from_millis(10);
+                thread::sleep(ten_millis)
+            }
+            debug!("exiting IO thread");
+        });
 
         Self {
             connection,
@@ -59,6 +80,8 @@ impl NodeStore {
             pages: VecDeque::new(),
             max_nodes: max_nodes,
             stats: NodeStoreStats::new(),
+            tx_write_page: tx_page,
+            tx_exit: tx_exit,
         }
     }
 
@@ -105,9 +128,7 @@ impl NodeStore {
     /// Commits all data in the pages to sqlite
     fn commit(&mut self, page: Page) {
         debug!("commiting {} for page {}", page.cache.len(), page.istate);
-        debug!("total pages: {}", self.pages.len());
-        write_data(&mut self.connection, page.cache);
-        debug!("commit finished for {}", page.istate);
+        self.tx_write_page.send(page).unwrap();
     }
 
     /// Loads the specified cursor into memory, flushing the previous cache
@@ -123,7 +144,7 @@ impl NodeStore {
             p.istate, p.max_length
         );
 
-        read_data(&self.connection, &p.istate, max_len, &mut p.cache);
+        sqlite_backend::read_data(&self.connection, &p.istate, max_len, &mut p.cache);
 
         let count = *self.stats.page_loads.get(&p.istate).unwrap_or(&0);
         self.stats.page_loads.insert(p.istate.clone(), count + 1);
@@ -159,102 +180,20 @@ impl Clone for NodeStore {
     }
 }
 
-/// Writes the data to a database
-///
-/// This function uses a single transaction for thr write for performance reasons. Previous
-/// implementations put a cap on the max transaction size. Removing that cap resulted in 80%+
-/// speed up in benchmarks
-pub fn write_data<T: Serialize>(c: &mut Connection, items: HashMap<String, T>) {
-    // Use a transaction for performance reasons
-    c.execute("BEGIN TRANSACTION;").unwrap();
-
-    for (k, v) in items.iter() {
-        let s = serde_json::to_string(v).unwrap();
-        let mut statement = c.prepare(INSERT_QUERY).unwrap();
-        statement
-            .bind::<&[(_, Value)]>(&[(":istate", k.clone().into()), (":node", s.into())][..])
-            .unwrap();
-        let r = statement.next();
-        if !r.is_ok() {
-            panic!("{:?}", r);
-        }
+impl Drop for NodeStore {
+    fn drop(&mut self) {
+        // Shut down the IO thread
+        self.tx_exit.send(true).unwrap();
     }
-
-    c.execute("COMMIT;").unwrap();
-}
-
-pub fn read_data<T>(c: &Connection, key: &String, max_len: usize, output: &mut HashMap<String, T>)
-where
-    T: DeserializeOwned,
-{
-    // We are manually concatenating the '%' character in rust code to ensure that we are
-    // performing the LIKE query against a string literal. This allows sqlite to use the
-    // index for this query.
-    let mut statement = c.prepare(LOAD_PAGE_QUERY).unwrap();
-    let mut like_statement = key.clone();
-    like_statement.push('%');
-    statement
-        .bind::<&[(_, Value)]>(
-            &[
-                (":like", like_statement.into()),
-                (":maxlen", (max_len as i64).into()),
-            ][..],
-        )
-        .unwrap();
-
-    while let Ok(State::Row) = statement.next() {
-        let node_ser = statement.read::<String, _>("node").unwrap();
-        let istate = statement.read::<String, _>("istate").unwrap();
-        let node = serde_json::from_str(&node_ser).unwrap();
-        output.insert(istate, node);
-    }
-}
-
-pub fn get_connection(storage: Storage) -> (Connection, Option<TempPath>) {
-    let mut temp_file = None;
-    let path = match storage.clone() {
-        Storage::Memory => ":memory:".to_string(),
-        Storage::Tempfile => {
-            let f = NamedTempFile::new().unwrap();
-            temp_file = Some(f.into_temp_path());
-            temp_file.as_ref().unwrap().to_str().unwrap().to_string()
-        }
-        Storage::Namedfile(x) => x,
-    };
-    debug!("creating connection to sqlite at {}", path);
-    let connection = sqlite::open(path).unwrap();
-
-    // Turns off case insenstivity for like statements
-    // this enables indexes to be used for queries.
-    // https://stackoverflow.com/questions/8584499/sqlite-should-like-searchstr-use-an-index
-    connection
-        .execute("PRAGMA case_sensitive_like=OFF;")
-        .unwrap();
-
-    // We set `COLLATE NOCASE` to the istate filed to enable us to use an index
-    let query =
-        "CREATE TABLE IF NOT EXISTS nodes (istate TEXT PRIMARY KEY COLLATE NOCASE, node TEXT);";
-    connection.execute(query).unwrap();
-
-    connection
-        .execute("CREATE INDEX IF NOT EXISTS istate_idx ON nodes(istate COLLATE NOCASE);")
-        .unwrap();
-
-    return (connection, temp_file);
 }
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
-    use rand::{distributions::Alphanumeric, Rng};
 
     use crate::{
         cfragent::CFRNode,
-        database::{read_data, NodeStore, Storage},
+        database::{NodeStore, Storage},
     };
-
-    use super::{get_connection, write_data};
 
     #[test]
     fn test_write_read_memory() {
@@ -305,43 +244,5 @@ mod tests {
         store.insert_node(istate.clone(), n);
         let r = store.get_node_mut(&istate);
         assert_eq!(r.unwrap().regret_sum, [1.0; 5]);
-    }
-
-    #[test]
-    fn test_database_write_read_tempfile() {
-        let (mut c, t) = get_connection(Storage::Tempfile);
-        // let (mut c, t) = get_connection(Storage::Namedfile("/tmp/test".to_string()));
-
-        let mut data: HashMap<String, Vec<char>> = HashMap::new();
-
-        for _ in 0..1000 {
-            let k: String = rand::thread_rng()
-                .sample_iter(&Alphanumeric)
-                .take(20)
-                .map(char::from)
-                .collect();
-            let v: Vec<char> = rand::thread_rng()
-                .sample_iter(&Alphanumeric)
-                .take(20)
-                .map(char::from)
-                .collect();
-            data.insert(k, v);
-        }
-
-        write_data(&mut c, data);
-        let mut statement = c
-            .prepare(
-                "SELECT COUNT(*) FROM nodes WHERE istate LIKE '%' AND LENGTH(istate) <= 99999;",
-            )
-            .unwrap();
-        statement.next().unwrap();
-        assert_eq!(statement.read::<i64, _>(0).unwrap(), 1000);
-
-        let mut output: HashMap<String, Vec<char>> = HashMap::new();
-        read_data(&c, &"".to_string(), 99999, &mut output);
-
-        assert_eq!(output.len(), 1000);
-
-        drop(t);
     }
 }

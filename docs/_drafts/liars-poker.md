@@ -21,7 +21,6 @@ Going to use Liar's poker bots to illustrate why.
     *How to figure out the policy from the weights? What's the right way to update things for convergence?
     * Do we actually just need to implement CFR?
     *Implement a full CFR bot: <https://towardsdatascience.com/counterfactual-regret-minimization-ff4204bf4205>
-    * Implement an MCCFR bot: <https://xyzml.medium.com/learn-ai-game-playing-algorithm-part-iii-counterfactual-regret-minimization-b182a7ec85fb#6cf7>
 [*] Fix the problem with types so that can test multiple games and agents at the same time
 [*] Attempt to use the CFR implementation for euchre
 [*] Implement sqlite caching to reduce memory usage, and see the cached reference below for perf improvements
@@ -29,26 +28,48 @@ Going to use Liar's poker bots to illustrate why.
 [*] Implement benchmarks for kuhn poker CRF training?
     *Currently getting killed for too much memory usage
     *Add wrapper functions and then look to use SQLite as the backend to materialize to disk?
-    * <https://docs.rs/cached/latest/cached/> for the cache on the function?
+    *<https://docs.rs/cached/latest/cached/> for the cache on the function?
 [*] Implement performance improvements
     [*] Batch writing of nodes
     [*] Batch reading of nodes
     [*] Implement summary stats for how often pages are added and removed -- can see if need new caching algorithm
-    [ ] Benchmark -- see if too many pages are slowing down execution -- most time is spent in page contains
+    [*] Benchmark -- see if too many pages are slowing down execution -- most time is spent in page contains
         *About 1k pages total -- need to reduce the time for this
     [*] Implement shortcut if only 1 viable move
-    [ ] Switch to heap allocations: https://nnethercote.github.io/perf-book/heap-allocations.html?highlight=borrow
+    [*] Investigate a sparse format for storing the nodes, don't need to store all the zeros. Know there are only
+        5 actions for many scenarios, store which action it is. And then what the weights are
+            *Actions: [usize; 5] -- 5 actions they could take, at max there are 5 actions they could do
+            *Weight: [double; 5] -- for all the various tracking
+            *also lets us use arrays, which may have better performance
+    [*] Investigate storing the istate information as the gamestate changes, reduce the cost of updating
+        *16% impovement to benchmark
+    [ ] Is there a way to have the nodes only store the incremental history from parent nodes? And refer to the previous memory?
+        *Perhaps memory arena could reduce allocation pressue?
+    [*] Benchmark commiting pages -- might be taking a long time
+    [ ] Move IO to a separate thread
+        * Probably want to do with raw threads and maybe use rayon for computation?
+        *<https://doc.rust-lang.org/book/ch16-02-message-passing.html>
+        * Investigate write ahead logging for sql
+    [ ] explore non-sqlite options -- add benchmark for reading before making the switch
+    [ ] Do a benchmark with and without an index
+    [ ] Can we move IO to a separate thread?
+    [ ] Switch to heap allocations: <https://nnethercote.github.io/perf-book/heap-allocations.html?highlight=borrow>
     [ ] Could get all 27M states to fit into memory?
     [ ] Implement multi sized pages, e.g. shorter depth at start, and get longer, to try and better balance out the page sizes (fewer options at the end)
-        * Need to do this for the root page
+        *Need to do this for the root page
     [ ] Reduce memory footprint for each node -- can we get all 27M into memory?
         *Cannot reduce the action space easily
-        * Could protentially revmoe CFRNode::Strategy and just recompute each time it is needed
+        *Could protentially revmoe CFRNode::Strategy and just recompute each time it is needed
     [ ] Avoid storing some nodes
-        * if only a single action
-        * ???
+        *if only a single action
+        *???
 [ ] Add estimates for how many nodes remain
     [ ] Figure out how many states we'd actually need to cover. Is there a way to collapse states? See notes below
+[ ] Implement an MCCFR bot: <https://xyzml.medium.com/learn-ai-game-playing-algorithm-part-iii-counterfactual-regret-minimization-b182a7ec85fb#6cf7>
+    *<http://mlanctot.info/files/papers/PhD_Thesis_MarcLanctot.pdf>
+    *Start with outcome sampling -- seems simpler
+    * Investigate how to measure convergence
+
 [*] build support for named database
 [ ] Switch to non-recursive CFR for better debugability? Or switch straight to MCCFR?
 [ ] Implement MCCFR for kuhn poker
@@ -159,6 +180,8 @@ How can this be reduced? e.g. with a better representation? Symmetry along the s
 
 Can we break the problem apart into before and after trump is called? And then simplify the gamestate?
 
+Running for 87M rounds of CFR resulted in 10M nodes stored in the database in 5.5GB. Would need ~175M rounds of the CFR for a single game. About 11 GB for nodes from a single game. Reasonable for a single hand, but would struggle to get reasonable coverage of possible deals.
+
 ## Exploring options to reduce computation
 
 Using CFR, we only need to store each information state.
@@ -171,3 +194,33 @@ Using CFR, we only need to store each information state.
 If only looking at a single game: 12.4b states -- at a byte per gamestate, this is 12TB of data
 
 Still likely too many states to store -- could we collapse the representation of the states?
+
+58 min for 258M states
+
+## Disk performance testing
+
+### sqlite multithreaded writing for data
+
+WAL testing:
+No WAL
+    2023-02-07T15:44:26-07:00 - INFO - Starting self play for CFR
+    2023-02-07T15:46:11-07:00 - DEBUG - cfr called 60000000 times   (0:01:45)
+
+W/ WAL
+    2023-02-07T15:47:52-07:00 - INFO - Starting self play for CFR
+    2023-02-07T15:49:54-07:00 - DEBUG - cfr called 60000000 times   (0:02:02)
+
+No index, w/ WAL
+    2023-02-07T15:53:40-07:00 - INFO - Starting self play for CFR
+    2023-02-07T15:55:04-07:00 - DEBUG - cfr called 60000000 times   (0:01:24)
+    2023-02-07T15:57:26-07:00 - DEBUG - cfr called 100000000 times  (0:03:46)
+    2023-02-07T16:01:33-07:00 - DEBUG - cfr called 200000000 times  (0:07:53)
+
+No index, Journal mode off, synchronous Normal
+    2023-02-07T18:29:25-07:00 - INFO - Starting self play for CFR
+    2023-02-07T18:31:05-07:00 - DEBUG - cfr called 60000000 times   (0:01:40)
+    2023-02-07T18:33:32-07:00 - DEBUG - cfr called 100000000 times  (0:04:07)
+
+    Failed with a "database is locked"
+
+Only getting 20M/s from iotop -- can we do better with raw writing performance
