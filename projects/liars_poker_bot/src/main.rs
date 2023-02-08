@@ -143,8 +143,8 @@ fn traverse_game_tree<T: GameState + Clone>(s: T, depth: usize) -> usize {
 
 fn run(args: Args) {
     let storage = match args.file.as_str() {
-        "" => Storage::Tempfile,
-        _ => Storage::Namedfile(args.file),
+        "" => Storage::Temp,
+        _ => Storage::Named(args.file),
     };
     let _cfr = CFRAgent::new(Euchre::game(), 1, 1, storage);
 }
@@ -155,7 +155,7 @@ fn run_benchmark(args: Args) {
         _ => todo!(),
     };
 
-    let cfr = CFRAgent::new(Euchre::game(), 0, 2, Storage::Tempfile);
+    let cfr = CFRAgent::new(Euchre::game(), 0, 2, Storage::Temp);
     let mut agents: Vec<Box<dyn Fn() -> Box<dyn Agent>>> = Vec::new();
     agents.push(Box::new(|| -> Box<dyn Agent> {
         Box::new(RandomAgent::new())

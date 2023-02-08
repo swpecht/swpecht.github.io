@@ -25,21 +25,17 @@ fn generate_page(istate: &str, n: usize) -> Page<Vec<char>> {
     return p;
 }
 
-// fn io_uring_write_data(data: HashMap<String, Vec<char>>) {
-//     io_uring_backend::write_data(data).unwrap();
-// }
-
 fn criterion_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("database-benchmarks");
     group.sample_size(10);
     let data = generate_page("", 1_000_000);
-    let mut sql = SqliteBackend::new(Storage::Tempfile);
+    let mut sql = SqliteBackend::new(Storage::Temp);
 
     group.bench_function("sql write data", |b| {
         b.iter(|| sql.write_sync(black_box(data.clone())))
     });
 
-    let mut sql = SqliteBackend::new(Storage::Tempfile);
+    let mut sql = SqliteBackend::new(Storage::Temp);
     sql.write_sync(data.clone()).unwrap();
 
     group.bench_function("sql read data", |b| {
@@ -53,7 +49,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     drop(sql);
 
     let data = generate_page("", 1_000_000);
-    let mut io_uring = UringBackend::new(Storage::Tempfile);
+    let mut io_uring = UringBackend::new(Storage::Temp);
     group.bench_function("io_uring write data", |b| {
         b.iter(|| io_uring.write(black_box(data.clone())))
     });

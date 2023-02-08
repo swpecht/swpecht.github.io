@@ -7,8 +7,11 @@
 /// Simplest to just store each page as it's own file?
 /// Pay some overhead on opening files, but should be minimal given we're constrained by
 use serde::Serialize;
-use std::{collections::HashMap, path::PathBuf};
-use tempfile::{NamedTempFile, TempPath};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
+use tempfile::{tempdir, NamedTempFile, TempDir, TempPath};
 use tokio_uring::fs::File;
 
 use super::{disk_backend::DiskBackend, page::Page, Storage};
@@ -16,30 +19,45 @@ use super::{disk_backend::DiskBackend, page::Page, Storage};
 pub struct UringBackend {
     // Location of all files
     dir: PathBuf,
-    storage: Storage,
-    // Hold a reference so the file isn't deleted
-    _temp: Option<TempPath>,
+    // Hold a reference so the directory isn't deleted until this is dropped
+    _temp: Option<TempDir>,
 }
 
 impl UringBackend {
     pub fn new(storage: Storage) -> Self {
-        let mut temp_file = None;
+        let mut temp_dir = None;
+
         let path = match storage.clone() {
-            Storage::Memory => ":memory:".to_string(),
-            Storage::Tempfile => {
-                let f = NamedTempFile::new().unwrap();
-                temp_file = Some(f.into_temp_path());
-                temp_file.as_ref().unwrap().to_str().unwrap().to_string()
+            Storage::Memory => panic!("memory backing not supported for io_uring"),
+            Storage::Temp => {
+                let dir = tempdir().unwrap();
+                let path = dir.path().to_owned();
+                temp_dir = Some(dir);
+                path
             }
-            Storage::Namedfile(x) => x,
+            Storage::Named(x) => Path::new(&x).to_owned(),
         };
-        todo!()
+
+        Self {
+            dir: path,
+            _temp: temp_dir,
+        }
     }
 }
 
-impl<T> DiskBackend<T> for UringBackend {
+impl<T: Serialize> DiskBackend<T> for UringBackend {
     fn write(&mut self, p: Page<T>) -> Result<(), &'static str> {
-        todo!()
+        // Special case to handle the root node
+        let name = match p.istate.as_str() {
+            "" => "ROOT_NODE",
+            _ => p.istate.as_str(),
+        };
+
+        let path = self.dir.join(name);
+        let f = std::fs::File::create(path).unwrap();
+
+        write_data(f, p.cache).unwrap();
+        Ok(())
     }
 
     fn read(&self, p: Page<T>) -> Page<T> {
@@ -78,30 +96,18 @@ pub fn write_data<T: Serialize>(
     })
 }
 
-// pub fn get_file(storage: Storage) -> std::fs::File {
-//     let file = match storage.clone() {
-//         Storage::Memory => panic!("memory storage not supported to io_uring"),
-//         Storage::Tempfile => {
-//             let f = NamedTempFile::new().unwrap();
-//             *f.as_file()
-//         }
-//         Storage::Namedfile(x) => fs::File::create(x).unwrap(),
-//     };
-
-//     return file;
-// }
-
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, fs::File};
 
     use rand::{distributions::Alphanumeric, Rng};
 
-    use crate::database::io_uring_backend::write_data;
+    use crate::database::{disk_backend::DiskBackend, page::Page, Storage};
+
+    use super::UringBackend;
 
     #[test]
     fn test_sqlite_write_read_tempfile() {
-        let mut data: HashMap<String, Vec<char>> = HashMap::new();
+        let mut p = Page::new("", &[]);
 
         for _ in 0..1000 {
             let k: String = rand::thread_rng()
@@ -114,10 +120,12 @@ mod tests {
                 .take(20)
                 .map(char::from)
                 .collect();
-            data.insert(k, v);
+            p.cache.insert(k, v);
         }
 
-        let file = File::create("/tmp/io_uring_test").unwrap();
-        write_data(file, data).unwrap();
+        let mut b = UringBackend::new(Storage::Temp);
+        b.write(p).unwrap();
+
+        todo!();
     }
 }

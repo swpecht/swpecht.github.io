@@ -15,8 +15,8 @@ use self::disk_backend::DiskBackend;
 #[derive(Clone)]
 pub enum Storage {
     Memory,
-    Tempfile,
-    Namedfile(String),
+    Temp,
+    Named(String),
 }
 
 struct NodeStoreStats {
@@ -172,7 +172,7 @@ mod tests {
 
     #[test]
     fn test_write_page_read() {
-        let mut store = NodeStore::new_with_pages(SqliteBackend::new(Storage::Tempfile), 1);
+        let mut store = NodeStore::new_with_pages(SqliteBackend::new(Storage::Temp), 1);
         let istate = "test".to_string();
 
         let mut n = CFRNode::new(istate.clone(), &vec![0]);
@@ -191,7 +191,7 @@ mod tests {
 
     #[test]
     fn test_write_read_tempfile() {
-        let mut store = NodeStore::new(SqliteBackend::new(Storage::Tempfile));
+        let mut store = NodeStore::new(SqliteBackend::new(Storage::Temp));
         let istate = "test".to_string();
 
         let mut n = CFRNode::new(istate.clone(), &vec![0]);

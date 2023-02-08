@@ -57,7 +57,11 @@ impl<T: DeserializeOwned + Serialize + Send + 'static> SqliteBackend<T> {
 
 impl<T: DeserializeOwned + Serialize> DiskBackend<T> for SqliteBackend<T> {
     fn write(&mut self, p: Page<T>) -> Result<(), &'static str> {
-        self.tx_write_page.send(p).unwrap();
+        let r = self.tx_write_page.send(p);
+        if r.is_err() {
+            return Err("error writing to thread channel");
+        }
+
         Ok(())
     }
 
@@ -145,12 +149,12 @@ pub fn get_connection(storage: Storage) -> (Connection, Option<TempPath>, Connec
     let mut temp_file = None;
     let path = match storage.clone() {
         Storage::Memory => ":memory:".to_string(),
-        Storage::Tempfile => {
+        Storage::Temp => {
             let f = NamedTempFile::new().unwrap();
             temp_file = Some(f.into_temp_path());
             temp_file.as_ref().unwrap().to_str().unwrap().to_string()
         }
-        Storage::Namedfile(x) => x,
+        Storage::Named(x) => x,
     };
     debug!("creating connection to sqlite at {}", path);
     let connection = sqlite::open(path.clone()).unwrap();
@@ -193,7 +197,7 @@ mod tests {
 
     #[test]
     fn test_sqlite_write_read_tempfile() {
-        let (mut c, t, _) = get_connection(Storage::Tempfile);
+        let (mut c, t, _) = get_connection(Storage::Temp);
 
         let mut data: HashMap<String, Vec<char>> = HashMap::new();
 
