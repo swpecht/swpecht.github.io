@@ -4,9 +4,9 @@ use std::{
     thread, time,
 };
 
-use log::debug;
+use log::{debug, info, warn};
 use serde::{de::DeserializeOwned, Serialize};
-use sqlite::{Connection, State, Value};
+use sqlite::{Connection, Error, State, Value};
 use tempfile::{NamedTempFile, TempPath};
 
 use super::{disk_backend::DiskBackend, page::Page, Storage};
@@ -98,7 +98,9 @@ pub fn write_data<T: Serialize>(c: &mut Connection, items: HashMap<String, T>) {
         }
     }
 
-    c.execute("COMMIT;").unwrap();
+    while c.execute("COMMIT;").is_err() {
+        warn!("retrying write, database errord on commit");
+    }
 }
 
 pub fn read_data<T>(c: &Connection, key: &String, max_len: usize, output: &mut HashMap<String, T>)
