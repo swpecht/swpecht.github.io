@@ -46,15 +46,39 @@ fn criterion_benchmark(c: &mut Criterion) {
         })
     });
 
-    drop(sql);
-
     let data = generate_page("", 1_000_000);
-    let mut io_uring = UringBackend::new(Storage::Temp);
-    group.bench_function("io_uring write data", |b| {
+    let mut io_uring = UringBackend::new_with_buffer_size(Storage::Temp, 65536);
+    group.bench_function("io_uring write data, 64kb", |b| {
         b.iter(|| io_uring.write(black_box(data.clone())))
     });
 
-    drop(io_uring);
+    let mut io_uring = UringBackend::new_with_buffer_size(Storage::Temp, 4096);
+    group.bench_function("io_uring write data, 4kb", |b| {
+        b.iter(|| io_uring.write(black_box(data.clone())))
+    });
+
+    let mut io_uring = UringBackend::new_with_buffer_size(Storage::Temp, 65536);
+    io_uring.write(data).unwrap();
+
+    group.bench_function("io_uring read data, 64kb", |b| {
+        b.iter(|| {
+            let mut p: Page<Vec<char>> = Page::new("", &[]);
+            p = io_uring.read(p);
+            assert_eq!(p.cache.len(), 1_000_000)
+        })
+    });
+
+    let data = generate_page("", 1_000_000);
+    let mut io_uring = UringBackend::new_with_buffer_size(Storage::Temp, 4096);
+    io_uring.write(data).unwrap();
+
+    group.bench_function("io_uring read data, 4kb", |b| {
+        b.iter(|| {
+            let mut p: Page<Vec<char>> = Page::new("", &[]);
+            p = io_uring.read(p);
+            assert_eq!(p.cache.len(), 1_000_000)
+        })
+    });
 
     group.finish()
 }
