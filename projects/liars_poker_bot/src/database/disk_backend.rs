@@ -1,5 +1,3 @@
-use serde::{de::DeserializeOwned, Serialize};
-
 use super::page::Page;
 
 /// Trait to handle actually writing data to disk, including any multithreading that may be needed

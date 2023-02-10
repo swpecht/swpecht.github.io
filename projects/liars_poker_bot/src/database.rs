@@ -2,6 +2,7 @@ pub mod disk_backend;
 pub mod io_uring_backend;
 pub mod page;
 pub mod sqlite_backend;
+pub mod file_backend;
 
 use std::collections::{HashMap, VecDeque};
 

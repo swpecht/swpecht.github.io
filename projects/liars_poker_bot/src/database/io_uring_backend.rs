@@ -1,3 +1,4 @@
+use log::debug;
 /// Implements a node storage backend for io_uring
 ///
 /// Each istate can be though of as a tree of data
@@ -9,10 +10,9 @@
 use serde::{de::DeserializeOwned, Serialize};
 use std::{
     collections::HashMap,
-    hash::Hash,
     path::{Path, PathBuf},
 };
-use tempfile::{tempdir, NamedTempFile, TempDir, TempPath};
+use tempfile::{tempdir, TempDir};
 use tokio_uring::fs::File;
 
 use super::{disk_backend::DiskBackend, page::Page, Storage};
@@ -45,6 +45,7 @@ impl UringBackend {
             Storage::Named(x) => Path::new(&x).to_owned(),
         };
 
+        debug!("setting up io_uring backend at: {}", path.display());
         Self {
             dir: path,
             _temp: temp_dir,
@@ -74,8 +75,13 @@ impl<T: Serialize + DeserializeOwned> DiskBackend<T> for UringBackend {
 
     fn read(&self, mut p: Page<T>) -> Page<T> {
         let path = self.get_path(&p);
-        let f = std::fs::File::open(path).unwrap();
-        p.cache = read_data(f, self.buffer_size).unwrap();
+        let o_result = std::fs::File::open(path);
+
+        if o_result.is_ok() {
+            let f = o_result.unwrap();
+            p.cache = read_data(f, self.buffer_size).unwrap();
+        }
+
         return p;
     }
 }
@@ -139,8 +145,6 @@ pub fn read_data<T: DeserializeOwned>(
         }
 
         let items = serde_json::from_slice(&output).unwrap();
-        // Failing because of trailing characters, maybe I need to 0 out the buffer?
-
         // Close the file
         file.close().await?;
         return Ok(items);
