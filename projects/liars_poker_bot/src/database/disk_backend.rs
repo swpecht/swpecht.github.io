@@ -1,4 +1,8 @@
-use super::page::Page;
+use std::path::{Path, PathBuf};
+
+use tempfile::{tempdir, TempDir};
+
+use super::{page::Page, Storage};
 
 /// Trait to handle actually writing data to disk, including any multithreading that may be needed
 pub trait DiskBackend<T>: Clone {
@@ -24,4 +28,32 @@ impl<T> DiskBackend<T> for NoOpBackend {
     fn read(&self, p: Page<T>) -> Page<T> {
         return p;
     }
+}
+
+pub(super) fn get_path<T>(p: &Page<T>, dir: &PathBuf) -> PathBuf {
+    // Special case to handle the root node
+    let name = match p.istate.as_str() {
+        "" => "ROOT_NODE",
+        _ => p.istate.as_str(),
+    };
+
+    let path = dir.join(name);
+    return path;
+}
+
+pub(super) fn get_directory(storage: Storage) -> (PathBuf, Option<TempDir>) {
+    let mut temp_dir = None;
+
+    let path = match storage.clone() {
+        Storage::Memory => panic!("memory backing not supported for io_uring"),
+        Storage::Temp => {
+            let dir = tempdir().unwrap();
+            let path = dir.path().to_owned();
+            temp_dir = Some(dir);
+            path
+        }
+        Storage::Named(x) => Path::new(&x).to_owned(),
+    };
+
+    return (path, temp_dir);
 }

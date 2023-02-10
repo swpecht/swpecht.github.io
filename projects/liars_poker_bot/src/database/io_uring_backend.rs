@@ -15,7 +15,13 @@ use std::{
 use tempfile::{tempdir, TempDir};
 use tokio_uring::fs::File;
 
-use super::{disk_backend::DiskBackend, page::Page, Storage};
+use crate::database::disk_backend::get_directory;
+
+use super::{
+    disk_backend::{get_path, DiskBackend},
+    page::Page,
+    Storage,
+};
 
 pub struct UringBackend {
     // Location of all files
@@ -32,18 +38,7 @@ impl UringBackend {
     }
 
     pub fn new_with_buffer_size(storage: Storage, buffer_size: usize) -> Self {
-        let mut temp_dir = None;
-
-        let path = match storage.clone() {
-            Storage::Memory => panic!("memory backing not supported for io_uring"),
-            Storage::Temp => {
-                let dir = tempdir().unwrap();
-                let path = dir.path().to_owned();
-                temp_dir = Some(dir);
-                path
-            }
-            Storage::Named(x) => Path::new(&x).to_owned(),
-        };
+        let (path, temp_dir) = get_directory(storage);
 
         debug!("setting up io_uring backend at: {}", path.display());
         Self {
@@ -52,29 +47,18 @@ impl UringBackend {
             buffer_size: buffer_size,
         }
     }
-
-    fn get_path<T>(&self, p: &Page<T>) -> PathBuf {
-        // Special case to handle the root node
-        let name = match p.istate.as_str() {
-            "" => "ROOT_NODE",
-            _ => p.istate.as_str(),
-        };
-
-        let path = self.dir.join(name);
-        return path;
-    }
 }
 
 impl<T: Serialize + DeserializeOwned> DiskBackend<T> for UringBackend {
     fn write(&mut self, p: Page<T>) -> Result<(), &'static str> {
-        let path = self.get_path(&p);
+        let path = get_path(&p, &self.dir);
         let f = std::fs::File::create(path).unwrap();
         write_data(f, p.cache, self.buffer_size).unwrap();
         Ok(())
     }
 
     fn read(&self, mut p: Page<T>) -> Page<T> {
-        let path = self.get_path(&p);
+        let path = get_path(&p, &self.dir);
         let o_result = std::fs::File::open(path);
 
         if o_result.is_ok() {
