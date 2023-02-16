@@ -233,18 +233,8 @@ impl Agent for CFRAgent {
     ///
     /// If the I state has not be
     fn step(&mut self, s: &dyn GameState) -> Action {
-        // Populate new istates with default value
         let istate = s.information_state_string(s.cur_player());
-        // if !self.contains_node(&istate) {
-        //     // populate an empty state
-        //     warn!("new istate encountered during play: {}", istate);
-        //     self.policy.insert(
-        //         istate.clone(),
-        //         vec![1.0 / self.game.max_actions as f32; self.game.max_actions],
-        //     );
-        // }
 
-        // Otherwise we choose the action based on weights
         let p = self.get_policy(&istate);
         trace!("evaluating istate {} for {:?}", istate, p);
         let mut weights = vec![0.0; s.legal_actions().len()];
