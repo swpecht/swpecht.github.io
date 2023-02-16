@@ -5,9 +5,9 @@ use clap::clap_derive::ArgEnum;
 use liars_poker_bot::agents::{Agent, RandomAgent};
 use liars_poker_bot::cfragent::CFRAgent;
 use liars_poker_bot::database::Storage;
-use liars_poker_bot::euchre::{Euchre, EuchreGameState};
+use liars_poker_bot::euchre::Euchre;
 use liars_poker_bot::game::{run_game, GameState};
-use liars_poker_bot::kuhn_poker::KuhnPoker;
+
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{thread_rng, SeedableRng};
@@ -23,6 +23,7 @@ enum Mode {
     Run,
     Benchmark,
     Analyze,
+    Play,
 }
 
 /// Simple program to greet a person
@@ -43,15 +44,20 @@ struct Args {
 
     #[clap(short, long, action, default_value = "")]
     file: String,
+
+    /// Allow module to log
+    #[structopt(long = "module")]
+    modules: Vec<String>,
 }
 
 fn main() {
     let args = Args::parse();
 
     stderrlog::new()
-        .module(module_path!())
         .verbosity(args.verbosity)
         .timestamp(stderrlog::Timestamp::Second)
+        .show_module_names(true)
+        .modules(args.modules.clone())
         .init()
         .unwrap();
 
@@ -59,6 +65,7 @@ fn main() {
         Mode::Run => run(args),
         Mode::Benchmark => run_benchmark(args),
         Mode::Analyze => run_analyze(args),
+        Mode::Play => run_play(args),
     }
 }
 
@@ -146,7 +153,7 @@ fn run(args: Args) {
         "" => Storage::Temp,
         _ => Storage::Named(args.file),
     };
-    let _cfr = CFRAgent::new(Euchre::game(), 1, 1, storage);
+    let _cfr = CFRAgent::new(Euchre::game(), 1, 100, storage);
 }
 
 fn run_benchmark(args: Args) {
@@ -192,4 +199,8 @@ fn run_benchmark(args: Args) {
             )
         }
     }
+}
+
+fn run_play(args: Args) {
+    todo!()
 }
