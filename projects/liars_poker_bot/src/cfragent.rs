@@ -39,7 +39,7 @@ impl CFRAgent {
                 s.apply_action(a);
             }
             agent.cfr(s, 1.0, 1.0);
-            trace!("Finished iteration {} for CFR", i);
+            info!("Finished iteration {} for CFR", i);
         }
 
         // Save the trained policy
@@ -273,7 +273,7 @@ mod tests {
     fn cfragent_nash_test() {
         let game = KuhnPoker::game();
         // Verify the nash equilibrium is reached. From https://en.wikipedia.org/wiki/Kuhn_poker
-        let mut qa = CFRAgent::new(game, 42, 10000, Storage::Memory);
+        let mut qa = CFRAgent::new(game, 42, 10000, Storage::Temp);
 
         // The second player has a single equilibrium strategy:
         // Always betting or calling when having a King
@@ -330,7 +330,7 @@ mod tests {
 
     #[test]
     fn cfragent_sample_test() {
-        let mut qa = CFRAgent::new(KuhnPoker::game(), 42, 10000, Storage::Memory);
+        let mut qa = CFRAgent::new(KuhnPoker::game(), 42, 10000, Storage::Temp);
         let mut s = KuhnPoker::new_state();
         s.apply_action(1);
         s.apply_action(0);
