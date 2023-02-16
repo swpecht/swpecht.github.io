@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{BufRead, BufReader, BufWriter, Read, Write},
+    io::{BufWriter, Read, Write},
     path::PathBuf,
 };
 
@@ -55,6 +55,10 @@ impl<T: Serialize + DeserializeOwned> DiskBackend<T> for FileBackend {
         p.cache = serde_json::from_slice(&buf).unwrap();
 
         return p;
+    }
+
+    fn write_sync(&mut self, p: super::page::Page<T>) -> Result<(), &'static str> {
+        self.write(p)
     }
 }
 

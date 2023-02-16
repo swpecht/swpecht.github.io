@@ -4,9 +4,9 @@ use std::{
     thread, time,
 };
 
-use log::{debug, info, warn};
+use log::{debug, warn};
 use serde::{de::DeserializeOwned, Serialize};
-use sqlite::{Connection, Error, State, Value};
+use sqlite::{Connection, State, Value};
 use tempfile::{NamedTempFile, TempPath};
 
 use super::{disk_backend::DiskBackend, page::Page, Storage};
@@ -47,12 +47,6 @@ impl<T: DeserializeOwned + Serialize + Send + 'static> SqliteBackend<T> {
             _temp: temp_file,
         };
     }
-
-    /// Synchronous version of writing data for testing
-    pub fn write_sync(&mut self, p: Page<T>) -> Result<(), &'static str> {
-        write_data(&mut self.connection, p.cache);
-        Ok(())
-    }
 }
 
 impl<T: DeserializeOwned + Serialize> DiskBackend<T> for SqliteBackend<T> {
@@ -68,6 +62,11 @@ impl<T: DeserializeOwned + Serialize> DiskBackend<T> for SqliteBackend<T> {
     fn read(&self, mut p: Page<T>) -> Page<T> {
         read_data(&self.connection, &p.istate, p.max_length, &mut p.cache);
         return p;
+    }
+
+    fn write_sync(&mut self, p: Page<T>) -> Result<(), &'static str> {
+        write_data(&mut self.connection, p.cache);
+        Ok(())
     }
 }
 

@@ -8,11 +8,8 @@ use log::debug;
 /// Simplest to just store each page as it's own file?
 /// Pay some overhead on opening files, but should be minimal given we're constrained by
 use serde::{de::DeserializeOwned, Serialize};
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-};
-use tempfile::{tempdir, TempDir};
+use std::{collections::HashMap, path::PathBuf};
+use tempfile::TempDir;
 use tokio_uring::fs::File;
 
 use crate::database::disk_backend::get_directory;
@@ -67,6 +64,10 @@ impl<T: Serialize + DeserializeOwned> DiskBackend<T> for UringBackend {
         }
 
         return p;
+    }
+
+    fn write_sync(&mut self, p: Page<T>) -> Result<(), &'static str> {
+        self.write(p)
     }
 }
 
