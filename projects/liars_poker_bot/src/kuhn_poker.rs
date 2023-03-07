@@ -65,9 +65,9 @@ impl KuhnPoker {
         }
     }
 
-    pub fn game() -> Game {
+    pub fn game() -> Game<KPGameState> {
         Game {
-            new: Box::new(|| -> Box<dyn GameState> { Box::new(Self::new_state()) }),
+            new: Box::new(|| -> KPGameState { Self::new_state() }),
             max_players: 2,
             max_actions: 3, // 1 for each card dealt
         }

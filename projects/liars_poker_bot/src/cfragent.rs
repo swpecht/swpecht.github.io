@@ -1,4 +1,4 @@
-use std::{fmt::Debug, iter::zip};
+use std::{fmt::Debug, iter::zip, marker::PhantomData};
 
 use itertools::Itertools;
 use log::{debug, info, trace};
@@ -12,21 +12,23 @@ use crate::{
 };
 
 #[derive(Clone)]
-pub struct CFRAgent {
-    game: Game,
+pub struct CFRAgent<T: GameState> {
+    game: Game<T>,
     rng: StdRng,
     store: NodeStore<UringBackend>,
     call_count: usize,
+    _phantom: PhantomData<T>,
 }
 
-impl CFRAgent {
-    pub fn new(game: Game, seed: u64, iterations: usize, storage: Storage) -> Self {
+impl<T: GameState> CFRAgent<T> {
+    pub fn new(game: Game<T>, seed: u64, iterations: usize, storage: Storage) -> Self {
         let mut agent = Self {
             game,
             rng: SeedableRng::seed_from_u64(seed),
             store: NodeStore::new(UringBackend::new(storage)),
             // store: NodeStore::new(NoOpBackend::new()),
             call_count: 0,
+            _phantom: PhantomData,
         };
 
         // Use CFR to train the agent
@@ -51,7 +53,7 @@ impl CFRAgent {
     /// Recursive CFR implementation
     ///
     /// Adapted from: https://towardsdatascience.com/counterfactual-regret-minimization-ff4204bf4205
-    fn cfr(&mut self, s: Box<dyn GameState>, p0: f32, p1: f32) -> f32 {
+    fn cfr(&mut self, s: T, p0: f32, p1: f32) -> f32 {
         self.call_count += 1;
         if self.call_count % 1000000 == 0 {
             debug!("cfr called {} times", self.call_count);
@@ -63,7 +65,7 @@ impl CFRAgent {
         // other optios.
         let actions = s.legal_actions();
         if actions.len() == 1 {
-            let mut new_s = dyn_clone::clone_box(&*s);
+            let mut new_s = s.clone();
             let a = s.legal_actions()[0];
             new_s.apply_action(a);
             return -self.cfr(new_s, p0, p1);
@@ -94,7 +96,7 @@ impl CFRAgent {
 
         let mut node_util = 0.0;
         for &a in &actions {
-            let mut new_s = dyn_clone::clone_box(&*s);
+            let mut new_s = s.clone();
             new_s.apply_action(a);
             let idx = node.get_index(a);
 
@@ -228,11 +230,11 @@ impl CFRNode {
     }
 }
 
-impl Agent for CFRAgent {
+impl<T: GameState> Agent<T> for CFRAgent<T> {
     /// Chooses a random action weighted by the policy for the current istate.
     ///
     /// If the I state has not be
-    fn step(&mut self, s: &dyn GameState) -> Action {
+    fn step(&mut self, s: &T) -> Action {
         let istate = s.information_state_string(s.cur_player());
 
         let p = self.get_policy(&istate);

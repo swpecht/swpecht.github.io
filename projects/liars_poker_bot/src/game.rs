@@ -1,6 +1,5 @@
 use std::fmt::Display;
 
-use dyn_clone::DynClone;
 use log::info;
 use rand::{seq::SliceRandom, Rng};
 
@@ -11,13 +10,13 @@ pub type IState = f64;
 pub type Player = usize;
 
 #[derive(Clone)]
-pub struct Game {
-    pub new: Box<fn() -> Box<dyn GameState>>,
+pub struct Game<T: GameState> {
+    pub new: Box<fn() -> T>,
     pub max_players: usize,
     pub max_actions: usize,
 }
 
-pub trait GameState: Display + DynClone {
+pub trait GameState: Display + Clone {
     /// Applies an action in place
     fn apply_action(&mut self, a: Action);
     /// Returns all legal actions at a given game state
@@ -33,9 +32,10 @@ pub trait GameState: Display + DynClone {
     fn cur_player(&self) -> Player;
 }
 
-pub fn run_game<R>(s: &mut (dyn GameState), agents: &mut Vec<&mut dyn Agent>, rng: &mut R)
+pub fn run_game<G, R>(s: &mut G, agents: &mut Vec<&mut dyn Agent<G>>, rng: &mut R)
 where
     R: Rng + ?Sized,
+    G: GameState,
 {
     if s.num_players() != agents.len() {
         panic!(

@@ -1,6 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use dyn_clone::clone_box;
-use liars_poker_bot::euchre::Euchre;
+use liars_poker_bot::{euchre::Euchre, game::GameState};
 use rand::{seq::SliceRandom, thread_rng};
 
 use liars_poker_bot::{cfragent::CFRAgent, database::Storage, kuhn_poker::KuhnPoker};
@@ -33,7 +33,7 @@ fn traverse_game_tree(n: usize) {
         let (_, s) = work.pop().unwrap();
         let actions = s.legal_actions();
         for a in actions {
-            let mut new_s = clone_box(&*s);
+            let mut new_s = s.clone();
             new_s.apply_action(a);
             let istate = new_s.information_state_string(new_s.cur_player());
             work.push((istate, new_s));

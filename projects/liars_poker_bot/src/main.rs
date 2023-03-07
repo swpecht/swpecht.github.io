@@ -5,7 +5,7 @@ use clap::clap_derive::ArgEnum;
 use liars_poker_bot::agents::{Agent, RandomAgent};
 use liars_poker_bot::cfragent::CFRAgent;
 use liars_poker_bot::database::Storage;
-use liars_poker_bot::euchre::Euchre;
+use liars_poker_bot::euchre::{Euchre, EuchreGameState};
 use liars_poker_bot::game::{run_game, GameState};
 
 use rand::rngs::StdRng;
@@ -158,17 +158,19 @@ fn run(args: Args) {
 
 fn run_benchmark(args: Args) {
     let g = match args.game {
-        GameType::Euchre => Box::new(|| -> Box<dyn GameState> { Box::new(Euchre::new_state()) }),
+        GameType::Euchre => Box::new(|| -> EuchreGameState { Euchre::new_state() }),
         _ => todo!(),
     };
 
     let cfr = CFRAgent::new(Euchre::game(), 0, 2, Storage::Temp);
-    let mut agents: Vec<Box<dyn Fn() -> Box<dyn Agent>>> = Vec::new();
-    agents.push(Box::new(|| -> Box<dyn Agent> {
+    let mut agents: Vec<Box<dyn Fn() -> Box<dyn Agent<EuchreGameState>>>> = Vec::new();
+    agents.push(Box::new(|| -> Box<dyn Agent<EuchreGameState>> {
         Box::new(RandomAgent::new())
     }));
 
-    agents.push(Box::new(|| -> Box<dyn Agent> { Box::new(cfr.clone()) }));
+    agents.push(Box::new(|| -> Box<dyn Agent<EuchreGameState>> {
+        Box::new(cfr.clone())
+    }));
 
     let mut rng = thread_rng();
     for p0 in 0..agents.len() {
@@ -177,7 +179,7 @@ fn run_benchmark(args: Args) {
             for _ in 0..args.num_games {
                 let mut s = g();
                 run_game(
-                    s.as_mut(),
+                    &mut s,
                     &mut vec![
                         agents[p0]().as_mut(),
                         agents[p1]().as_mut(),

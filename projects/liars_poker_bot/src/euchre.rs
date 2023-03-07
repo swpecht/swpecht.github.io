@@ -33,9 +33,9 @@ impl Euchre {
         }
     }
 
-    pub fn game() -> Game {
+    pub fn game() -> Game<EuchreGameState> {
         Game {
-            new: Box::new(|| -> Box<dyn GameState> { Box::new(Self::new_state()) }),
+            new: Box::new(|| -> EuchreGameState { Self::new_state() }),
             max_players: 2,
             max_actions: 24, // 1 for each card dealt
         }

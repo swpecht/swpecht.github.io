@@ -2,8 +2,8 @@ use rand::{rngs::ThreadRng, seq::SliceRandom, thread_rng};
 
 use crate::game::{Action, GameState};
 
-pub trait Agent {
-    fn step(&mut self, s: &dyn GameState) -> Action;
+pub trait Agent<T: GameState> {
+    fn step(&mut self, s: &T) -> Action;
     fn get_name(&self) -> String {
         return format!("{}", std::any::type_name::<Self>());
     }
@@ -19,8 +19,8 @@ impl RandomAgent {
     }
 }
 
-impl Agent for RandomAgent {
-    fn step(&mut self, s: &dyn GameState) -> Action {
+impl<T: GameState> Agent<T> for RandomAgent {
+    fn step(&mut self, s: &T) -> Action {
         return *s.legal_actions().choose(&mut self.rng).unwrap();
     }
 }
@@ -33,8 +33,8 @@ impl AlwaysFirstAgent {
     }
 }
 
-impl Agent for AlwaysFirstAgent {
-    fn step(&mut self, s: &dyn GameState) -> Action {
+impl<T: GameState> Agent<T> for AlwaysFirstAgent {
+    fn step(&mut self, s: &T) -> Action {
         return s.legal_actions()[0];
     }
 }
@@ -54,8 +54,8 @@ impl RecordedAgent {
     }
 }
 
-impl Agent for RecordedAgent {
-    fn step(&mut self, _: &dyn GameState) -> Action {
+impl<T: GameState> Agent<T> for RecordedAgent {
+    fn step(&mut self, _: &T) -> Action {
         let a = self.actions[self.cur_action];
         self.cur_action = (self.cur_action + 1) % self.actions.len();
         return a;
