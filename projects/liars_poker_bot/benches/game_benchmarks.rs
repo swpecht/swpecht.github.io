@@ -1,5 +1,4 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use dyn_clone::clone_box;
 use liars_poker_bot::{euchre::Euchre, game::GameState};
 use rand::{seq::SliceRandom, thread_rng};
 
