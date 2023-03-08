@@ -548,8 +548,6 @@ impl GameState for EuchreGameState {
             r.push_str("XX");
             let len = r.len();
             let s = r[len - 2..].as_mut();
-            // let card = format_card(istate[i] as Action);
-            // r.push_str(&card)
             put_card(istate[i] as Action, s);
         }
 
