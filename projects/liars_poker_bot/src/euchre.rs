@@ -2,6 +2,7 @@ use std::{fmt::Display, rc::Rc};
 
 use arrayvec::ArrayVec;
 use itertools::Itertools;
+use log::info;
 
 use crate::game::{self, Action, Game, GameState, IState, Player};
 
@@ -64,6 +65,12 @@ pub struct EuchreGameState {
 
 impl Clone for EuchreGameState {
     fn clone(&self) -> Self {
+        // This ensures public history has the same capacity to avoid allocations/
+        // This resulted in a 68% improvement to the traverse euchre tree benchmark
+        // https://stackoverflow.com/questions/74083762/how-do-i-clone-a-vector-with-fixed-capacity-in-rust
+        let mut public_history = Vec::with_capacity(self.public_history.capacity());
+        public_history.extend(&self.public_history);
+
         if self.phase == EPhase::Play {
             // if we're in the playing phase, can avoid copying the starting hand memory and
             // instead just keep a single reference. Doing this led to a ~15% improvement on the euchre
@@ -80,7 +87,7 @@ impl Clone for EuchreGameState {
                 is_terminal: self.is_terminal.clone(),
                 phase: self.phase.clone(),
                 cur_player: self.cur_player.clone(),
-                public_history: self.public_history.clone(),
+                public_history: public_history,
             }
         } else {
             Self {
@@ -95,7 +102,7 @@ impl Clone for EuchreGameState {
                 is_terminal: self.is_terminal.clone(),
                 phase: self.phase.clone(),
                 cur_player: self.cur_player.clone(),
-                public_history: self.public_history.clone(),
+                public_history: public_history,
             }
         }
     }
@@ -444,6 +451,8 @@ impl GameState for EuchreGameState {
     fn apply_action(&mut self, a: Action) {
         // Don't want hands in the public history
         if self.phase != EPhase::DealHands && self.phase != EPhase::Discard {
+            info!("capacity: {}", self.public_history.capacity());
+            assert!(self.public_history.capacity() >= self.public_history.len() + 1);
             self.public_history.push(a);
         }
 
