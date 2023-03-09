@@ -1,3 +1,5 @@
+use std::io;
+
 use clap::Parser;
 
 use clap::clap_derive::ArgEnum;
@@ -6,7 +8,7 @@ use liars_poker_bot::agents::{Agent, RandomAgent};
 use liars_poker_bot::cfragent::CFRAgent;
 use liars_poker_bot::database::Storage;
 use liars_poker_bot::euchre::{Euchre, EuchreGameState};
-use liars_poker_bot::game::{run_game, GameState};
+use liars_poker_bot::game::{run_game, Action, GameState};
 
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
@@ -203,6 +205,45 @@ fn run_benchmark(args: Args) {
     }
 }
 
-fn run_play(args: Args) {
+fn run_play(_args: Args) {
+    let mut s = Euchre::new_state();
+    let mut rng: StdRng = SeedableRng::seed_from_u64(1);
+
+    let mut agent = RandomAgent::new();
+    let user = 0;
+
+    while !s.is_terminal() {
+        if s.is_chance_node() {
+            let actions = s.legal_actions();
+            let a = *actions.choose(&mut rng).unwrap();
+            s.apply_action(a);
+            continue;
+        }
+
+        let a;
+        if s.cur_player() == user {
+            a = handle_player_turn(&mut s);
+        } else {
+            a = agent.step(&s);
+        }
+
+        let cur_player = s.cur_player();
+        s.apply_action(a);
+        println!("{}: {}", cur_player, s.information_state_string(user));
+    }
+
     todo!()
+}
+
+fn handle_player_turn<T: GameState>(s: &mut T) -> Action {
+    let player = s.cur_player();
+    println!("{}", s.information_state_string(player));
+    println!("{:?}", s.legal_actions());
+
+    let mut buffer = String::new();
+    io::stdin()
+        .read_line(&mut buffer)
+        .expect("Failed to read input");
+
+    return buffer.trim().parse().expect("Failed to parse digits");
 }
