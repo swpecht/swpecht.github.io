@@ -1,8 +1,7 @@
 pub mod disk_backend;
+pub mod file_backend;
 pub mod io_uring_backend;
 pub mod page;
-pub mod sqlite_backend;
-pub mod file_backend;
 
 use std::collections::{HashMap, VecDeque};
 
@@ -152,47 +151,12 @@ mod tests {
 
     use crate::{
         cfragent::CFRNode,
-        database::{sqlite_backend::SqliteBackend, NodeStore, Storage},
+        database::{file_backend::FileBackend, NodeStore, Storage},
     };
 
     #[test]
-    fn test_write_read_memory() {
-        let mut store = NodeStore::new(SqliteBackend::new(Storage::Memory));
-        let istate = "test".to_string();
-
-        let mut n = CFRNode::new(istate.clone(), &vec![0]);
-        store.insert_node(istate.clone(), n.clone());
-        let r = store.get_node_mut(&istate);
-        assert_eq!(r.unwrap().regret_sum, [0.0; 5]);
-
-        n.regret_sum = [1.0; 5];
-        store.insert_node(istate.clone(), n);
-        let r = store.get_node_mut(&istate);
-        assert_eq!(r.unwrap().regret_sum, [1.0; 5]);
-    }
-
-    #[test]
-    fn test_write_page_read() {
-        let mut store = NodeStore::new_with_pages(SqliteBackend::new(Storage::Temp), 1);
-        let istate = "test".to_string();
-
-        let mut n = CFRNode::new(istate.clone(), &vec![0]);
-        store.insert_node(istate.clone(), n.clone());
-        let r = store.get_node_mut(&istate);
-        assert_eq!(r.unwrap().regret_sum, [0.0; 5]);
-
-        n.regret_sum = [1.0; 5];
-        store.insert_node(istate.clone(), n);
-
-        // force a page out
-        store.get_node_mut("different page because it's much longer");
-        let r = store.get_node_mut(&istate);
-        assert_eq!(r.unwrap().regret_sum, [1.0; 5]);
-    }
-
-    #[test]
     fn test_write_read_tempfile() {
-        let mut store = NodeStore::new(SqliteBackend::new(Storage::Temp));
+        let mut store = NodeStore::new(FileBackend::new(Storage::Temp));
         let istate = "test".to_string();
 
         let mut n = CFRNode::new(istate.clone(), &vec![0]);

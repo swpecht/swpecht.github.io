@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{BufWriter, Read, Write},
+    io::{BufWriter, ErrorKind, Read, Write},
     path::PathBuf,
 };
 
@@ -47,7 +47,13 @@ impl<T: Serialize + DeserializeOwned> DiskBackend<T> for FileBackend {
 
     fn read(&self, mut p: super::page::Page<T>) -> super::page::Page<T> {
         let path = get_path(&p, &self.dir);
-        let mut f = File::open(&path).unwrap();
+        let f = &mut File::open(&path);
+
+        if f.is_err() && f.as_ref().err().unwrap().kind() == ErrorKind::NotFound {
+            return p;
+        }
+
+        let f = f.as_mut().unwrap();
 
         let mut buf = Vec::new();
         f.read_to_end(&mut buf).unwrap();
