@@ -9,15 +9,11 @@ use crate::game::{self, Action, Game, GameState, IState, Player};
 const JACK: usize = 2;
 const CARD_PER_SUIT: usize = 6;
 const PRE_PLAY_PUBLIC_ACTIONS: usize = 11;
+const NUM_CARDS: usize = 24;
 
 pub struct Euchre {}
 impl Euchre {
     pub fn new_state() -> EuchreGameState {
-        let mut deck = Vec::new();
-        for i in 0..24 {
-            deck.push(i);
-        }
-
         EuchreGameState {
             num_players: 4,
             hands: ArrayVec::new(),
@@ -27,10 +23,13 @@ impl Euchre {
             cur_player: 0,
             trump: Suit::Clubs, // Default to one for now
             face_up: 0,         // Default for now
-            deck: deck,
             trump_caller: 0,
             starting_hands: Rc::new(ArrayVec::new()),
-            public_history: Vec::with_capacity(PRE_PLAY_PUBLIC_ACTIONS + 20),
+            pickup_history: Vec::with_capacity(4),
+            choose_history: Vec::with_capacity(4),
+            play_history: Vec::with_capacity(5 * 4),
+            deal_history: Vec::with_capacity(5 * 4),
+            discard_history: 0,
         }
     }
 
@@ -51,8 +50,6 @@ pub struct EuchreGameState {
     /// Holds the cards for each player in the game
     hands: ArrayVec<ArrayVec<Action, 5>, 4>,
     starting_hands: Rc<ArrayVec<ArrayVec<Action, 5>, 4>>,
-    /// Undealt cards
-    deck: Vec<Action>,
     trump: Suit,
     trump_caller: usize,
     face_up: Action,
@@ -60,7 +57,18 @@ pub struct EuchreGameState {
     is_terminal: bool,
     phase: EPhase,
     cur_player: usize,
-    public_history: Vec<Action>,
+
+    deal_history: Vec<Action>,
+    pickup_history: Vec<Action>,
+    choose_history: Vec<Action>,
+    play_history: Vec<Action>,
+    discard_history: Action,
+}
+
+fn clone_with_capacity(from: &Vec<usize>) -> Vec<usize> {
+    let mut new = Vec::with_capacity(from.capacity());
+    new.extend(from);
+    return new;
 }
 
 impl Clone for EuchreGameState {
@@ -68,8 +76,7 @@ impl Clone for EuchreGameState {
         // This ensures public history has the same capacity to avoid allocations/
         // This resulted in a 68% improvement to the traverse euchre tree benchmark
         // https://stackoverflow.com/questions/74083762/how-do-i-clone-a-vector-with-fixed-capacity-in-rust
-        let mut public_history = Vec::with_capacity(self.public_history.capacity());
-        public_history.extend(&self.public_history);
+        let play_history = clone_with_capacity(&self.play_history);
 
         if self.phase == EPhase::Play {
             // if we're in the playing phase, can avoid copying the starting hand memory and
@@ -79,7 +86,6 @@ impl Clone for EuchreGameState {
                 num_players: self.num_players.clone(),
                 hands: self.hands.clone(),
                 starting_hands: Rc::clone(&self.starting_hands),
-                deck: self.deck.clone(),
                 trump: self.trump.clone(),
                 trump_caller: self.trump_caller.clone(),
                 face_up: self.face_up.clone(),
@@ -87,14 +93,17 @@ impl Clone for EuchreGameState {
                 is_terminal: self.is_terminal.clone(),
                 phase: self.phase.clone(),
                 cur_player: self.cur_player.clone(),
-                public_history: public_history,
+                deal_history: self.deal_history.clone(),
+                pickup_history: self.pickup_history.clone(),
+                choose_history: self.choose_history.clone(),
+                play_history,
+                discard_history: self.discard_history,
             }
         } else {
             Self {
                 num_players: self.num_players.clone(),
                 hands: self.hands.clone(),
                 starting_hands: Rc::new((*self.starting_hands).clone()),
-                deck: self.deck.clone(),
                 trump: self.trump.clone(),
                 trump_caller: self.trump_caller.clone(),
                 face_up: self.face_up.clone(),
@@ -102,7 +111,11 @@ impl Clone for EuchreGameState {
                 is_terminal: self.is_terminal.clone(),
                 phase: self.phase.clone(),
                 cur_player: self.cur_player.clone(),
-                public_history: public_history,
+                deal_history: self.deal_history.clone(),
+                pickup_history: self.pickup_history.clone(),
+                choose_history: self.choose_history.clone(),
+                play_history,
+                discard_history: self.discard_history,
             }
         }
     }
@@ -138,8 +151,7 @@ enum Suit {
 
 impl EuchreGameState {
     fn apply_action_deal_hands(&mut self, a: Action) {
-        let index = self.deck.iter().position(|&x| x == a).unwrap();
-        self.deck.remove(index);
+        self.deal_history.push(a);
 
         if self.hands.len() <= self.cur_player {
             self.hands.push(ArrayVec::new());
@@ -165,6 +177,8 @@ impl EuchreGameState {
     }
 
     fn apply_action_pickup(&mut self, a: Action) {
+        self.pickup_history.push(a);
+
         match a {
             x if x == EAction::Pass as usize => {
                 if self.cur_player == self.num_players - 1 {
@@ -184,6 +198,7 @@ impl EuchreGameState {
     }
 
     fn apply_action_choose_trump(&mut self, a: Action) {
+        self.choose_history.push(a);
         match a {
             x if x == EAction::Clubs as usize => self.trump = Suit::Clubs,
             x if x == EAction::Spades as usize => self.trump = Suit::Spades,
@@ -217,6 +232,8 @@ impl EuchreGameState {
     }
 
     fn apply_action_play(&mut self, a: Action) {
+        self.play_history.push(a);
+
         let index = self.hands[self.cur_player]
             .iter()
             .position(|&x| x == a)
@@ -224,7 +241,7 @@ impl EuchreGameState {
         self.hands[self.cur_player].remove(index);
 
         // Set acting player based on who won last trick
-        if self.play_history().len() % 4 == 0 {
+        if self.play_history().len() % 4 == 0 && self.play_history().len() > 0 {
             let starter = (self.cur_player + 3) % self.num_players;
             let trick = &self.play_history()[self.play_history().len() - 4..];
             let winner = self.evaluate_trick(trick, starter);
@@ -239,7 +256,13 @@ impl EuchreGameState {
     }
 
     fn legal_actions_dealing(&self) -> Vec<Action> {
-        return self.deck.clone();
+        let mut deck = Vec::with_capacity(NUM_CARDS);
+        for i in 0..NUM_CARDS {
+            if !self.deal_history.contains(&i) {
+                deck.push(i);
+            }
+        }
+        return deck;
     }
 
     /// Can choose any trump except for the one from the faceup card
@@ -390,7 +413,7 @@ impl EuchreGameState {
     }
 
     fn play_history(&self) -> &[Action] {
-        return &self.public_history[PRE_PLAY_PUBLIC_ACTIONS..];
+        return &self.play_history;
     }
 }
 
@@ -449,13 +472,6 @@ fn put_card(c: Action, out: &mut str) {
 
 impl GameState for EuchreGameState {
     fn apply_action(&mut self, a: Action) {
-        // Don't want hands in the public history
-        if self.phase != EPhase::DealHands && self.phase != EPhase::Discard {
-            info!("capacity: {}", self.public_history.capacity());
-            assert!(self.public_history.capacity() >= self.public_history.len() + 1);
-            self.public_history.push(a);
-        }
-
         match self.phase {
             EPhase::DealHands => self.apply_action_deal_hands(a),
             EPhase::DealFaceUp => self.apply_action_deal_face_up(a),
@@ -463,20 +479,6 @@ impl GameState for EuchreGameState {
             EPhase::ChooseTrump => self.apply_action_choose_trump(a),
             EPhase::Discard => self.apply_action_discard(a),
             EPhase::Play => self.apply_action_play(a),
-        }
-
-        // Buffer the history if necessary
-        // Everyone didn't pass choosing trump or pickup
-        // 1 for face up, 4 for pickup, 4 for choosing trump
-        if (self.phase == EPhase::Play || self.phase == EPhase::Discard)
-            && self.public_history.len() < PRE_PLAY_PUBLIC_ACTIONS
-        {
-            for _ in 0..PRE_PLAY_PUBLIC_ACTIONS - 2 - self.public_history.len() {
-                self.public_history.push(EAction::Pass as usize);
-            }
-
-            self.public_history.push(self.trump_caller);
-            self.public_history.push(self.trump.clone() as usize);
         }
     }
 
@@ -529,11 +531,38 @@ impl GameState for EuchreGameState {
 
         istate.extend(self.starting_hands[player].iter().map(|&x| x as IState));
         assert_eq!(istate.len(), 5);
-        istate.extend(self.public_history.iter().map(|&x| x as IState));
 
-        if self.phase == EPhase::Discard || self.phase == EPhase::Play {
-            assert!(istate.len() >= 15)
+        if self.phase == EPhase::DealHands || self.phase == EPhase::DealFaceUp {
+            return istate;
         }
+
+        istate.push(self.face_up as IState);
+        assert_eq!(istate.len(), 6);
+
+        istate.extend(self.pickup_history.iter().map(|&x| x as IState));
+
+        if self.phase == EPhase::Pickup {
+            return istate;
+        }
+        for _ in 0..4 - self.pickup_history.len() {
+            istate.push(EAction::Pass as usize as IState);
+        }
+        assert_eq!(istate.len(), 10);
+
+        istate.extend(self.choose_history.iter().map(|&x| x as IState));
+        if self.phase == EPhase::ChooseTrump {
+            return istate;
+        }
+        for _ in 0..4 - self.choose_history.len() {
+            istate.push(EAction::Pass as usize as IState);
+        }
+        assert_eq!(istate.len(), 14);
+
+        istate.push(self.trump_caller as IState);
+        istate.push(self.trump.clone() as usize as IState);
+        assert!(istate.len() >= 15);
+
+        istate.extend(self.play_history.iter().map(|&x| x as IState));
 
         return istate;
     }
@@ -706,11 +735,12 @@ mod tests {
                 assert_eq!(index, None);
             }
         }
-        assert_eq!(s.public_history.len(), 0);
+        assert_eq!(s.play_history.len(), 0);
 
         // Deal the face up card
         s.apply_action(21);
-        assert_eq!(s.public_history.len(), 1);
+        assert_eq!(s.deal_history.len(), 20);
+        assert_eq!(s.face_up, 21);
 
         assert_eq!(
             s.legal_actions(),
