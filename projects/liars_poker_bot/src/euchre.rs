@@ -2,13 +2,11 @@ use std::{fmt::Display, rc::Rc};
 
 use arrayvec::ArrayVec;
 use itertools::Itertools;
-use log::info;
 
 use crate::game::{self, Action, Game, GameState, IState, Player};
 
 const JACK: usize = 2;
 const CARD_PER_SUIT: usize = 6;
-const PRE_PLAY_PUBLIC_ACTIONS: usize = 11;
 const NUM_CARDS: usize = 24;
 
 pub struct Euchre {}
