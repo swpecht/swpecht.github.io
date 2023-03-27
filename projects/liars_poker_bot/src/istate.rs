@@ -48,6 +48,7 @@ impl IStateKey {
 
     pub fn read(&self, start: usize, size: usize) -> Action {
         assert!(size > 0);
+        assert!(start + 1 >= size);
 
         let mut mask: Key = match size {
             1 => 0b1,

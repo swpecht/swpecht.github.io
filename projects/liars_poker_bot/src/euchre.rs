@@ -1,10 +1,13 @@
-use std::{fmt::Display, rc::Rc};
+use std::{
+    fmt::{Display, Write},
+    rc::Rc,
+};
 
 use arrayvec::ArrayVec;
 use itertools::Itertools;
 
 use crate::{
-    game::{self, Action, Game, GameState, IState, Player},
+    game::{self, Action, Game, GameState, Player},
     istate::IStateKey,
 };
 
@@ -32,7 +35,6 @@ impl Euchre {
             choose_history: Vec::with_capacity(4),
             play_history: Vec::with_capacity(5 * 4),
             deal_history: Vec::with_capacity(5 * 4),
-            discard_history: 0,
             istate_keys: keys,
         }
     }
@@ -67,7 +69,6 @@ pub struct EuchreGameState {
     pickup_history: Vec<Action>,
     choose_history: Vec<Action>,
     play_history: Vec<Action>,
-    discard_history: Action,
 }
 
 fn clone_with_capacity(from: &Vec<usize>) -> Vec<usize> {
@@ -102,7 +103,6 @@ impl Clone for EuchreGameState {
                 pickup_history: self.pickup_history.clone(),
                 choose_history: self.choose_history.clone(),
                 play_history,
-                discard_history: self.discard_history,
                 istate_keys: self.istate_keys.clone(),
             }
         } else {
@@ -121,7 +121,6 @@ impl Clone for EuchreGameState {
                 pickup_history: self.pickup_history.clone(),
                 choose_history: self.choose_history.clone(),
                 play_history,
-                discard_history: self.discard_history,
                 istate_keys: self.istate_keys.clone(),
             }
         }
@@ -139,6 +138,7 @@ enum EPhase {
     Play,
 }
 
+#[derive(PartialEq)]
 enum EAction {
     Pickup,
     Pass,
@@ -146,6 +146,60 @@ enum EAction {
     Spades,
     Hearts,
     Diamonds,
+    Card { a: usize },
+}
+
+impl EAction {
+    // Converts a non card action to the enum
+    fn non_card_from(value: usize) -> Self {
+        match value {
+            0 => EAction::Pickup,
+            1 => EAction::Pass,
+            2 => EAction::Clubs,
+            3 => EAction::Spades,
+            4 => EAction::Hearts,
+            5 => EAction::Diamonds,
+            _ => panic!("unsupported action"),
+        }
+    }
+
+    fn to_suit(self) -> Suit {
+        match self {
+            EAction::Clubs => Suit::Clubs,
+            EAction::Spades => Suit::Spades,
+            EAction::Hearts => Suit::Hearts,
+            EAction::Diamonds => Suit::Diamonds,
+            _ => panic!("invalid action to convert to suit"),
+        }
+    }
+}
+
+impl Into<usize> for EAction {
+    fn into(self) -> usize {
+        match self {
+            EAction::Pickup => 0,
+            EAction::Pass => 1,
+            EAction::Clubs => 2,
+            EAction::Spades => 3,
+            EAction::Hearts => 4,
+            EAction::Diamonds => 5,
+            EAction::Card { a: x } => x,
+        }
+    }
+}
+
+impl Display for EAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EAction::Clubs => f.write_char('C'),
+            EAction::Spades => f.write_char('S'),
+            EAction::Hearts => f.write_char('H'),
+            EAction::Diamonds => f.write_char('D'),
+            EAction::Pickup => f.write_char('T'),
+            EAction::Pass => f.write_char('P'),
+            EAction::Card { a: c } => f.write_str(&format_card(*c)),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -154,6 +208,19 @@ enum Suit {
     Spades,
     Hearts,
     Diamonds,
+}
+
+impl Display for Suit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let c = match self {
+            Suit::Clubs => 'C',
+            Suit::Spades => 'S',
+            Suit::Hearts => 'H',
+            Suit::Diamonds => 'D',
+        };
+
+        f.write_char(c)
+    }
 }
 
 impl EuchreGameState {
@@ -186,15 +253,15 @@ impl EuchreGameState {
     fn apply_action_pickup(&mut self, a: Action) {
         self.pickup_history.push(a);
 
-        match a {
-            x if x == EAction::Pass as usize => {
+        match EAction::non_card_from(a) {
+            EAction::Pass => {
                 if self.cur_player == self.num_players - 1 {
                     // Dealer has passed, move to choosing
                     self.phase = EPhase::ChooseTrump;
                 }
                 self.cur_player = (self.cur_player + 1) % self.num_players;
             }
-            x if x == EAction::Pickup as usize => {
+            EAction::Pickup => {
                 self.trump_caller = self.cur_player;
                 self.trump = self.get_suit(self.face_up);
                 self.cur_player = 3; // dealers turn
@@ -206,16 +273,17 @@ impl EuchreGameState {
 
     fn apply_action_choose_trump(&mut self, a: Action) {
         self.choose_history.push(a);
+        let a = EAction::non_card_from(a);
         match a {
-            x if x == EAction::Clubs as usize => self.trump = Suit::Clubs,
-            x if x == EAction::Spades as usize => self.trump = Suit::Spades,
-            x if x == EAction::Hearts as usize => self.trump = Suit::Hearts,
-            x if x == EAction::Diamonds as usize => self.trump = Suit::Diamonds,
-            x if x == EAction::Pass as usize => {}
+            EAction::Clubs => self.trump = Suit::Clubs,
+            EAction::Spades => self.trump = Suit::Spades,
+            EAction::Hearts => self.trump = Suit::Hearts,
+            EAction::Diamonds => self.trump = Suit::Diamonds,
+            EAction::Pass => {}
             _ => panic!("invalid action"),
         };
 
-        if a == EAction::Pass as usize {
+        if a == EAction::Pass {
             self.cur_player += 1;
         } else {
             self.trump_caller = self.cur_player;
@@ -279,21 +347,21 @@ impl EuchreGameState {
 
         // Dealer can't pass
         if self.cur_player != 3 {
-            actions.push(EAction::Pass as usize)
+            actions.push(EAction::Pass.into())
         }
 
         let face_up = self.get_suit(self.face_up);
         if face_up != Suit::Clubs {
-            actions.push(EAction::Clubs as usize);
+            actions.push(EAction::Clubs.into());
         }
         if face_up != Suit::Spades {
-            actions.push(EAction::Spades as usize);
+            actions.push(EAction::Spades.into());
         }
         if face_up != Suit::Hearts {
-            actions.push(EAction::Hearts as usize);
+            actions.push(EAction::Hearts.into());
         }
         if face_up != Suit::Diamonds {
-            actions.push(EAction::Diamonds as usize);
+            actions.push(EAction::Diamonds.into());
         }
         return actions;
     }
@@ -443,6 +511,18 @@ impl EuchreGameState {
             self.istate_keys[i].push(a, s);
         }
     }
+
+    /// Returns the ehcure actions for a given action
+    fn getEAction(&self, a: Action) -> EAction {
+        match self.phase {
+            EPhase::DealHands => EAction::Card { a: a },
+            EPhase::DealFaceUp => EAction::Card { a: a },
+            EPhase::Pickup => todo!(),
+            EPhase::Discard => EAction::Card { a: a },
+            EPhase::ChooseTrump => todo!(),
+            EPhase::Play => EAction::Card { a: a },
+        }
+    }
 }
 
 impl Display for EuchreGameState {
@@ -515,7 +595,7 @@ impl GameState for EuchreGameState {
     fn legal_actions(&self) -> Vec<Action> {
         match self.phase {
             EPhase::DealHands | EPhase::DealFaceUp => self.legal_actions_dealing(),
-            EPhase::Pickup => vec![EAction::Pass as usize, EAction::Pickup as usize],
+            EPhase::Pickup => vec![EAction::Pass.into(), EAction::Pickup.into()],
             EPhase::Discard => self.hands[3].to_vec(), // Dealer can discard any card
             EPhase::ChooseTrump => self.legal_actions_choose_trump(),
             EPhase::Play => self.legal_actions_play(),
@@ -557,118 +637,165 @@ impl GameState for EuchreGameState {
     /// * 15: trump
     /// * 16+: play history
     fn information_state(&self, player: Player) -> Vec<game::IState> {
-        let mut istate = Vec::with_capacity(36);
+        todo!()
+        // let mut istate = Vec::with_capacity(36);
 
-        istate.extend(self.starting_hands[player].iter().map(|&x| x as IState));
-        assert_eq!(istate.len(), 5);
+        // istate.extend(self.starting_hands[player].iter().map(|&x| x as IState));
+        // assert_eq!(istate.len(), 5);
 
-        if self.phase == EPhase::DealHands || self.phase == EPhase::DealFaceUp {
-            return istate;
-        }
+        // if self.phase == EPhase::DealHands || self.phase == EPhase::DealFaceUp {
+        //     return istate;
+        // }
 
-        istate.push(self.face_up as IState);
-        assert_eq!(istate.len(), 6);
+        // istate.push(self.face_up as IState);
+        // assert_eq!(istate.len(), 6);
 
-        istate.extend(self.pickup_history.iter().map(|&x| x as IState));
+        // istate.extend(self.pickup_history.iter().map(|&x| x as IState));
 
-        if self.phase == EPhase::Pickup {
-            return istate;
-        }
-        for _ in 0..4 - self.pickup_history.len() {
-            istate.push(EAction::Pass as usize as IState);
-        }
-        assert_eq!(istate.len(), 10);
+        // if self.phase == EPhase::Pickup {
+        //     return istate;
+        // }
+        // for _ in 0..4 - self.pickup_history.len() {
+        //     istate.push(EAction::Pass.into() as IState);
+        // }
+        // assert_eq!(istate.len(), 10);
 
-        istate.extend(self.choose_history.iter().map(|&x| x as IState));
-        if self.phase == EPhase::ChooseTrump {
-            return istate;
-        }
-        for _ in 0..4 - self.choose_history.len() {
-            istate.push(EAction::Pass as usize as IState);
-        }
-        assert_eq!(istate.len(), 14);
+        // istate.extend(self.choose_history.iter().map(|&x| x as IState));
+        // if self.phase == EPhase::ChooseTrump {
+        //     return istate;
+        // }
+        // for _ in 0..4 - self.choose_history.len() {
+        //     istate.push(EAction::Pass as usize as IState);
+        // }
+        // assert_eq!(istate.len(), 14);
 
-        istate.push(self.trump_caller as IState);
-        istate.push(self.trump.clone() as usize as IState);
-        assert!(istate.len() >= 15);
+        // istate.push(self.trump_caller as IState);
+        // istate.push(self.trump.clone() as usize as IState);
+        // assert!(istate.len() >= 15);
 
-        istate.extend(self.play_history.iter().map(|&x| x as IState));
+        // istate.extend(self.play_history.iter().map(|&x| x as IState));
 
-        return istate;
+        // return istate;
     }
 
     fn information_state_string(&self, player: Player) -> String {
-        let istate = self.information_state(player);
+        let istate = self.istate_keys[player];
+
         // Full game state:
         // 9CTCJCKCKS|KH|PPPPPPCP|3H|ASTSKSAC|9C9HTDQC|JD9DTCJH|JSKCQHQD|KDADXXXX|
-        let mut r = String::with_capacity(71);
+        let mut r = String::new();
 
-        for i in 0..5 {
-            r.push_str("XX");
-            let len = r.len();
-            let s = r[len - 2..].as_mut();
-            put_card(istate[i] as Action, s);
+        let mut index = istate.first_bit();
+        if self.phase == EPhase::DealHands {
+            todo!("don't yet support istates during dealing phase");
         }
 
-        if istate.len() <= 5 {
+        for _ in 0..5 {
+            let a = istate.read(index, 5);
+            index -= 5;
+            let s = EAction::Card { a }.to_string();
+            r.push_str(&s);
+        }
+
+        if self.phase == EPhase::DealFaceUp {
             return r;
         }
 
         // Face up card
-        r.push('|');
-        r.push_str("XX");
-        let len = r.len();
-        let s = r[len - 2..].as_mut();
-        put_card(istate[5] as Action, s);
-        r.push('|');
+        let a = istate.read(index, 5);
+        index -= 5;
 
-        if istate.len() <= 6 {
-            return r;
-        }
+        r.push('|');
+        let s = EAction::Card { a }.to_string();
+        r.push_str(&s);
+        r.push('|');
 
         // Pickup round and calling round
-        for i in 6..istate.len().min(14) {
-            let c = match istate[i] as usize {
-                x if x == EAction::Clubs as usize => 'C',
-                x if x == EAction::Spades as usize => 'S',
-                x if x == EAction::Hearts as usize => 'H',
-                x if x == EAction::Diamonds as usize => 'D',
-                x if x == EAction::Pass as usize => 'P',
-                x if x == EAction::Pickup as usize => 'T',
-                _ => panic!("invalid action"),
-            };
-            r.push(c);
+        let mut pickup_called = false;
+        for _ in 0..(index / 1).min(8 * 1) {
+            let a = istate.read(index, 1);
+            index -= 1;
+            let a = EAction::non_card_from(a);
+            let s = a.to_string();
+            r.push_str(&s);
+
+            if a == EAction::Pickup {
+                pickup_called = true;
+            }
+
+            if a != EAction::Pass {
+                break;
+            }
+        }
+
+        if self.phase == EPhase::Pickup || self.phase == EPhase::ChooseTrump {
+            return r;
         }
 
         r.push('|');
 
-        if istate.len() <= 15 {
+        r.push_str(&format!("{}{}", self.trump_caller, self.trump));
+
+        if self.phase == EPhase::Discard {
             return r;
         }
 
-        // Calling player
-        r.push_str(&format!("{}", istate[14] as usize));
+        // If the dealer, show the discarded card if that happened
+        if player == 3 && pickup_called {
+            r.push('|');
+            let a = istate.read(index, 5);
+            index -= 5;
 
-        let trump_char = match istate[15] as usize {
-            x if x == Suit::Clubs as usize => 'C',
-            x if x == Suit::Spades as usize => 'S',
-            x if x == Suit::Diamonds as usize => 'D',
-            x if x == Suit::Hearts as usize => 'H',
-            _ => panic!("invalid trump"),
-        };
-        r.push(trump_char);
+            let d = EAction::Card { a: a }.to_string();
+            r.push_str(&d);
+        }
 
-        for i in 16..istate.len() {
-            if i % self.num_players == 0 {
+        // populate play data
+        let mut turn = 0;
+        while index > 0 {
+            if turn % 4 == 0 {
                 r.push('|');
             }
-            r.push_str("XX");
-            let len = r.len();
-            let s = r[len - 2..].as_mut();
-            put_card(istate[i] as usize, s);
+
+            let a = istate.read(index, 5);
+            index -= 5;
+            let c = EAction::Card { a: a }.to_string();
+
+            r.push_str(&c);
+            turn += 1;
         }
 
         return r;
+
+        //
+
+        // if istate.len() <= 15 {
+        //     return r;
+        // }
+
+        // // Calling player
+        // r.push_str(&format!("{}", istate[14] as usize));
+
+        // let trump_char = match istate[15] as usize {
+        //     x if x == Suit::Clubs as usize => 'C',
+        //     x if x == Suit::Spades as usize => 'S',
+        //     x if x == Suit::Diamonds as usize => 'D',
+        //     x if x == Suit::Hearts as usize => 'H',
+        //     _ => panic!("invalid trump"),
+        // };
+        // r.push(trump_char);
+
+        // for i in 16..istate.len() {
+        //     if i % self.num_players == 0 {
+        //         r.push('|');
+        //     }
+        //     r.push_str("XX");
+        //     let len = r.len();
+        //     let s = r[len - 2..].as_mut();
+        //     put_card(istate[i] as usize, s);
+        // }
+
+        // return r;
     }
 
     fn is_terminal(&self) -> bool {
@@ -715,13 +842,13 @@ mod tests {
         assert!(!s.is_chance_node);
         for i in 0..4 {
             assert_eq!(s.cur_player, i);
-            s.apply_action(EAction::Pass as usize);
+            s.apply_action(EAction::Pass.into());
         }
 
         assert_eq!(s.phase, EPhase::ChooseTrump);
         assert_eq!(s.cur_player, 0);
-        s.apply_action(EAction::Pass as usize);
-        s.apply_action(EAction::Diamonds as usize);
+        s.apply_action(EAction::Pass.into());
+        s.apply_action(EAction::Diamonds.into());
         assert_eq!(s.cur_player, 0);
 
         assert_eq!(s.phase, EPhase::Play);
@@ -742,9 +869,9 @@ mod tests {
         assert_eq!(s.phase, EPhase::Pickup);
         assert!(!s.is_chance_node);
         for _ in 0..3 {
-            s.apply_action(EAction::Pass as usize);
+            s.apply_action(EAction::Pass.into());
         }
-        s.apply_action(EAction::Pickup as usize);
+        s.apply_action(EAction::Pickup.into());
 
         assert_eq!(s.phase, EPhase::Discard);
         s.apply_action(3);
@@ -774,10 +901,10 @@ mod tests {
 
         assert_eq!(
             s.legal_actions(),
-            vec![EAction::Pass as usize, EAction::Pickup as usize]
+            vec![Into::<usize>::into(EAction::Pass), EAction::Pickup.into()]
         );
 
-        s.apply_action(EAction::Pickup as usize);
+        s.apply_action(EAction::Pickup.into());
         // Cards in dealers hand
         assert_eq!(s.legal_actions(), vec![3, 7, 11, 15, 19]);
         assert_eq!(s.phase, EPhase::Discard);
@@ -807,7 +934,7 @@ mod tests {
         }
 
         s.apply_action(0); // Deal the 9 face up
-        s.apply_action(EAction::Pickup as usize);
+        s.apply_action(EAction::Pickup.into());
         s.apply_action(4);
         assert_eq!(s.trump, Suit::Clubs);
         assert_eq!(s.phase, EPhase::Play);
@@ -835,21 +962,19 @@ mod tests {
         assert_eq!(s.information_state_string(2), "JC9SKSJH9D|JD|");
         assert_eq!(s.information_state_string(3), "QCTSASQHTD|JD|");
 
-        s.apply_action(EAction::Pickup as usize);
-        assert_eq!(s.information_state_string(0), "9CKCJS9HKH|JD|TPPPPPPP|0D");
+        s.apply_action(EAction::Pickup.into());
+        assert_eq!(s.information_state_string(0), "9CKCJS9HKH|JD|T|0D");
 
         // Dealer discards the QC
+        assert_eq!(s.information_state_string(3), "QCTSASQHTD|JD|T|0D");
         s.apply_action(3);
-        assert_eq!(s.information_state_string(3), "JDTSASQHTD|JD|TPPPPPPP|0D");
+        assert_eq!(s.information_state_string(3), "QCTSASQHTD|JD|T|0D|QC");
 
         for _ in 0..4 {
             let a = s.legal_actions()[0];
             s.apply_action(a);
         }
-        assert_eq!(
-            s.information_state_string(0),
-            "9CKCJS9HKH|JD|TPPPPPPP|0D|9CTCJCJD"
-        );
+        assert_eq!(s.information_state_string(0), "9CKCJS9HKH|JD|T|0D|9CTCJCJD");
 
         while !s.is_terminal() {
             let a = s.legal_actions()[0];
