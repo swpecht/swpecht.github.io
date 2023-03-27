@@ -3,7 +3,10 @@ use std::{fmt::Display, rc::Rc};
 use arrayvec::ArrayVec;
 use itertools::Itertools;
 
-use crate::game::{self, Action, Game, GameState, IState, Player};
+use crate::{
+    game::{self, Action, Game, GameState, IState, Player},
+    istate::IStateKey,
+};
 
 const JACK: usize = 2;
 const CARD_PER_SUIT: usize = 6;
@@ -12,6 +15,8 @@ const NUM_CARDS: usize = 24;
 pub struct Euchre {}
 impl Euchre {
     pub fn new_state() -> EuchreGameState {
+        let keys = vec![IStateKey::new(); 4];
+
         EuchreGameState {
             num_players: 4,
             hands: ArrayVec::new(),
@@ -28,6 +33,7 @@ impl Euchre {
             play_history: Vec::with_capacity(5 * 4),
             deal_history: Vec::with_capacity(5 * 4),
             discard_history: 0,
+            istate_keys: keys,
         }
     }
 
@@ -55,6 +61,7 @@ pub struct EuchreGameState {
     is_terminal: bool,
     phase: EPhase,
     cur_player: usize,
+    istate_keys: Vec<IStateKey>,
 
     deal_history: Vec<Action>,
     pickup_history: Vec<Action>,
@@ -96,6 +103,7 @@ impl Clone for EuchreGameState {
                 choose_history: self.choose_history.clone(),
                 play_history,
                 discard_history: self.discard_history,
+                istate_keys: self.istate_keys.clone(),
             }
         } else {
             Self {
@@ -114,6 +122,7 @@ impl Clone for EuchreGameState {
                 choose_history: self.choose_history.clone(),
                 play_history,
                 discard_history: self.discard_history,
+                istate_keys: self.istate_keys.clone(),
             }
         }
     }
@@ -413,6 +422,27 @@ impl EuchreGameState {
     fn play_history(&self) -> &[Action] {
         return &self.play_history;
     }
+
+    fn update_keys(&mut self, a: Action) {
+        let s = match self.phase {
+            EPhase::DealHands => 5, // 5 for bits required for 24 cards
+            EPhase::DealFaceUp => 5,
+            EPhase::Pickup => 1,
+            EPhase::Discard => 5,
+            EPhase::ChooseTrump => 3, // could be any of the 4 suits or pass
+            EPhase::Play => 5,
+        };
+
+        // Private actions
+        if self.phase == EPhase::DealHands || self.phase == EPhase::Discard {
+            self.istate_keys[self.cur_player].push(a, s);
+            return;
+        }
+
+        for i in 0..self.num_players {
+            self.istate_keys[i].push(a, s);
+        }
+    }
 }
 
 impl Display for EuchreGameState {
@@ -470,6 +500,8 @@ fn put_card(c: Action, out: &mut str) {
 
 impl GameState for EuchreGameState {
     fn apply_action(&mut self, a: Action) {
+        self.update_keys(a);
+
         match self.phase {
             EPhase::DealHands => self.apply_action_deal_hands(a),
             EPhase::DealFaceUp => self.apply_action_deal_face_up(a),

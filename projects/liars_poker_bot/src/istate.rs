@@ -1,5 +1,6 @@
 use crate::game::Action;
 
+#[derive(Debug, Clone, Copy)]
 pub struct IStateKey {
     key: u128,
 }
