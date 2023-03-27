@@ -4,5 +4,6 @@ pub mod cfrcs;
 pub mod database;
 pub mod euchre;
 pub mod game;
+pub mod istate;
 pub mod kuhn_poker;
 pub mod outcome_sampling;
