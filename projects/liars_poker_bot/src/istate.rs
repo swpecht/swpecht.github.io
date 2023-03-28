@@ -1,44 +1,60 @@
 use crate::game::Action;
 
-pub type Key = u128;
+/// For euchre, need the following bits:
+/// 25 for deal: 5 cards * 5 bits
+/// 5 for face up: 1 card * 5 bits
+/// 4 for pickup: 4 players * bool
+/// 12 for choose trump: 4 players * 3 bits for 5 choices
+/// 100 for play: 4 players * 5 cards * 5 bits
+pub type KeyFragment = u128;
 
 #[derive(Debug, Clone, Copy)]
 pub struct IStateKey {
-    pub key: Key,
+    key: [KeyFragment; 2],
 }
 
 impl IStateKey {
     pub fn new() -> Self {
-        Self { key: 1 }
+        Self { key: [1, 0] }
     }
 
     /// Push a new action of `s` bits into the key)
     pub fn push(&mut self, a: Action, s: usize) {
         assert!(s > 0);
 
-        if f64::sqrt(a as f64) > s as f64 {
+        if (a as f64).log2().ceil() > s as f64 {
             panic!("value too large for size")
         }
 
-        self.key = self.key << s;
-        let a = Key::try_from(a).expect("Action could not be converted into a 128");
-        self.key |= a;
-    }
+        if s > 32 {
+            panic!("don't support writes over 32 bits");
+        }
 
-    /// Sets the top `s` bits to a `phase`
-    pub fn set_phase(&mut self, _phase: usize, _s: usize) {
-        todo!()
+        let len = std::mem::size_of::<KeyFragment>() * 8;
+        let is_overflow = (self.key[1] >> (len - s)) > 0;
+        if is_overflow {
+            panic!("overflowing key")
+        }
+
+        let overflow = self.key[0] >> (len - s);
+        self.key[1] = self.key[1] << s;
+        self.key[1] |= overflow;
+
+        self.key[0] = self.key[0] << s;
+        let a = KeyFragment::try_from(a).expect("Action could not be converted into a 128");
+        self.key[0] |= a;
     }
 
     /// Returns the index of the first bit with data. It ignores the first bit used
     /// to track the first data
     pub fn first_bit(&self) -> usize {
         let mut f = 0;
-        let len = std::mem::size_of::<Key>() * 8 - 1;
-        for i in 0..len {
-            let is_set = self.key & (1 << (len - i)) != 0;
+        let len = std::mem::size_of::<KeyFragment>() * 8;
+        for i in (0..(len * self.key.len())).rev() {
+            let idx = i / len;
+            let is_set = self.key[idx] & (1 << (i % len)) != 0;
             if is_set {
-                f = len - i;
+                f = i;
                 break;
             }
         }
@@ -50,38 +66,62 @@ impl IStateKey {
         assert!(size > 0);
         assert!(start + 1 >= size);
 
-        let mut mask: Key = match size {
-            1 => 0b1,
-            2 => 0b11,
-            3 => 0b111,
-            4 => 0b1111,
-            5 => 0b11111,
-            _ => todo!("not yet implemented"),
+        let fragment_length = std::mem::size_of::<KeyFragment>() * 8;
+        assert!(start < fragment_length * self.key.len());
+
+        let key_idx = start / fragment_length;
+        let mask = get_mask(size);
+
+        let rel_start = start - fragment_length * key_idx;
+        let overflow = if size > rel_start {
+            size - rel_start
+        } else {
+            0
         };
-        mask = mask << (start - size);
-        let mut v = self.key & mask;
-        v = v >> (start - size);
+
+        // Reads from highest fragment
+        let mut v = (self.key[key_idx] >> (rel_start - (size - overflow))) & (mask >> overflow);
+        if overflow > 0 {
+            v = v << overflow;
+            v |= (self.key[key_idx - 1] >> (fragment_length - overflow))
+                & (mask >> (size - overflow));
+        }
 
         return v as Action;
     }
 }
 
+fn get_mask(size: usize) -> KeyFragment {
+    match size {
+        1 => 0b1,
+        2 => 0b11,
+        3 => 0b111,
+        4 => 0b1111,
+        5 => 0b11111,
+        6 => 0b111111,
+        7 => 0b1111111,
+        8 => 0b11111111,
+        _ => todo!("not yet implemented"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::IStateKey;
+
+    use super::{IStateKey, KeyFragment};
 
     #[test]
     fn test_push() {
         let mut k = IStateKey::new();
 
         k.push(1, 1);
-        assert_eq!(k.key, 0b011);
+        assert_eq!(k.key[0], 0b011);
 
         k.push(1, 1);
-        assert_eq!(k.key, 0b111);
+        assert_eq!(k.key[0], 0b111);
 
         k.push(1, 2);
-        assert_eq!(k.key, 0b11101);
+        assert_eq!(k.key[0], 0b11101);
     }
 
     #[test]
@@ -110,5 +150,34 @@ mod tests {
 
         let v = k.read(4, 2);
         assert_eq!(v, 2);
+    }
+
+    #[test]
+    fn test_overflow() {
+        let mut k = IStateKey::new();
+        assert_eq!(k.read(129, 3), 0);
+        k.push(0b101, 3);
+
+        k.push(0, 32);
+        k.push(0, 32);
+        k.push(0, 32);
+        k.push(0, 32);
+        assert_eq!(k.read(128 + 3, 3), 0b101);
+
+        assert_eq!(k.first_bit(), 128 + 3);
+    }
+
+    #[test]
+    fn test_read_write_stress() {
+        for n in 0..u8::MAX {
+            for offset in 1..(std::mem::size_of::<KeyFragment>() * 8 * 2 - 8 - 1) {
+                let mut k = IStateKey::new();
+                k.push(n as usize, 8);
+                for _ in 0..offset {
+                    k.push(0, 1);
+                }
+                assert_eq!(k.read(offset + 8, 8) as u8, n);
+            }
+        }
     }
 }
