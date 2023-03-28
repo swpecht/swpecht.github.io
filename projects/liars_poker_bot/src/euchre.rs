@@ -497,7 +497,7 @@ impl EuchreGameState {
             EPhase::DealFaceUp => 5,
             EPhase::Pickup => 1,
             EPhase::Discard => 5,
-            EPhase::ChooseTrump => 3, // could be any of the 4 suits or pass
+            EPhase::ChooseTrump => 3, // could be any of the 4 suits or pass, 3 bits for 5 options
             EPhase::Play => 5,
         };
 
@@ -509,18 +509,6 @@ impl EuchreGameState {
 
         for i in 0..self.num_players {
             self.istate_keys[i].push(a, s);
-        }
-    }
-
-    /// Returns the ehcure actions for a given action
-    fn getEAction(&self, a: Action) -> EAction {
-        match self.phase {
-            EPhase::DealHands => EAction::Card { a: a },
-            EPhase::DealFaceUp => EAction::Card { a: a },
-            EPhase::Pickup => todo!(),
-            EPhase::Discard => EAction::Card { a: a },
-            EPhase::ChooseTrump => todo!(),
-            EPhase::Play => EAction::Card { a: a },
         }
     }
 }
@@ -636,46 +624,8 @@ impl GameState for EuchreGameState {
     /// * 14: Calling player
     /// * 15: trump
     /// * 16+: play history
-    fn information_state(&self, player: Player) -> Vec<game::IState> {
-        todo!()
-        // let mut istate = Vec::with_capacity(36);
-
-        // istate.extend(self.starting_hands[player].iter().map(|&x| x as IState));
-        // assert_eq!(istate.len(), 5);
-
-        // if self.phase == EPhase::DealHands || self.phase == EPhase::DealFaceUp {
-        //     return istate;
-        // }
-
-        // istate.push(self.face_up as IState);
-        // assert_eq!(istate.len(), 6);
-
-        // istate.extend(self.pickup_history.iter().map(|&x| x as IState));
-
-        // if self.phase == EPhase::Pickup {
-        //     return istate;
-        // }
-        // for _ in 0..4 - self.pickup_history.len() {
-        //     istate.push(EAction::Pass.into() as IState);
-        // }
-        // assert_eq!(istate.len(), 10);
-
-        // istate.extend(self.choose_history.iter().map(|&x| x as IState));
-        // if self.phase == EPhase::ChooseTrump {
-        //     return istate;
-        // }
-        // for _ in 0..4 - self.choose_history.len() {
-        //     istate.push(EAction::Pass as usize as IState);
-        // }
-        // assert_eq!(istate.len(), 14);
-
-        // istate.push(self.trump_caller as IState);
-        // istate.push(self.trump.clone() as usize as IState);
-        // assert!(istate.len() >= 15);
-
-        // istate.extend(self.play_history.iter().map(|&x| x as IState));
-
-        // return istate;
+    fn information_state(&self, player: Player) -> IStateKey {
+        return self.istate_keys[player];
     }
 
     fn information_state_string(&self, player: Player) -> String {
@@ -712,7 +662,7 @@ impl GameState for EuchreGameState {
 
         // Pickup round and calling round
         let mut pickup_called = false;
-        for _ in 0..(index / 1).min(8 * 1) {
+        for _ in 0..(index / 1).min(4 * 1) {
             let a = istate.read(index, 1);
             index -= 1;
             let a = EAction::non_card_from(a);
@@ -728,8 +678,26 @@ impl GameState for EuchreGameState {
             }
         }
 
-        if self.phase == EPhase::Pickup || self.phase == EPhase::ChooseTrump {
+        if self.phase == EPhase::Pickup {
             return r;
+        }
+
+        if !pickup_called {
+            for _ in 0..(index / 3).min(4 * 3) {
+                let a = istate.read(index, 3);
+                index -= 3;
+                let a = EAction::non_card_from(a);
+                let s = a.to_string();
+                r.push_str(&s);
+
+                if a != EAction::Pass {
+                    break;
+                }
+            }
+
+            if self.phase == EPhase::ChooseTrump {
+                return r;
+            }
         }
 
         r.push('|');
@@ -751,6 +719,7 @@ impl GameState for EuchreGameState {
         }
 
         // populate play data
+        assert_eq!(index % 5, 0); // Should only be cards played left
         let mut turn = 0;
         while index > 0 {
             if turn % 4 == 0 {
@@ -766,36 +735,6 @@ impl GameState for EuchreGameState {
         }
 
         return r;
-
-        //
-
-        // if istate.len() <= 15 {
-        //     return r;
-        // }
-
-        // // Calling player
-        // r.push_str(&format!("{}", istate[14] as usize));
-
-        // let trump_char = match istate[15] as usize {
-        //     x if x == Suit::Clubs as usize => 'C',
-        //     x if x == Suit::Spades as usize => 'S',
-        //     x if x == Suit::Diamonds as usize => 'D',
-        //     x if x == Suit::Hearts as usize => 'H',
-        //     _ => panic!("invalid trump"),
-        // };
-        // r.push(trump_char);
-
-        // for i in 16..istate.len() {
-        //     if i % self.num_players == 0 {
-        //         r.push('|');
-        //     }
-        //     r.push_str("XX");
-        //     let len = r.len();
-        //     let s = r[len - 2..].as_mut();
-        //     put_card(istate[i] as usize, s);
-        // }
-
-        // return r;
     }
 
     fn is_terminal(&self) -> bool {
@@ -962,6 +901,8 @@ mod tests {
         assert_eq!(s.information_state_string(2), "JC9SKSJH9D|JD|");
         assert_eq!(s.information_state_string(3), "QCTSASQHTD|JD|");
 
+        let mut new_s = s.clone(); // for alternative pickup parsing
+
         s.apply_action(EAction::Pickup.into());
         assert_eq!(s.information_state_string(0), "9CKCJS9HKH|JD|T|0D");
 
@@ -975,13 +916,26 @@ mod tests {
             s.apply_action(a);
         }
         assert_eq!(s.information_state_string(0), "9CKCJS9HKH|JD|T|0D|9CTCJCJD");
+        assert_eq!(s.information_state_string(1), "TCACQSTHAH|JD|T|0D|9CTCJCJD");
+        assert_eq!(s.information_state_string(2), "JC9SKSJH9D|JD|T|0D|9CTCJCJD");
+        assert_eq!(
+            s.information_state_string(3),
+            "QCTSASQHTD|JD|T|0D|QC|9CTCJCJD"
+        );
 
         while !s.is_terminal() {
             let a = s.legal_actions()[0];
             s.apply_action(a);
+            s.information_state_string(0);
         }
+        assert_eq!(s.evaluate(), vec![0.0, 2.0, 0.0, 2.0]);
 
-        assert_eq!(s.evaluate(), vec![0.0, 2.0, 0.0, 2.0])
+        // Different calling path
+        for _ in 0..5 {
+            new_s.apply_action(EAction::Pass.into());
+        }
+        new_s.apply_action(EAction::Hearts.into());
+        assert_eq!(new_s.information_state_string(0), "9CKCJS9HKH|JD|PPPPPH|1H");
     }
 
     #[test]

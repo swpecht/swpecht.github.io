@@ -3,7 +3,7 @@ use std::fmt::Display;
 use log::info;
 use rand::{seq::SliceRandom, Rng};
 
-use crate::agents::Agent;
+use crate::{agents::Agent, istate::IStateKey};
 
 pub type Action = usize;
 pub type IState = f64;
@@ -24,7 +24,7 @@ pub trait GameState: Display + Clone {
     /// Returns a vector of the score for each player
     /// at the end of the game
     fn evaluate(&self) -> Vec<f32>;
-    fn information_state(&self, player: Player) -> Vec<IState>;
+    fn information_state(&self, player: Player) -> IStateKey;
     fn information_state_string(&self, player: Player) -> String;
     fn is_terminal(&self) -> bool;
     fn is_chance_node(&self) -> bool;

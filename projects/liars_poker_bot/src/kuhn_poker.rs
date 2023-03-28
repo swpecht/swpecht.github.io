@@ -1,7 +1,12 @@
 use std::fmt::Display;
 
-use crate::game::{Action, Game, GameState, IState, Player};
+use crate::{
+    game::{Action, Game, GameState, IState, Player},
+    istate::IStateKey,
+};
 use log::info;
+
+const ISTATE_CHUNK: usize = 5;
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub enum KPAction {
@@ -185,13 +190,13 @@ impl GameState for KPGameState {
     /// Returns an information state with the following data at each index:
     /// 0: Card dealt
     /// 1+: History of play
-    fn information_state(&self, player: Player) -> Vec<IState> {
-        let mut i_state = Vec::new();
-        i_state.push(self.hands[player] as IState);
+    fn information_state(&self, player: Player) -> IStateKey {
+        let mut i_state = IStateKey::new();
+        i_state.push(self.hands[player], ISTATE_CHUNK);
 
         for &h in &self.history {
             let u = h as usize;
-            i_state.push(u as IState);
+            i_state.push(u, ISTATE_CHUNK);
         }
         return i_state;
     }
@@ -215,15 +220,18 @@ impl GameState for KPGameState {
     fn information_state_string(&self, player: Player) -> String {
         let istate = self.information_state(player);
         let mut result = String::new();
-        result.push_str(format!("{}", istate[0]).as_str());
 
-        for i in 1..istate.len() {
-            let char = match istate[i] {
-                x if x == KPAction::Bet as i64 as f64 => 'b',
-                x if x == KPAction::Pass as i64 as f64 => 'p',
+        let mut idx = istate.first_bit();
+        result.push_str(format!("{}", istate.read(idx, ISTATE_CHUNK)).as_str());
+        idx -= ISTATE_CHUNK;
+        while idx > 0 {
+            let char = match istate.read(idx, ISTATE_CHUNK) {
+                x if x == KPAction::Bet as usize => 'b',
+                x if x == KPAction::Pass as usize => 'p',
                 _ => panic!("invalid history"),
             };
-            result.push(char)
+            result.push(char);
+            idx -= ISTATE_CHUNK;
         }
 
         return result;
