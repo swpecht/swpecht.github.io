@@ -1,4 +1,4 @@
-use std::{fmt::Debug, iter::zip, marker::PhantomData};
+use std::{fmt::Debug, fs::File, iter::zip, marker::PhantomData};
 
 use itertools::Itertools;
 use log::{debug, info, trace};
@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     agents::Agent,
-    database::{io_uring_backend::UringBackend, NodeStore, Storage},
+    database::{file_backend::FileBackend, io_uring_backend::UringBackend, NodeStore, Storage},
     game::{Action, Game, GameState},
 };
 
@@ -15,7 +15,7 @@ use crate::{
 pub struct CFRAgent<T: GameState> {
     game: Game<T>,
     rng: StdRng,
-    store: NodeStore<UringBackend>,
+    store: NodeStore<FileBackend>,
     call_count: usize,
     _phantom: PhantomData<T>,
 }
@@ -25,7 +25,7 @@ impl<T: GameState> CFRAgent<T> {
         let mut agent = Self {
             game,
             rng: SeedableRng::seed_from_u64(seed),
-            store: NodeStore::new(UringBackend::new(storage)),
+            store: NodeStore::new(FileBackend::new(storage)),
             // store: NodeStore::new(NoOpBackend::new()),
             call_count: 0,
             _phantom: PhantomData,
