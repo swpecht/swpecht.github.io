@@ -14,67 +14,22 @@ Going to use Liar's poker bots to illustrate why.
 
 ## TODOs
 
-[*] Implement Kuhn poker
-    *<https://github.com/deepmind/open_spiel/blob/master/open_spiel/spiel.h> -- see how gamestate managed by deepmind
-
-[*] Implement CFR for Kuhn poker
-    *How to figure out the policy from the weights? What's the right way to update things for convergence?
-    * Do we actually just need to implement CFR?
-    *Implement a full CFR bot: <https://towardsdatascience.com/counterfactual-regret-minimization-ff4204bf4205>
-[*] Fix the problem with types so that can test multiple games and agents at the same time
-[*] Attempt to use the CFR implementation for euchre
-[*] Implement sqlite caching to reduce memory usage, and see the cached reference below for perf improvements
-    *Need to implement a get_policy version of the sql reading
-[*] Implement benchmarks for kuhn poker CRF training?
-    *Currently getting killed for too much memory usage
-    *Add wrapper functions and then look to use SQLite as the backend to materialize to disk?
-    *<https://docs.rs/cached/latest/cached/> for the cache on the function?
-[*] Implement performance improvements
-    [*] Batch writing of nodes
-    [*] Batch reading of nodes
-    [*] Implement summary stats for how often pages are added and removed -- can see if need new caching algorithm
-    [*] Benchmark -- see if too many pages are slowing down execution -- most time is spent in page contains
-        *About 1k pages total -- need to reduce the time for this
-    [*] Implement shortcut if only 1 viable move
-    [*] Investigate a sparse format for storing the nodes, don't need to store all the zeros. Know there are only
-        5 actions for many scenarios, store which action it is. And then what the weights are
-            *Actions: [usize; 5] -- 5 actions they could take, at max there are 5 actions they could do
-            *Weight: [double; 5] -- for all the various tracking
-            *also lets us use arrays, which may have better performance
-    [*] Investigate storing the istate information as the gamestate changes, reduce the cost of updating
-        *16% impovement to benchmark
-    [ ] Is there a way to have the nodes only store the incremental history from parent nodes? And refer to the previous memory?
-        *Perhaps memory arena could reduce allocation pressue?
-    [*] Benchmark commiting pages -- might be taking a long time
-    [ ] Move IO to a separate thread
-        * Probably want to do with raw threads and maybe use rayon for computation?
-        *<https://doc.rust-lang.org/book/ch16-02-message-passing.html>
-        * Investigate write ahead logging for sql
-    [ ] explore non-sqlite options -- add benchmark for reading before making the switch
-    [ ] Do a benchmark with and without an index
-    [ ] Can we move IO to a separate thread?
-    [ ] Switch to heap allocations: <https://nnethercote.github.io/perf-book/heap-allocations.html?highlight=borrow>
-    [ ] Could get all 27M states to fit into memory?
-    [ ] Implement multi sized pages, e.g. shorter depth at start, and get longer, to try and better balance out the page sizes (fewer options at the end)
-        *Need to do this for the root page
-    [ ] Reduce memory footprint for each node -- can we get all 27M into memory?
-        *Cannot reduce the action space easily
-        *Could protentially revmoe CFRNode::Strategy and just recompute each time it is needed
-    [ ] Avoid storing some nodes
-        *if only a single action
-        *???
-[ ] Add estimates for how many nodes remain
-    [ ] Figure out how many states we'd actually need to cover. Is there a way to collapse states? See notes below
-[ ] Implement an MCCFR bot: <https://xyzml.medium.com/learn-ai-game-playing-algorithm-part-iii-counterfactual-regret-minimization-b182a7ec85fb#6cf7>
-    *<http://mlanctot.info/files/papers/PhD_Thesis_MarcLanctot.pdf>
-    *Start with outcome sampling -- seems simpler
-    * Investigate how to measure convergence
-
-[*] build support for named database
-[ ] Switch to non-recursive CFR for better debugability? Or switch straight to MCCFR?
-[ ] Implement MCCFR for kuhn poker
-
-<https://arxiv.org/pdf/2206.15378.pdf>
+[*] Swtich from strings to integers for keys, can still use strings for debugging -- can use special hashmap for this
+[*] Re-tune database to work dynamically, when larger than a certain size, split key in half? and go from there?
+    *Probably easier to buidl a tool to try a bunch of different cutoffs and see which ones work reasonably well
+    * Then can manually tune
+    *ADQSTSJSAS|9C|PPPPPPPS|3S|TSTC9SJC|ACQCKCJS|THKHQS9H|QHAHASJH|KDTDAD9D
+    * 011011101001001110100001011000001111001001001011
+    *01100100010101100000010111000000111100100100101100111
+[ ] Move IO to a separate thread
+    *Probably want to do with raw threads and maybe use rayon for computation?
+    *<https://doc.rust-lang.org/book/ch16-02-message-passing.html>
+[ ] Train a single deal repeatedly, seed 1? See if converges to good play?
+    *May need to add way to judge performance, see thesis on possible metrics
+    *results going into /tmp/seed_0
+    *See Thesis, pg 139, algorithm 8
+    * <http://mlanctot.info/>
+[ ] Imlement other CFR algorithms, see Marc's phd and website for implementations
 
 ## Design
 
@@ -224,3 +179,40 @@ No index, Journal mode off, synchronous Normal
     Failed with a "database is locked"
 
 Only getting 20M/s from iotop -- can we do better with raw writing performance
+
+### no_op disk backed
+
+Doesn't do any disk IO as a point of reference
+    2023-02-08T10:23:59-07:00 - INFO - Starting self play for CFR
+    2023-02-08T10:24:46-07:00 - DEBUG - cfr called 60000000 times (0:00:47)
+    2023-02-08T10:25:30-07:00 - DEBUG - cfr called 100000000 times (0:01:31)
+    2023-02-08T10:27:29-07:00 - DEBUG - cfr called 200000000 times (0:03:30)
+    2023-02-08T10:37:05-07:00 - DEBUG - cfr called 713000000 times (0:13:06)
+
+### io_uring
+
+Built proof of concept with tokio io_uring.
+to write 1M nodes:
+
+* sqlite: 8.1325s (15-20MB/s)
+* io_uring (4kb page): 2.9714s (40-60MB/s)
+
+2.7x faster than raw writing to SQL. But this doesn't include any of the book keeping overhead sqlite incurs
+But verified with perf that serialization overhead is minimal
+
+With a 4k offset, what about 64k?
+    * io_uring (64kb page): 0.67s (100-200MB/s)
+    12x faster than sqlite
+
+Dual buffer -- no noticable change, tokio is properly parallelizing
+
+## Allocation reduction
+
+liars_poker_bot::cfragent: 2023-03-08T16:18:55-07:00 - INFO - Starting self play for CFR
+liars_poker_bot::cfragent: 2023-03-08T16:19:59-07:00 - DEBUG - cfr called 60000000 times
+liars_poker_bot::cfragent: 2023-03-08T16:21:01-07:00 - DEBUG - cfr called 100000000 times
+
+## With IStateKey and synchronous IO
+
+liars_poker_bot::cfragent: 2023-03-29T12:18:46-05:00 - INFO - Starting self play for CFR
+liars_poker_bot::cfragent: 2023-03-29T12:20:14-05:00 - DEBUG - cfr called 60000000 times
