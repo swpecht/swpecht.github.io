@@ -190,7 +190,7 @@ impl GameState for KPGameState {
     /// Returns an information state with the following data at each index:
     /// 0: Card dealt
     /// 1+: History of play
-    fn information_state(&self, player: Player) -> IStateKey {
+    fn istate_key(&self, player: Player) -> IStateKey {
         let mut i_state = IStateKey::new();
         i_state.push(self.hands[player], ISTATE_CHUNK);
 
@@ -217,8 +217,8 @@ impl GameState for KPGameState {
         self.cur_player
     }
 
-    fn information_state_string(&self, player: Player) -> String {
-        let istate = self.information_state(player);
+    fn istate_string(&self, player: Player) -> String {
+        let istate = self.istate_key(player);
         let mut result = String::new();
 
         let mut idx = istate.first_bit();

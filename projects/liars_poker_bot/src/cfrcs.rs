@@ -3,8 +3,9 @@ use crate::game::GameState;
 /// Implementation of chance sampled CFR
 ///
 /// Based on implementation from: http://mlanctot.info/
+/// cfrcs.cpp
 
-pub fn cfrcs<T: GameState>(g: &T, depth: usize, p0: f64, p1: f64) -> Vec<f32> {
+pub fn cfrcs<T: GameState>(g: &T, depth: usize, reach0: f64, reach1: f64) -> Vec<f32> {
     if g.is_terminal() {
         return g.evaluate();
     }

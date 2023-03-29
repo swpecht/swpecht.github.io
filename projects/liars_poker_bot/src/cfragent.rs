@@ -74,7 +74,7 @@ impl<T: GameState> CFRAgent<T> {
         let cur_player = s.cur_player();
 
         // Get or create the node
-        let info_set = s.information_state_string(cur_player);
+        let info_set = s.istate_key(cur_player).to_string();
         trace!("cfr processing:\t{}", info_set);
         trace!("node:\t{}", s);
 
@@ -235,7 +235,7 @@ impl<T: GameState> Agent<T> for CFRAgent<T> {
     ///
     /// If the I state has not be
     fn step(&mut self, s: &T) -> Action {
-        let istate = s.information_state_string(s.cur_player());
+        let istate = s.istate_key(s.cur_player()).to_string();
 
         let p = self.get_policy(&istate);
         trace!("evaluating istate {} for {:?}", istate, p);
@@ -267,24 +267,38 @@ mod tests {
         // Verify the nash equilibrium is reached. From https://en.wikipedia.org/wiki/Kuhn_poker
         let mut qa = CFRAgent::new(game, 42, 10000, Storage::Temp);
 
+        // To verify istate keys
+        // let mut g = (KuhnPoker::game().new)();
+        // g.apply_action(0);
+        // g.apply_action(1);
+        // g.apply_action(1);
+        // g.apply_action(0);
+        // let s = g.istate_string(1);
+        // let k = g.istate_key(1).to_string();
+
         // The second player has a single equilibrium strategy:
         // Always betting or calling when having a King
-        let w = qa.get_policy("2b");
+        // 4400 = 2b
+        let w = qa.get_policy("4400");
         check_floats(w[KPAction::Bet as usize], 1.0, 2);
 
-        let w = qa.get_policy("2p");
+        // 4410 = 2p
+        let w = qa.get_policy("4410");
         check_floats(w[KPAction::Bet as usize], 1.0, 2);
 
         // when having a Queen, checking if possible, otherwise calling with the probability of 1/3
-        let w = qa.get_policy("1p");
+        // 1p
+        let w = qa.get_policy("4210");
         check_floats(w[KPAction::Pass as usize], 1.0, 2);
-        let w = qa.get_policy("1b");
+        let w = qa.get_policy("4200");
         check_floats(w[KPAction::Bet as usize], 0.3333, 1);
 
         // when having a Jack, never calling and betting with the probability of 1/3.
-        let w = qa.get_policy("0b");
+        // 0b
+        let w = qa.get_policy("4000");
         check_floats(w[KPAction::Pass as usize], 1.0, 2);
-        let w = qa.get_policy("0p");
+        // 0p
+        let w = qa.get_policy("4010");
         check_floats(w[KPAction::Bet as usize], 0.3333, 1);
 
         // First player equilibrium
@@ -292,23 +306,28 @@ mod tests {
         // {\displaystyle \alpha \in [0,1/3]}{\displaystyle \alpha \in [0,1/3]}
         // with which he will bet when having a Jack (otherwise he checks; if the
         //other player bets, he should always fold).
-        let alpha = qa.get_policy("0")[KPAction::Bet as usize];
+        // 0
+        let alpha = qa.get_policy("200")[KPAction::Bet as usize];
         assert!(alpha < 0.4);
 
-        let w = qa.get_policy("0pb");
+        // 0pb
+        let w = qa.get_policy("80200");
         check_floats(w[KPAction::Pass as usize], 1.0, 2);
 
         // When having a King, he should bet with the probability of {\displaystyle 3\alpha }3\alpha
         // (otherwise he checks; if the other player bets, he should always call)
-        let w = qa.get_policy("2");
+        // 2
+        let w = qa.get_policy("220");
         check_floats(w[KPAction::Bet as usize], 3.0 * alpha, 1);
 
         // He should always check when having a Queen, and if the other player bets after this check,
         // he should call with the probability of {\displaystyle \alpha +1/3}{\displaystyle \alpha +1/3}.
-        let w = qa.get_policy("1");
+        // 1
+        let w = qa.get_policy("210");
         check_floats(w[KPAction::Pass as usize], 1.0, 2);
 
-        let w = qa.get_policy("1pb");
+        // 1pb
+        let w = qa.get_policy("84200");
         // We nudge the optimal weight here to save on iterations for convergence
         check_floats(w[KPAction::Bet as usize], alpha + 0.35, 1);
     }
@@ -328,7 +347,7 @@ mod tests {
         s.apply_action(0);
         s.apply_action(KPAction::Pass as usize);
 
-        assert_eq!(s.information_state_string(1), "0p");
+        assert_eq!(s.istate_string(1), "0p");
 
         let mut action_counter = vec![0; 2];
         for _ in 0..1000 {

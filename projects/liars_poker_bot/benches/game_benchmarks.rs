@@ -22,7 +22,7 @@ fn traverse_game_tree(n: usize) {
     }
 
     let mut work = Vec::new();
-    work.push((s.information_state(s.cur_player()), s));
+    work.push((s.istate_key(s.cur_player()), s));
 
     let mut nodes_processed = 0;
 
@@ -34,7 +34,7 @@ fn traverse_game_tree(n: usize) {
         for a in actions {
             let mut new_s = s.clone();
             new_s.apply_action(a);
-            let istate = new_s.information_state(new_s.cur_player());
+            let istate = new_s.istate_key(new_s.cur_player());
             work.push((istate, new_s));
         }
     }

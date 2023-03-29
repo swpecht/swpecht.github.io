@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::game::Action;
 
 /// For euchre, need the following bits:
@@ -88,6 +90,12 @@ impl IStateKey {
         }
 
         return v as Action;
+    }
+}
+
+impl ToString for IStateKey {
+    fn to_string(&self) -> String {
+        format!("{:X}{:X}", self.key[0], self.key[1])
     }
 }
 

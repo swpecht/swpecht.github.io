@@ -511,7 +511,7 @@ impl Display for EuchreGameState {
                 self.phase,
                 self.hands,
                 format_card(self.face_up),
-                self.information_state_string(0)
+                self.istate_string(0)
             ),
         }
     }
@@ -610,11 +610,11 @@ impl GameState for EuchreGameState {
     /// * 14: Calling player
     /// * 15: trump
     /// * 16+: play history
-    fn information_state(&self, player: Player) -> IStateKey {
+    fn istate_key(&self, player: Player) -> IStateKey {
         return self.istate_keys[player];
     }
 
-    fn information_state_string(&self, player: Player) -> String {
+    fn istate_string(&self, player: Player) -> String {
         let istate = self.istate_keys[player];
 
         // Full game state:
@@ -874,43 +874,40 @@ mod tests {
             s.apply_action(i);
         }
 
-        assert_eq!(s.information_state_string(0), "9CKCJS9HKH");
-        assert_eq!(s.information_state_string(1), "TCACQSTHAH");
-        assert_eq!(s.information_state_string(2), "JC9SKSJH9D");
-        assert_eq!(s.information_state_string(3), "QCTSASQHTD");
+        assert_eq!(s.istate_string(0), "9CKCJS9HKH");
+        assert_eq!(s.istate_string(1), "TCACQSTHAH");
+        assert_eq!(s.istate_string(2), "JC9SKSJH9D");
+        assert_eq!(s.istate_string(3), "QCTSASQHTD");
 
         s.apply_action(20);
-        assert_eq!(s.information_state_string(0), "9CKCJS9HKH|JD|");
-        assert_eq!(s.information_state_string(1), "TCACQSTHAH|JD|");
-        assert_eq!(s.information_state_string(2), "JC9SKSJH9D|JD|");
-        assert_eq!(s.information_state_string(3), "QCTSASQHTD|JD|");
+        assert_eq!(s.istate_string(0), "9CKCJS9HKH|JD|");
+        assert_eq!(s.istate_string(1), "TCACQSTHAH|JD|");
+        assert_eq!(s.istate_string(2), "JC9SKSJH9D|JD|");
+        assert_eq!(s.istate_string(3), "QCTSASQHTD|JD|");
 
         let mut new_s = s.clone(); // for alternative pickup parsing
 
         s.apply_action(EAction::Pickup.into());
-        assert_eq!(s.information_state_string(0), "9CKCJS9HKH|JD|T|0D");
+        assert_eq!(s.istate_string(0), "9CKCJS9HKH|JD|T|0D");
 
         // Dealer discards the QC
-        assert_eq!(s.information_state_string(3), "QCTSASQHTD|JD|T|0D");
+        assert_eq!(s.istate_string(3), "QCTSASQHTD|JD|T|0D");
         s.apply_action(3);
-        assert_eq!(s.information_state_string(3), "QCTSASQHTD|JD|T|0D|QC");
+        assert_eq!(s.istate_string(3), "QCTSASQHTD|JD|T|0D|QC");
 
         for _ in 0..4 {
             let a = s.legal_actions()[0];
             s.apply_action(a);
         }
-        assert_eq!(s.information_state_string(0), "9CKCJS9HKH|JD|T|0D|9CTCJCJD");
-        assert_eq!(s.information_state_string(1), "TCACQSTHAH|JD|T|0D|9CTCJCJD");
-        assert_eq!(s.information_state_string(2), "JC9SKSJH9D|JD|T|0D|9CTCJCJD");
-        assert_eq!(
-            s.information_state_string(3),
-            "QCTSASQHTD|JD|T|0D|QC|9CTCJCJD"
-        );
+        assert_eq!(s.istate_string(0), "9CKCJS9HKH|JD|T|0D|9CTCJCJD");
+        assert_eq!(s.istate_string(1), "TCACQSTHAH|JD|T|0D|9CTCJCJD");
+        assert_eq!(s.istate_string(2), "JC9SKSJH9D|JD|T|0D|9CTCJCJD");
+        assert_eq!(s.istate_string(3), "QCTSASQHTD|JD|T|0D|QC|9CTCJCJD");
 
         while !s.is_terminal() {
             let a = s.legal_actions()[0];
             s.apply_action(a);
-            s.information_state_string(0);
+            s.istate_string(0);
         }
         assert_eq!(s.evaluate(), vec![0.0, 2.0, 0.0, 2.0]);
 
@@ -919,7 +916,7 @@ mod tests {
             new_s.apply_action(EAction::Pass.into());
         }
         new_s.apply_action(EAction::Hearts.into());
-        assert_eq!(new_s.information_state_string(0), "9CKCJS9HKH|JD|PPPPPH|1H");
+        assert_eq!(new_s.istate_string(0), "9CKCJS9HKH|JD|PPPPPH|1H");
     }
 
     #[test]
@@ -934,11 +931,11 @@ mod tests {
                 s.apply_action(a);
             }
 
-            istates.insert(s.information_state_string(s.cur_player));
+            istates.insert(s.istate_string(s.cur_player));
             while !s.is_terminal() {
                 let a = ra.step(&s);
                 s.apply_action(a);
-                let istate = s.information_state_string(s.cur_player);
+                let istate = s.istate_string(s.cur_player);
                 assert!(!istates.contains(&istate));
                 istates.insert(istate);
             }

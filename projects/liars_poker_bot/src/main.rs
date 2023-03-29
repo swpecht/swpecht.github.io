@@ -229,7 +229,7 @@ fn run_play(_args: Args) {
 
         let cur_player = s.cur_player();
         s.apply_action(a);
-        println!("{}: {}", cur_player, s.information_state_string(user));
+        println!("{}: {}", cur_player, s.istate_string(user));
     }
 
     todo!()
@@ -237,7 +237,7 @@ fn run_play(_args: Args) {
 
 fn handle_player_turn<T: GameState>(s: &mut T) -> Action {
     let player = s.cur_player();
-    println!("{}", s.information_state_string(player));
+    println!("{}", s.istate_string(player));
     println!("{:?}", s.legal_actions());
 
     let mut buffer = String::new();

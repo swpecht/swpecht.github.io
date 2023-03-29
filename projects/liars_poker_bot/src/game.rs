@@ -24,8 +24,8 @@ pub trait GameState: Display + Clone {
     /// Returns a vector of the score for each player
     /// at the end of the game
     fn evaluate(&self) -> Vec<f32>;
-    fn information_state(&self, player: Player) -> IStateKey;
-    fn information_state_string(&self, player: Player) -> String;
+    fn istate_key(&self, player: Player) -> IStateKey;
+    fn istate_string(&self, player: Player) -> String;
     fn is_terminal(&self) -> bool;
     fn is_chance_node(&self) -> bool;
     fn num_players(&self) -> usize;
