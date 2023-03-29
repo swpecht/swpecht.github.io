@@ -7,22 +7,27 @@ use arrayvec::ArrayVec;
 use itertools::Itertools;
 
 use crate::{
-    game::{self, Action, Game, GameState, Player},
+    game::{Action, Game, GameState, Player},
     istate::IStateKey,
 };
 
 const JACK: usize = 2;
 const CARD_PER_SUIT: usize = 6;
 const NUM_CARDS: usize = 24;
+const CARD_BITS: usize = 5;
 
 pub struct Euchre {}
 impl Euchre {
     pub fn new_state() -> EuchreGameState {
         let keys = vec![IStateKey::new(); 4];
+        let mut hands = ArrayVec::new();
+        for _ in 0..4 {
+            hands.push(ArrayVec::new());
+        }
 
         EuchreGameState {
             num_players: 4,
-            hands: ArrayVec::new(),
+            hands: hands,
             is_chance_node: true,
             is_terminal: false,
             phase: EPhase::DealHands,
@@ -30,11 +35,6 @@ impl Euchre {
             trump: Suit::Clubs, // Default to one for now
             face_up: 0,         // Default for now
             trump_caller: 0,
-            starting_hands: Rc::new(ArrayVec::new()),
-            pickup_history: Vec::with_capacity(4),
-            choose_history: Vec::with_capacity(4),
-            play_history: Vec::with_capacity(5 * 4),
-            deal_history: Vec::with_capacity(5 * 4),
             istate_keys: keys,
         }
     }
@@ -50,12 +50,11 @@ impl Euchre {
 
 /// We use Rc for the starting hand information since these values rarely change
 /// and are consistent across all children of the given state
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EuchreGameState {
     num_players: usize,
     /// Holds the cards for each player in the game
     hands: ArrayVec<ArrayVec<Action, 5>, 4>,
-    starting_hands: Rc<ArrayVec<ArrayVec<Action, 5>, 4>>,
     trump: Suit,
     trump_caller: usize,
     face_up: Action,
@@ -64,67 +63,6 @@ pub struct EuchreGameState {
     phase: EPhase,
     cur_player: usize,
     istate_keys: Vec<IStateKey>,
-
-    deal_history: Vec<Action>,
-    pickup_history: Vec<Action>,
-    choose_history: Vec<Action>,
-    play_history: Vec<Action>,
-}
-
-fn clone_with_capacity(from: &Vec<usize>) -> Vec<usize> {
-    let mut new = Vec::with_capacity(from.capacity());
-    new.extend(from);
-    return new;
-}
-
-impl Clone for EuchreGameState {
-    fn clone(&self) -> Self {
-        // This ensures public history has the same capacity to avoid allocations/
-        // This resulted in a 68% improvement to the traverse euchre tree benchmark
-        // https://stackoverflow.com/questions/74083762/how-do-i-clone-a-vector-with-fixed-capacity-in-rust
-        let play_history = clone_with_capacity(&self.play_history);
-
-        if self.phase == EPhase::Play {
-            // if we're in the playing phase, can avoid copying the starting hand memory and
-            // instead just keep a single reference. Doing this led to a ~15% improvement on the euchre
-            // game tree traversal benchmark
-            Self {
-                num_players: self.num_players.clone(),
-                hands: self.hands.clone(),
-                starting_hands: Rc::clone(&self.starting_hands),
-                trump: self.trump.clone(),
-                trump_caller: self.trump_caller.clone(),
-                face_up: self.face_up.clone(),
-                is_chance_node: self.is_chance_node.clone(),
-                is_terminal: self.is_terminal.clone(),
-                phase: self.phase.clone(),
-                cur_player: self.cur_player.clone(),
-                deal_history: self.deal_history.clone(),
-                pickup_history: self.pickup_history.clone(),
-                choose_history: self.choose_history.clone(),
-                play_history,
-                istate_keys: self.istate_keys.clone(),
-            }
-        } else {
-            Self {
-                num_players: self.num_players.clone(),
-                hands: self.hands.clone(),
-                starting_hands: Rc::new((*self.starting_hands).clone()),
-                trump: self.trump.clone(),
-                trump_caller: self.trump_caller.clone(),
-                face_up: self.face_up.clone(),
-                is_chance_node: self.is_chance_node.clone(),
-                is_terminal: self.is_terminal.clone(),
-                phase: self.phase.clone(),
-                cur_player: self.cur_player.clone(),
-                deal_history: self.deal_history.clone(),
-                pickup_history: self.pickup_history.clone(),
-                choose_history: self.choose_history.clone(),
-                play_history,
-                istate_keys: self.istate_keys.clone(),
-            }
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -225,16 +163,8 @@ impl Display for Suit {
 
 impl EuchreGameState {
     fn apply_action_deal_hands(&mut self, a: Action) {
-        self.deal_history.push(a);
-
-        if self.hands.len() <= self.cur_player {
-            self.hands.push(ArrayVec::new());
-        }
-
         self.hands[self.cur_player].push(a);
         self.hands[self.cur_player].sort();
-
-        self.starting_hands = Rc::new(self.hands.clone());
 
         self.cur_player = (self.cur_player + 1) % self.num_players;
 
@@ -251,8 +181,6 @@ impl EuchreGameState {
     }
 
     fn apply_action_pickup(&mut self, a: Action) {
-        self.pickup_history.push(a);
-
         match EAction::non_card_from(a) {
             EAction::Pass => {
                 if self.cur_player == self.num_players - 1 {
@@ -272,7 +200,6 @@ impl EuchreGameState {
     }
 
     fn apply_action_choose_trump(&mut self, a: Action) {
-        self.choose_history.push(a);
         let a = EAction::non_card_from(a);
         match a {
             EAction::Clubs => self.trump = Suit::Clubs,
@@ -301,14 +228,11 @@ impl EuchreGameState {
             panic!("attempted to discard a card not in hand")
         }
 
-        self.starting_hands = Rc::new(self.hands.clone());
         self.cur_player = 0;
         self.phase = EPhase::Play;
     }
 
     fn apply_action_play(&mut self, a: Action) {
-        self.play_history.push(a);
-
         let index = self.hands[self.cur_player]
             .iter()
             .position(|&x| x == a)
@@ -316,24 +240,90 @@ impl EuchreGameState {
         self.hands[self.cur_player].remove(index);
 
         // Set acting player based on who won last trick
-        if self.play_history().len() % 4 == 0 && self.play_history().len() > 0 {
+        let trick_over = self.is_trick_over();
+        let num_cards = self.hands[0].len();
+        // trick is over and played at least one card
+        if trick_over && num_cards < 5 {
+            let trick = self.get_trick(0);
             let starter = (self.cur_player + 3) % self.num_players;
-            let trick = &self.play_history()[self.play_history().len() - 4..];
-            let winner = self.evaluate_trick(trick, starter);
+            let winner = self.evaluate_trick(&trick, starter);
             self.cur_player = winner;
         } else {
             self.cur_player = (self.cur_player + 1) % self.num_players;
         }
 
-        if self.play_history().len() >= self.num_players * 5 {
+        if trick_over && num_cards == 0 {
             self.is_terminal = true;
         }
+    }
+
+    /// Determine if current trick is over (all 4 players have played)
+    /// Also returns true if none have played
+    fn is_trick_over(&self) -> bool {
+        let mut trick_over = true;
+        let num_cards = self.hands[0].len();
+        for i in 1..self.num_players {
+            if num_cards != self.hands[i].len() {
+                trick_over = false;
+                break;
+            }
+        }
+
+        return trick_over;
+    }
+
+    /// Gets the `n` last trick
+    ///
+    /// 0 is the most recent trick
+    fn get_trick(&self, n: usize) -> [Action; 4] {
+        if !self.is_trick_over() {
+            panic!("cannot get trick unless the trick is over");
+        }
+
+        // can check any since trick is over, all same value
+        let played_cards = 5 - self.hands[0].len();
+        if n + 1 > played_cards {
+            panic!("not that many tricks have been played");
+        }
+
+        let mut trick = [0; 4];
+        let key = self.istate_keys[0];
+        let mut idx = CARD_BITS * 4 * (n + 1);
+        idx -= n * (CARD_BITS * self.num_players);
+        for i in 0..4 {
+            trick[i] = key.read(idx, CARD_BITS);
+            idx -= CARD_BITS;
+        }
+
+        return trick;
+    }
+
+    /// Get the card that started the current trick
+    fn get_leading_card(&self) -> Action {
+        if self.phase != EPhase::Play {
+            panic!("tried to get leading card of trick at invalid time")
+        }
+
+        let min_hand = self.hands.iter().map(|x| x.len()).min().unwrap();
+        let cards_played = self.hands.iter().filter(|&x| x.len() == min_hand).count();
+
+        let key = self.istate_keys[0];
+        let first_card = key.read(CARD_BITS * cards_played, CARD_BITS);
+
+        return first_card;
     }
 
     fn legal_actions_dealing(&self) -> Vec<Action> {
         let mut deck = Vec::with_capacity(NUM_CARDS);
         for i in 0..NUM_CARDS {
-            if !self.deal_history.contains(&i) {
+            let mut is_dealt = false;
+            for h in 0..self.num_players {
+                if self.hands[h].contains(&i) {
+                    is_dealt = true;
+                    break;
+                }
+            }
+            if !is_dealt {
                 deck.push(i);
             }
         }
@@ -370,11 +360,11 @@ impl EuchreGameState {
     /// Can only play cards from hand
     fn legal_actions_play(&self) -> Vec<Action> {
         // If they are the first to act on a trick then can play any card in hand
-        if self.play_history().len() % self.num_players == 0 {
+        if self.is_trick_over() {
             return self.hands[self.cur_player].to_vec();
         }
 
-        let leading_card = self.play_history()[self.play_history().len() / 4 * 4];
+        let leading_card = self.get_leading_card();
         let suit = self.get_suit(leading_card);
 
         let actions = self.hands[self.cur_player]
@@ -487,18 +477,14 @@ impl EuchreGameState {
         };
     }
 
-    fn play_history(&self) -> &[Action] {
-        return &self.play_history;
-    }
-
     fn update_keys(&mut self, a: Action) {
         let s = match self.phase {
-            EPhase::DealHands => 5, // 5 for bits required for 24 cards
-            EPhase::DealFaceUp => 5,
+            EPhase::DealHands => CARD_BITS, // 5 for bits required for 24 cards
+            EPhase::DealFaceUp => CARD_BITS,
             EPhase::Pickup => 1,
-            EPhase::Discard => 5,
+            EPhase::Discard => CARD_BITS,
             EPhase::ChooseTrump => 3, // could be any of the 4 suits or pass, 3 bits for 5 options
-            EPhase::Play => 5,
+            EPhase::Play => CARD_BITS,
         };
 
         // Private actions
@@ -525,7 +511,7 @@ impl Display for EuchreGameState {
                 self.phase,
                 self.hands,
                 format_card(self.face_up),
-                self.play_history()
+                self.information_state_string(0)
             ),
         }
     }
@@ -598,8 +584,8 @@ impl GameState for EuchreGameState {
         let mut won_tricks = [0; 2];
         let mut starter = 0;
         for i in 0..5 {
-            let trick = &self.play_history()[i * 4..4 * i + 4];
-            let winner = self.evaluate_trick(trick, starter);
+            let trick = self.get_trick(i);
+            let winner = self.evaluate_trick(&trick, starter);
             starter = winner;
             won_tricks[winner % 2] += 1;
         }
@@ -831,11 +817,9 @@ mod tests {
                 assert_eq!(index, None);
             }
         }
-        assert_eq!(s.play_history.len(), 0);
 
         // Deal the face up card
         s.apply_action(21);
-        assert_eq!(s.deal_history.len(), 20);
         assert_eq!(s.face_up, 21);
 
         assert_eq!(
