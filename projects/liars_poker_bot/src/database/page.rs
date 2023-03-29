@@ -24,8 +24,8 @@ use std::fmt::Debug;
 ///
 /// For B-5, there are ~27M ways the game can be played out. Implies that 1-5 have 90k end states.
 ///     27M / 304 = 90k
-pub(super) const EUCHRE_PAGE_TRIM: &[usize] = &[26, 2];
-// Need to eventually implement another cut, can't have all nodes loaded to ""
+pub(super) const EUCHRE_PAGE_TRIM: &[usize] = &[48, 5]; // &[26, 2];
+                                                        // Need to eventually implement another cut, can't have all nodes loaded to ""
 
 const MAX_PAGE_LEN: usize = 999999;
 
