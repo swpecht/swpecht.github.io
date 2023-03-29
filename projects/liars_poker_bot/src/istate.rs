@@ -24,8 +24,11 @@ impl IStateKey {
     pub fn push(&mut self, a: Action, s: usize) {
         assert!(s > 0);
 
-        if (a as f64).log2().ceil() > s as f64 {
-            panic!("value too large for size")
+        #[cfg(debug_assertions)]
+        {
+            if (a as f64).log2().ceil() > s as f64 {
+                panic!("value too large for size")
+            }
         }
 
         if s > 32 {
