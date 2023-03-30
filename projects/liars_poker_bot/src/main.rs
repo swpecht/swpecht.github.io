@@ -128,12 +128,12 @@ fn run_analyze(args: Args) {
         s.apply_action(a);
     }
 
-    println!("total nodes: {}", traverse_game_tree(s, 0));
+    println!("total storable nodes: {}", traverse_game_tree(s, 0));
 }
 
 fn traverse_game_tree<T: GameState + Clone>(s: T, depth: usize) -> usize {
     if s.is_terminal() {
-        return 1;
+        return 0; // don't need to store leaf node
     }
 
     let mut count = 1;
@@ -144,6 +144,12 @@ fn traverse_game_tree<T: GameState + Clone>(s: T, depth: usize) -> usize {
 
         let mut new_s = s.clone();
         new_s.apply_action(a);
+
+        // don't need to store if only 1 action
+        while new_s.legal_actions().len() == 1 {
+            new_s.apply_action(new_s.legal_actions()[0])
+        }
+
         count += traverse_game_tree(new_s, depth + 1);
     }
 
