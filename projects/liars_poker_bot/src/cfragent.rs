@@ -1,3 +1,6 @@
+pub mod cfr;
+pub mod cfrcs;
+
 use std::{fmt::Debug, iter::zip, marker::PhantomData};
 
 use itertools::Itertools;

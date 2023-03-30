@@ -1,6 +1,5 @@
 pub mod agents;
 pub mod cfragent;
-pub mod cfrcs;
 pub mod database;
 pub mod euchre;
 pub mod game;
