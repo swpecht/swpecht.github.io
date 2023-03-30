@@ -1,6 +1,5 @@
 use std::{
     fmt::{Display, Write},
-    rc::Rc,
 };
 
 use arrayvec::ArrayVec;

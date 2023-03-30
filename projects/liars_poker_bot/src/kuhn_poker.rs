@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use crate::{
-    game::{Action, Game, GameState, IState, Player},
+    game::{Action, Game, GameState, Player},
     istate::IStateKey,
 };
 use log::info;
