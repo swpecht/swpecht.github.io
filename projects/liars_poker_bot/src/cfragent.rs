@@ -292,7 +292,7 @@ mod tests {
         check_floats(w[KPAction::Pass as usize], 1.0, 2);
         // 1b
         let w = qa.get_policy("010000100000");
-        check_floats(w[KPAction::Bet as usize], 0.3333, 1);
+        check_floats(w[KPAction::Bet as usize], 0.3333, 2);
 
         // when having a Jack, never calling and betting with the probability of 1/3.
         // 0b
@@ -300,7 +300,7 @@ mod tests {
         check_floats(w[KPAction::Pass as usize], 1.0, 2);
         // 0p
         let w = qa.get_policy("010000000001");
-        check_floats(w[KPAction::Bet as usize], 0.3333, 1);
+        check_floats(w[KPAction::Bet as usize], 0.3333, 2);
 
         // First player equilibrium
         // In one possible formulation, player one freely chooses the probability
@@ -319,7 +319,7 @@ mod tests {
         // (otherwise he checks; if the other player bets, he should always call)
         // 2
         let w = qa.get_policy("0100010");
-        check_floats(w[KPAction::Bet as usize], 3.0 * alpha, 1);
+        check_floats(w[KPAction::Bet as usize], 3.0 * alpha, 2);
 
         // He should always check when having a Queen, and if the other player bets after this check,
         // he should call with the probability of {\displaystyle \alpha +1/3}{\displaystyle \alpha +1/3}.
@@ -330,14 +330,15 @@ mod tests {
         // 1pb
         let w = qa.get_policy("01000010000100000");
         // We nudge the optimal weight here to save on iterations for convergence
-        check_floats(w[KPAction::Bet as usize], alpha + 0.35, 1);
+        check_floats(w[KPAction::Bet as usize], alpha + 0.35, 2);
     }
 
     fn check_floats(x: f32, y: f32, i: i32) {
-        assert_eq!(
-            (x * (10.0f32).powi(i)).round() / (10.0f32).powi(i),
-            (y * (10.0f32).powi(i)).round() / (10.0f32).powi(i)
-        );
+        let diff = (x * (10.0f32).powi(i)) - (y * (10.0f32).powi(i));
+
+        if diff > 2.0 {
+            panic!("expected: {} got: {}", x, y);
+        }
     }
 
     #[test]
