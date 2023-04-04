@@ -1,6 +1,7 @@
 pub mod disk_backend;
 pub mod file_backend;
 pub mod io_uring_backend;
+pub mod memory_backend;
 pub mod page;
 
 use std::collections::{HashMap, VecDeque};
