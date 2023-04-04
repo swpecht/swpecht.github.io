@@ -9,6 +9,7 @@ use std::collections::{HashMap, VecDeque};
 use log::{debug, trace};
 
 use crate::database::page::Page;
+use crate::istate::IStateKey;
 use crate::{cfragent::CFRNode, database::page::EUCHRE_PAGE_TRIM};
 
 use self::disk_backend::DiskBackend;
@@ -37,7 +38,8 @@ impl NodeStoreStats {
 /// It stores an FIFO queue of Pages. When a page is evicted, it's written by the diskbackend.
 pub struct NodeStore<T: DiskBackend<CFRNode>> {
     max_nodes: usize,
-    pages: VecDeque<Page<CFRNode>>,
+    pages: HashMap<String, Page<CFRNode>>,
+    page_queue: VecDeque<String>,
     // Keeps count of how often a given page is loaded into memory
     stats: NodeStoreStats,
     backend: T,
@@ -46,10 +48,11 @@ pub struct NodeStore<T: DiskBackend<CFRNode>> {
 impl<T: DiskBackend<CFRNode>> NodeStore<T> {
     pub fn new_with_pages(backend: T, max_nodes: usize) -> Self {
         Self {
-            pages: VecDeque::new(),
+            pages: HashMap::new(),
             max_nodes: max_nodes,
             stats: NodeStoreStats::new(),
             backend: backend,
+            page_queue: VecDeque::new(),
         }
     }
 
@@ -58,10 +61,9 @@ impl<T: DiskBackend<CFRNode>> NodeStore<T> {
     }
 
     pub fn get_node_mut(&mut self, istate: &str) -> Option<CFRNode> {
-        for i in 0..self.pages.len() {
-            if self.pages[i].contains(istate) {
-                return self.pages[i].cache.get(istate).cloned();
-            }
+        let pgi = Page::<CFRNode>::get_page_key(istate, EUCHRE_PAGE_TRIM);
+        if let Some(p) = self.pages.get_mut(&pgi) {
+            return p.cache.get(istate).cloned();
         }
 
         self.load_page(istate);
@@ -70,10 +72,9 @@ impl<T: DiskBackend<CFRNode>> NodeStore<T> {
     }
 
     pub fn insert_node(&mut self, istate: String, n: CFRNode) -> Option<CFRNode> {
-        for i in 0..self.pages.len() {
-            if self.pages[i].contains(&istate) {
-                return self.pages[i].cache.insert(istate, n);
-            }
+        let pgi = Page::<CFRNode>::get_page_key(&istate, EUCHRE_PAGE_TRIM);
+        if let Some(p) = self.pages.get_mut(&pgi) {
+            return p.cache.insert(istate, n);
         }
 
         self.load_page(&istate);
@@ -82,13 +83,12 @@ impl<T: DiskBackend<CFRNode>> NodeStore<T> {
     }
 
     pub fn contains_node(&mut self, istate: &String) -> bool {
-        for i in 0..self.pages.len() {
-            if self.pages[i].contains(istate) {
-                return self.pages[i].cache.contains_key(istate);
-            }
+        let pgi = Page::<CFRNode>::get_page_key(&istate, EUCHRE_PAGE_TRIM);
+        if let Some(p) = self.pages.get_mut(&pgi) {
+            return p.cache.contains_key(istate);
         }
 
-        self.load_page(istate);
+        self.load_page(&istate);
 
         return self.contains_node(istate);
     }
@@ -126,16 +126,21 @@ impl<T: DiskBackend<CFRNode>> NodeStore<T> {
         trace!("{} pages loaded", self.pages.len());
 
         // Implement a FIFO cache
-        self.pages.push_back(p);
+        let pk = p.istate.clone();
+        self.page_queue.push_back(pk.clone());
+        self.pages.insert(pk, p);
+
         let mut cur_nodes = 0;
-        for p in &self.pages {
+        for k in &self.page_queue {
+            let p = self.pages.get(k).unwrap();
             cur_nodes += p.cache.len();
         }
 
         if cur_nodes > self.max_nodes {
-            let dropped = self.pages.pop_front();
-            if let Some(dropped) = dropped {
-                self.commit(dropped);
+            let dropped = self.page_queue.pop_front().unwrap();
+            let p = self.pages.remove(&dropped);
+            if let Some(p) = p {
+                self.commit(p);
             }
         }
     }

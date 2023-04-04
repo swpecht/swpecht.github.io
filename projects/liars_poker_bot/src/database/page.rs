@@ -42,6 +42,15 @@ pub struct Page<T> {
 
 impl<T> Page<T> {
     pub fn new(istate: &str, depth: &[usize]) -> Self {
+        let (pgi, ml) = Page::<T>::get_key_and_max_depth(istate, depth);
+        Self {
+            istate: pgi,
+            max_length: ml,
+            cache: HashMap::new(),
+        }
+    }
+
+    fn get_key_and_max_depth(istate: &str, depth: &[usize]) -> (String, usize) {
         let mut total_depth = 0;
         let mut max_length = total_depth;
         for d in depth {
@@ -63,11 +72,12 @@ impl<T> Page<T> {
             false => "".to_string(),
         };
 
-        Self {
-            istate: page_istate,
-            max_length: max_length,
-            cache: HashMap::new(),
-        }
+        return (page_istate, max_length);
+    }
+
+    pub fn get_page_key(istate: &str, depth: &[usize]) -> String {
+        let (pgi, _) = Page::<T>::get_key_and_max_depth(istate, depth);
+        return pgi;
     }
 
     pub fn contains(&self, istate: &str) -> bool {
