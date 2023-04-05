@@ -1,6 +1,7 @@
+use std::io::Write;
 use std::{
     fs::File,
-    io::{BufWriter, ErrorKind, Read, Write},
+    io::{BufWriter, ErrorKind, Read},
     path::PathBuf,
 };
 
