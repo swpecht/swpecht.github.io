@@ -37,11 +37,9 @@ impl<T: Serialize + DeserializeOwned> DiskBackend<T> for FileBackend {
     fn write(&mut self, p: super::page::Page<T>) -> Result<(), &'static str> {
         let path = get_path(&p, &self.dir);
         let f = File::create(path).unwrap();
-        let mut f = BufWriter::new(f);
+        let f = BufWriter::new(f);
 
-        let s = serde_json::to_string(&p.cache).unwrap();
-        f.write_all(s.as_bytes()).unwrap();
-        f.flush().unwrap();
+        serde_json::to_writer(f, &p.cache).unwrap();
         Ok(())
     }
 
