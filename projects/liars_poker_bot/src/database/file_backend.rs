@@ -42,7 +42,6 @@ impl<T: Serialize + DeserializeOwned> DiskBackend<T> for FileBackend {
         let f = BufWriter::new(f);
 
         p.cache.serialize(&mut Serializer::new(f)).unwrap();
-        // serde_json::to_writer(f, &p.cache).unwrap();
         Ok(())
     }
 
