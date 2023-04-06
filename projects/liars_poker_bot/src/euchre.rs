@@ -1,6 +1,4 @@
-use std::{
-    fmt::{Display, Write},
-};
+use std::fmt::{Display, Write};
 
 use arrayvec::ArrayVec;
 use itertools::Itertools;
@@ -232,11 +230,12 @@ impl EuchreGameState {
     }
 
     fn apply_action_play(&mut self, a: Action) {
-        let index = self.hands[self.cur_player]
-            .iter()
-            .position(|&x| x == a)
-            .unwrap();
-        self.hands[self.cur_player].remove(index);
+        for i in 0..self.hands[self.cur_player].len() {
+            if self.hands[self.cur_player][i] == a {
+                self.hands[self.cur_player].remove(i);
+                break;
+            }
+        }
 
         // Set acting player based on who won last trick
         let trick_over = self.is_trick_over();

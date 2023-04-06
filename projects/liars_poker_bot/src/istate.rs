@@ -26,26 +26,29 @@ impl IStateKey {
     pub fn push(&mut self, a: Action, s: usize) {
         assert!(s > 0);
 
+        let len = std::mem::size_of::<KeyFragment>() * 8;
         #[cfg(debug_assertions)]
         {
             if (a as f64).log2().ceil() > s as f64 {
                 panic!("value too large for size")
             }
+
+            if s > 32 {
+                panic!("don't support writes over 32 bits");
+            }
+
+            let is_overflow = (self.key[1] >> (len - s)) > 0;
+            if is_overflow {
+                panic!("overflowing key")
+            }
         }
 
-        if s > 32 {
-            panic!("don't support writes over 32 bits");
+        // handle overflowing to second key
+        if self.fb + s > std::mem::size_of::<KeyFragment>() * 8 {
+            let overflow = self.key[0] >> (len - s);
+            self.key[1] = self.key[1] << s;
+            self.key[1] |= overflow;
         }
-
-        let len = std::mem::size_of::<KeyFragment>() * 8;
-        let is_overflow = (self.key[1] >> (len - s)) > 0;
-        if is_overflow {
-            panic!("overflowing key")
-        }
-
-        let overflow = self.key[0] >> (len - s);
-        self.key[1] = self.key[1] << s;
-        self.key[1] |= overflow;
 
         self.key[0] = self.key[0] << s;
         let a = KeyFragment::try_from(a).expect("Action could not be converted into a 128");
