@@ -13,11 +13,13 @@ pub type KeyFragment = u128;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct IStateKey {
     key: [KeyFragment; 2],
+    /// index of the first bit of data
+    fb: usize,
 }
 
 impl IStateKey {
     pub fn new() -> Self {
-        Self { key: [1, 0] }
+        Self { key: [1, 0], fb: 0 }
     }
 
     /// Push a new action of `s` bits into the key)
@@ -48,23 +50,14 @@ impl IStateKey {
         self.key[0] = self.key[0] << s;
         let a = KeyFragment::try_from(a).expect("Action could not be converted into a 128");
         self.key[0] |= a;
+
+        self.fb += s;
     }
 
     /// Returns the index of the first bit with data. It ignores the first bit used
     /// to track the first data
     pub fn first_bit(&self) -> usize {
-        let mut f = 0;
-        let len = std::mem::size_of::<KeyFragment>() * 8;
-        for i in (0..(len * self.key.len())).rev() {
-            let idx = i / len;
-            let is_set = self.key[idx] & (1 << (i % len)) != 0;
-            if is_set {
-                f = i;
-                break;
-            }
-        }
-
-        return f;
+        return self.fb;
     }
 
     pub fn read(&self, start: usize, size: usize) -> Action {
@@ -117,11 +110,14 @@ impl IStateKey {
 
         let k1 = self.key[1] >> trim_amt;
 
-        return Self { key: [k0, k1] };
+        return Self {
+            key: [k0, k1],
+            fb: n,
+        };
     }
 
     pub fn len(&self) -> usize {
-        return self.first_bit();
+        return self.fb;
     }
 }
 
