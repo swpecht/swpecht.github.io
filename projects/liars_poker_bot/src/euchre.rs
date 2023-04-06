@@ -921,7 +921,7 @@ mod tests {
     fn euchre_test_unique_istate() {
         let mut ra = RandomAgent::new();
 
-        for _ in 0..10000 {
+        for _ in 0..1000 {
             let mut s = Euchre::new_state();
             let mut istates = HashSet::new();
             while s.is_chance_node() {

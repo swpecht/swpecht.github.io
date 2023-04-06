@@ -126,7 +126,7 @@ impl IStateKey {
 
 impl ToString for IStateKey {
     fn to_string(&self) -> String {
-        format!("{:b}{:b}", self.key[1], self.key[0])
+        format!("{:X}{:X}", self.key[1], self.key[0])
     }
 }
 

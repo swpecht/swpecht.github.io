@@ -1,3 +1,4 @@
+pub mod bestresponse;
 pub mod cfr;
 pub mod cfrcs;
 
@@ -30,7 +31,6 @@ impl<T: GameState> CFRAgent<T> {
             game,
             rng: SeedableRng::seed_from_u64(seed),
             store: NodeStore::new(FileBackend::new(storage)),
-            // store: NodeStore::new(NoOpBackend::new()),
             call_count: 0,
             _phantom: PhantomData,
         };
@@ -91,10 +91,11 @@ impl<T: GameState> CFRAgent<T> {
             .unwrap_or(CFRNode::new(info_set, &actions));
 
         let param = match cur_player {
-            0 => p0,
-            _ => p1,
+            0 | 2 => p0,
+            1 | 3 => p1,
+            _ => panic!("invalid player"),
         };
-        let strategy = node.get_strategy(param);
+        let strategy = node.get_move_prob(param);
 
         let mut util = [0.0; 5];
 
@@ -110,7 +111,7 @@ impl<T: GameState> CFRAgent<T> {
             // so we pass reach probability = p0 * strategy[a], likewise if this is player == 1 then reach probability = p1 * strategy[a]
             // https://colab.research.google.com/drive/1SYNxGdR7UmoxbxY-NSpVsKywLX7YwQMN?usp=sharing#scrollTo=NamPieNiykz1
             util[idx] = match cur_player {
-                0 => -self.cfr(new_s, p0 * strategy[idx], p1),
+                0 | 2 => -self.cfr(new_s, p0 * strategy[idx], p1),
                 _ => -self.cfr(new_s, p0, p1 * strategy[idx]),
             };
             node_util += strategy[idx] * util[idx];
@@ -124,7 +125,7 @@ impl<T: GameState> CFRAgent<T> {
             // because it is the action of player 1 at the layer above that made the current node reachable
             // conversly if this player 1, then the reach p0 is used.
             node.regret_sum[idx] += match cur_player {
-                0 => p1,
+                0 | 2 => p1,
                 _ => p0,
             } * regret;
         }
@@ -159,8 +160,8 @@ pub struct CFRNode {
     pub actions: [usize; 5],
     pub num_actions: usize,
     pub regret_sum: [f32; 5],
-    pub strategy: [f32; 5],
-    pub strategy_sum: [f32; 5],
+    pub move_prob: [f32; 5],
+    pub total_move_prob: [f32; 5],
 }
 
 impl CFRNode {
@@ -176,47 +177,47 @@ impl CFRNode {
             actions: actions,
             num_actions: num_actions,
             regret_sum: [0.0; 5],
-            strategy: [0.0; 5],
-            strategy_sum: [0.0; 5],
+            move_prob: [0.0; 5],
+            total_move_prob: [0.0; 5],
         }
     }
 
     /// Combine the positive regrets into a strategy.
     ///
     /// Defaults to a uniform action strategy if no regrets are present
-    fn get_strategy(&mut self, realization_weight: f32) -> [f32; 5] {
+    fn get_move_prob(&mut self, realization_weight: f32) -> [f32; 5] {
         let num_actions = self.num_actions;
         let mut normalizing_sum = 0.0;
 
         for i in 0..num_actions {
-            self.strategy[i] = self.regret_sum[i].max(0.0);
-            normalizing_sum += self.strategy[i];
+            self.move_prob[i] = self.regret_sum[i].max(0.0);
+            normalizing_sum += self.move_prob[i];
         }
 
         for i in 0..num_actions {
             if normalizing_sum > 0.0 {
-                self.strategy[i] = self.strategy[i] / normalizing_sum;
+                self.move_prob[i] = self.move_prob[i] / normalizing_sum;
             } else {
-                self.strategy[i] = 1.0 / num_actions as f32;
+                self.move_prob[i] = 1.0 / num_actions as f32;
             }
-            self.strategy_sum[i] += realization_weight * self.strategy[i];
+            self.total_move_prob[i] += realization_weight * self.move_prob[i];
         }
 
-        return self.strategy.clone();
+        return self.move_prob.clone();
     }
 
     fn get_average_strategy(&self) -> Vec<f32> {
-        let mut avg_strat = vec![0.0; self.strategy.len()];
+        let mut avg_strat = vec![0.0; self.move_prob.len()];
         let mut normalizing_sum = 0.0;
-        for i in 0..self.strategy.len() {
-            normalizing_sum += self.strategy_sum[i];
+        for i in 0..self.move_prob.len() {
+            normalizing_sum += self.total_move_prob[i];
         }
 
-        for i in 0..self.strategy.len() {
+        for i in 0..self.move_prob.len() {
             if normalizing_sum > 0.0 {
-                avg_strat[i] = self.strategy_sum[i] / normalizing_sum;
+                avg_strat[i] = self.total_move_prob[i] / normalizing_sum;
             } else {
-                avg_strat[i] = 1.0 / self.strategy.len() as f32;
+                avg_strat[i] = 1.0 / self.move_prob.len() as f32;
             }
         }
 
