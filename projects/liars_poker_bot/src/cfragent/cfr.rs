@@ -109,7 +109,6 @@ impl VanillaCFR {
         }
 
         // // post-traversals: update the infoset
-
         if cur_player == update_player {
             let (my_reach, opp_reach) = match gs.cur_player() {
                 0 | 2 => (reach0, reach1),
