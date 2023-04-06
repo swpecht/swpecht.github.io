@@ -39,8 +39,11 @@ impl<T: GameState> CFRAgent<T> {
         let mut alg = CFRCS::new(seed);
         for i in 0..iterations {
             let gs = (agent.game.new)();
-            alg.run(&mut agent.store, &gs, 0);
-            alg.run(&mut agent.store, &gs, 1);
+
+            for i in 0..agent.game.max_players {
+                alg.run(&mut agent.store, &gs, i);
+            }
+
             info!("Finished iteration {} for CFR", i);
         }
 
@@ -178,7 +181,7 @@ mod tests {
 
     #[test]
     fn cfragent_sample_test() {
-        let mut qa = CFRAgent::new(KuhnPoker::game(), 42, 10000, Storage::Temp);
+        let mut qa = CFRAgent::new(KuhnPoker::game(), 42, 50000, Storage::Temp);
         let mut s = KuhnPoker::new_state();
         s.apply_action(1);
         s.apply_action(0);
