@@ -56,7 +56,7 @@ impl<T: DiskBackend<CFRNode>> NodeStore<T> {
     }
 
     pub fn new(backend: T) -> Self {
-        NodeStore::new_with_pages(backend, 2000000)
+        NodeStore::new_with_pages(backend, 5_000_000)
     }
 
     pub fn get_node_mut(&mut self, istate: &IStateKey) -> Option<CFRNode> {
