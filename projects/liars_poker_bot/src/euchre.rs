@@ -97,16 +97,6 @@ impl EAction {
             _ => panic!("unsupported action"),
         }
     }
-
-    fn to_suit(self) -> Suit {
-        match self {
-            EAction::Clubs => Suit::Clubs,
-            EAction::Spades => Suit::Spades,
-            EAction::Hearts => Suit::Hearts,
-            EAction::Diamonds => Suit::Diamonds,
-            _ => panic!("invalid action to convert to suit"),
-        }
-    }
 }
 
 impl Into<usize> for EAction {

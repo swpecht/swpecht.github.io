@@ -1,3 +1,4 @@
+use log::{debug, trace};
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
 use crate::{
@@ -42,14 +43,25 @@ impl CFRCS {
         reach0: f32,
         reach1: f32,
     ) -> f32 {
-        let cur_player = gs.cur_player();
-        if gs.is_terminal() {
-            return gs.evaluate()[update_player].into();
+        if self.nodes_touched % 1000000 == 0 {
+            debug!("cfr touched {} nodes", self.nodes_touched);
         }
         self.nodes_touched += 1;
 
+        if gs.is_terminal() {
+            return gs.evaluate()[update_player].into();
+        }
+
+        let cur_player = gs.cur_player();
+        let actions = gs.legal_actions();
+        if actions.len() == 1 {
+            // avoid processing nodes with no choices
+            let mut ngs = gs.clone();
+            ngs.apply_action(actions[0]);
+            return self.cfrcs(ns, &ngs, update_player, depth + 1, reach0, reach1);
+        }
+
         if gs.is_chance_node() {
-            let actions = gs.legal_actions();
             let a = *actions.choose(&mut self.rng).unwrap();
             let mut ngs = gs.clone();
             ngs.apply_action(a);
@@ -57,9 +69,11 @@ impl CFRCS {
         }
 
         let is = gs.istate_key(gs.cur_player());
-        let mut strat_ev = 0.0;
 
-        let actions = gs.legal_actions();
+        // log the call
+        trace!("cfr processing:\t{}", is.to_string());
+        trace!("node:\t{}", gs);
+        let mut strat_ev = 0.0;
 
         let mut move_evs = Vec::new();
         for _ in 0..actions.len() {

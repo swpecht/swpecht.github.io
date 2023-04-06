@@ -1,12 +1,11 @@
-use std::io::Write;
 use std::{
     fs::File,
-    io::{BufWriter, ErrorKind, Read},
+    io::{BufWriter, ErrorKind},
     path::PathBuf,
 };
 
 use log::debug;
-use rmp_serde::{Deserializer, Serializer};
+use rmp_serde::Serializer;
 use serde::{de::DeserializeOwned, Serialize};
 use tempfile::TempDir;
 
