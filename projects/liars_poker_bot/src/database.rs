@@ -1,6 +1,5 @@
 pub mod disk_backend;
 pub mod file_backend;
-pub mod io_uring_backend;
 pub mod memory_backend;
 pub mod page;
 
@@ -22,7 +21,7 @@ pub enum Storage {
 }
 
 struct NodeStoreStats {
-    page_loads: HashMap<String, usize>,
+    page_loads: HashMap<IStateKey, usize>,
 }
 
 impl NodeStoreStats {
@@ -38,8 +37,8 @@ impl NodeStoreStats {
 /// It stores an FIFO queue of Pages. When a page is evicted, it's written by the diskbackend.
 pub struct NodeStore<T: DiskBackend<CFRNode>> {
     max_nodes: usize,
-    pages: HashMap<String, Page<CFRNode>>,
-    page_queue: VecDeque<String>,
+    pages: HashMap<IStateKey, Page<CFRNode>>,
+    page_queue: VecDeque<IStateKey>,
     // Keeps count of how often a given page is loaded into memory
     stats: NodeStoreStats,
     backend: T,
@@ -60,7 +59,7 @@ impl<T: DiskBackend<CFRNode>> NodeStore<T> {
         NodeStore::new_with_pages(backend, 2000000)
     }
 
-    pub fn get_node_mut(&mut self, istate: &str) -> Option<CFRNode> {
+    pub fn get_node_mut(&mut self, istate: &IStateKey) -> Option<CFRNode> {
         let pgi = Page::<CFRNode>::get_page_key(istate, EUCHRE_PAGE_TRIM);
         if let Some(p) = self.pages.get_mut(&pgi) {
             return p.cache.get(istate).cloned();
@@ -71,7 +70,7 @@ impl<T: DiskBackend<CFRNode>> NodeStore<T> {
         return self.get_node_mut(istate);
     }
 
-    pub fn insert_node(&mut self, istate: String, n: CFRNode) -> Option<CFRNode> {
+    pub fn insert_node(&mut self, istate: IStateKey, n: CFRNode) -> Option<CFRNode> {
         let pgi = Page::<CFRNode>::get_page_key(&istate, EUCHRE_PAGE_TRIM);
         if let Some(p) = self.pages.get_mut(&pgi) {
             return p.cache.insert(istate, n);
@@ -82,7 +81,7 @@ impl<T: DiskBackend<CFRNode>> NodeStore<T> {
         return self.insert_node(istate, n);
     }
 
-    pub fn contains_node(&mut self, istate: &String) -> bool {
+    pub fn contains_node(&mut self, istate: &IStateKey) -> bool {
         let pgi = Page::<CFRNode>::get_page_key(&istate, EUCHRE_PAGE_TRIM);
         if let Some(p) = self.pages.get_mut(&pgi) {
             return p.cache.contains_key(istate);
@@ -95,20 +94,25 @@ impl<T: DiskBackend<CFRNode>> NodeStore<T> {
 
     /// Commits all data in the pages to sqlite
     fn commit(&mut self, page: Page<CFRNode>) {
-        debug!("commiting {} for page {}", page.cache.len(), page.istate);
+        debug!(
+            "commiting {} for page {}",
+            page.cache.len(),
+            page.istate.to_string()
+        );
         self.backend.write(page).unwrap();
     }
 
     /// Loads the specified cursor into memory, flushing the previous cache
-    fn load_page(&mut self, istate: &str) {
-        trace!("page fault for:\t{}", istate);
+    fn load_page(&mut self, istate: &IStateKey) {
+        trace!("page fault for:\t{}", istate.to_string());
 
         // find the page istate
         let mut p = Page::new(istate, EUCHRE_PAGE_TRIM);
 
         debug!(
             "starting page load for: {} length {}",
-            p.istate, p.max_length
+            p.istate.to_string(),
+            p.max_length
         );
 
         p = self.backend.read(p);
@@ -116,10 +120,10 @@ impl<T: DiskBackend<CFRNode>> NodeStore<T> {
         let count = *self.stats.page_loads.get(&p.istate).unwrap_or(&0);
         self.stats.page_loads.insert(p.istate.clone(), count + 1);
 
-        trace!("page loaded: {}\t{}", p.cache.len(), p.istate);
+        trace!("page loaded: {}\t{}", p.cache.len(), p.istate.to_string());
         debug!(
             "page '{}' loaded {} times ({} items)",
-            p.istate,
+            p.istate.to_string(),
             count + 1,
             p.cache.len()
         );
@@ -158,12 +162,13 @@ mod tests {
     use crate::{
         cfragent::CFRNode,
         database::{file_backend::FileBackend, NodeStore, Storage},
+        istate::IStateKey,
     };
 
     #[test]
     fn test_write_read_tempfile() {
         let mut store = NodeStore::new(FileBackend::new(Storage::Temp));
-        let istate = "test".to_string();
+        let istate = IStateKey::new();
 
         let mut n = CFRNode::new(istate.clone(), &vec![0]);
         store.insert_node(istate.clone(), n.clone());

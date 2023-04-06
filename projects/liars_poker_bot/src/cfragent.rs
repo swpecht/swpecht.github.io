@@ -12,6 +12,7 @@ use crate::{
     agents::Agent,
     database::{file_backend::FileBackend, NodeStore, Storage},
     game::{Action, Game, GameState},
+    istate::IStateKey,
 };
 
 #[derive(Clone)]
@@ -77,8 +78,8 @@ impl<T: GameState> CFRAgent<T> {
         let cur_player = s.cur_player();
 
         // Get or create the node
-        let info_set = s.istate_key(cur_player).to_string();
-        trace!("cfr processing:\t{}", info_set);
+        let info_set = s.istate_key(cur_player);
+        trace!("cfr processing:\t{}", info_set.to_string());
         trace!("node:\t{}", s);
 
         if s.is_terminal() {
@@ -87,7 +88,7 @@ impl<T: GameState> CFRAgent<T> {
 
         let mut node = self
             .get_node_mut(&info_set)
-            .unwrap_or(CFRNode::new(info_set.clone(), &actions));
+            .unwrap_or(CFRNode::new(info_set, &actions));
 
         let param = match cur_player {
             0 => p0,
@@ -134,15 +135,15 @@ impl<T: GameState> CFRAgent<T> {
         return node_util;
     }
 
-    fn get_node_mut(&mut self, istate: &str) -> Option<CFRNode> {
+    fn get_node_mut(&mut self, istate: &IStateKey) -> Option<CFRNode> {
         self.store.get_node_mut(istate)
     }
 
-    fn insert_node(&mut self, istate: String, node: CFRNode) -> Option<CFRNode> {
+    fn insert_node(&mut self, istate: IStateKey, node: CFRNode) -> Option<CFRNode> {
         self.store.insert_node(istate, node)
     }
 
-    fn get_policy(&mut self, istate: &str) -> Vec<f32> {
+    fn get_policy(&mut self, istate: &IStateKey) -> Vec<f32> {
         let n = self.get_node_mut(istate).unwrap();
         let p = n.get_average_strategy();
         return p;
@@ -152,7 +153,7 @@ impl<T: GameState> CFRAgent<T> {
 /// Adapted from: https://towardsdatascience.com/counterfactual-regret-minimization-ff4204bf4205
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CFRNode {
-    pub info_set: String,
+    pub info_set: IStateKey,
     /// Stores what action each index represents.
     /// There are at most 5 actions (one for each card in hand)
     pub actions: [usize; 5],
@@ -163,7 +164,7 @@ pub struct CFRNode {
 }
 
 impl CFRNode {
-    pub fn new(info_set: String, legal_moves: &Vec<Action>) -> Self {
+    pub fn new(info_set: IStateKey, legal_moves: &Vec<Action>) -> Self {
         let num_actions = legal_moves.len();
         let mut actions = [0; 5];
         for i in 0..num_actions {
@@ -171,7 +172,7 @@ impl CFRNode {
         }
 
         Self {
-            info_set: info_set.clone(),
+            info_set: info_set,
             actions: actions,
             num_actions: num_actions,
             regret_sum: [0.0; 5],
@@ -238,10 +239,10 @@ impl<T: GameState> Agent<T> for CFRAgent<T> {
     ///
     /// If the I state has not be
     fn step(&mut self, s: &T) -> Action {
-        let istate = s.istate_key(s.cur_player()).to_string();
+        let istate = s.istate_key(s.cur_player());
 
         let p = self.get_policy(&istate);
-        trace!("evaluating istate {} for {:?}", istate, p);
+        trace!("evaluating istate {} for {:?}", istate.to_string(), p);
         let mut weights = vec![0.0; s.legal_actions().len()];
         for &a in &s.legal_actions() {
             weights[a] = p[a];
@@ -260,7 +261,8 @@ mod tests {
     use crate::{
         agents::Agent,
         database::Storage,
-        game::GameState,
+        game::{Action, GameState},
+        istate::IStateKey,
         kuhn_poker::{KPAction, KuhnPoker},
     };
 
@@ -270,39 +272,36 @@ mod tests {
         // Verify the nash equilibrium is reached. From https://en.wikipedia.org/wiki/Kuhn_poker
         let mut qa = CFRAgent::new(game, 42, 10000, Storage::Temp);
 
-        // To verify istate keys
-        let mut g = (KuhnPoker::game().new)();
-        g.apply_action(0);
-        g.apply_action(1);
-        g.apply_action(1);
-        g.apply_action(0);
-        let s = g.istate_string(1);
-        let k = g.istate_key(1).to_string();
-
         // The second player has a single equilibrium strategy:
         // Always betting or calling when having a King
         // 2b
-        let w = qa.get_policy("010001000000");
+        let k = get_key(&[2, 0, KPAction::Bet as usize]);
+        let w = qa.get_policy(&k);
         check_floats(w[KPAction::Bet as usize], 1.0, 2);
 
         // 2p
-        let w = qa.get_policy("010001000001");
+        let k = get_key(&[2, 0, KPAction::Pass as usize]);
+        let w = qa.get_policy(&k);
         check_floats(w[KPAction::Bet as usize], 1.0, 2);
 
         // when having a Queen, checking if possible, otherwise calling with the probability of 1/3
         // 1p
-        let w = qa.get_policy("010000100001");
+        let k = get_key(&[1, 0, KPAction::Pass as usize]);
+        let w = qa.get_policy(&k);
         check_floats(w[KPAction::Pass as usize], 1.0, 2);
         // 1b
-        let w = qa.get_policy("010000100000");
+        let k = get_key(&[1, 0, KPAction::Bet as usize]);
+        let w = qa.get_policy(&k);
         check_floats(w[KPAction::Bet as usize], 0.3333, 2);
 
         // when having a Jack, never calling and betting with the probability of 1/3.
         // 0b
-        let w = qa.get_policy("010000000000");
+        let k = get_key(&[0, 1, KPAction::Bet as usize]);
+        let w = qa.get_policy(&k);
         check_floats(w[KPAction::Pass as usize], 1.0, 2);
         // 0p
-        let w = qa.get_policy("010000000001");
+        let k = get_key(&[0, 1, KPAction::Pass as usize]);
+        let w = qa.get_policy(&k);
         check_floats(w[KPAction::Bet as usize], 0.3333, 2);
 
         // First player equilibrium
@@ -311,27 +310,32 @@ mod tests {
         // with which he will bet when having a Jack (otherwise he checks; if the
         //other player bets, he should always fold).
         // 0
-        let alpha = qa.get_policy("0100000")[KPAction::Bet as usize];
+        let k = get_key(&[0]);
+        let alpha = qa.get_policy(&k)[KPAction::Bet as usize];
         assert!(alpha < 0.4);
 
         // 0pb
-        let w = qa.get_policy("01000000000100000");
+        let k = get_key(&[0, 1, KPAction::Pass as usize, KPAction::Bet as usize]);
+        let w = qa.get_policy(&k);
         check_floats(w[KPAction::Pass as usize], 1.0, 2);
 
         // When having a King, he should bet with the probability of {\displaystyle 3\alpha }3\alpha
         // (otherwise he checks; if the other player bets, he should always call)
         // 2
-        let w = qa.get_policy("0100010");
+        let k = get_key(&[2]);
+        let w = qa.get_policy(&k);
         check_floats(w[KPAction::Bet as usize], 3.0 * alpha, 2);
 
         // He should always check when having a Queen, and if the other player bets after this check,
         // he should call with the probability of {\displaystyle \alpha +1/3}{\displaystyle \alpha +1/3}.
         // 1
-        let w = qa.get_policy("0100001");
+        let k = get_key(&[1]);
+        let w = qa.get_policy(&k);
         check_floats(w[KPAction::Pass as usize], 1.0, 2);
 
         // 1pb
-        let w = qa.get_policy("01000010000100000");
+        let k = get_key(&[1, 0, KPAction::Pass as usize, KPAction::Bet as usize]);
+        let w = qa.get_policy(&k);
         // We nudge the optimal weight here to save on iterations for convergence
         check_floats(w[KPAction::Bet as usize], alpha + 0.35, 2);
     }
@@ -342,6 +346,16 @@ mod tests {
         if diff > 2.0 {
             panic!("expected: {} got: {}", x, y);
         }
+    }
+
+    /// Gets a key for player 0 of a new gamestate after applying the passed actions
+    fn get_key(actions: &[Action]) -> IStateKey {
+        let mut g = (KuhnPoker::game().new)();
+        for &a in actions {
+            g.apply_action(a);
+        }
+
+        return g.istate_key(0);
     }
 
     #[test]

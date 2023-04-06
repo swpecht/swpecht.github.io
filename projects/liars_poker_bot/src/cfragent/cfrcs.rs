@@ -5,7 +5,7 @@ use crate::game::GameState;
 /// Based on implementation from: http://mlanctot.info/
 /// cfrcs.cpp
 
-pub fn cfrcs<T: GameState>(gs: &T, depth: usize, reach0: f64, reach1: f64) -> f64 {
+pub fn cfrcs<T: GameState>(gs: &T, _depth: usize, reach0: f64, reach1: f64) -> f64 {
     let cur_player = gs.cur_player();
 
     // if (terminal(gs))
@@ -24,10 +24,10 @@ pub fn cfrcs<T: GameState>(gs: &T, depth: usize, reach0: f64, reach1: f64) -> f6
     //   Infoset is;
 
     // unsigned long long infosetkey = 0;
-    let key = gs.istate_key(cur_player);
+    let _key = gs.istate_key(cur_player);
 
     //   double stratEV = 0.0;
-    let stratEv = 0.0;
+    let strat_ev = 0.0;
     //   int action = -1;
 
     //   int maxBid = (gs.curbid == 0 ? BLUFFBID-1 : BLUFFBID);
@@ -36,11 +36,11 @@ pub fn cfrcs<T: GameState>(gs: &T, depth: usize, reach0: f64, reach1: f64) -> f6
 
     //   assert(actionshere > 0);
     //   double moveEVs[actionshere];
-    let mut moveEvs: Vec<f64> = Vec::new();
+    let mut move_evs: Vec<f64> = Vec::new();
 
     //   for (int i = 0; i < actionshere; i++)
     for _ in 0..actions.len() {
-        moveEvs.push(0.0);
+        move_evs.push(0.0);
     }
 
     // get the info set (also set is.curMoveProbs using regret matching)
@@ -76,13 +76,13 @@ pub fn cfrcs<T: GameState>(gs: &T, depth: usize, reach0: f64, reach1: f64) -> f6
         ngs.apply_action(a);
 
         //     double payoff = cfrcs(ngs, 3-player, depth+1, newbidseq, newreach1, newreach2, phase, updatePlayer);
-        let payoff = cfrcs(&ngs, depth + 1, newreach0, newreach1);
+        let payoff = cfrcs(&ngs, _depth + 1, newreach0, newreach1);
 
         //     moveEVs[action] = payoff;
-        moveEvs[i] = payoff;
+        move_evs[i] = payoff;
 
         //     stratEV += moveProb*payoff;
-        stratEv += moveProb * payoff;
+        strat_ev += moveProb * payoff;
 
         //   }
     }
@@ -125,5 +125,5 @@ pub fn cfrcs<T: GameState>(gs: &T, depth: usize, reach0: f64, reach1: f64) -> f6
     //   }
 
     //   return stratEV;
-    return stratEv;
+    return strat_ev;
 }

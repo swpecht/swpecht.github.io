@@ -6,6 +6,7 @@ use std::{
 };
 
 use log::debug;
+use rmp_serde::{Deserializer, Serializer};
 use serde::{de::DeserializeOwned, Serialize};
 use tempfile::TempDir;
 
@@ -40,7 +41,8 @@ impl<T: Serialize + DeserializeOwned> DiskBackend<T> for FileBackend {
         let f = File::create(path).unwrap();
         let f = BufWriter::new(f);
 
-        serde_json::to_writer(f, &p.cache).unwrap();
+        p.cache.serialize(&mut Serializer::new(f)).unwrap();
+        // serde_json::to_writer(f, &p.cache).unwrap();
         Ok(())
     }
 
@@ -53,12 +55,7 @@ impl<T: Serialize + DeserializeOwned> DiskBackend<T> for FileBackend {
         }
 
         let f = f.as_mut().unwrap();
-
-        let mut buf = Vec::new();
-        f.read_to_end(&mut buf).unwrap();
-
-        p.cache = serde_json::from_slice(&buf).unwrap();
-
+        p.cache = rmp_serde::from_read(f).unwrap();
         return p;
     }
 
@@ -78,20 +75,21 @@ mod tests {
 
     use rand::{distributions::Alphanumeric, Rng};
 
-    use crate::database::{
-        disk_backend::DiskBackend, file_backend::FileBackend, page::Page, Storage,
+    use crate::{
+        database::{disk_backend::DiskBackend, file_backend::FileBackend, page::Page, Storage},
+        istate::IStateKey,
     };
 
     #[test]
     fn test_file_write_read_tempfile() {
-        let mut p = Page::new("", &[]);
+        let mut p = Page::new(&IStateKey::new(), &[]);
 
         for _ in 0..1000 {
-            let k: String = rand::thread_rng()
-                .sample_iter(&Alphanumeric)
-                .take(20)
-                .map(char::from)
-                .collect();
+            let mut k = IStateKey::new();
+            for _ in 0..5 {
+                let p: u8 = rand::thread_rng().gen();
+                k.push(p.into(), 8);
+            }
             let v: Vec<char> = rand::thread_rng()
                 .sample_iter(&Alphanumeric)
                 .take(20)
@@ -103,7 +101,7 @@ mod tests {
         let mut b = FileBackend::new(Storage::Temp);
         b.write(p.clone()).unwrap();
 
-        let mut read: Page<Vec<char>> = Page::new("", &[]);
+        let mut read: Page<Vec<char>> = Page::new(&IStateKey::new(), &[]);
         read = b.read(read);
 
         assert_eq!(p.cache, read.cache);

@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
 
+use crate::istate::IStateKey;
+
 /// Magic number dependant on the format of the istate. Should choose a number that has a meaningful break.
 /// For example:
 ///     ASTDJDQDKDKH3C|ASTSKSAC|9C9HTDQC|
@@ -35,13 +37,13 @@ const MAX_PAGE_LEN: usize = 999999;
 /// `trim` variable determins where the cut happens to split istates into pages.
 #[derive(Clone)]
 pub struct Page<T> {
-    pub istate: String,
+    pub istate: IStateKey,
     pub max_length: usize,
-    pub cache: HashMap<String, T>,
+    pub cache: HashMap<IStateKey, T>,
 }
 
 impl<T> Page<T> {
-    pub fn new(istate: &str, depth: &[usize]) -> Self {
+    pub fn new(istate: &IStateKey, depth: &[usize]) -> Self {
         let (pgi, ml) = Page::<T>::get_key_and_max_depth(istate, depth);
         Self {
             istate: pgi,
@@ -50,7 +52,7 @@ impl<T> Page<T> {
         }
     }
 
-    fn get_key_and_max_depth(istate: &str, depth: &[usize]) -> (String, usize) {
+    fn get_key_and_max_depth(istate: &IStateKey, depth: &[usize]) -> (IStateKey, usize) {
         let mut total_depth = 0;
         let mut max_length = total_depth;
         for d in depth {
@@ -68,26 +70,26 @@ impl<T> Page<T> {
         }
 
         let page_istate = match istate.len() > total_depth {
-            true => istate[0..total_depth].to_string(),
-            false => "".to_string(),
+            true => istate.trim(total_depth),
+            false => IStateKey::new(),
         };
 
         return (page_istate, max_length);
     }
 
-    pub fn get_page_key(istate: &str, depth: &[usize]) -> String {
+    pub fn get_page_key(istate: &IStateKey, depth: &[usize]) -> IStateKey {
         let (pgi, _) = Page::<T>::get_key_and_max_depth(istate, depth);
         return pgi;
     }
 
-    pub fn contains(&self, istate: &str) -> bool {
+    pub fn contains(&self, istate: &IStateKey) -> bool {
         // Parent of the current page
         if istate.len() < self.istate.len() || istate.len() > self.max_length {
             return false;
         }
 
         // Different parent
-        let target_parent = &istate[0..self.istate.len()];
+        let target_parent = istate.trim(self.istate.len());
         if target_parent != self.istate {
             return false;
         }
@@ -107,35 +109,41 @@ impl<T> Debug for Page<T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::cfragent::CFRNode;
+    use crate::{cfragent::CFRNode, istate::IStateKey};
 
     use super::{Page, MAX_PAGE_LEN};
 
     #[test]
     fn test_page_contains() {
-        let p: Page<CFRNode> = Page::new("AC9HJHQHAHKH3C|AS10SKSAC|9CQHQDJS|JD", &[15]);
-        assert_eq!(p.istate, "AC9HJHQHAHKH3C|");
+        let mut k = IStateKey::new();
+        k.push(0b00000000000010000, 17);
+        let p: Page<CFRNode> = Page::new(&k, &[15]);
 
-        assert!(p.contains("AC9HJHQHAHKH3C|AS10SKSAC|9CQHQDJS|JD"));
-        assert!(p.contains("AC9HJHQHAHKH3C|AS10SKSAC|9CQHQDJS|JDAD"));
-        assert!(p.contains("AC9HJHQHAHKH3C|AS10SKSAC|9CQHQDJS|JDADKCAH|XXXXXXXXXXXXXXXXXXXXXXX"));
-        assert!(!p.contains("XXXXXXXXXXXXXX|AS10SKSAC|9CQHQDJS|JDADKCAH|"));
-        assert!(!p.contains("AC9HJHQHAHKH"));
+        let mut pk = IStateKey::new();
+        pk.push(0b000000000000100, 15);
+        assert_eq!(p.istate, pk);
 
-        let p: Page<CFRNode> = Page::new("AC9HJHQHA", &[15]);
-        assert_eq!(p.istate, "");
-        assert!(!p.contains("AC9HJHQHAHKH3C|AS10SKSAC|9CQHQDJS|JD"));
+        assert!(p.contains(&k));
+        k.push(5, 4);
+        assert!(p.contains(&k));
 
-        let p: Page<CFRNode> = Page::new("AC9HJHQHAHKH3C|ASTSKSAC|9CQHQDJS|JD", &[15, 9]);
-        assert_eq!(p.istate, "AC9HJHQHAHKH3C|ASTSKSAC|");
+        let mut dk = IStateKey::new();
+        dk.push(0b00000100000010000, 17);
+        assert!(!p.contains(&dk));
 
-        let p: Page<CFRNode> = Page::new("test", &[15, 9]);
-        assert!(p.contains("test"));
+        let mut sk = IStateKey::new();
+        sk.push(0b00000001, 8);
+        let p: Page<CFRNode> = Page::new(&sk, &[15]);
+        let pk = IStateKey::new(); // blank key
+        assert_eq!(p.istate, pk);
+        assert!(p.contains(&sk));
+        assert!(!p.contains(&k)); // too long to be included
     }
 
     #[test]
     fn test_page_new() {
-        let p: Page<CFRNode> = Page::new("", &[]);
+        let k = IStateKey::new();
+        let p: Page<CFRNode> = Page::new(&k, &[]);
         assert_eq!(p.max_length, MAX_PAGE_LEN);
     }
 }

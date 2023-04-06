@@ -37,9 +37,9 @@ impl<T> DiskBackend<T> for NoOpBackend {
 
 pub(super) fn get_path<T>(p: &Page<T>, dir: &PathBuf) -> PathBuf {
     // Special case to handle the root node
-    let name = match p.istate.as_str() {
-        "" => "ROOT_NODE",
-        _ => p.istate.as_str(),
+    let name = match p.istate.to_string().as_str() {
+        "01" => "ROOT_NODE".to_owned(),
+        _ => p.istate.to_string(),
     };
 
     let path = dir.join(name);

@@ -1,7 +1,7 @@
 use crate::game::GameState;
 
 pub struct VanillaCFR {
-    nodesTouched: usize,
+    nodes_touched: usize,
 }
 
 impl VanillaCFR {
@@ -15,7 +15,7 @@ impl VanillaCFR {
         depth: usize,
         reach1: f64,
         reach2: f64,
-        chanceReach: f64,
+        chance_reach: f64,
     ) -> f64 {
         // // at terminal node?
         // if (terminal(gs))
@@ -28,14 +28,14 @@ impl VanillaCFR {
         }
 
         // nodesTouched++;
-        self.nodesTouched += 1;
+        self.nodes_touched += 1;
 
         // // Chances nodes at the top of the tree. If p1roll and p2roll not set, we're at a chance node
         // if (gs.p1roll == 0)
         // {
         if gs.is_chance_node() {
             // double EV = 0.0;
-            let mut EV = 0.0;
+            let mut ev = 0.0;
 
             // for (int i = 1; i <= numChanceOutcomes(1); i++)
             // {
@@ -48,11 +48,11 @@ impl VanillaCFR {
 
                 // double newChanceReach = getChanceProb(1,i)*chanceReach;
                 let chance_prob = 1.0 / actions.len() as f64;
-                let new_chance_reach = chance_prob * chanceReach;
+                let new_chance_reach = chance_prob * chance_reach;
                 // EV += getChanceProb(1,i)*cfr(ngs, player, depth+1, bidseq, reach1, reach2, newChanceReach, phase, updatePlayer);
-                EV += chance_prob * self.vcfr(&ngs, depth + 1, reach1, reach2, new_chance_reach);
+                ev += chance_prob * self.vcfr(&ngs, depth + 1, reach1, reach2, new_chance_reach);
             }
-            return EV;
+            return ev;
         }
 
         // // declare the variables

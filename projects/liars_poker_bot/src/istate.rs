@@ -1,4 +1,4 @@
-
+use serde::{Deserialize, Serialize};
 
 use crate::game::Action;
 
@@ -10,7 +10,7 @@ use crate::game::Action;
 /// 100 for play: 4 players * 5 cards * 5 bits
 pub type KeyFragment = u128;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct IStateKey {
     key: [KeyFragment; 2],
 }
@@ -94,6 +94,35 @@ impl IStateKey {
 
         return v as Action;
     }
+
+    /// Returns a version of the IStateKey trimmed to a certain number of bits
+    ///
+    /// Upper bits are set to 0.
+    pub fn trim(&self, n: usize) -> IStateKey {
+        if n >= self.len() {
+            return self.clone();
+        }
+
+        let trim_amt = self.first_bit() - n;
+
+        let mut mask = 1;
+        for _ in 0..trim_amt - 1 {
+            mask = mask << 1;
+            mask |= 1;
+        }
+
+        let mut k0 = self.key[0] >> trim_amt;
+        let overflow = self.key[1] & mask;
+        k0 |= overflow << trim_amt;
+
+        let k1 = self.key[1] >> trim_amt;
+
+        return Self { key: [k0, k1] };
+    }
+
+    pub fn len(&self) -> usize {
+        return self.first_bit();
+    }
 }
 
 impl ToString for IStateKey {
@@ -102,6 +131,7 @@ impl ToString for IStateKey {
     }
 }
 
+/// Returns a mask for bit manipulation
 fn get_mask(size: usize) -> KeyFragment {
     match size {
         1 => 0b1,
@@ -112,7 +142,14 @@ fn get_mask(size: usize) -> KeyFragment {
         6 => 0b111111,
         7 => 0b1111111,
         8 => 0b11111111,
-        _ => todo!("not yet implemented"),
+        _ => {
+            let mut m = 1;
+            for _ in 0..size {
+                m = m << 1;
+                m |= 1;
+            }
+            m
+        }
     }
 }
 
@@ -190,5 +227,19 @@ mod tests {
                 assert_eq!(k.read(offset + 8, 8) as u8, n);
             }
         }
+    }
+
+    #[test]
+    fn test_len() {
+        let mut k = IStateKey::new();
+        assert_eq!(k.len(), 0);
+        k.push(1, 5);
+        assert_eq!(k.len(), 5);
+
+        k.push(1, 32);
+        k.push(1, 32);
+        k.push(1, 32);
+        k.push(1, 32);
+        assert_eq!(k.len(), 128 + 5);
     }
 }
