@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     agents::Agent,
-    cfragent::cfrcs::CFRCS,
+    cfragent::{cfr::Algorithm, cfrcs::CFRCS},
     database::{file_backend::FileBackend, NodeStore, Storage},
     game::{Action, Game, GameState},
     istate::IStateKey,

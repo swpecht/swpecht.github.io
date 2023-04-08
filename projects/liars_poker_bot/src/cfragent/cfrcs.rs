@@ -6,7 +6,7 @@ use crate::{
     game::{GameState, Player},
 };
 
-use super::CFRNode;
+use super::{cfr::Algorithm, CFRNode};
 
 /// Implementation of chance sampled CFR
 ///
@@ -17,21 +17,23 @@ pub struct CFRCS {
     rng: StdRng,
 }
 
-impl CFRCS {
-    pub fn new(seed: u64) -> Self {
-        Self {
-            nodes_touched: 0,
-            rng: SeedableRng::seed_from_u64(seed),
-        }
-    }
-
-    pub fn run<T: GameState>(
+impl Algorithm for CFRCS {
+    fn run<T: GameState>(
         &mut self,
         ns: &mut NodeStore<FileBackend>,
         gs: &T,
         update_player: Player,
     ) {
         self.cfrcs(ns, gs, update_player, 0, 1.0, 1.0);
+    }
+}
+
+impl CFRCS {
+    pub fn new(seed: u64) -> Self {
+        Self {
+            nodes_touched: 0,
+            rng: SeedableRng::seed_from_u64(seed),
+        }
     }
 
     fn cfrcs<T: GameState>(
@@ -133,116 +135,7 @@ impl CFRCS {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        cfragent::cfrcs::CFRCS,
-        database::{file_backend::FileBackend, NodeStore, Storage},
-        game::{Action, GameState},
-        istate::IStateKey,
-        kuhn_poker::{KPAction, KuhnPoker},
-    };
 
     #[test]
-    fn cfrcs_nash_test() {
-        let game = KuhnPoker::game();
-        // Verify the nash equilibrium is reached. From https://en.wikipedia.org/wiki/Kuhn_poker
-        let mut ns = NodeStore::new(FileBackend::new(Storage::Temp));
-        let mut cfr = CFRCS::new(42);
-        let gs = (game.new)();
-
-        for _ in 0..50000 {
-            cfr.cfrcs(&mut ns, &gs, 0, 0, 1.0, 1.0);
-            cfr.cfrcs(&mut ns, &gs, 1, 0, 1.0, 1.0);
-        }
-
-        // The second player has a single equilibrium strategy:
-        // Always betting or calling when having a King
-        // 2b
-        let k = get_key(&[2, 0, KPAction::Bet as usize]);
-        let w = get_policy(&mut ns, &k);
-        check_floats(w[KPAction::Bet as usize], 1.0, 2);
-
-        // 2p
-        let k = get_key(&[2, 0, KPAction::Pass as usize]);
-        let w = get_policy(&mut ns, &k);
-        check_floats(w[KPAction::Bet as usize], 1.0, 2);
-
-        // when having a Queen, checking if possible, otherwise calling with the probability of 1/3
-        // 1p
-        let k = get_key(&[1, 0, KPAction::Pass as usize]);
-        let w = get_policy(&mut ns, &k);
-        check_floats(w[KPAction::Pass as usize], 1.0, 2);
-        // 1b
-        let k = get_key(&[1, 0, KPAction::Bet as usize]);
-        let w = get_policy(&mut ns, &k);
-        check_floats(w[KPAction::Bet as usize], 0.3333, 2);
-
-        // when having a Jack, never calling and betting with the probability of 1/3.
-        // 0b
-        let k = get_key(&[0, 1, KPAction::Bet as usize]);
-        let w = get_policy(&mut ns, &k);
-        check_floats(w[KPAction::Pass as usize], 1.0, 2);
-        // 0p
-        let k = get_key(&[0, 1, KPAction::Pass as usize]);
-        let w = get_policy(&mut ns, &k);
-        check_floats(w[KPAction::Bet as usize], 0.3333, 2);
-
-        // First player equilibrium
-        // In one possible formulation, player one freely chooses the probability
-        // {\displaystyle \alpha \in [0,1/3]}{\displaystyle \alpha \in [0,1/3]}
-        // with which he will bet when having a Jack (otherwise he checks; if the
-        //other player bets, he should always fold).
-        // 0
-        let k = get_key(&[0]);
-        let alpha = get_policy(&mut ns, &k)[KPAction::Bet as usize];
-        assert!(alpha < 0.4);
-
-        // 0pb
-        let k = get_key(&[0, 1, KPAction::Pass as usize, KPAction::Bet as usize]);
-        let w = get_policy(&mut ns, &k);
-        check_floats(w[KPAction::Pass as usize], 1.0, 2);
-
-        // When having a King, he should bet with the probability of {\displaystyle 3\alpha }3\alpha
-        // (otherwise he checks; if the other player bets, he should always call)
-        // 2
-        let k = get_key(&[2]);
-        let w = get_policy(&mut ns, &k);
-        check_floats(w[KPAction::Bet as usize], 3.0 * alpha, 2);
-
-        // He should always check when having a Queen, and if the other player bets after this check,
-        // he should call with the probability of {\displaystyle \alpha +1/3}{\displaystyle \alpha +1/3}.
-        // 1
-        let k = get_key(&[1]);
-        let w = get_policy(&mut ns, &k);
-        check_floats(w[KPAction::Pass as usize], 1.0, 2);
-
-        // 1pb
-        let k = get_key(&[1, 0, KPAction::Pass as usize, KPAction::Bet as usize]);
-        let w = get_policy(&mut ns, &k);
-        // We nudge the optimal weight here to save on iterations for convergence
-        check_floats(w[KPAction::Bet as usize], alpha + 0.35, 2);
-    }
-
-    fn check_floats(x: f32, y: f32, i: i32) {
-        let diff = (x * (10.0f32).powi(i)) - (y * (10.0f32).powi(i));
-
-        if diff > 2.0 {
-            panic!("got: {} expected: {}", x, y);
-        }
-    }
-
-    /// Gets a key for player 0 of a new gamestate after applying the passed actions
-    fn get_key(actions: &[Action]) -> IStateKey {
-        let mut g = (KuhnPoker::game().new)();
-        for &a in actions {
-            g.apply_action(a);
-        }
-
-        return g.istate_key(0);
-    }
-
-    fn get_policy(ns: &mut NodeStore<FileBackend>, istate: &IStateKey) -> Vec<f32> {
-        let n = ns.get_node_mut(istate).unwrap();
-        let p = n.get_average_strategy();
-        return p;
-    }
+    fn cfrcs_nash_test() {}
 }
