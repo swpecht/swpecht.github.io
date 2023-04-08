@@ -21,26 +21,38 @@ Going to use Liar's poker bots to illustrate why.
     *ADQSTSJSAS|9C|PPPPPPPS|3S|TSTC9SJC|ACQCKCJS|THKHQS9H|QHAHASJH|KDTDAD9D
     * 011011101001001110100001011000001111001001001011
     *01100100010101100000010111000000111100100100101100111
+[*] Implement lookup improvement for pages -- use hash table for pages. Store keys in a vector so can use that still to manage when to write things to disk
+[ ] have database return references to nodes rather than clones?
+[*] Use IStateKey until the final step when converting to a string for storage
+    * And use bit shift to cut to the right
+    * Move the conversion of istate key to string to be deeper in code -- make pages work with istate key and avoid the need to create strings all together (except on page faults). Can just bitshift the key to get the proper page name.
+[ ] pruning optimization from Section 2.2.2 from Marc's thesis -- should reduce some computation
 [ ] Move IO to a separate thread
     *Probably want to do with raw threads and maybe use rayon for computation?
     *<https://doc.rust-lang.org/book/ch16-02-message-passing.html>
+[ ] Implement metric to track performance -- see how close to converging
+    * Use this to compare the vanilla CFR and chance samples CFR algorithms for a simple game -- first blog post?
+    * Could also do this for a single deal of Euchre to see how things are converging
 [ ] Train a single deal repeatedly, seed 1? See if converges to good play?
     *May need to add way to judge performance, see thesis on possible metrics
     *results going into /tmp/seed_0
     *See Thesis, pg 139, algorithm 8
     * <http://mlanctot.info/>
-[ ] Imlement other CFR algorithms, see Marc's phd and website for implementations
+[*] Imlement other CFR algorithms, see Marc's phd and website for implementations
+    * May already be using chance sampling -- need to fix my algorithm
+    * Probably should implement vanilla cfr as well to ensure working as expected
+
 
 ## Design
 
 * score leaf node
 * propogate score
 
-Algorithm | score_leaf_node | propogate_score |
-|---------|-----------------|-----------------|
-| Random    | random    | minimax |
-| Minimax   | rollout expected value    | minimax   |
-| CFR   | CFR / regret matching | ???? Minimax? |
+| Algorithm     | score_leaf_node        | propogate_score |
+| ------------- | ---------------------- | --------------- |
+| Random        | random                 | minimax         |
+| Minimax       | rollout expected value | minimax         |
+| CFR           | CFR / regret matching  | ???? Minimax?   |
 | Owndice agent |
 
 ## Results
@@ -94,63 +106,18 @@ For the first layer of the gametree, the minimum memory required is:
     `600m * 24 cards * 2 bits / 8 bits per byte / 1000 kB per byte / 1000 MB per kB = 3,600 MB`
 The 2 bits represent the 4 locations that unknowns cards can be in: 3 hands + discard
 Each of these possible states could play out in a variety of ways.
-| Phase     | number of options | Notes |
-|-------    |-------------------|-------|
-| Pick-up   | 4                 | Each player can pickup or skip      |
-| Call      |   81              | each player has 3 options, $3^4$|
-| Round 1   | 625               | 5 cards across 4 players, $5^4$   |
-| Round 2   | 256               | $4^4$ |
-| Round 3   | 81                | $3^4$ |
-| Round 4   | 16                | $2^4$ |
-| Round 5   | 1                 | $1^4$ |
+| Phase   | number of options | Notes                            |
+| ------- | ----------------- | -------------------------------- |
+| Pick-up | 4                 | Each player can pickup or skip   |
+| Call    | 81                | each player has 3 options, $3^4$ |
+| Round 1 | 625               | 5 cards across 4 players, $5^4$  |
+| Round 2 | 256               | $4^4$                            |
+| Round 3 | 81                | $3^4$                            |
+| Round 4 | 16                | $2^4$                            |
+| Round 5 | 1                 | $1^4$                            |
 
 From playing rounds alone, there are 207M options. Including pre-play rounds there are 67 billion options.
 
-### Combined
-
-Taking these two together leads to 41 trillion game state leaf nodes: $O(10^12)$ nodes. Even at 1 bit per gamestate this would be 125 GB of data for the leaf nodes alone.
-
-It is not possible for us to evaluate the game in this way.
-
-## Verifying on actual game rules
-
-run with `--mode analyze` to see summary stats about games
-
-For a given deal, ~27M possible rollouts. One order of magnitude less than the naive approach.
-
-How many total game nodes is this? -- need to count across the tree
-~175M nodes --many to keep in memory?
-
-22 total rounds
-
-Less nodes, since can ignore last layer and layer before
-
-This is possible with the current set up I have so far. But there are 16 quadrillion deal states:
-    `26 choose 5 * 21 choose 5 * 16 choose 5 * 11 choose 5 * 6 choose 1`
-    `65780 * 20349 * 4368 * 462 * 6`
-    `1.6*10^16 (16 quadrillion)`
-This is far too many to evaluate repeatedly (necessary to get convergence using CFR).
-
-How can this be reduced? e.g. with a better representation? Symmetry along the suits?
-
-Can we break the problem apart into before and after trump is called? And then simplify the gamestate?
-
-Running for 87M rounds of CFR resulted in 10M nodes stored in the database in 5.5GB. Would need ~175M rounds of the CFR for a single game. About 11 GB for nodes from a single game. Reasonable for a single hand, but would struggle to get reasonable coverage of possible deals.
-
-## Exploring options to reduce computation
-
-Using CFR, we only need to store each information state.
-
-* Deal: 134k hands (24 choose 6, hand + 1 revealed card)
-* Pick / pass: 5 states (everyone passes or one of each pickup)
-* Suit choice: 12 states, each of 4 players could choose 3 suits (can't choose flipped suit)
-* Hands (see above): 207M states
-
-If only looking at a single game: 12.4b states -- at a byte per gamestate, this is 12TB of data
-
-Still likely too many states to store -- could we collapse the representation of the states?
-
-58 min for 258M states
 
 ## Disk performance testing
 
@@ -215,4 +182,19 @@ liars_poker_bot::cfragent: 2023-03-08T16:21:01-07:00 - DEBUG - cfr called 100000
 ## With IStateKey and synchronous IO
 
 liars_poker_bot::cfragent: 2023-03-29T12:18:46-05:00 - INFO - Starting self play for CFR
-liars_poker_bot::cfragent: 2023-03-29T12:20:14-05:00 - DEBUG - cfr called 60000000 times
+liars_poker_bot::cfragent: 2023-03-29T12:20:14-05:00 - DEBUG - cfr called 60000000 times (0:01:28 )
+
+## Use hashtables to lookup pages
+
+liars_poker_bot::cfragent: 2023-04-04T11:36:05-04:00 - INFO - Starting self play for CFR
+liars_poker_bot::cfragent: 2023-04-04T11:36:41-04:00 - DEBUG - cfr called 60000000 times (0:00:36)
+
+## Switch to using IState key for Istates used during storage and page mgmt rather than Strings 
+
+liars_poker_bot::cfragent: 2023-04-06T14:55:06+02:00 - INFO - Starting self play for CFR
+liars_poker_bot::cfragent: 2023-04-06T14:55:55+02:00 - DEBUG - cfr called 60000000 times
+
+## Storing the first bit of IStateKey for easy retrieval
+
+liars_poker_bot::cfragent: 2023-04-06T15:07:18+02:00 - INFO - Starting self play for CFR
+liars_poker_bot::cfragent: 2023-04-06T15:07:41+02:00 - DEBUG - cfr called 60000000 times (0:00:23)
