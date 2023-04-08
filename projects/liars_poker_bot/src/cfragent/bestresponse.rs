@@ -1,94 +1,159 @@
 // https://aipokertutorial.com/agent-evaluation/
 
-// import numpy as np
+mod normalizer;
 
-// def brf(self, player_card, history, player_iteration, opp_reach):
-// 	plays = len(history)
-// 	acting_player = plays % 3
-// 	expected_payoff = 0
+use crate::{
+    cfragent::bestresponse::normalizer::{NormalizerMap, NormalizerVector},
+    database::{file_backend::FileBackend, NodeStore},
+    game::{Action, GameState, Player},
+    kuhn_poker::KPGameState,
+};
 
-// 	if plays >= 3: #can be terminal
-// 		opponent_dist = np.zeros(len(opp_reach))
-// 		opponent_dist_total = 0
-// 		#print('opp reach', opp_reach)
-// 		if history[-1] == 'f' or history[-1] == 'c' or (history[-1] == history[-2] == 'k'):
-// 			for i in range(len(opp_reach)):
-// 				opponent_dist_total += opp_reach[i] #compute sum of dist. for normalizing
-// 			for i in range(len(opp_reach)):
-// 				opponent_dist[i] = opp_reach[i] / opponent_dist_total
-// 				payoff = 0
-// 				is_player_card_higher = player_card > i
-// 				if history[-1] == 'f': #bet fold
-// 					if acting_player == player_iteration:
-// 						payoff = 1
-// 					else:
-// 						payoff = -1
-// 				elif history[-1] == 'c': #bet call
-// 					if is_player_card_higher:
-// 						payoff = 2
-// 					else:
-// 						payoff = -2
-// 				elif (history[-1] == history[-2] == 'k'): #check check
-// 					if is_player_card_higher:
-// 						payoff = 1
-// 					else:
-// 						payoff = -1
-// 				expected_payoff += opponent_dist[i] * payoff
-// 			return expected_payoff
+pub struct BestResponse {
+    /// Vector of possible private chance outcomes for a given game. For example
+    /// in KuhnPoker, this would be the dealt cards [[0], [1], [2]]. In Euchre, this would be all
+    /// possible hand states [[0, 1, 2, 3, 4], [0, 1, 2, 3, 5],  ...]
+    ///
+    /// For now we're ignoring how to handle the discard card in Euchre.
+    opp_chance_outcomes: Vec<Action>,
+}
 
-// 	d = np.zeros(2) #opponent action distribution
-// 	d = [0, 0]
+impl BestResponse {
+    pub fn new() -> Self {
+        Self {
+            opp_chance_outcomes: Vec::new(),
+        }
+    }
 
-// 	new_opp_reach = np.zeros(len(opp_reach))
-// 	for i in range(len(opp_reach)):
-// 		new_opp_reach[i] = opp_reach[i]
+    /// Runs the best response algorithm
+    pub fn run() -> f64 {
+        todo!();
+    }
 
-// 	v = -100000
-// 	util = np.zeros(2)
-// 	util = [0, 0]
-// 	w = np.zeros(2)
-// 	w = [0, 0]
+    /// Implements the best response alogirhtm from Marc's thesis.
+    ///
+    /// https://github.com/deepmind/open_spiel/blob/master/open_spiel/python/algorithms/best_response.py -- look at openspiel impl
+    /// https://github.com/deepmind/open_spiel/blob/master/open_spiel/algorithms/best_response.cc
+    ///
+    /// Args:
+    ///     gs: Gamestate
+    ///     opp_reach: ...
+    ///     ip: Iterating player
+    ///     ns: node store
+    pub fn expectimaxbr(
+        &mut self,
+        gs: KPGameState,
+        fixed_player: Player,
+        opp_reach: &[f64],
+        ns: &mut NodeStore<FileBackend>,
+    ) -> f64 {
+        assert!(fixed_player == 1 || fixed_player == 2);
 
-// 	#infoset = history
+        let update_player = fixed_player + 1 % gs.num_players();
 
-// 	for a in range(2):
-// 		if acting_player != player_iteration:
-// 			for i in range(len(opp_reach)):
-// 				infoset = str(i) + history
-// 				if infoset not in self.nodes:
-// 					self.nodes[infoset] = Node(2)
-// 				strategy = self.nodes[infoset].get_average_strategy()#get_strategy_br()
-// 				new_opp_reach[i] = opp_reach[i] * strategy[a] #update reach prob
-// 				w[a] += new_opp_reach[i] #sum weights over all poss. of new reach
+        // opponent never plays here, should choose this
+        if gs.cur_player() == update_player && opp_reach.iter().sum::<f64>() == 0.0 {
+            return f64::NEG_INFINITY;
+        }
 
-// 		if a == 0:
-// 			if len(history) != 0:
-// 				if history[-1] == 'b':
-// 					next_history = history + 'f'
-// 				elif history[-1] == 'k':
-// 					next_history = history + 'k'
-// 			else:
-// 				next_history = history + 'k'
-// 		elif a == 1:
-// 			if len(history) != 0:
-// 				if history[-1] == 'b':
-// 					next_history = history + 'c'
-// 				elif history[-1] == 'k':
-// 					next_history = history + 'b'
-// 			else:
-// 				next_history = history + 'b'
-// 		#print('w', w)
-// 		#print('history', history)
-// 		#print('next history', next_history)
-// 		util[a] = self.brf(player_card, next_history, player_iteration, new_opp_reach)
-// 		#print('util a', util[a])
-// 		if (acting_player == player_iteration and util[a] > v):
-// 			v = util[a] #this action better than previously best action
+        if gs.is_terminal() {
+            if opp_reach.iter().sum::<f64>() == 0.0 {
+                return f64::NEG_INFINITY;
+            }
 
-// 	if acting_player != player_iteration:
-// 		#D_(-i) = Normalize(w) , d is action distribution that = normalized w
-// 		d[0] = w[0] / (w[0] + w[1])
-// 		d[1] = w[1] / (w[0] + w[1])
-// 		v = d[0] * util[0] + d[1] * util[1]
+            let mut opp_dist = NormalizerVector::new();
 
-// 	return v
+            for i in 0..self.opp_chance_outcomes.len() {
+                // TODO: this may need updated, unclear on what `getChanceProb()` is doing in the original version
+                // oppDist.push_back(getChanceProb(fixed_player, oppChanceOutcomes[i])*oppReach[i]);
+                opp_dist.push(1.0 / self.opp_chance_outcomes.len() as f64 * opp_reach[i]);
+            }
+
+            opp_dist.normalize();
+
+            let mut exp_payoff = 0.0;
+
+            for i in 0..self.opp_chance_outcomes.len() {
+                let payoff = gs.get_payoff(fixed_player, self.opp_chance_outcomes[i]);
+
+                // TODO: unclear what `CHKPROB` and `CHKDBL` are doing, may need other asserts
+                // CHKPROB(oppDist[i]);
+                // CHKDBL(payoff);
+                exp_payoff += opp_dist[i] * payoff
+            }
+
+            return exp_payoff;
+        }
+
+        if gs.is_chance_node() {
+            if gs.cur_player() == fixed_player {
+                // filling with a dummy variable since this is never used
+                let mut ngs = gs.clone();
+                let a = gs.legal_actions()[0];
+                ngs.apply_action(a);
+                return self.expectimaxbr(ngs, fixed_player, opp_reach.clone(), ns);
+            }
+
+            let mut ev = 0.0;
+            let cos = gs.chance_outcomes(fixed_player);
+            let num_cos = cos.len();
+            for oc in cos {
+                let mut ngs = gs.clone();
+                ngs.apply_action(oc);
+
+                // TODO: Similar to above this was a call to `getChanceProb` may need to support
+                // something other than just the naive uniform distribution
+                ev += 1.0 / num_cos as f64
+                    * self.expectimaxbr(ngs, fixed_player, opp_reach.clone(), ns);
+            }
+
+            return ev;
+        }
+
+        // declare variables and get # actions available
+        let mut ev = 0.0;
+
+        let actions = gs.legal_actions();
+
+        //   childEV = expectimaxbr(ngs, newbidseq, 3-player, fixed_player, depth+1, newOppReach);
+        let mut max_ev = f64::NEG_INFINITY;
+        let mut child_evs = Vec::with_capacity(actions.len());
+        let mut opp_action_dist = NormalizerMap::new();
+
+        for i in 0..actions.len() {
+            let a = actions[i];
+
+            if gs.cur_player() == fixed_player {
+                // computeActionDist(bidseq, player, fixed_player, oppActionDist, action, newOppReach, actionshere);
+                todo!();
+            }
+
+            // state transition + recursion
+            let mut ngs = gs.clone();
+            ngs.apply_action(a);
+            let child_ev = self.expectimaxbr(ngs, fixed_player, opp_reach.clone(), ns);
+
+            if gs.cur_player() == fixed_player {
+                child_evs.push(child_ev);
+            } else {
+                if child_ev >= max_ev {
+                    max_ev = child_ev;
+                }
+            }
+        }
+
+        if gs.cur_player() == fixed_player {
+            opp_action_dist.normalize();
+            for i in 0..actions.len() {
+                // TODO: unclear what `CHKPROB` and `CHKDBL` are doing, may need other asserts
+                //     CHKPROB(oppActionDist[i]);
+                //     CHKDBL(childEVs[i]);
+                ev += opp_action_dist[i] * child_evs[i];
+            }
+        } else {
+            ev = max_ev;
+        }
+
+        return ev;
+    }
+}

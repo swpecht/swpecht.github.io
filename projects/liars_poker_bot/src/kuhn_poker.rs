@@ -128,6 +128,17 @@ impl KPGameState {
         actions.push(KPAction::Bet as Action);
         actions.push(KPAction::Pass as Action);
     }
+
+    /// Get the payoff for this gamestate if the opponents chance outcomes are replaced by the specified ones
+    pub fn get_payoff(&self, fixed_player: Player, oppChanceOutcome: Action) -> f64 {
+        todo!();
+    }
+
+    pub fn chance_outcomes(&self, fixed_player: Player) -> Vec<Action> {
+        // TODO: we want the chance outcomes for the non-fixed player! only passing the fixed player for convience
+
+        todo!()
+    }
 }
 
 impl GameState for KPGameState {
