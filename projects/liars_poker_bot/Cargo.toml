@@ -8,6 +8,7 @@ edition = "2021"
 
 [profile.release]
 debug = true
+lto = true # increase compile times for better possible perf
 
 [dependencies]
 rand = "0.8"
