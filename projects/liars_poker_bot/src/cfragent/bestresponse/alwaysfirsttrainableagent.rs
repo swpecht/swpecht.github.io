@@ -5,7 +5,7 @@ use crate::{
 };
 
 /// Populates a nodestore to always pick a given action index
-fn _populate_ns<T: GameState, N: NodeStore>(ns: &mut N, g: Game<T>, idx: usize) {
+pub(super) fn _populate_always_n<T: GameState, N: NodeStore>(ns: &mut N, g: Game<T>, idx: usize) {
     for _ in 0..100 {
         let gs = (g.new)();
         let mut q = Vec::new();
@@ -41,13 +41,13 @@ mod tests {
         kuhn_poker::KuhnPoker,
     };
 
-    use super::_populate_ns;
+    use super::_populate_always_n;
 
     #[test]
     fn test_populate_ns() {
         let mut ns = MemoryNodeStore::new();
         let g = KuhnPoker::game();
-        _populate_ns(&mut ns, g, 0);
+        _populate_always_n(&mut ns, g, 0);
 
         let k = KuhnPoker::from_actions(&[0, 1]).istate_key(0);
         assert_eq!(

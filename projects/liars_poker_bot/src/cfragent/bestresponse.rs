@@ -5,7 +5,7 @@ mod normalizer;
 
 use crate::{
     cfragent::bestresponse::normalizer::{NormalizerMap, NormalizerVector},
-    database::{file_backend::FileBackend, FileNodeStore},
+    database::NodeStore,
     game::{Action, GameState, Player},
     kuhn_poker::KPGameState,
 };
@@ -27,8 +27,14 @@ impl BestResponse {
     }
 
     /// Runs the best response algorithm
-    pub fn run() -> f64 {
-        todo!();
+    pub fn compute_best_response<T: NodeStore>(
+        &mut self,
+        gs: KPGameState,
+        fixed_player: Player,
+        opp_reach: &[f64],
+        ns: &mut T,
+    ) -> f64 {
+        return self.expectimaxbr(gs, fixed_player, opp_reach, ns);
     }
 
     /// Implements the best response alogirhtm from Marc's thesis.
@@ -36,14 +42,14 @@ impl BestResponse {
     /// Args:
     ///     gs: Gamestate
     ///     opp_reach: chance of reaching this istate given the corresponsding opp chance outcomes
-    ///     ip: Iterating player
+    ///     fixed_player: Iterating player
     ///     ns: node store
-    pub fn expectimaxbr(
+    pub fn expectimaxbr<T: NodeStore>(
         &mut self,
         gs: KPGameState,
         fixed_player: Player,
         opp_reach: &[f64],
-        ns: &mut FileNodeStore<FileBackend>,
+        ns: &mut T,
     ) -> f64 {
         assert!(fixed_player == 1 || fixed_player == 2);
 
@@ -162,10 +168,34 @@ impl BestResponse {
 
 #[cfg(test)]
 mod tests {
+    use crate::{
+        cfragent::bestresponse::alwaysfirsttrainableagent::_populate_always_n,
+        database::memory_node_store::MemoryNodeStore,
+        kuhn_poker::{KPAction, KuhnPoker},
+    };
+
+    use super::BestResponse;
 
     ///  Verify that finding the optimal policy against an agent that always bets in Kuhn Poker
+    ///
+    /// If it is known the agent always bets, the best response for player 0 should be:
+    /// * Jack: always fold
+    /// * Queen: unclear
+    /// * King: always bet
     #[test]
     fn test_br_always_bet_agent() {
-        todo!();
+        let g = KuhnPoker::game();
+        let mut ns = MemoryNodeStore::new();
+        let mut br = BestResponse::new();
+
+        _populate_always_n(&mut ns, g, KPAction::Bet as usize);
+
+        // best response against player 0, so as player 1
+        let gs = KuhnPoker::from_actions(&[0, 2]);
+
+        // todo, should the fixed player be player 1 or player 2?
+        let v = br.compute_best_response(gs, 1, &[1.0, 1.0], &mut ns);
+
+        assert_eq!(v, 0.0);
     }
 }
