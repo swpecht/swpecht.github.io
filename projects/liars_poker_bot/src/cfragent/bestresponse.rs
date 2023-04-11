@@ -180,14 +180,13 @@ impl BestResponse {
         action: Action,
         mut new_opp_reach: Vec<f64>,
     ) -> (NormalizerMap, Vec<f64>) {
+        let player = gs.cur_player();
+        assert_eq!(player, fixed_player);
+
         let mut weight = 0.0;
 
         for i in 0..self.opp_chance_outcomes.len() {
             let chance_outcome = self.opp_chance_outcomes[i];
-            //     // get the information set that corresponds to it
-            //     Infoset is;
-            //     unsigned long long infosetkey = 0;
-            let player = gs.cur_player();
             let key = gs.co_istate(player, chance_outcome);
 
             //     double oppProb = getMoveProb(is, action, actionshere);
@@ -241,6 +240,8 @@ mod tests {
         // todo, should the fixed player be player 1 or player 2?
         let v = br.compute_best_response(gs, 1, vec![1.0, 1.0], &mut ns);
 
-        assert_eq!(v, 0.0);
+        // Can manually calculate what the exploitability will be and compare it to what comes here
+        // see paper for description of calcs
+        todo!();
     }
 }
