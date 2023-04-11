@@ -148,6 +148,11 @@ impl KPGameState {
 
         todo!()
     }
+
+    // returns the istate key for a given player with the chance outcomes replaced with the specified one
+    pub fn co_istate(&self, player: Player, chance_outcome: Action) -> IStateKey {
+        todo!();
+    }
 }
 
 impl GameState for KPGameState {

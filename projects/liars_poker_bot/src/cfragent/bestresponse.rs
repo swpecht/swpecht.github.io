@@ -31,9 +31,10 @@ impl BestResponse {
         &mut self,
         gs: KPGameState,
         fixed_player: Player,
-        opp_reach: &[f64],
+        opp_reach: Vec<f64>,
         ns: &mut T,
     ) -> f64 {
+        self.opp_chance_outcomes = gs.chance_outcomes(fixed_player);
         return self.expectimaxbr(gs, fixed_player, opp_reach, ns);
     }
 
@@ -48,7 +49,7 @@ impl BestResponse {
         &mut self,
         gs: KPGameState,
         fixed_player: Player,
-        opp_reach: &[f64],
+        opp_reach: Vec<f64>,
         ns: &mut T,
     ) -> f64 {
         assert!(fixed_player == 1 || fixed_player == 2);
@@ -125,16 +126,23 @@ impl BestResponse {
 
         for i in 0..actions.len() {
             let a = actions[i];
+            let mut new_opp_reach = opp_reach.clone();
 
             if gs.cur_player() == fixed_player {
-                // computeActionDist(bidseq, player, fixed_player, oppActionDist, action, newOppReach, actionshere);
-                todo!();
+                (opp_action_dist, new_opp_reach) = self.compute_action_dist(
+                    ns,
+                    &gs,
+                    fixed_player,
+                    opp_action_dist,
+                    a,
+                    new_opp_reach,
+                );
             }
 
             // state transition + recursion
             let mut ngs = gs.clone();
             ngs.apply_action(a);
-            let child_ev = self.expectimaxbr(ngs, fixed_player, opp_reach.clone(), ns);
+            let child_ev = self.expectimaxbr(ngs, fixed_player, new_opp_reach, ns);
 
             if gs.cur_player() == fixed_player {
                 child_evs.push(child_ev);
@@ -163,7 +171,44 @@ impl BestResponse {
     /// Compute the weight for this action over all chance outcomes
     /// Used for determining probability of action
     /// Done only at fixed_player nodes
-    fn compute_action_dist() {}
+    fn compute_action_dist<N: NodeStore>(
+        &mut self,
+        ns: &mut N,
+        gs: &KPGameState,
+        fixed_player: Player,
+        mut opp_action_dist: NormalizerMap,
+        action: Action,
+        mut new_opp_reach: Vec<f64>,
+    ) -> (NormalizerMap, Vec<f64>) {
+        let mut weight = 0.0;
+
+        for i in 0..self.opp_chance_outcomes.len() {
+            let chance_outcome = self.opp_chance_outcomes[i];
+            //     // get the information set that corresponds to it
+            //     Infoset is;
+            //     unsigned long long infosetkey = 0;
+            let player = gs.cur_player();
+            let key = gs.co_istate(player, chance_outcome);
+
+            //     double oppProb = getMoveProb(is, action, actionshere);
+            let node = ns.get_node_mut(&key).unwrap();
+            let idx = node.get_index(action);
+            let opp_prob = node.get_average_strategy()[idx];
+
+            // TODO: figure out what CHKPROB does
+            //     CHKPROB(oppProb);
+
+            new_opp_reach[i] = new_opp_reach[i] * opp_prob as f64;
+
+            weight += 1.0 / self.opp_chance_outcomes.len() as f64 * new_opp_reach[i]
+        }
+
+        // TODO: figure out what CHKDBL does
+        //   CHKDBL(weight);
+
+        opp_action_dist.add(action, weight);
+        return (opp_action_dist, new_opp_reach);
+    }
 }
 
 #[cfg(test)]
@@ -194,7 +239,7 @@ mod tests {
         let gs = KuhnPoker::from_actions(&[0, 2]);
 
         // todo, should the fixed player be player 1 or player 2?
-        let v = br.compute_best_response(gs, 1, &[1.0, 1.0], &mut ns);
+        let v = br.compute_best_response(gs, 1, vec![1.0, 1.0], &mut ns);
 
         assert_eq!(v, 0.0);
     }
