@@ -2,7 +2,7 @@ use log::{debug, trace};
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
 use crate::{
-    database::{file_backend::FileBackend, NodeStore},
+    database::{file_backend::FileBackend, FileNodeStore, NodeStore},
     game::{GameState, Player},
 };
 
@@ -18,12 +18,7 @@ pub struct CFRCS {
 }
 
 impl Algorithm for CFRCS {
-    fn run<T: GameState>(
-        &mut self,
-        ns: &mut NodeStore<FileBackend>,
-        gs: &T,
-        update_player: Player,
-    ) {
+    fn run<T: GameState, N: NodeStore>(&mut self, ns: &mut N, gs: &T, update_player: Player) {
         self.cfrcs(ns, gs, update_player, 0, 1.0, 1.0);
     }
 }
@@ -36,9 +31,9 @@ impl CFRCS {
         }
     }
 
-    fn cfrcs<T: GameState>(
+    fn cfrcs<T: GameState, N: NodeStore>(
         &mut self,
-        ns: &mut NodeStore<FileBackend>,
+        ns: &mut N,
         gs: &T,
         update_player: Player,
         depth: usize,

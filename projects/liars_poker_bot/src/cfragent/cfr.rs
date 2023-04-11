@@ -1,13 +1,16 @@
 use crate::{
     cfragent::CFRNode,
-    database::{file_backend::FileBackend, NodeStore, Storage},
+    database::{
+        file_backend::FileBackend, memory_node_store::MemoryNodeStore, FileNodeStore, NodeStore,
+        Storage,
+    },
     game::{Action, GameState, Player},
     istate::IStateKey,
     kuhn_poker::{KPAction, KuhnPoker},
 };
 
 pub trait Algorithm {
-    fn run<T: GameState>(&mut self, ns: &mut NodeStore<FileBackend>, gs: &T, update_player: Player);
+    fn run<T: GameState, N: NodeStore>(&mut self, ns: &mut N, gs: &T, update_player: Player);
 }
 
 pub struct VanillaCFR {
@@ -15,20 +18,15 @@ pub struct VanillaCFR {
 }
 
 impl Algorithm for VanillaCFR {
-    fn run<T: GameState>(
-        &mut self,
-        ns: &mut NodeStore<FileBackend>,
-        gs: &T,
-        update_player: Player,
-    ) {
+    fn run<T: GameState, N: NodeStore>(&mut self, ns: &mut N, gs: &T, update_player: Player) {
         self.vcfr(ns, gs, update_player, 0, 1.0, 1.0, 1.0);
     }
 }
 
 impl VanillaCFR {
-    fn vcfr<T: GameState>(
+    fn vcfr<T: GameState, N: NodeStore>(
         &mut self,
-        ns: &mut NodeStore<FileBackend>,
+        ns: &mut N,
         gs: &T,
         update_player: Player,
         depth: usize,
@@ -140,7 +138,7 @@ impl VanillaCFR {
 }
 
 /// Returns the policy of a given istate
-fn _get_policy(ns: &mut NodeStore<FileBackend>, istate: &IStateKey) -> Vec<f32> {
+fn _get_policy<T: NodeStore>(ns: &mut T, istate: &IStateKey) -> Vec<f32> {
     let n = ns.get_node_mut(istate).unwrap();
     let p = n.get_average_strategy();
     return p;
@@ -167,7 +165,7 @@ fn _get_key(actions: &[Action]) -> IStateKey {
 pub(super) fn _test_kp_nash<T: Algorithm>(mut alg: T, iterations: usize) {
     let game = KuhnPoker::game();
     // Verify the nash equilibrium is reached. From https://en.wikipedia.org/wiki/Kuhn_poker
-    let mut ns = NodeStore::new(FileBackend::new(Storage::Temp));
+    let mut ns = MemoryNodeStore::new();
     let gs = (game.new)();
 
     for _ in 0..iterations {

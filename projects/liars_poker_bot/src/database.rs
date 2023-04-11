@@ -1,6 +1,6 @@
 pub mod disk_backend;
 pub mod file_backend;
-pub mod memory_backend;
+pub mod memory_node_store;
 pub mod page;
 
 use std::collections::{HashMap, VecDeque};
@@ -20,6 +20,12 @@ pub enum Storage {
     Named(String),
 }
 
+pub trait NodeStore {
+    fn get_node_mut(&mut self, istate: &IStateKey) -> Option<CFRNode>;
+    fn insert_node(&mut self, istate: IStateKey, n: CFRNode) -> Option<CFRNode>;
+    fn contains_node(&mut self, istate: &IStateKey) -> bool;
+}
+
 struct NodeStoreStats {
     page_loads: HashMap<IStateKey, usize>,
 }
@@ -35,7 +41,7 @@ impl NodeStoreStats {
 /// NodeStore is a cache for istates and their associated game nodes.
 ///
 /// It stores an FIFO queue of Pages. When a page is evicted, it's written by the diskbackend.
-pub struct NodeStore<T: DiskBackend<CFRNode>> {
+pub struct FileNodeStore<T: DiskBackend<CFRNode>> {
     max_nodes: usize,
     pages: HashMap<IStateKey, Page<CFRNode>>,
     page_queue: VecDeque<IStateKey>,
@@ -44,7 +50,42 @@ pub struct NodeStore<T: DiskBackend<CFRNode>> {
     backend: T,
 }
 
-impl<T: DiskBackend<CFRNode>> NodeStore<T> {
+impl<T: DiskBackend<CFRNode>> NodeStore for FileNodeStore<T> {
+    fn get_node_mut(&mut self, istate: &IStateKey) -> Option<CFRNode> {
+        let pgi = Page::<CFRNode>::get_page_key(istate, EUCHRE_PAGE_TRIM);
+        if let Some(p) = self.pages.get_mut(&pgi) {
+            return p.cache.get(istate).cloned();
+        }
+
+        self.load_page(istate);
+
+        return self.get_node_mut(istate);
+    }
+
+    fn insert_node(&mut self, istate: IStateKey, n: CFRNode) -> Option<CFRNode> {
+        let pgi = Page::<CFRNode>::get_page_key(&istate, EUCHRE_PAGE_TRIM);
+        if let Some(p) = self.pages.get_mut(&pgi) {
+            return p.cache.insert(istate, n);
+        }
+
+        self.load_page(&istate);
+
+        return self.insert_node(istate, n);
+    }
+
+    fn contains_node(&mut self, istate: &IStateKey) -> bool {
+        let pgi = Page::<CFRNode>::get_page_key(&istate, EUCHRE_PAGE_TRIM);
+        if let Some(p) = self.pages.get_mut(&pgi) {
+            return p.cache.contains_key(istate);
+        }
+
+        self.load_page(&istate);
+
+        return self.contains_node(istate);
+    }
+}
+
+impl<T: DiskBackend<CFRNode>> FileNodeStore<T> {
     pub fn new_with_pages(backend: T, max_nodes: usize) -> Self {
         Self {
             pages: HashMap::new(),
@@ -56,40 +97,7 @@ impl<T: DiskBackend<CFRNode>> NodeStore<T> {
     }
 
     pub fn new(backend: T) -> Self {
-        NodeStore::new_with_pages(backend, 5_000_000)
-    }
-
-    pub fn get_node_mut(&mut self, istate: &IStateKey) -> Option<CFRNode> {
-        let pgi = Page::<CFRNode>::get_page_key(istate, EUCHRE_PAGE_TRIM);
-        if let Some(p) = self.pages.get_mut(&pgi) {
-            return p.cache.get(istate).cloned();
-        }
-
-        self.load_page(istate);
-
-        return self.get_node_mut(istate);
-    }
-
-    pub fn insert_node(&mut self, istate: IStateKey, n: CFRNode) -> Option<CFRNode> {
-        let pgi = Page::<CFRNode>::get_page_key(&istate, EUCHRE_PAGE_TRIM);
-        if let Some(p) = self.pages.get_mut(&pgi) {
-            return p.cache.insert(istate, n);
-        }
-
-        self.load_page(&istate);
-
-        return self.insert_node(istate, n);
-    }
-
-    pub fn contains_node(&mut self, istate: &IStateKey) -> bool {
-        let pgi = Page::<CFRNode>::get_page_key(&istate, EUCHRE_PAGE_TRIM);
-        if let Some(p) = self.pages.get_mut(&pgi) {
-            return p.cache.contains_key(istate);
-        }
-
-        self.load_page(&istate);
-
-        return self.contains_node(istate);
+        FileNodeStore::new_with_pages(backend, 5_000_000)
     }
 
     /// Commits all data in the pages to sqlite
@@ -150,9 +158,9 @@ impl<T: DiskBackend<CFRNode>> NodeStore<T> {
     }
 }
 
-impl<T: DiskBackend<CFRNode>> Clone for NodeStore<T> {
+impl<T: DiskBackend<CFRNode>> Clone for FileNodeStore<T> {
     fn clone(&self) -> Self {
-        NodeStore::new_with_pages(self.backend.clone(), self.max_nodes)
+        FileNodeStore::new_with_pages(self.backend.clone(), self.max_nodes)
     }
 }
 
@@ -161,13 +169,13 @@ mod tests {
 
     use crate::{
         cfragent::CFRNode,
-        database::{file_backend::FileBackend, NodeStore, Storage},
+        database::{file_backend::FileBackend, FileNodeStore, NodeStore, Storage},
         istate::IStateKey,
     };
 
     #[test]
     fn test_write_read_tempfile() {
-        let mut store = NodeStore::new(FileBackend::new(Storage::Temp));
+        let mut store = FileNodeStore::new(FileBackend::new(Storage::Temp));
         let istate = IStateKey::new();
 
         let mut n = CFRNode::new(istate.clone(), &vec![0]);

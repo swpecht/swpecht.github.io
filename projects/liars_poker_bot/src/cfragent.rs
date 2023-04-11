@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     agents::Agent,
     cfragent::{cfr::Algorithm, cfrcs::CFRCS},
-    database::{file_backend::FileBackend, NodeStore, Storage},
+    database::{file_backend::FileBackend, FileNodeStore, NodeStore, Storage},
     game::{Action, Game, GameState},
     istate::IStateKey,
 };
@@ -21,7 +21,7 @@ use crate::{
 pub struct CFRAgent<T: GameState> {
     game: Game<T>,
     rng: StdRng,
-    store: NodeStore<FileBackend>,
+    store: FileNodeStore<FileBackend>,
     _phantom: PhantomData<T>,
 }
 
@@ -30,7 +30,7 @@ impl<T: GameState> CFRAgent<T> {
         let mut agent = Self {
             game,
             rng: SeedableRng::seed_from_u64(seed),
-            store: NodeStore::new(FileBackend::new(storage)),
+            store: FileNodeStore::new(FileBackend::new(storage)),
             _phantom: PhantomData,
         };
 

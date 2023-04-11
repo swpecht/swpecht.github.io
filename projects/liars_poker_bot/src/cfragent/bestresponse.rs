@@ -1,10 +1,11 @@
 // https://aipokertutorial.com/agent-evaluation/
 
+mod alwaysfirsttrainableagent;
 mod normalizer;
 
 use crate::{
     cfragent::bestresponse::normalizer::{NormalizerMap, NormalizerVector},
-    database::{file_backend::FileBackend, NodeStore},
+    database::{file_backend::FileBackend, FileNodeStore},
     game::{Action, GameState, Player},
     kuhn_poker::KPGameState,
 };
@@ -32,12 +33,9 @@ impl BestResponse {
 
     /// Implements the best response alogirhtm from Marc's thesis.
     ///
-    /// https://github.com/deepmind/open_spiel/blob/master/open_spiel/python/algorithms/best_response.py -- look at openspiel impl
-    /// https://github.com/deepmind/open_spiel/blob/master/open_spiel/algorithms/best_response.cc
-    ///
     /// Args:
     ///     gs: Gamestate
-    ///     opp_reach: ...
+    ///     opp_reach: chance of reaching this istate given the corresponsding opp chance outcomes
     ///     ip: Iterating player
     ///     ns: node store
     pub fn expectimaxbr(
@@ -45,7 +43,7 @@ impl BestResponse {
         gs: KPGameState,
         fixed_player: Player,
         opp_reach: &[f64],
-        ns: &mut NodeStore<FileBackend>,
+        ns: &mut FileNodeStore<FileBackend>,
     ) -> f64 {
         assert!(fixed_player == 1 || fixed_player == 2);
 
@@ -115,7 +113,6 @@ impl BestResponse {
 
         let actions = gs.legal_actions();
 
-        //   childEV = expectimaxbr(ngs, newbidseq, 3-player, fixed_player, depth+1, newOppReach);
         let mut max_ev = f64::NEG_INFINITY;
         let mut child_evs = Vec::with_capacity(actions.len());
         let mut opp_action_dist = NormalizerMap::new();
@@ -155,5 +152,20 @@ impl BestResponse {
         }
 
         return ev;
+    }
+
+    /// Compute the weight for this action over all chance outcomes
+    /// Used for determining probability of action
+    /// Done only at fixed_player nodes
+    fn compute_action_dist() {}
+}
+
+#[cfg(test)]
+mod tests {
+
+    ///  Verify that finding the optimal policy against an agent that always bets in Kuhn Poker
+    #[test]
+    fn test_br_always_bet_agent() {
+        todo!();
     }
 }
