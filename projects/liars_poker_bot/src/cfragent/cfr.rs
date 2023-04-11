@@ -164,13 +164,13 @@ fn _get_key(actions: &[Action]) -> IStateKey {
     return g.istate_key(0);
 }
 
-pub(super) fn _test_kp_nash<T: Algorithm>(mut alg: T) {
+pub(super) fn _test_kp_nash<T: Algorithm>(mut alg: T, iterations: usize) {
     let game = KuhnPoker::game();
     // Verify the nash equilibrium is reached. From https://en.wikipedia.org/wiki/Kuhn_poker
     let mut ns = NodeStore::new(FileBackend::new(Storage::Temp));
     let gs = (game.new)();
 
-    for _ in 0..10000 {
+    for _ in 0..iterations {
         alg.run(&mut ns, &gs, 0);
         alg.run(&mut ns, &gs, 1);
     }
@@ -251,6 +251,6 @@ mod tests {
 
     #[test]
     fn vcfr_nash_test() {
-        _test_kp_nash(VanillaCFR::new())
+        _test_kp_nash(VanillaCFR::new(), 10000)
     }
 }

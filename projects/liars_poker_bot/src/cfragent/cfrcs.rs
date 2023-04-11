@@ -135,7 +135,12 @@ impl CFRCS {
 
 #[cfg(test)]
 mod tests {
+    use crate::cfragent::cfr::_test_kp_nash;
+
+    use super::CFRCS;
 
     #[test]
-    fn cfrcs_nash_test() {}
+    fn cfrcs_nash_test() {
+        _test_kp_nash(CFRCS::new(42), 50000)
+    }
 }
