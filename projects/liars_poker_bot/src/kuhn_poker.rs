@@ -77,6 +77,15 @@ impl KuhnPoker {
             max_actions: 3, // 1 for each card dealt
         }
     }
+
+    pub fn from_actions(actions: &[Action]) -> KPGameState {
+        let mut g = (KuhnPoker::game().new)();
+        for &a in actions {
+            g.apply_action(a);
+        }
+
+        return g;
+    }
 }
 
 impl KPGameState {

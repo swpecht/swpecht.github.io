@@ -151,10 +151,7 @@ fn _check_floats(x: f32, y: f32, i: i32) {
 
 /// Gets a key for player 0 of a new gamestate after applying the passed actions
 fn _get_key(actions: &[Action]) -> IStateKey {
-    let mut g = (KuhnPoker::game().new)();
-    for &a in actions {
-        g.apply_action(a);
-    }
+    let g = KuhnPoker::from_actions(actions);
 
     return g.istate_key(0);
 }
