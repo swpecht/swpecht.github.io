@@ -7,8 +7,9 @@ Attach to process:
 perf record -p 23505 -F 99 --call-graph dwarf sleep 120
 
 Run executable:
-perf record -F 99 --call-graph dwarf ./target/release/liars_poker_bot -v3 --module liars_poker_bot::cfragent
+perf record -F 99 --call-graph dwarf,65528 ./target/release/liars_poker_bot -v3 --module liars_poker_bot::cfragent
 
+Need the 65528 to have a large enough stack size
 
 
  perf report --no-inline
