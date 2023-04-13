@@ -1,4 +1,4 @@
-use log::{debug, trace};
+use log::{debug, trace, warn};
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
 use crate::{
@@ -17,9 +17,15 @@ pub struct CFRCS {
     rng: StdRng,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CFRPhase {
+    Phase1,
+    Phase2,
+}
+
 impl Algorithm for CFRCS {
     fn run<T: GameState, N: NodeStore>(&mut self, ns: &mut N, gs: &T, update_player: Player) {
-        self.cfrcs(ns, gs, update_player, 0, 1.0, 1.0);
+        self.cfrcs(ns, gs, update_player, 0, 1.0, 1.0, CFRPhase::Phase1);
     }
 }
 
@@ -39,6 +45,7 @@ impl CFRCS {
         depth: usize,
         reach0: f32,
         reach1: f32,
+        mut phase: CFRPhase,
     ) -> f32 {
         if self.nodes_touched % 1000000 == 0 {
             debug!("cfr touched {} nodes", self.nodes_touched);
@@ -55,14 +62,41 @@ impl CFRCS {
             // avoid processing nodes with no choices
             let mut ngs = gs.clone();
             ngs.apply_action(actions[0]);
-            return self.cfrcs(ns, &ngs, update_player, depth + 1, reach0, reach1);
+            return self.cfrcs(ns, &ngs, update_player, depth + 1, reach0, reach1, phase);
         }
 
         if gs.is_chance_node() {
             let a = *actions.choose(&mut self.rng).unwrap();
             let mut ngs = gs.clone();
             ngs.apply_action(a);
-            return self.cfrcs(ns, &ngs, update_player, depth + 1, reach0, reach1);
+            return self.cfrcs(ns, &ngs, update_player, depth + 1, reach0, reach1, phase);
+        }
+
+        // check for cuts  (pruning optimization from Section 2.2.2) of Marc's thesis
+        let team = match cur_player {
+            0 | 2 => 0,
+            1 | 3 => 1,
+            _ => panic!("invald player"),
+        };
+        let update_team = match update_player {
+            0 | 2 => 0,
+            1 | 3 => 1,
+            _ => panic!("invald player"),
+        };
+
+        if phase == CFRPhase::Phase1
+            && ((team == 0 && update_team == 0 && reach1 <= 0.0)
+                || (team == 1 && update_team == 1 && reach0 <= 0.0))
+        {
+            phase = CFRPhase::Phase2;
+        }
+
+        if phase == CFRPhase::Phase2
+            && ((team == 0 && update_team == 0 && reach0 <= 0.0)
+                || (team == 1 && update_team == 1 && reach1 <= 0.0))
+        {
+            warn!("pruning tree");
+            return 0.0;
         }
 
         let is = gs.istate_key(gs.cur_player());
@@ -103,27 +137,44 @@ impl CFRCS {
 
             let mut ngs = gs.clone();
             ngs.apply_action(a);
-            let payoff = self.cfrcs(ns, &ngs, update_player, depth + 1, newreach0, newreach1);
+            let payoff = self.cfrcs(
+                ns,
+                &ngs,
+                update_player,
+                depth + 1,
+                newreach0,
+                newreach1,
+                phase,
+            );
             move_evs[idx] = payoff;
             strat_ev += move_prob[idx] * payoff;
         }
 
-        // // post-traversals: update the infoset
-        if cur_player == update_player {
-            let (my_reach, opp_reach) = match gs.cur_player() {
-                0 | 2 => (reach0, reach1),
-                1 | 3 => (reach1, reach0),
-                _ => panic!("invalid player"),
-            };
+        let (my_reach, opp_reach) = match gs.cur_player() {
+            0 | 2 => (reach0, reach1),
+            1 | 3 => (reach1, reach0),
+            _ => panic!("invalid player"),
+        };
 
-            for a in actions {
+        // // post-traversals: update the infoset
+        if phase == CFRPhase::Phase1 && cur_player == update_player {
+            for &a in &actions {
                 let idx = node.get_index(a);
                 node.regret_sum[idx] += opp_reach * (move_evs[idx] - strat_ev);
-                node.total_move_prob[idx] += my_reach * node.move_prob[idx]
             }
+        }
 
+        if phase == CFRPhase::Phase2 && cur_player == update_player {
+            for a in actions {
+                let idx = node.get_index(a);
+                node.total_move_prob[idx] += my_reach * node.move_prob[idx];
+            }
+        }
+
+        if cur_player == update_player {
             ns.insert_node(is, node);
         }
+
         return strat_ev;
     }
 }
