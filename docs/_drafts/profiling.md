@@ -13,3 +13,7 @@ Need the 65528 to have a large enough stack size
 
 
  perf report --no-inline
+
+ perf script | stackcollapse-perf.pl | stackcollapse-recursive.pl | c++filt | flamegraph.pl > flame.svg
+
+ https://gist.github.com/dlaehnemann/df31787c41bd50c0fe223df07cf6eb89

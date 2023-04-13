@@ -1,3 +1,4 @@
+
 ---
 layout: post
 title:  "Exploiting expecation maximization in imperfect information games"
@@ -41,6 +42,8 @@ Going to use Liar's poker bots to illustrate why.
 [*] Imlement other CFR algorithms, see Marc's phd and website for implementations
     * May already be using chance sampling -- need to fix my algorithm
     * Probably should implement vanilla cfr as well to ensure working as expected
+[ ] Use an object pool for gamestates
+    * doesn't seem to speed anything up
 
 
 ## Design
