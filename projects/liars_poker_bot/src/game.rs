@@ -1,5 +1,7 @@
 use std::fmt::Display;
 
+pub mod card_vec;
+
 use log::info;
 use rand::{seq::SliceRandom, Rng};
 

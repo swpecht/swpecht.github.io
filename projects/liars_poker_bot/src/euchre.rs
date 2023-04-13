@@ -3,7 +3,7 @@ use std::fmt::{Display, Write};
 use itertools::Itertools;
 
 use crate::{
-    game::{Action, Game, GameState, Player},
+    game::{card_vec::CardVec, Action, Game, GameState, Player},
     istate::IStateKey,
 };
 
@@ -15,11 +15,8 @@ const CARD_BITS: usize = 5;
 pub struct Euchre {}
 impl Euchre {
     pub fn new_state() -> EuchreGameState {
-        let keys = vec![IStateKey::new(); 4];
-        let mut hands = Vec::with_capacity(4);
-        for _ in 0..4 {
-            hands.push(Vec::with_capacity(5));
-        }
+        let keys = [IStateKey::new(); 4];
+        let mut hands = [CardVec::<5>::new(); 4];
 
         EuchreGameState {
             num_players: 4,
@@ -46,11 +43,11 @@ impl Euchre {
 
 /// We use Rc for the starting hand information since these values rarely change
 /// and are consistent across all children of the given state
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct EuchreGameState {
     num_players: usize,
     /// Holds the cards for each player in the game
-    hands: Vec<Vec<Action>>,
+    hands: [CardVec<5>; 4],
     trump: Suit,
     trump_caller: usize,
     face_up: Action,
@@ -58,10 +55,10 @@ pub struct EuchreGameState {
     is_terminal: bool,
     phase: EPhase,
     cur_player: usize,
-    istate_keys: Vec<IStateKey>,
+    istate_keys: [IStateKey; 4],
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
 enum EPhase {
     DealHands,
     DealFaceUp,
@@ -126,7 +123,7 @@ impl Display for EAction {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
 enum Suit {
     Clubs,
     Spades,
@@ -150,7 +147,6 @@ impl Display for Suit {
 impl EuchreGameState {
     fn apply_action_deal_hands(&mut self, a: Action) {
         self.hands[self.cur_player].push(a);
-        self.hands[self.cur_player].sort();
 
         self.cur_player = (self.cur_player + 1) % self.num_players;
 
@@ -207,12 +203,11 @@ impl EuchreGameState {
 
     /// Can only be done by the dealer (player 3)
     fn apply_action_discard(&mut self, a: Action) {
-        let index = self.hands[3].iter().position(|&x| x == a);
-        if let Some(index) = index {
-            self.hands[3][index] = self.face_up;
-        } else {
+        if !self.hands[3].contains(&a) {
             panic!("attempted to discard a card not in hand")
         }
+        self.hands[3].remove(a);
+        self.hands[3].push(self.face_up);
 
         self.cur_player = 0;
         self.phase = EPhase::Play;
@@ -221,7 +216,7 @@ impl EuchreGameState {
     fn apply_action_play(&mut self, a: Action) {
         for i in 0..self.hands[self.cur_player].len() {
             if self.hands[self.cur_player][i] == a {
-                self.hands[self.cur_player].remove(i);
+                self.hands[self.cur_player].remove(a);
                 break;
             }
         }
@@ -354,11 +349,13 @@ impl EuchreGameState {
         let leading_card = self.get_leading_card();
         let suit = self.get_suit(leading_card);
 
-        let actions = self.hands[self.cur_player]
-            .iter()
-            .filter(|&&x| self.get_suit(x) == suit)
-            .map(|x| *x)
-            .collect_vec();
+        let mut actions = Vec::with_capacity(5);
+        for i in 0..self.hands[self.cur_player].len() {
+            let c = self.hands[self.cur_player][i];
+            if self.get_suit(c) == suit {
+                actions.push(c);
+            }
+        }
 
         if actions.len() == 0 {
             // no suit, can play any card
@@ -886,10 +883,10 @@ mod tests {
             let a = s.legal_actions()[0];
             s.apply_action(a);
         }
-        assert_eq!(s.istate_string(0), "9CKCJS9HKH|JD|T|0D|9CTCJCJD");
-        assert_eq!(s.istate_string(1), "TCACQSTHAH|JD|T|0D|9CTCJCJD");
-        assert_eq!(s.istate_string(2), "JC9SKSJH9D|JD|T|0D|9CTCJCJD");
-        assert_eq!(s.istate_string(3), "QCTSASQHTD|JD|T|0D|QC|9CTCJCJD");
+        assert_eq!(s.istate_string(0), "9CKCJS9HKH|JD|T|0D|9CTCJCTS");
+        assert_eq!(s.istate_string(1), "TCACQSTHAH|JD|T|0D|9CTCJCTS");
+        assert_eq!(s.istate_string(2), "JC9SKSJH9D|JD|T|0D|9CTCJCTS");
+        assert_eq!(s.istate_string(3), "QCTSASQHTD|JD|T|0D|QC|9CTCJCTS");
 
         while !s.is_terminal() {
             let a = s.legal_actions()[0];

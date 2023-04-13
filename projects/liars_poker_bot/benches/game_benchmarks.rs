@@ -1,5 +1,8 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use liars_poker_bot::{euchre::Euchre, game::GameState};
+use liars_poker_bot::{
+    euchre::{Euchre, EuchreGameState},
+    game::GameState,
+};
 use rand::{seq::SliceRandom, thread_rng};
 
 use liars_poker_bot::{cfragent::CFRAgent, database::Storage, kuhn_poker::KuhnPoker};
@@ -24,6 +27,8 @@ fn traverse_game_tree(n: usize) {
     let mut work = Vec::new();
     work.push((s.istate_key(s.cur_player()), s));
 
+    let mut pool: Vec<EuchreGameState> = Vec::new();
+
     let mut nodes_processed = 0;
 
     while nodes_processed < n {
@@ -32,11 +37,23 @@ fn traverse_game_tree(n: usize) {
         let (_, s) = work.pop().unwrap();
         let actions = s.legal_actions();
         for a in actions {
-            let mut new_s = s.clone();
+            let mut new_s = new_gs(&s, &mut pool);
+
             new_s.apply_action(a);
             let istate = new_s.istate_key(new_s.cur_player());
             work.push((istate, new_s));
         }
+
+        pool.push(s);
+    }
+}
+
+fn new_gs(g: &EuchreGameState, pool: &mut Vec<EuchreGameState>) -> EuchreGameState {
+    if let Some(mut new_s) = pool.pop() {
+        new_s = *g;
+        return new_s;
+    } else {
+        return *g;
     }
 }
 
