@@ -5,12 +5,12 @@ use super::Action;
 /// Array backed card storage that implements Vector-like features and is copyable
 /// It also always remains sorted
 #[derive(Clone, Copy, Debug)]
-pub struct CardVec<const N: usize> {
+pub struct ArrayVec<const N: usize> {
     len: usize,
     cards: [Action; N],
 }
 
-impl<const N: usize> CardVec<N> {
+impl<const N: usize> ArrayVec<N> {
     pub fn new() -> Self {
         Self {
             len: 0,
@@ -89,7 +89,7 @@ impl<const N: usize> CardVec<N> {
     }
 }
 
-impl<const N: usize> Index<usize> for CardVec<N> {
+impl<const N: usize> Index<usize> for ArrayVec<N> {
     type Output = Action;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -100,11 +100,11 @@ impl<const N: usize> Index<usize> for CardVec<N> {
 
 #[cfg(test)]
 mod tests {
-    use super::CardVec;
+    use super::ArrayVec;
 
     #[test]
     fn test_card_vec() {
-        let mut h: CardVec<5> = CardVec::new();
+        let mut h: ArrayVec<5> = ArrayVec::new();
 
         // test basic add and index
         h.push(0);

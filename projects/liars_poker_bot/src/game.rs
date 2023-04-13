@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-pub mod card_vec;
+pub mod arrayvec;
 
 use log::info;
 use rand::{seq::SliceRandom, Rng};
