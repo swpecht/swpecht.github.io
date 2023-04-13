@@ -1,6 +1,5 @@
 use std::fmt::{Display, Write};
 
-use arrayvec::ArrayVec;
 use itertools::Itertools;
 
 use crate::{
@@ -17,9 +16,9 @@ pub struct Euchre {}
 impl Euchre {
     pub fn new_state() -> EuchreGameState {
         let keys = vec![IStateKey::new(); 4];
-        let mut hands = ArrayVec::new();
+        let mut hands = Vec::with_capacity(4);
         for _ in 0..4 {
-            hands.push(ArrayVec::new());
+            hands.push(Vec::with_capacity(5));
         }
 
         EuchreGameState {
@@ -51,7 +50,7 @@ impl Euchre {
 pub struct EuchreGameState {
     num_players: usize,
     /// Holds the cards for each player in the game
-    hands: ArrayVec<ArrayVec<Action, 5>, 4>,
+    hands: Vec<Vec<Action>>,
     trump: Suit,
     trump_caller: usize,
     face_up: Action,
