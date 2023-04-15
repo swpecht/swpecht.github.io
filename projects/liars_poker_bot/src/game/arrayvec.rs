@@ -1,34 +1,40 @@
-use std::ops::Index;
+use std::{
+    hash::{Hash, Hasher},
+    ops::Index,
+};
+
+use serde::{Deserialize, Serialize};
+use serde_big_array::BigArray;
 
 use super::Action;
 
 /// Array backed card storage that implements Vector-like features and is copyable
 /// It also always remains sorted
 #[derive(Clone, Copy, Debug)]
-pub struct ArrayVec<const N: usize> {
+pub struct SortedArrayVec<const N: usize> {
     len: usize,
-    cards: [Action; N],
+    data: [Action; N],
 }
 
-impl<const N: usize> ArrayVec<N> {
+impl<const N: usize> SortedArrayVec<N> {
     pub fn new() -> Self {
         Self {
             len: 0,
-            cards: [0; N],
+            data: [0; N],
         }
     }
 
     pub fn push(&mut self, c: Action) {
-        assert!(self.len < self.cards.len());
+        assert!(self.len < self.data.len());
 
-        if self.len == 0 || self.cards[self.len - 1] <= c {
+        if self.len == 0 || self.data[self.len - 1] <= c {
             // put it on the end
-            self.cards[self.len] = c;
+            self.data[self.len] = c;
         } else {
             for i in 0..self.len {
-                if c < self.cards[i] {
+                if c < self.data[i] {
                     self.shift_right(i);
-                    self.cards[i] = c;
+                    self.data[i] = c;
                     break;
                 }
             }
@@ -40,20 +46,20 @@ impl<const N: usize> ArrayVec<N> {
     /// shifts all elements right starting at the item in idx, so idx will become idx+1
     fn shift_right(&mut self, idx: usize) {
         for i in (idx..self.len).rev() {
-            self.cards[i + 1] = self.cards[i];
+            self.data[i + 1] = self.data[i];
         }
     }
 
-    // shifts all elements left starting at the item in idx, so idx will become idx-1
+    /// shifts all elements left starting at the item in idx, so idx will become idx-1
     fn shift_left(&mut self, idx: usize) {
         for i in idx..self.len {
-            self.cards[i - 1] = self.cards[i];
+            self.data[i - 1] = self.data[i];
         }
     }
 
     pub fn remove(&mut self, c: Action) {
         for i in 0..self.len {
-            if self.cards[i] == c {
+            if self.data[i] == c {
                 self.shift_left(i + 1);
                 self.len -= 1;
                 return;
@@ -70,7 +76,7 @@ impl<const N: usize> ArrayVec<N> {
     pub fn to_vec(&self) -> Vec<Action> {
         let mut v = Vec::with_capacity(self.len);
         for i in 0..self.len {
-            v.push(self.cards[i]);
+            v.push(self.data[i]);
         }
 
         return v;
@@ -80,7 +86,7 @@ impl<const N: usize> ArrayVec<N> {
         let mut contains = false;
 
         for i in 0..self.len {
-            if self.cards[i] == *c {
+            if self.data[i] == *c {
                 contains = true;
             }
         }
@@ -89,22 +95,85 @@ impl<const N: usize> ArrayVec<N> {
     }
 }
 
-impl<const N: usize> Index<usize> for ArrayVec<N> {
+impl<const N: usize> Index<usize> for SortedArrayVec<N> {
     type Output = Action;
 
     fn index(&self, index: usize) -> &Self::Output {
         assert!(index <= self.len);
-        return &self.cards[index];
+        return &self.data[index];
+    }
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct ArrayVec<const N: usize> {
+    len: usize,
+    #[serde(with = "BigArray")]
+    data: [Action; N],
+}
+
+impl<const N: usize> ArrayVec<N> {
+    pub fn new() -> Self {
+        Self {
+            len: 0,
+            data: [0; N],
+        }
+    }
+
+    pub fn push(&mut self, a: Action) {
+        assert!(self.len < self.data.len());
+        self.data[self.len] = a;
+        self.len += 1;
+    }
+
+    /// Returns a version of the ArrayVec trimmed to a certain number of elements
+    pub fn trim(&mut self, n: usize) -> Self {
+        assert!(N >= n);
+
+        let mut new = self.clone();
+        if n >= self.len {
+            return new;
+        }
+        new.len = n;
+        return new;
+    }
+
+    pub fn len(&self) -> usize {
+        return self.len;
+    }
+}
+
+impl<const N: usize, Idx> Index<Idx> for ArrayVec<N>
+where
+    Idx: std::slice::SliceIndex<[Action]>,
+{
+    type Output = Idx::Output;
+
+    fn index(&self, index: Idx) -> &Self::Output {
+        return &self.data[index];
+    }
+}
+
+impl<const N: usize> PartialEq for ArrayVec<N> {
+    fn eq(&self, other: &Self) -> bool {
+        self.len == other.len && self.data[0..self.len] == other.data[0..self.len]
+    }
+}
+
+impl<const N: usize> Eq for ArrayVec<N> {}
+
+impl<const N: usize> Hash for ArrayVec<N> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.data[0..self.len].hash(state);
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::ArrayVec;
+    use super::{ArrayVec, SortedArrayVec};
 
     #[test]
-    fn test_card_vec() {
-        let mut h: ArrayVec<5> = ArrayVec::new();
+    fn test_sorted_array_vec() {
+        let mut h: SortedArrayVec<5> = SortedArrayVec::new();
 
         // test basic add and index
         h.push(0);
@@ -127,5 +196,19 @@ mod tests {
         assert_eq!(h[1], 2);
         assert_eq!(h[2], 10);
         assert_eq!(h.len(), 3);
+    }
+
+    #[test]
+    fn test_array_vec() {
+        let mut v = ArrayVec::<5>::new();
+        v.push(42);
+        v.push(10);
+
+        assert_eq!(v[0], 42);
+        assert_eq!(v[1], 10);
+        assert_eq!(v.len(), 2);
+
+        let n = v.trim(3);
+        assert_eq!(v, n);
     }
 }

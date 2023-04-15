@@ -86,7 +86,7 @@ mod tests {
             let mut k = IStateKey::new();
             for _ in 0..5 {
                 let p: u8 = rand::thread_rng().gen();
-                k.push(p.into(), 8);
+                k.push(p.into());
             }
             let v: Vec<char> = rand::thread_rng()
                 .sample_iter(&Alphanumeric)

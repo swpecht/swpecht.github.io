@@ -1,22 +1,19 @@
 use std::fmt::{Display, Write};
 
-use itertools::Itertools;
-
 use crate::{
-    game::{arrayvec::ArrayVec, Action, Game, GameState, Player},
+    game::{arrayvec::SortedArrayVec, Action, Game, GameState, Player},
     istate::IStateKey,
 };
 
 const JACK: usize = 2;
 const CARD_PER_SUIT: usize = 6;
 const NUM_CARDS: usize = 24;
-const CARD_BITS: usize = 5;
 
 pub struct Euchre {}
 impl Euchre {
     pub fn new_state() -> EuchreGameState {
         let keys = [IStateKey::new(); 4];
-        let mut hands = [ArrayVec::<5>::new(); 4];
+        let hands = [SortedArrayVec::<5>::new(); 4];
 
         EuchreGameState {
             num_players: 4,
@@ -47,7 +44,7 @@ impl Euchre {
 pub struct EuchreGameState {
     num_players: usize,
     /// Holds the cards for each player in the game
-    hands: [ArrayVec<5>; 4],
+    hands: [SortedArrayVec<5>; 4],
     trump: Suit,
     trump_caller: usize,
     face_up: Action,
@@ -247,7 +244,6 @@ impl EuchreGameState {
         for i in 1..self.num_players {
             if num_cards != self.hands[i].len() {
                 trick_over = false;
-                break;
             }
         }
 
@@ -268,13 +264,12 @@ impl EuchreGameState {
             panic!("not that many tricks have been played");
         }
 
-        let mut trick = [0; 4];
+        // all keys should see the same tricks, so just use the first one
         let key = self.istate_keys[0];
-        let mut idx = CARD_BITS * 4 * (n + 1);
-        idx -= n * (CARD_BITS * self.num_players);
+        let sidx = key.len() - 4 * (n + 1);
+        let mut trick = [0; 4];
         for i in 0..4 {
-            trick[i] = key.read(idx, CARD_BITS);
-            idx -= CARD_BITS;
+            trick[i] = key[sidx + i];
         }
 
         return trick;
@@ -290,7 +285,7 @@ impl EuchreGameState {
         let cards_played = self.hands.iter().filter(|&x| x.len() == min_hand).count();
 
         let key = self.istate_keys[0];
-        let first_card = key.read(CARD_BITS * cards_played, CARD_BITS);
+        let first_card = key[key.len() - cards_played];
 
         return first_card;
     }
@@ -462,23 +457,14 @@ impl EuchreGameState {
     }
 
     fn update_keys(&mut self, a: Action) {
-        let s = match self.phase {
-            EPhase::DealHands => CARD_BITS, // 5 for bits required for 24 cards
-            EPhase::DealFaceUp => CARD_BITS,
-            EPhase::Pickup => 1,
-            EPhase::Discard => CARD_BITS,
-            EPhase::ChooseTrump => 3, // could be any of the 4 suits or pass, 3 bits for 5 options
-            EPhase::Play => CARD_BITS,
-        };
-
         // Private actions
         if self.phase == EPhase::DealHands || self.phase == EPhase::Discard {
-            self.istate_keys[self.cur_player].push(a, s);
+            self.istate_keys[self.cur_player].push(a);
             return;
         }
 
         for i in 0..self.num_players {
-            self.istate_keys[i].push(a, s);
+            self.istate_keys[i].push(a);
         }
     }
 }
@@ -605,14 +591,12 @@ impl GameState for EuchreGameState {
         // 9CTCJCKCKS|KH|PPPPPPCP|3H|ASTSKSAC|9C9HTDQC|JD9DTCJH|JSKCQHQD|KDADXXXX|
         let mut r = String::new();
 
-        let mut index = istate.first_bit();
         if self.phase == EPhase::DealHands {
             todo!("don't yet support istates during dealing phase");
         }
 
-        for _ in 0..5 {
-            let a = istate.read(index, 5);
-            index -= 5;
+        for i in 0..5 {
+            let a = istate[i];
             let s = EAction::Card { a }.to_string();
             r.push_str(&s);
         }
@@ -622,8 +606,7 @@ impl GameState for EuchreGameState {
         }
 
         // Face up card
-        let a = istate.read(index, 5);
-        index -= 5;
+        let a = istate[5];
 
         r.push('|');
         let s = EAction::Card { a }.to_string();
@@ -632,12 +615,13 @@ impl GameState for EuchreGameState {
 
         // Pickup round and calling round
         let mut pickup_called = false;
-        for _ in 0..(index / 1).min(4 * 1) {
-            let a = istate.read(index, 1);
-            index -= 1;
+        let mut num_pickups = 0;
+        for i in 6..(istate.len()).min(6 + 4) {
+            let a = istate[i];
             let a = EAction::non_card_from(a);
             let s = a.to_string();
             r.push_str(&s);
+            num_pickups += 1;
 
             if a == EAction::Pickup {
                 pickup_called = true;
@@ -652,13 +636,14 @@ impl GameState for EuchreGameState {
             return r;
         }
 
+        let mut num_calls = 0;
         if !pickup_called {
-            for _ in 0..(index / 3).min(4 * 3) {
-                let a = istate.read(index, 3);
-                index -= 3;
+            for i in 10..(istate.len()).min(6 + 4 + 4) {
+                let a = istate[i];
                 let a = EAction::non_card_from(a);
                 let s = a.to_string();
                 r.push_str(&s);
+                num_calls += 1;
 
                 if a != EAction::Pass {
                     break;
@@ -681,27 +666,30 @@ impl GameState for EuchreGameState {
         // If the dealer, show the discarded card if that happened
         if player == 3 && pickup_called {
             r.push('|');
-            let a = istate.read(index, 5);
-            index -= 5;
+            let a = istate[6 + num_pickups];
 
             let d = EAction::Card { a: a }.to_string();
             r.push_str(&d);
         }
 
         // populate play data
-        assert_eq!(index % 5, 0); // Should only be cards played left
         let mut turn = 0;
-        while index > 0 {
+        let mut i = if player == 3 && pickup_called {
+            6 + num_pickups + num_calls + 1 // pickups + discard + 1 to get first play
+        } else {
+            6 + num_pickups + num_calls
+        };
+        while i < istate.len() {
             if turn % 4 == 0 {
                 r.push('|');
             }
 
-            let a = istate.read(index, 5);
-            index -= 5;
+            let a = istate[i];
             let c = EAction::Card { a: a }.to_string();
 
             r.push_str(&c);
             turn += 1;
+            i += 1;
         }
 
         return r;

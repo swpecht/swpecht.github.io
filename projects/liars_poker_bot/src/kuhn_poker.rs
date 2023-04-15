@@ -6,8 +6,6 @@ use crate::{
 };
 use log::info;
 
-const ISTATE_CHUNK: usize = 5;
-
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub enum KPAction {
     Bet,
@@ -217,11 +215,11 @@ impl GameState for KPGameState {
     /// 1+: History of play
     fn istate_key(&self, player: Player) -> IStateKey {
         let mut i_state = IStateKey::new();
-        i_state.push(self.hands[player], ISTATE_CHUNK);
+        i_state.push(self.hands[player]);
 
         for &h in &self.history {
             let u = h as usize;
-            i_state.push(u, ISTATE_CHUNK);
+            i_state.push(u);
         }
         return i_state;
     }
@@ -246,17 +244,15 @@ impl GameState for KPGameState {
         let istate = self.istate_key(player);
         let mut result = String::new();
 
-        let mut idx = istate.first_bit();
-        result.push_str(format!("{}", istate.read(idx, ISTATE_CHUNK)).as_str());
-        idx -= ISTATE_CHUNK;
-        while idx > 0 {
-            let char = match istate.read(idx, ISTATE_CHUNK) {
+        result.push_str(format!("{}", istate[0]).as_str());
+
+        for i in 1..istate.len() {
+            let char = match istate[i] {
                 x if x == KPAction::Bet as usize => 'b',
                 x if x == KPAction::Pass as usize => 'p',
                 _ => panic!("invalid history"),
             };
             result.push(char);
-            idx -= ISTATE_CHUNK;
         }
 
         return result;

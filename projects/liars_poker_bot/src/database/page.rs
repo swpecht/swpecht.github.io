@@ -116,24 +116,24 @@ mod tests {
     #[test]
     fn test_page_contains() {
         let mut k = IStateKey::new();
-        k.push(0b00000000000010000, 17);
-        let p: Page<CFRNode> = Page::new(&k, &[15]);
+        k.append(&[1, 0, 0, 0, 1]);
+        let p: Page<CFRNode> = Page::new(&k, &[3]);
 
         let mut pk = IStateKey::new();
-        pk.push(0b000000000000100, 15);
+        pk.append(&[1, 0, 0]);
         assert_eq!(p.istate, pk);
 
         assert!(p.contains(&k));
-        k.push(5, 4);
+        k.push(5);
         assert!(p.contains(&k));
 
         let mut dk = IStateKey::new();
-        dk.push(0b00000100000010000, 17);
+        dk.append(&[1, 1, 0, 0, 1]);
         assert!(!p.contains(&dk));
 
         let mut sk = IStateKey::new();
-        sk.push(0b00000001, 8);
-        let p: Page<CFRNode> = Page::new(&sk, &[15]);
+        sk.append(&[1, 0]);
+        let p: Page<CFRNode> = Page::new(&sk, &[3]);
         let pk = IStateKey::new(); // blank key
         assert_eq!(p.istate, pk);
         assert!(p.contains(&sk));

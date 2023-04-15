@@ -235,13 +235,16 @@ mod tests {
         _populate_always_n(&mut ns, g, KPAction::Bet as usize);
 
         // best response against player 0, so as player 1
-        let gs = KuhnPoker::from_actions(&[0, 2]);
+        let gs = KuhnPoker::from_actions(&[0, 1]);
 
         // todo, should the fixed player be player 1 or player 2?
         let v = br.compute_best_response(gs, 1, vec![1.0, 1.0], &mut ns);
 
         // Can manually calculate what the exploitability will be and compare it to what comes here
         // see paper for description of calcs
+
+        // Node 0: reach (1, 1)
+
         todo!();
     }
 }
