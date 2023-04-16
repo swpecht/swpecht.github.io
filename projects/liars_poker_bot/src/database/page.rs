@@ -3,20 +3,17 @@ use std::fmt::Debug;
 
 use crate::istate::IStateKey;
 
-/// Magic number dependant on the format of the istate. Should choose a number that has a meaningful break.
-/// For example:
-///     ASTDJDQDKDKH3C|ASTSKSAC|9C9HTDQC|
-/// Is 33 characters. This creates a clean break between rounds
-
+/// Magic number dependant on the format of the istate key.
+///
 /// Determines where the page-breaks are for a euchre istate
 /// For example:
 ///     9CTCJCKCKS|KH|PPPPPPCP|3H|ASTSKSAC|9C9HTDQC|JD9DTCJH|JSKCQHQD|KDADXXXX|
 ///     9CTCJCKCKSKH3C|ASTSKSAC|9C9HTDQC|JD9DTCJH|JSKCQHQD|KDADXXXX|
 ///     |    A    | B |   1    |     2  |    3   |   4    |    5   |
 /// Where:
-///     A) 11 characters for the hand
-///     b) 5 characters for the flip and the call
-///     1-5) 9 characters for cards that have been played
+///     A) 5 actions
+///     b) 1 action for the flip
+///     1-5)
 ///
 /// A has 304 possible direct children:
 ///     19 cards * 4 suits * 4 possible calls = 304
@@ -24,10 +21,8 @@ use crate::istate::IStateKey;
 /// B has 8568 possible direct children:
 ///     18 Choose 5 = 8568
 ///
-/// For B-5, there are ~27M ways the game can be played out. Implies that 1-5 have 90k end states.
-///     27M / 304 = 90k
-pub(super) const EUCHRE_PAGE_TRIM: &[usize] = &[48, 5]; // &[26, 2];
-                                                        // Need to eventually implement another cut, can't have all nodes loaded to ""
+pub(super) const EUCHRE_PAGE_TRIM: &[usize] = &[6, 4];
+// Need to eventually implement another cut, can't have all nodes loaded to ""
 
 const MAX_PAGE_LEN: usize = 999999;
 

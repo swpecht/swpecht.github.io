@@ -2,6 +2,7 @@ pub mod disk_backend;
 pub mod file_backend;
 pub mod memory_node_store;
 pub mod page;
+pub mod tune_page;
 
 use std::collections::{HashMap, VecDeque};
 
@@ -135,7 +136,7 @@ impl<T: DiskBackend<CFRNode>> FileNodeStore<T> {
             count + 1,
             p.cache.len()
         );
-        trace!("{} pages loaded", self.pages.len());
+        debug!("{} pages loaded", self.pages.len());
 
         // Implement a FIFO cache
         let pk = p.istate.clone();
