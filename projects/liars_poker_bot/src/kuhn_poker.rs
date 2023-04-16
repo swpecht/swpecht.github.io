@@ -136,21 +136,23 @@ impl KPGameState {
         actions.push(KPAction::Pass as Action);
     }
 
-    /// Get the payoff for this gamestate if the opponents chance outcomes are replaced by the specified ones
+    /// Get the payoff for the non-fixed player assuming the fixed players chance
+    /// outcomes are replaced with the sepficied one
     pub fn get_payoff(&self, fixed_player: Player, chance_outcome: Action) -> f64 {
         let non_fixed = if fixed_player == 0 { 1 } else { 0 };
         let mut ngs = self.clone();
-        ngs.hands[non_fixed] = chance_outcome;
-        return ngs.evaluate()[fixed_player] as f64;
+        ngs.hands[fixed_player] = chance_outcome;
+        return ngs.evaluate()[non_fixed] as f64;
     }
 
     pub fn chance_outcomes(&self, fixed_player: Player) -> Vec<Action> {
-        // Note: we want the chance outcomes for the non-fixed player! only passing the fixed player for convience
-        if fixed_player >= self.hands.len() {
+        let nf = if fixed_player == 0 { 1 } else { 0 };
+
+        if nf >= self.hands.len() {
             return vec![0, 1, 2]; // could be any card
         }
 
-        return match self.hands[fixed_player] {
+        return match self.hands[nf] {
             0 => vec![1, 2],
             1 => vec![0, 2],
             2 => vec![0, 1],
@@ -198,6 +200,10 @@ impl GameState for KPGameState {
 
         if self.num_players != 2 {
             panic!("game logic only implemented for 2 players")
+        }
+
+        if self.hands[0] == self.hands[1] {
+            panic!("invalid deal, players have same cards")
         }
 
         let payoffs = match self.history[..] {

@@ -27,6 +27,8 @@ impl BestResponse {
     }
 
     /// Runs the best response algorithm
+    ///
+    /// The `fixed_player` is the player using the stored policy from `ns`
     pub fn compute_best_response<T: NodeStore>(
         &mut self,
         gs: KPGameState,
@@ -102,14 +104,18 @@ impl BestResponse {
             let mut ev = 0.0;
             let cos = gs.chance_outcomes(fixed_player);
             let num_cos = cos.len();
-            for oc in cos {
+            for i in 0..cos.len() {
+                let oc = cos[i];
                 let mut ngs = gs.clone();
                 ngs.apply_action(oc);
 
+                let mut new_op_reach = opp_reach.clone();
+                new_op_reach[i] = 0.0; // we know the opponent can't have this card
+                                       // Need to account for opponent no longer being able to get the cards I'm dealt
+
                 // TODO: Similar to above this was a call to `getChanceProb` may need to support
                 // something other than just the naive uniform distribution
-                ev += 1.0 / num_cos as f64
-                    * self.expectimaxbr(ngs, fixed_player, opp_reach.clone(), ns);
+                ev += 1.0 / num_cos as f64 * self.expectimaxbr(ngs, fixed_player, new_op_reach, ns);
             }
 
             return ev;
@@ -239,18 +245,18 @@ mod tests {
 
         // best response against player 0, so as player 1
         let gs = KuhnPoker::from_actions(&[0, 1]);
-        let v_0 = br.compute_best_response(gs, 1, vec![1.0, 1.0], &mut ns);
+        let v_0 = br.compute_best_response(gs, 0, vec![1.0, 1.0], &mut ns);
         let gs = KuhnPoker::from_actions(&[2, 1]);
-        let v_2 = br.compute_best_response(gs, 1, vec![1.0, 1.0], &mut ns);
+        let v_2 = br.compute_best_response(gs, 0, vec![1.0, 1.0], &mut ns);
 
         assert_eq!(v_0, v_2); // shouldn't depend on opponents actual card, this should be normalized over the possible outcomes
 
         let gs = KuhnPoker::from_actions(&[1, 0]);
-        let v = br.compute_best_response(gs, 1, vec![1.0, 1.0], &mut ns);
+        let v = br.compute_best_response(gs, 0, vec![1.0, 1.0], &mut ns);
         assert_eq!(v, -1.0);
 
         let gs = KuhnPoker::from_actions(&[1, 2]);
-        let v = br.compute_best_response(gs, 1, vec![1.0, 1.0], &mut ns);
+        let v = br.compute_best_response(gs, 0, vec![1.0, 1.0], &mut ns);
         assert_eq!(v, 2.0);
 
         // With no chance outcomes decided:
@@ -260,7 +266,7 @@ mod tests {
         //
         // Total should be 1/3 * (-1 + 2) = 1/3
         let gs = KuhnPoker::from_actions(&[]);
-        let v = br.compute_best_response(gs, 1, vec![1.0, 1.0, 1.0], &mut ns);
+        let v = br.compute_best_response(gs, 0, vec![1.0, 1.0, 1.0], &mut ns);
         assert_eq!(v, 1.0 / 3.0); // todo: calculate what this should be
 
         // Can manually calculate what the exploitability will be and compare it to what comes here

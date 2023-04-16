@@ -178,9 +178,9 @@ fn run_benchmark(args: Args) {
         Box::new(RandomAgent::new())
     }));
 
-    agents.push(Box::new(|| -> Box<dyn Agent<EuchreGameState>> {
-        Box::new(cfr.clone())
-    }));
+    // agents.push(Box::new(|| -> Box<dyn Agent<EuchreGameState>> {
+    //     Box::new(cfr.clone())
+    // }));
 
     let mut rng = thread_rng();
     for p0 in 0..agents.len() {
