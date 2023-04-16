@@ -54,7 +54,7 @@ impl BestResponse {
     ) -> f64 {
         assert!(fixed_player == 0 || fixed_player == 1);
 
-        let update_player = fixed_player + 1 % gs.num_players();
+        let update_player = (fixed_player + 1) % gs.num_players();
 
         // opponent never plays here, should choose this
         if gs.cur_player() == update_player && opp_reach.iter().sum::<f64>() == 0.0 {
@@ -159,7 +159,10 @@ impl BestResponse {
                 // TODO: unclear what `CHKPROB` and `CHKDBL` are doing, may need other asserts
                 //     CHKPROB(oppActionDist[i]);
                 //     CHKDBL(childEVs[i]);
-                ev += opp_action_dist[i] * child_evs[i];
+                // the child_evs are getting a neg infinity because they wouldn't be chosen, need to account for this
+                if opp_action_dist[i] > 0.0 {
+                    ev += opp_action_dist[i] * child_evs[i];
+                }
             }
         } else {
             ev = max_ev;
@@ -236,7 +239,21 @@ mod tests {
 
         // best response against player 0, so as player 1
         let gs = KuhnPoker::from_actions(&[0, 1]);
-        let v = br.compute_best_response(gs, 1, vec![1.0, 1.0], &mut ns);
+        let v_0 = br.compute_best_response(gs, 1, vec![1.0, 1.0], &mut ns);
+        let gs = KuhnPoker::from_actions(&[2, 1]);
+        let v_2 = br.compute_best_response(gs, 1, vec![1.0, 1.0], &mut ns);
+
+        assert_eq!(v_0, v_2); // shouldn't depend on opponents actual card, this should be normalized over the possible outcomes
+
+        // With no chance outcomes decided:
+        // 1/3 chance get a 0 -- should immediately fold, ev = -1
+        // 1/3 chance get a 1 -- should be neutral, 50% of time win and 50% lose, ev = 0
+        // 1/3 chance get a 2 -- should bet, 100% win 2
+        //
+        // Total should be 1/3 * (-1 + 2) = 1/3
+        let gs = KuhnPoker::from_actions(&[]);
+        let v = br.compute_best_response(gs, 1, vec![1.0, 1.0, 1.0], &mut ns);
+        assert_eq!(v, 1.0 / 3.0); // todo: calculate what this should be
 
         // Can manually calculate what the exploitability will be and compare it to what comes here
         // see paper for description of calcs
