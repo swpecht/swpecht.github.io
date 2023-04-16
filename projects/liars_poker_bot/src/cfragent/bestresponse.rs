@@ -245,6 +245,14 @@ mod tests {
 
         assert_eq!(v_0, v_2); // shouldn't depend on opponents actual card, this should be normalized over the possible outcomes
 
+        let gs = KuhnPoker::from_actions(&[1, 0]);
+        let v = br.compute_best_response(gs, 1, vec![1.0, 1.0], &mut ns);
+        assert_eq!(v, -1.0);
+
+        let gs = KuhnPoker::from_actions(&[1, 2]);
+        let v = br.compute_best_response(gs, 1, vec![1.0, 1.0], &mut ns);
+        assert_eq!(v, 2.0);
+
         // With no chance outcomes decided:
         // 1/3 chance get a 0 -- should immediately fold, ev = -1
         // 1/3 chance get a 1 -- should be neutral, 50% of time win and 50% lose, ev = 0
