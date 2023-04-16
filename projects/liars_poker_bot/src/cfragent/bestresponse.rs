@@ -52,7 +52,7 @@ impl BestResponse {
         opp_reach: Vec<f64>,
         ns: &mut T,
     ) -> f64 {
-        assert!(fixed_player == 1 || fixed_player == 2);
+        assert!(fixed_player == 0 || fixed_player == 1);
 
         let update_player = fixed_player + 1 % gs.num_players();
 
@@ -236,8 +236,6 @@ mod tests {
 
         // best response against player 0, so as player 1
         let gs = KuhnPoker::from_actions(&[0, 1]);
-
-        // todo, should the fixed player be player 1 or player 2?
         let v = br.compute_best_response(gs, 1, vec![1.0, 1.0], &mut ns);
 
         // Can manually calculate what the exploitability will be and compare it to what comes here
