@@ -1,4 +1,4 @@
-use std::ops::Index;
+use std::{hash::Hash, ops::Index};
 
 use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;
@@ -157,6 +157,12 @@ impl<const N: usize> PartialEq for ArrayVec<N> {
 }
 
 impl<const N: usize> Eq for ArrayVec<N> {}
+
+impl<const N: usize> Hash for ArrayVec<N> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.data[0..self.len].hash(state);
+    }
+}
 
 #[cfg(test)]
 mod tests {
