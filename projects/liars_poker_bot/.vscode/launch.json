@@ -7,6 +7,19 @@
         {
             "type": "lldb",
             "request": "launch",
+            "name": "Debug Cargo test",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib"
+                ]
+            },
+            "args": []
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
             "name": "Debug executable 'liars_poker_bot'",
             "cargo": {
                 "args": [
@@ -28,24 +41,5 @@
                 "RUST_BACKTRACE": "1"
             }
         },
-        {
-            "type": "lldb",
-            "request": "launch",
-            "name": "Debug unit tests in executable 'liars_poker_bot'",
-            "cargo": {
-                "args": [
-                    "test",
-                    "--no-run",
-                    "--bin=liars_poker_bot",
-                    "--package=liars_poker_bot"
-                ],
-                "filter": {
-                    "name": "liars_poker_bot",
-                    "kind": "bin"
-                }
-            },
-            "args": [],
-            "cwd": "${workspaceFolder}"
-        }
     ]
 }
