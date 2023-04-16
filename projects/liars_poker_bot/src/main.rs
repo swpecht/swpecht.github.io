@@ -6,7 +6,7 @@ use clap::clap_derive::ArgEnum;
 
 use liars_poker_bot::agents::{Agent, RandomAgent};
 use liars_poker_bot::cfragent::CFRAgent;
-use liars_poker_bot::database::Storage;
+use liars_poker_bot::database::{tune_page, Storage};
 use liars_poker_bot::euchre::{Euchre, EuchreGameState};
 use liars_poker_bot::game::{run_game, Action, GameState};
 
@@ -74,6 +74,8 @@ fn main() {
 fn run_analyze(args: Args) {
     assert_eq!(args.game, GameType::Euchre);
 
+    tune_page::tune_page_size();
+
     let mut total_end_states = 0;
     let mut total_states = 0;
     let mut total_rounds = 0;
@@ -131,7 +133,7 @@ fn run_analyze(args: Args) {
     println!("total storable nodes: {}", traverse_game_tree(s, 0));
 }
 
-fn traverse_game_tree<T: GameState + Clone>(s: T, depth: usize) -> usize {
+fn traverse_game_tree<T: GameState>(s: T, depth: usize) -> usize {
     if s.is_terminal() {
         return 0; // don't need to store leaf node
     }

@@ -5,23 +5,10 @@ use crate::istate::IStateKey;
 
 /// Magic number dependant on the format of the istate key.
 ///
-/// Determines where the page-breaks are for a euchre istate
-/// For example:
-///     9CTCJCKCKS|KH|PPPPPPCP|3H|ASTSKSAC|9C9HTDQC|JD9DTCJH|JSKCQHQD|KDADXXXX|
-///     9CTCJCKCKSKH3C|ASTSKSAC|9C9HTDQC|JD9DTCJH|JSKCQHQD|KDADXXXX|
-///     |    A    | B |   1    |     2  |    3   |   4    |    5   |
-/// Where:
-///     A) 5 actions
-///     b) 1 action for the flip
-///     1-5)
-///
-/// A has 304 possible direct children:
-///     19 cards * 4 suits * 4 possible calls = 304
-///
-/// B has 8568 possible direct children:
-///     18 Choose 5 = 8568
-///
-pub(super) const EUCHRE_PAGE_TRIM: &[usize] = &[6, 4];
+/// For Euchre:
+/// * 6: represents the deal and the face up card, 24 choose 6 options: 134k istates
+/// * 4:
+pub(super) const EUCHRE_PAGE_TRIM: &[usize] = &[6, 5];
 // Need to eventually implement another cut, can't have all nodes loaded to ""
 
 const MAX_PAGE_LEN: usize = 999999;
