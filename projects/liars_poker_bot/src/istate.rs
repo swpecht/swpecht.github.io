@@ -4,24 +4,21 @@ use std::{hash::Hash, ops::Index};
 
 use crate::game::{arrayvec::ArrayVec, Action};
 
-/// The number of bits per action for the hash_key
-const HASH_WORD_LENGTH: usize = 5;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash, PartialOrd, Ord)]
 pub struct IStateKey {
-    key: ArrayVec<64>,
+    actions: ArrayVec<64>,
 }
 
 impl IStateKey {
     pub fn new() -> Self {
         Self {
-            key: ArrayVec::new(),
+            actions: ArrayVec::new(),
         }
     }
 
     /// Push a new action to the key
     pub fn push(&mut self, a: Action) {
-        self.key.push(a);
+        self.actions.push(a);
     }
 
     /// Returns a version of the IStateKey trimmed to a certain number of actions
@@ -33,12 +30,12 @@ impl IStateKey {
         }
 
         return Self {
-            key: self.key.clone().trim(n),
+            actions: self.actions.clone().trim(n),
         };
     }
 
     pub fn len(&self) -> usize {
-        return self.key.len();
+        return self.actions.len();
     }
 
     pub fn append(&mut self, actions: &[Action]) {
@@ -46,11 +43,15 @@ impl IStateKey {
             self.push(a);
         }
     }
+
+    pub fn get_actions(&self) -> ArrayVec<64> {
+        return self.actions;
+    }
 }
 
 impl ToString for IStateKey {
     fn to_string(&self) -> String {
-        format!("{:?}", self.key)
+        format!("{:?}", self.actions)
     }
 }
 
@@ -58,8 +59,8 @@ impl Index<usize> for IStateKey {
     type Output = Action;
 
     fn index(&self, index: usize) -> &Self::Output {
-        assert!(index <= self.key.len());
-        return &self.key[index];
+        assert!(index <= self.actions.len());
+        return &self.actions[index];
     }
 }
 

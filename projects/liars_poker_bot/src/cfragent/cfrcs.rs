@@ -111,7 +111,7 @@ impl CFRCS {
             move_evs.push(0.0);
         }
 
-        let mut node = ns.get_node_mut(&is).unwrap_or(CFRNode::new(is, &actions));
+        let mut node = ns.get_node_mut(&is).unwrap_or(CFRNode::new(&actions));
         let param = match cur_player {
             0 | 2 => reach0,
             1 | 3 => reach1,

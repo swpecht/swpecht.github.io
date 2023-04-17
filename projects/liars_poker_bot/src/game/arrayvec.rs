@@ -101,7 +101,7 @@ impl<const N: usize> Index<usize> for SortedArrayVec<N> {
     }
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialOrd, Ord)]
 pub struct ArrayVec<const N: usize> {
     len: usize,
     #[serde(with = "BigArray")]

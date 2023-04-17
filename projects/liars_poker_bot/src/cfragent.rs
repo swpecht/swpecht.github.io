@@ -12,10 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     agents::Agent,
     cfragent::{cfr::Algorithm, cfrcs::CFRCS},
-    database::{
-        file_backend::FileBackend, memory_node_store::MemoryNodeStore, FileNodeStore, NodeStore,
-        Storage,
-    },
+    database::{memory_node_store::MemoryNodeStore, NodeStore, Storage},
     game::{Action, Game, GameState},
     istate::IStateKey,
 };
@@ -69,9 +66,8 @@ impl<T: GameState> CFRAgent<T> {
 }
 
 /// Adapted from: https://towardsdatascience.com/counterfactual-regret-minimization-ff4204bf4205
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Copy)]
 pub struct CFRNode {
-    pub info_set: IStateKey,
     /// Stores what action each index represents.
     /// There are at most 5 actions (one for each card in hand)
     pub actions: [usize; 5],
@@ -82,7 +78,7 @@ pub struct CFRNode {
 }
 
 impl CFRNode {
-    pub fn new(info_set: IStateKey, legal_moves: &Vec<Action>) -> Self {
+    pub fn new(legal_moves: &Vec<Action>) -> Self {
         let num_actions = legal_moves.len();
         let mut actions = [0; 5];
         for i in 0..num_actions {
@@ -90,7 +86,6 @@ impl CFRNode {
         }
 
         Self {
-            info_set: info_set,
             actions: actions,
             num_actions: num_actions,
             regret_sum: [0.0; 5],

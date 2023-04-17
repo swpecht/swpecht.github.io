@@ -1,6 +1,7 @@
 pub mod disk_backend;
 pub mod file_backend;
 pub mod memory_node_store;
+pub mod node_tree;
 pub mod page;
 pub mod tune_page;
 
@@ -179,7 +180,7 @@ mod tests {
         let mut store = FileNodeStore::new(FileBackend::new(Storage::Temp));
         let istate = IStateKey::new();
 
-        let mut n = CFRNode::new(istate.clone(), &vec![0]);
+        let mut n = CFRNode::new(&vec![0]);
         store.insert_node(istate.clone(), n.clone());
         let r = store.get_node_mut(&istate);
         assert_eq!(r.unwrap().regret_sum, [0.0; 5]);
