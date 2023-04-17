@@ -10,6 +10,7 @@ pub struct Tree<T: Copy> {
     nodes: Vec<Node<T>>,
     /// the starting roots of the tree
     roots: HashMap<Action, usize>,
+    last_node: (ArrayVec<64>, usize),
 }
 
 struct Node<T> {
@@ -33,6 +34,7 @@ impl<T: Copy> Tree<T> {
         Self {
             nodes: Vec::new(),
             roots: HashMap::new(),
+            last_node: (ArrayVec::new(), 0),
         }
     }
 
@@ -82,6 +84,11 @@ impl<T: Copy> Tree<T> {
 
     /// Return the index of the node for a given ka. Creates nodes along the way as needed;
     fn find_node(&mut self, ka: ArrayVec<64>, root: usize) -> usize {
+        let (lka, id) = self.last_node;
+        if lka == ka {
+            return id;
+        }
+
         let mut depth = 0;
         let a = ka[depth];
         let mut idx = root;
@@ -95,6 +102,7 @@ impl<T: Copy> Tree<T> {
             let child = self.get_or_create_child(idx, next_action);
 
             if depth + 1 == ka.len() {
+                self.last_node = (ka, child);
                 return child;
             }
 
