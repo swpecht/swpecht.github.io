@@ -40,7 +40,7 @@ impl<T: Copy> Tree<T> {
         let ka = k.get_actions();
 
         let root = self.get_or_create_root(ka[0]);
-        let id = self.get_node(ka, root);
+        let id = self.find_node(ka, root);
         let n = &mut self.nodes[id];
         n.v = Some(v);
 
@@ -61,8 +61,27 @@ impl<T: Copy> Tree<T> {
         return id;
     }
 
-    /// Return the index of the node that would be the parent of the ka. Creates nodes along the way as needed;
-    fn get_node(&mut self, ka: ArrayVec<64>, root: usize) -> usize {
+    /// Return the index of the child node for a given actions, creating one if needed
+    fn get_or_create_child(&mut self, parent: usize, action: Action) -> usize {
+        let p = &self.nodes[parent];
+        let c = p.children.get(&action);
+
+        if c.is_some() {
+            return *c.unwrap();
+        }
+
+        let cn: Node<T> = Node::new(action, None);
+        let c = self.nodes.len();
+        self.nodes.push(cn);
+
+        let p = &mut self.nodes[parent];
+        p.children.insert(action, c);
+
+        return c;
+    }
+
+    /// Return the index of the node for a given ka. Creates nodes along the way as needed;
+    fn find_node(&mut self, ka: ArrayVec<64>, root: usize) -> usize {
         let mut depth = 0;
         let a = ka[depth];
         let mut idx = root;
@@ -73,65 +92,27 @@ impl<T: Copy> Tree<T> {
         loop {
             let next_action = ka[depth + 1];
 
-            let mut child;
-            {
-                let n = &mut self.nodes[idx];
-                child = n.children.get(&next_action).copied();
-            }
-            if child.is_none() {
-                let cn: Node<T> = Node {
-                    children: HashMap::new(),
-                    action: next_action,
-                    v: None,
-                };
-
-                child = Some(self.nodes.len());
-                self.nodes.push(cn);
-                let n = &mut self.nodes[idx];
-                n.children.insert(next_action, child.unwrap());
-            }
+            let child = self.get_or_create_child(idx, next_action);
 
             if depth + 1 == ka.len() {
-                return child.unwrap();
+                return child;
             }
 
-            idx = child.unwrap();
+            idx = child;
             depth += 1;
         }
     }
 
-    pub fn get(&self, k: &IStateKey) -> Option<T> {
-        let idx = self.roots.get(&k[0]);
-        if idx.is_none() {
+    pub fn get(&mut self, k: &IStateKey) -> Option<T> {
+        let root = self.roots.get(&k[0]);
+        if root.is_none() {
             return None;
         }
-        let mut idx = *idx.unwrap();
-        let ka = k.get_actions();
-        let mut depth = 0;
-
-        loop {
-            let next_action = ka[depth + 1];
-
-            let n = &self.nodes[idx];
-            let child = n.children.get(&next_action).copied();
-
-            if child.is_none() {
-                return None;
-            }
-
-            if depth + 1 == ka.len() {
-                idx = child.unwrap();
-                break;
-            }
-
-            idx = child.unwrap();
-            depth += 1;
-        }
-
+        let idx = self.find_node(k.get_actions(), *root.unwrap());
         return self.nodes[idx].v;
     }
 
-    pub fn contains_key(&self, k: &IStateKey) -> bool {
+    pub fn contains_key(&mut self, k: &IStateKey) -> bool {
         return self.get(k).is_some();
     }
 }
