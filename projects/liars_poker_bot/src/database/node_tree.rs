@@ -1,9 +1,11 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use crate::{
     game::{arrayvec::ArrayVec, Action},
     istate::IStateKey,
 };
+
+type HashMap<K, V> = FxHashMap<K, V>;
 
 /// A performant datastructure for storing nodes in memory
 pub struct Tree<T: Copy> {
@@ -11,18 +13,27 @@ pub struct Tree<T: Copy> {
     /// the starting roots of the tree
     roots: HashMap<Action, usize>,
     last_node: (ArrayVec<64>, usize),
+    /// a cursor for each root of the tree
+    cursors: HashMap<Action, Cursor>,
+}
+
+struct Cursor {
+    id: usize,
+    path: ArrayVec<64>,
 }
 
 struct Node<T> {
+    parent: usize,
     children: HashMap<Action, usize>,
     action: Action,
     v: Option<T>,
 }
 
 impl<T> Node<T> {
-    fn new(a: Action, v: Option<T>) -> Self {
+    fn new(p: Action, a: Action, v: Option<T>) -> Self {
         Self {
-            children: HashMap::new(),
+            parent: p,
+            children: HashMap::default(),
             action: a,
             v: v,
         }
@@ -33,8 +44,9 @@ impl<T: Copy> Tree<T> {
     pub fn new() -> Self {
         Self {
             nodes: Vec::new(),
-            roots: HashMap::new(),
+            roots: HashMap::default(),
             last_node: (ArrayVec::new(), 0),
+            cursors: HashMap::default(),
         }
     }
 
@@ -55,7 +67,7 @@ impl<T: Copy> Tree<T> {
             return *root.unwrap();
         }
 
-        let n = Node::new(action, None);
+        let n = Node::new(0, action, None); // root node has itself as a parent
         let id = self.nodes.len();
         self.nodes.push(n);
         self.roots.insert(action, id);
@@ -72,7 +84,7 @@ impl<T: Copy> Tree<T> {
             return *c.unwrap();
         }
 
-        let cn: Node<T> = Node::new(action, None);
+        let cn: Node<T> = Node::new(parent, action, None);
         let c = self.nodes.len();
         self.nodes.push(cn);
 
@@ -82,7 +94,7 @@ impl<T: Copy> Tree<T> {
         return c;
     }
 
-    /// Return the index of the node for a given ka. Creates nodes along the way as needed;
+    /// Return the index of the node for a given ka. Creates nodes along the way as needed
     fn find_node(&mut self, ka: ArrayVec<64>, root: usize) -> usize {
         let (lka, id) = self.last_node;
         if lka == ka {
@@ -95,6 +107,8 @@ impl<T: Copy> Tree<T> {
         if a != self.nodes[idx].action {
             panic!("trying to insert a node that isn't a child of the root node");
         }
+
+        let ancestor = self.find_common_ancestor(ka);
 
         loop {
             let next_action = ka[depth + 1];
@@ -111,6 +125,32 @@ impl<T: Copy> Tree<T> {
         }
     }
 
+    /// Returns the id of the nearest common ancestor to a node
+    ///
+    /// Because nodes are read "near" each other, this should be much faster than always traversing the tree
+    fn find_common_ancestor(&self, ka: ArrayVec<64>) -> Option<usize> {
+        let cursor = self.cursors.get(&ka[0]);
+        if cursor.is_none() {
+            return None;
+        }
+        let cursor = cursor.unwrap();
+        let ca = cursor.path;
+        let diff = find_first_diff(ka, ca);
+        if diff.is_none() {
+            return Some(cursor.id);
+        }
+        let diff = diff.unwrap();
+
+        let mut cur_node = cursor.id;
+        for _ in 0..diff {
+            let n = &self.nodes[cur_node];
+            let p = n.parent;
+            cur_node = p;
+        }
+
+        return Some(cur_node);
+    }
+
     pub fn get(&mut self, k: &IStateKey) -> Option<T> {
         let root = self.roots.get(&k[0]);
         if root.is_none() {
@@ -123,6 +163,22 @@ impl<T: Copy> Tree<T> {
     pub fn contains_key(&mut self, k: &IStateKey) -> bool {
         return self.get(k).is_some();
     }
+}
+
+/// finds the first difference between action lists if one exists
+fn find_first_diff(ka: ArrayVec<64>, ca: ArrayVec<64>) -> Option<usize> {
+    let len = ka.len().min(ca.len());
+    for i in 0..len {
+        if ka[i] != ca[i] {
+            return Some(i);
+        }
+    }
+
+    if ka.len() == ca.len() {
+        return None;
+    }
+
+    return Some(len);
 }
 
 #[cfg(test)]
