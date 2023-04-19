@@ -29,15 +29,19 @@ impl BestResponse {
     /// Runs the best response algorithm
     ///
     /// The `fixed_player` is the player using the stored policy from `ns`
-    pub fn compute_best_response<T: NodeStore>(
+    pub fn compute_best_response<T: NodeStore, G: GameState>(
         &mut self,
-        gs: KPGameState,
+        gs: G,
         fixed_player: Player,
-        opp_reach: Vec<f64>,
         ns: &mut T,
     ) -> f64 {
         self.opp_chance_outcomes = gs.chance_outcomes(fixed_player);
-        return self.expectimaxbr(gs, fixed_player, opp_reach, ns);
+        return self.expectimaxbr(
+            gs,
+            fixed_player,
+            vec![1.0; self.opp_chance_outcomes.len()],
+            ns,
+        );
     }
 
     /// Implements the best response alogirhtm from Marc's thesis.
@@ -47,9 +51,9 @@ impl BestResponse {
     ///     opp_reach: chance of reaching this istate given the corresponsding opp chance outcomes
     ///     fixed_player: player with the policy in the node store
     ///     ns: node store
-    pub fn expectimaxbr<T: NodeStore>(
+    pub fn expectimaxbr<T: NodeStore, G: GameState>(
         &mut self,
-        gs: KPGameState,
+        gs: G,
         fixed_player: Player,
         opp_reach: Vec<f64>,
         ns: &mut T,
@@ -180,10 +184,10 @@ impl BestResponse {
     /// Compute the weight for this action over all chance outcomes
     /// Used for determining probability of action
     /// Done only at fixed_player nodes
-    fn compute_action_dist<N: NodeStore>(
+    fn compute_action_dist<N: NodeStore, G: GameState>(
         &mut self,
         ns: &mut N,
-        gs: &KPGameState,
+        gs: &G,
         fixed_player: Player,
         mut opp_action_dist: NormalizerMap,
         action: Action,
@@ -248,18 +252,18 @@ mod tests {
 
         // best response against player 0, so as player 1
         let gs = KuhnPoker::from_actions(&[0, 1]);
-        let v_0 = br.compute_best_response(gs, 0, vec![1.0, 1.0], &mut ns);
+        let v_0 = br.compute_best_response(gs, 0, &mut ns);
         let gs = KuhnPoker::from_actions(&[2, 1]);
-        let v_2 = br.compute_best_response(gs, 0, vec![1.0, 1.0], &mut ns);
+        let v_2 = br.compute_best_response(gs, 0, &mut ns);
 
         assert_eq!(v_0, v_2); // shouldn't depend on opponents actual card, this should be normalized over the possible outcomes
 
         let gs = KuhnPoker::from_actions(&[1, 0]);
-        let v = br.compute_best_response(gs, 0, vec![1.0, 1.0], &mut ns);
+        let v = br.compute_best_response(gs, 0, &mut ns);
         assert_eq!(v, -1.0);
 
         let gs = KuhnPoker::from_actions(&[1, 2]);
-        let v = br.compute_best_response(gs, 0, vec![1.0, 1.0], &mut ns);
+        let v = br.compute_best_response(gs, 0, &mut ns);
         assert_eq!(v, 2.0);
 
         // With no chance outcomes decided:
@@ -267,7 +271,7 @@ mod tests {
         // 1/3 chance get a 1 -- should be neutral, 50% of time win and 50% lose, ev = 0
         // 1/3 chance get a 2 -- should bet, 100% win 2
         //
-        // Total should be 1/3 * (-1 + 2) = 1/3
+        // Total should be 1/3 * (0 + -1 + 2) = 1/3
         let iterations = 10000;
         let mut value_sum = 0.0;
         for _ in 0..iterations {
@@ -278,12 +282,14 @@ mod tests {
                 gs.apply_action(a);
             }
 
-            let v = br.compute_best_response(gs, 0, vec![1.0, 1.0], &mut ns);
+            let v = br.compute_best_response(gs, 0, &mut ns);
             value_sum += v;
         }
 
         let avg = value_sum / iterations as f64;
         assert!(avg <= 0.35);
         assert!(avg >= 0.32);
+
+        todo!() // implement for 1 as the fixed player
     }
 }
