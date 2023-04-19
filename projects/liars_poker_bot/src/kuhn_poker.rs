@@ -148,10 +148,6 @@ impl KPGameState {
     pub fn chance_outcomes(&self, fixed_player: Player) -> Vec<Action> {
         let nf = if fixed_player == 0 { 1 } else { 0 };
 
-        if nf >= self.hands.len() {
-            return vec![0, 1, 2]; // could be any card
-        }
-
         return match self.hands[nf] {
             0 => vec![1, 2],
             1 => vec![0, 2],

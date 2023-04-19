@@ -45,7 +45,7 @@ impl BestResponse {
     /// Args:
     ///     gs: Gamestate
     ///     opp_reach: chance of reaching this istate given the corresponsding opp chance outcomes
-    ///     fixed_player: Iterating player
+    ///     fixed_player: player with the policy in the node store
     ///     ns: node store
     pub fn expectimaxbr<T: NodeStore>(
         &mut self,
@@ -221,9 +221,12 @@ impl BestResponse {
 
 #[cfg(test)]
 mod tests {
+    use rand::{seq::SliceRandom, thread_rng};
+
     use crate::{
         cfragent::bestresponse::alwaysfirsttrainableagent::_populate_always_n,
         database::memory_node_store::MemoryNodeStore,
+        game::GameState,
         kuhn_poker::{KPAction, KuhnPoker},
     };
 
@@ -241,7 +244,7 @@ mod tests {
         let mut ns = MemoryNodeStore::new();
         let mut br = BestResponse::new();
 
-        _populate_always_n(&mut ns, g, KPAction::Bet as usize);
+        _populate_always_n(&mut ns, &g, KPAction::Bet as usize);
 
         // best response against player 0, so as player 1
         let gs = KuhnPoker::from_actions(&[0, 1]);
@@ -265,15 +268,22 @@ mod tests {
         // 1/3 chance get a 2 -- should bet, 100% win 2
         //
         // Total should be 1/3 * (-1 + 2) = 1/3
-        let gs = KuhnPoker::from_actions(&[]);
-        let v = br.compute_best_response(gs, 0, vec![1.0, 1.0, 1.0], &mut ns);
-        assert_eq!(v, 1.0 / 3.0); // todo: calculate what this should be
+        let iterations = 10000;
+        let mut value_sum = 0.0;
+        for _ in 0..iterations {
+            let mut gs = (&g.new)();
+            while gs.is_chance_node() {
+                let actions = gs.legal_actions();
+                let a = *actions.choose(&mut thread_rng()).unwrap();
+                gs.apply_action(a);
+            }
 
-        // Can manually calculate what the exploitability will be and compare it to what comes here
-        // see paper for description of calcs
+            let v = br.compute_best_response(gs, 0, vec![1.0, 1.0], &mut ns);
+            value_sum += v;
+        }
 
-        // Node 0: reach (1, 1)
-
-        todo!();
+        let avg = value_sum / iterations as f64;
+        assert!(avg <= 0.35);
+        assert!(avg >= 0.32);
     }
 }
