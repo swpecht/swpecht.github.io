@@ -9,7 +9,6 @@ use crate::{
     cfragent::bestresponse::normalizer::{NormalizerMap, NormalizerVector},
     database::NodeStore,
     game::{Action, Game, GameState, Player},
-    kuhn_poker::KPGameState,
 };
 
 pub struct BestResponse {
@@ -262,8 +261,10 @@ mod tests {
     use crate::{
         cfragent::bestresponse::alwaysfirsttrainableagent::_populate_always_n,
         database::memory_node_store::MemoryNodeStore,
-        game::GameState,
-        kuhn_poker::{KPAction, KuhnPoker},
+        game::{
+            kuhn_poker::{KPAction, KuhnPoker},
+            GameState,
+        },
     };
 
     use super::BestResponse;

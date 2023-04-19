@@ -280,8 +280,8 @@ mod tests {
 
     use crate::{
         agents::RecordedAgent,
+        game::kuhn_poker::{KPAction, KuhnPoker},
         game::{run_game, Action, GameState},
-        kuhn_poker::{KPAction, KuhnPoker},
     };
     use rand::{rngs::StdRng, SeedableRng};
 

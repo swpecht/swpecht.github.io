@@ -1,9 +1,9 @@
 use crate::{
     cfragent::CFRNode,
     database::{memory_node_store::MemoryNodeStore, NodeStore},
+    game::kuhn_poker::{KPAction, KuhnPoker},
     game::{Action, GameState, Player},
     istate::IStateKey,
-    kuhn_poker::{KPAction, KuhnPoker},
 };
 
 pub trait Algorithm {

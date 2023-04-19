@@ -37,8 +37,7 @@ pub(super) fn _populate_always_n<T: GameState, N: NodeStore>(ns: &mut N, g: &Gam
 mod tests {
     use crate::{
         database::{memory_node_store::MemoryNodeStore, NodeStore},
-        game::GameState,
-        kuhn_poker::KuhnPoker,
+        game::{kuhn_poker::KuhnPoker, GameState},
     };
 
     use super::_populate_always_n;

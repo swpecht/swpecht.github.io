@@ -1,11 +1,11 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use liars_poker_bot::{
-    euchre::{Euchre, EuchreGameState},
+    game::euchre::{Euchre, EuchreGameState},
     game::GameState,
 };
 use rand::{seq::SliceRandom, thread_rng};
 
-use liars_poker_bot::{cfragent::CFRAgent, database::Storage, kuhn_poker::KuhnPoker};
+use liars_poker_bot::{cfragent::CFRAgent, database::Storage, game::kuhn_poker::KuhnPoker};
 
 fn train_cfr_kp() {
     let game = KuhnPoker::game();

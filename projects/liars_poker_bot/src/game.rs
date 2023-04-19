@@ -1,6 +1,8 @@
 use std::fmt::Display;
 
 pub mod arrayvec;
+pub mod euchre;
+pub mod kuhn_poker;
 
 use log::info;
 use rand::{seq::SliceRandom, Rng};

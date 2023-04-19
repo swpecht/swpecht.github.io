@@ -2,7 +2,7 @@ use log::trace;
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
 use crate::{
-    euchre::{Euchre, EuchreGameState},
+    game::euchre::{Euchre, EuchreGameState},
     game::GameState,
 };
 

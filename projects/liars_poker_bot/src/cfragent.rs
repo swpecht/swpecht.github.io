@@ -11,15 +11,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     agents::Agent,
-    cfragent::{
-        bestresponse::BestResponse,
-        cfr::{Algorithm, VanillaCFR},
-        cfrcs::CFRCS,
-    },
+    cfragent::{bestresponse::BestResponse, cfr::Algorithm, cfrcs::CFRCS},
     database::{memory_node_store::MemoryNodeStore, NodeStore, Storage},
     game::{Action, Game, GameState},
     istate::IStateKey,
-    kuhn_poker::KPGameState,
 };
 
 pub struct CFRAgent<T: GameState> {
@@ -189,8 +184,10 @@ mod tests {
     use crate::{
         agents::Agent,
         database::Storage,
-        game::GameState,
-        kuhn_poker::{KPAction, KuhnPoker},
+        game::{
+            kuhn_poker::{KPAction, KuhnPoker},
+            GameState,
+        },
     };
 
     #[test]

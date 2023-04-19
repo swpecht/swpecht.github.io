@@ -189,7 +189,7 @@ mod tests {
 
     use crate::{
         database::node_tree::find_last_same,
-        euchre::Euchre,
+        game::euchre::Euchre,
         game::{arrayvec::ArrayVec, GameState},
         istate::IStateKey,
     };

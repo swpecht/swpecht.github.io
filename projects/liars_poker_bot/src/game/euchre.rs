@@ -752,7 +752,7 @@ mod tests {
 
     use crate::{
         agents::{Agent, RandomAgent},
-        euchre::{EAction, EPhase, Euchre, Suit},
+        game::euchre::{EAction, EPhase, Euchre, Suit},
     };
 
     use super::GameState;
