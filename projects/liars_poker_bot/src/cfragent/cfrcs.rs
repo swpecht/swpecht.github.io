@@ -27,6 +27,10 @@ impl Algorithm for CFRCS {
     fn run<T: GameState, N: NodeStore>(&mut self, ns: &mut N, gs: &T, update_player: Player) {
         self.cfrcs(ns, gs, update_player, 0, 1.0, 1.0, CFRPhase::Phase1);
     }
+
+    fn nodes_touched(&self) -> usize {
+        return self.nodes_touched;
+    }
 }
 
 impl CFRCS {
@@ -95,7 +99,7 @@ impl CFRCS {
             && ((team == 0 && update_team == 0 && reach0 <= 0.0)
                 || (team == 1 && update_team == 1 && reach1 <= 0.0))
         {
-            warn!("pruning tree");
+            trace!("pruning cfr tree");
             return 0.0;
         }
 

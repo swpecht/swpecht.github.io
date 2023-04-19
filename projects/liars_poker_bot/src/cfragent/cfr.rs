@@ -8,6 +8,7 @@ use crate::{
 
 pub trait Algorithm {
     fn run<T: GameState, N: NodeStore>(&mut self, ns: &mut N, gs: &T, update_player: Player);
+    fn nodes_touched(&self) -> usize;
 }
 
 pub struct VanillaCFR {
@@ -17,6 +18,10 @@ pub struct VanillaCFR {
 impl Algorithm for VanillaCFR {
     fn run<T: GameState, N: NodeStore>(&mut self, ns: &mut N, gs: &T, update_player: Player) {
         self.vcfr(ns, gs, update_player, 0, 1.0, 1.0, 1.0);
+    }
+
+    fn nodes_touched(&self) -> usize {
+        return self.nodes_touched;
     }
 }
 

@@ -229,9 +229,15 @@ impl BestResponse {
             let key = gs.co_istate(player, chance_outcome);
 
             //     double oppProb = getMoveProb(is, action, actionshere);
-            let node = ns.get_node_mut(&key).unwrap();
-            let idx = node.get_index(action);
-            let opp_prob = node.get_average_strategy()[idx];
+            let node = ns.get_node_mut(&key);
+            let opp_prob;
+            if node.is_none() {
+                opp_prob = 1.0 / gs.legal_actions().len() as f32;
+            } else {
+                let node = node.unwrap();
+                let idx = node.get_index(action);
+                opp_prob = node.get_average_strategy()[idx];
+            }
 
             // TODO: figure out what CHKPROB does
             //     CHKPROB(oppProb);

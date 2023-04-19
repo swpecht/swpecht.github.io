@@ -4,7 +4,7 @@ use crate::{
     game::{Action, Game, GameState, Player},
     istate::IStateKey,
 };
-use log::info;
+use log::trace;
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub enum KPAction {
@@ -88,12 +88,12 @@ impl KuhnPoker {
 
 impl KPGameState {
     fn apply_action_dealing(&mut self, card: Action) {
-        info!("player {} dealt card {}", self.cur_player, card);
+        trace!("player {} dealt card {}", self.cur_player, card);
         self.hands.push(card);
         self.cur_player += 1;
 
         if self.cur_player >= self.num_players {
-            info!("moving to playing phase");
+            trace!("moving to playing phase");
             self.phase = KPPhase::Playing;
             self.cur_player = 0;
             self.is_chance_node = false;
