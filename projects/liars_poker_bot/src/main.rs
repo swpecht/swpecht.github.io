@@ -10,6 +10,7 @@ use liars_poker_bot::database::{tune_page, Storage};
 use liars_poker_bot::euchre::{Euchre, EuchreGameState};
 use liars_poker_bot::game::{run_game, Action, GameState};
 
+use liars_poker_bot::kuhn_poker::KuhnPoker;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{thread_rng, SeedableRng};
@@ -163,7 +164,7 @@ fn run(args: Args) {
         "" => Storage::Temp,
         _ => Storage::Named(args.file),
     };
-    let _cfr = CFRAgent::new(Euchre::game(), 1, 100, storage);
+    let _cfr = CFRAgent::new(KuhnPoker::game(), 1, 5000, storage);
 }
 
 fn run_benchmark(args: Args) {

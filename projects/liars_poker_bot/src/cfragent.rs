@@ -11,10 +11,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     agents::Agent,
-    cfragent::{cfr::Algorithm, cfrcs::CFRCS},
+    cfragent::{bestresponse::BestResponse, cfr::Algorithm, cfrcs::CFRCS},
     database::{memory_node_store::MemoryNodeStore, NodeStore, Storage},
     game::{Action, Game, GameState},
     istate::IStateKey,
+    kuhn_poker::KPGameState,
 };
 
 pub struct CFRAgent<T: GameState> {
@@ -28,7 +29,7 @@ pub struct CFRAgent<T: GameState> {
 impl<T: GameState> CFRAgent<T> {
     pub fn new(game: Game<T>, seed: u64, iterations: usize, storage: Storage) -> Self {
         let mut agent = Self {
-            game,
+            game: game.clone(),
             rng: SeedableRng::seed_from_u64(seed),
             // store: FileNodeStore::new(FileBackend::new(storage)),
             store: MemoryNodeStore::new(),
@@ -36,6 +37,7 @@ impl<T: GameState> CFRAgent<T> {
         };
 
         // Use CFR to train the agent
+        let mut br = BestResponse::new();
         info!("Starting self play for CFR");
         let mut alg = CFRCS::new(seed);
         for i in 0..iterations {
@@ -46,6 +48,14 @@ impl<T: GameState> CFRAgent<T> {
             }
 
             info!("Finished iteration {} for CFR", i);
+
+            if i % 100 == 0 {
+                info!(
+                    "{}\t{}",
+                    i,
+                    br.estimate_exploitability(&game, &mut agent.store, 0, 5000)
+                )
+            }
         }
 
         // Save the trained policy
