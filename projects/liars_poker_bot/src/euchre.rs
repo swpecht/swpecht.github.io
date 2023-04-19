@@ -462,6 +462,23 @@ impl EuchreGameState {
     }
 
     fn update_keys(&mut self, a: Action) {
+        // haven't pushed the cards yet, do it now if we've dealt all but the last card
+        if (self.hands[3].len() == 4) && (self.hands[2].len() == 5) {
+            for p in 0..self.num_players {
+                for i in 0..self.hands[p].len() {
+                    let c = self.hands[p][i];
+                    self.istate_keys[p].push(c);
+                }
+            }
+
+            self.istate_keys[3].push(a);
+        }
+
+        if self.phase == EPhase::DealHands {
+            // don't do anything until hands are dealt so we can put the cards in order
+            return;
+        }
+
         // Private actions
         if self.phase == EPhase::DealHands || self.phase == EPhase::Discard {
             self.istate_keys[self.cur_player].push(a);
