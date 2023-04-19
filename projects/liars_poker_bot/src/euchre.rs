@@ -26,6 +26,7 @@ impl Euchre {
             face_up: 0,         // Default for now
             trump_caller: 0,
             istate_keys: keys,
+            first_played: None,
         }
     }
 
@@ -53,6 +54,9 @@ pub struct EuchreGameState {
     phase: EPhase,
     cur_player: usize,
     istate_keys: [IStateKey; 4],
+    /// the index of the 0 player istate where the first played card is
+    /// used to make looking up tricks easier
+    first_played: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
@@ -211,6 +215,10 @@ impl EuchreGameState {
     }
 
     fn apply_action_play(&mut self, a: Action) {
+        if self.first_played.is_none() {
+            self.first_played = Some(self.istate_keys[0].len() - 1);
+        }
+
         for i in 0..self.hands[self.cur_player].len() {
             if self.hands[self.cur_player][i] == a {
                 self.hands[self.cur_player].remove(a);
@@ -239,15 +247,12 @@ impl EuchreGameState {
     /// Determine if current trick is over (all 4 players have played)
     /// Also returns true if none have played
     fn is_trick_over(&self) -> bool {
-        let mut trick_over = true;
-        let num_cards = self.hands[0].len();
-        for i in 1..self.num_players {
-            if num_cards != self.hands[i].len() {
-                trick_over = false;
-            }
+        // if no one has played yet
+        if self.first_played.is_none() {
+            return true;
         }
 
-        return trick_over;
+        return (self.istate_keys[0].len() - self.first_played.unwrap()) % 4 == 0;
     }
 
     /// Gets the `n` last trick
