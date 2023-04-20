@@ -6,6 +6,7 @@ use clap::clap_derive::ArgEnum;
 
 use liars_poker_bot::agents::{Agent, RandomAgent};
 use liars_poker_bot::cfragent::CFRAgent;
+use liars_poker_bot::database::memory_node_store::MemoryNodeStore;
 use liars_poker_bot::database::{tune_page, Storage};
 use liars_poker_bot::game::euchre::{Euchre, EuchreGameState};
 use liars_poker_bot::game::{run_game, Action, GameState};
@@ -160,11 +161,11 @@ fn traverse_game_tree<T: GameState>(s: T, depth: usize) -> usize {
 }
 
 fn run(args: Args) {
-    let storage = match args.file.as_str() {
+    let _storage = match args.file.as_str() {
         "" => Storage::Temp,
-        _ => Storage::Named(args.file),
+        _ => panic!("need to add support to create named files"), // Storage::Named(args.file),
     };
-    let _cfr = CFRAgent::new(KuhnPoker::game(), 1, 5000, storage);
+    let _cfr = CFRAgent::new(KuhnPoker::game(), 1, 5000, MemoryNodeStore::new());
 }
 
 fn run_benchmark(args: Args) {
@@ -173,7 +174,7 @@ fn run_benchmark(args: Args) {
         _ => todo!(),
     };
 
-    let cfr = CFRAgent::new(Euchre::game(), 0, 2, Storage::Temp);
+    // let cfr = CFRAgent::new(Euchre::game(), 0, 2, Storage::Temp);
     let mut agents: Vec<Box<dyn Fn() -> Box<dyn Agent<EuchreGameState>>>> = Vec::new();
     agents.push(Box::new(|| -> Box<dyn Agent<EuchreGameState>> {
         Box::new(RandomAgent::new())

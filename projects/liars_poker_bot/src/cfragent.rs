@@ -12,26 +12,26 @@ use serde::{Deserialize, Serialize};
 use crate::{
     agents::Agent,
     cfragent::{bestresponse::BestResponse, cfr::Algorithm, cfrcs::CFRCS},
-    database::{memory_node_store::MemoryNodeStore, NodeStore, Storage},
+    database::NodeStore,
     game::{Action, Game, GameState},
     istate::IStateKey,
 };
 
-pub struct CFRAgent<T: GameState> {
+pub struct CFRAgent<T: GameState, N: NodeStore> {
     game: Game<T>,
     rng: StdRng,
     // store: FileNodeStore<FileBackend>,
-    store: MemoryNodeStore,
+    ns: N,
     _phantom: PhantomData<T>,
 }
 
-impl<T: GameState> CFRAgent<T> {
-    pub fn new(game: Game<T>, seed: u64, iterations: usize, storage: Storage) -> Self {
+impl<T: GameState, N: NodeStore> CFRAgent<T, N> {
+    pub fn new(game: Game<T>, seed: u64, iterations: usize, ns: N) -> Self {
         let mut agent = Self {
             game: game.clone(),
             rng: SeedableRng::seed_from_u64(seed),
             // store: FileNodeStore::new(FileBackend::new(storage)),
-            store: MemoryNodeStore::new(),
+            ns: ns,
             _phantom: PhantomData,
         };
 
@@ -40,17 +40,17 @@ impl<T: GameState> CFRAgent<T> {
         info!("Starting self play for CFR");
         let mut alg = CFRCS::new(seed);
         // let mut alg = VanillaCFR::new();
-        for i in 0..iterations {
+        for _ in 0..iterations {
             let gs = (agent.game.new)();
 
             for i in 0..agent.game.max_players {
-                alg.run(&mut agent.store, &gs, i);
+                alg.run(&mut agent.ns, &gs, i);
 
                 if alg.nodes_touched() % 10 == 0 {
                     info!(
                         "\t{}\t{}",
                         alg.nodes_touched(),
-                        br.estimate_exploitability(&game, &mut agent.store, 0, 5000)
+                        br.estimate_exploitability(&game, &mut agent.ns, 0, 5000)
                     )
                 }
             }
@@ -65,7 +65,7 @@ impl<T: GameState> CFRAgent<T> {
     }
 
     fn get_node_mut(&mut self, istate: &IStateKey) -> Option<CFRNode> {
-        self.store.get_node_mut(istate)
+        self.ns.get_node_mut(istate)
     }
 
     fn get_policy(&mut self, istate: &IStateKey) -> Vec<f32> {
@@ -157,7 +157,7 @@ impl CFRNode {
     }
 }
 
-impl<T: GameState> Agent<T> for CFRAgent<T> {
+impl<T: GameState, N: NodeStore> Agent<T> for CFRAgent<T, N> {
     /// Chooses a random action weighted by the policy for the current istate.
     ///
     /// If the I state has not be
@@ -183,7 +183,7 @@ mod tests {
     use super::CFRAgent;
     use crate::{
         agents::Agent,
-        database::Storage,
+        database::memory_node_store::MemoryNodeStore,
         game::{
             kuhn_poker::{KPAction, KuhnPoker},
             GameState,
@@ -192,7 +192,7 @@ mod tests {
 
     #[test]
     fn cfragent_sample_test() {
-        let mut qa = CFRAgent::new(KuhnPoker::game(), 42, 50000, Storage::Temp);
+        let mut qa = CFRAgent::new(KuhnPoker::game(), 42, 50000, MemoryNodeStore::new());
         let mut s = KuhnPoker::new_state();
         s.apply_action(1);
         s.apply_action(0);

@@ -733,15 +733,15 @@ impl GameState for EuchreGameState {
         self.cur_player
     }
 
-    fn chance_outcomes(&self, fixed_player: Player) -> Vec<Action> {
+    fn chance_outcomes(&self, _fixed_player: Player) -> Vec<Action> {
         todo!()
     }
 
-    fn co_istate(&self, player: Player, chance_outcome: Action) -> IStateKey {
+    fn co_istate(&self, _player: Player, _chance_outcome: Action) -> IStateKey {
         todo!()
     }
 
-    fn get_payoff(&self, fixed_player: Player, chance_outcome: Action) -> f64 {
+    fn get_payoff(&self, _fixed_player: Player, _chance_outcome: Action) -> f64 {
         todo!()
     }
 }

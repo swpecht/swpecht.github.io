@@ -256,15 +256,11 @@ impl BestResponse {
 
 #[cfg(test)]
 mod tests {
-    use rand::{seq::SliceRandom, thread_rng};
 
     use crate::{
         cfragent::bestresponse::alwaysfirsttrainableagent::_populate_always_n,
         database::memory_node_store::MemoryNodeStore,
-        game::{
-            kuhn_poker::{KPAction, KuhnPoker},
-            GameState,
-        },
+        game::kuhn_poker::{KPAction, KuhnPoker},
     };
 
     use super::BestResponse;

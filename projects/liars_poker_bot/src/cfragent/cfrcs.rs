@@ -1,4 +1,4 @@
-use log::{debug, trace, warn};
+use log::{debug, trace};
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
 use crate::{
