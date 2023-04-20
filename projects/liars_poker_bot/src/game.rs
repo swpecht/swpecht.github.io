@@ -1,6 +1,7 @@
 use std::fmt::Display;
 
 pub mod arrayvec;
+pub mod bluff;
 pub mod euchre;
 pub mod kuhn_poker;
 
