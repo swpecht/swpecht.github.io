@@ -19,7 +19,7 @@ const FACES: [Dice; 6] = [
     Dice::Wild,
 ];
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Dice {
     One,
     Two,
@@ -71,11 +71,21 @@ impl From<usize> for Dice {
     }
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub enum BluffActions {
     Roll(Dice),
     Bid(usize, Dice),
     Call,
+}
+
+impl BluffActions {
+    fn get_dice(&self) -> Dice {
+        match self {
+            BluffActions::Roll(d) => *d,
+            BluffActions::Bid(_, d) => *d,
+            BluffActions::Call => panic!("can't get dice on a call"),
+        }
+    }
 }
 
 impl PartialOrd for BluffActions {
@@ -124,7 +134,7 @@ impl Into<usize> for BluffActions {
             BluffActions::Roll(d) => d.into(), // 1-6
             BluffActions::Bid(n, d) => {
                 let d: usize = d.into();
-                6 + (STARTING_DICE * d * 2) + n
+                6 + ((d - 1) * STARTING_DICE * 2) + n
             }
         }
     }
@@ -136,8 +146,9 @@ impl From<usize> for BluffActions {
             0 => BluffActions::Call,
             x if x >= 1 && x <= 6 => BluffActions::Roll(Dice::from(x)),
             x if x <= 30 => {
-                let n = (x - 6) % 6;
-                let d = x / 6;
+                let n = (x - 6) % (STARTING_DICE * 2);
+                let n = if n == 0 { 4 } else { n };
+                let d = (x - 7) / 4 + 1;
                 BluffActions::Bid(n, Dice::from(d))
             }
             _ => panic!("invalid action"),
@@ -148,7 +159,7 @@ impl From<usize> for BluffActions {
 impl Display for BluffActions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            BluffActions::Bid(n, d) => f.write_str(&format!("{}-{}", n, d)),
+            BluffActions::Bid(n, d) => f.write_str(&format!("{}{}", n, d)),
             BluffActions::Call => f.write_char('C'),
             BluffActions::Roll(d) => f.write_str(&format!("{}", d)),
         }
@@ -214,6 +225,11 @@ impl BluffGameState {
     }
 
     fn apply_action_bids(&mut self, a: Action) {
+        if self.bids.len() != 0 && a != BluffActions::Call.into() {
+            let lb = self.bids[self.bids.len() - 1];
+            assert!(a > lb);
+        }
+
         self.bids.push(a);
     }
 
@@ -260,10 +276,33 @@ impl BluffGameState {
         }
         return legal_actions;
     }
+
+    fn update_keys(&mut self, a: Action) {
+        // private actions for rolling, and we don't push the dice until we have all of them sorted
+        if self.dice[0].len() == 2 && self.dice[1].len() == 1 {
+            for p in 0..self.num_players {
+                for d in 0..self.dice[p].len() {
+                    self.keys[p].push(self.dice[p][d])
+                }
+            }
+            self.keys[1].push(a);
+            return;
+        }
+
+        if self.phase == Phase::RollingDice {
+            return;
+        }
+
+        for i in 0..self.num_players {
+            self.keys[i].push(a);
+        }
+    }
 }
 
 impl GameState for BluffGameState {
     fn apply_action(&mut self, a: Action) {
+        self.update_keys(a);
+
         match self.phase {
             Phase::RollingDice => self.apply_action_rolling(a),
             Phase::Betting => self.apply_action_bids(a),
@@ -278,7 +317,29 @@ impl GameState for BluffGameState {
     }
 
     fn evaluate(&self) -> Vec<f32> {
-        todo!()
+        assert!(self.is_terminal());
+
+        let calling_player = (self.bids.len() + 1) % 2;
+        let lb = BluffActions::from(self.bids[self.bids.len() - 2]);
+        let f = lb.get_dice();
+
+        let mut n = 0;
+
+        for p in 0..self.num_players {
+            for d in 0..self.dice[p].len() {
+                if self.dice[p][d] == f.into() || self.dice[p][d] == Dice::Wild.into() {
+                    n += 1;
+                }
+            }
+        }
+
+        let is_call_right = BluffActions::Bid(n, f) < lb;
+
+        return match (calling_player, is_call_right) {
+            (0, true) | (1, false) => vec![1.0, -1.0],
+            (0, false) | (1, true) => vec![-1.0, 1.0],
+            _ => todo!("only 2 players supported"),
+        };
     }
 
     fn istate_key(&self, player: Player) -> crate::istate::IStateKey {
@@ -286,7 +347,19 @@ impl GameState for BluffGameState {
     }
 
     fn istate_string(&self, player: super::Player) -> String {
-        todo!()
+        let mut istate = String::new();
+
+        let k = self.istate_key(player);
+        for i in 0..k.len() {
+            let s = format!("{}", BluffActions::from(k[i]));
+            istate.push_str(&s);
+
+            if i >= 1 && i != k.len() - 1 {
+                istate.push('|');
+            }
+        }
+
+        return istate;
     }
 
     fn is_terminal(&self) -> bool {
@@ -421,5 +494,52 @@ mod tests {
         }
 
         assert_eq!(gs.legal_actions(), legal_actions);
+    }
+
+    #[test]
+    fn test_bluff_evaluate() {
+        todo!()
+    }
+
+    #[test]
+    fn test_bluff_istate() {
+        let mut gs = BluffGameState::from_actions(&[
+            BluffActions::Roll(Dice::One),
+            BluffActions::Roll(Dice::Three),
+            BluffActions::Roll(Dice::Two),
+            BluffActions::Roll(Dice::Four),
+            BluffActions::Bid(4, Dice::One),
+        ]);
+
+        let istate = gs.istate_string(0);
+        assert_eq!(istate, "12|41");
+        let istate = gs.istate_string(1);
+        assert_eq!(istate, "34|41");
+
+        gs.apply_action(BluffActions::Bid(2, Dice::Three).into());
+        let istate = gs.istate_string(0);
+        assert_eq!(istate, "12|41|23");
+        let istate = gs.istate_string(1);
+        assert_eq!(istate, "34|41|23");
+
+        gs.apply_action(BluffActions::Call.into());
+        let istate = gs.istate_string(0);
+        assert_eq!(istate, "12|41|23|C");
+        let istate = gs.istate_string(1);
+        assert_eq!(istate, "34|41|23|C");
+    }
+
+    #[test]
+    fn test_bluff_action_into_from() {
+        let max_bets = 2 * STARTING_DICE;
+        for &f in &FACES[0..FACES.len() - 1] {
+            // don't include the wild
+            for n in 1..max_bets + 1 {
+                let bid = BluffActions::Bid(n, f);
+                let a: usize = bid.into();
+                let from_bid = BluffActions::from(a);
+                assert_eq!(from_bid, bid);
+            }
+        }
     }
 }
