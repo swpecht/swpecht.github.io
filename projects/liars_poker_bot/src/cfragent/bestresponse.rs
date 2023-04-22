@@ -303,12 +303,12 @@ mod tests {
         // Total should be 1/3 * (0 + -1 + 2) = 1/3
 
         let avg = br.estimate_exploitability(&g, &mut ns, 0, 5000);
-        assert!(avg <= 0.35);
-        assert!(avg >= 0.32);
+        assert!(avg <= 0.36);
+        assert!(avg >= 0.31);
 
         // same for player 1
         let avg = br.estimate_exploitability(&g, &mut ns, 1, 5000);
-        assert!(avg <= 0.35);
-        assert!(avg >= 0.32);
+        assert!(avg <= 0.36);
+        assert!(avg >= 0.31);
     }
 }

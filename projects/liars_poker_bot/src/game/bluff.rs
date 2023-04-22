@@ -177,6 +177,7 @@ pub struct BluffGameState {
     is_chance_node: bool,
     phase: Phase,
     dice: [SortedArrayVec<STARTING_DICE>; 2],
+    num_dice: [usize; 2],
     bids: ArrayVec<20>,
     cur_player: Player,
     num_players: usize,
@@ -193,6 +194,7 @@ impl BluffGameState {
             num_players: 2,
             keys: [IStateKey::new(); 2],
             bids: ArrayVec::new(),
+            num_dice: [STARTING_DICE; 2],
         }
     }
 
@@ -218,13 +220,18 @@ impl BluffGameState {
         self.cur_player = (self.cur_player + 1) % 2;
 
         // check if done rolling
-        if self.dice[1].len() == STARTING_DICE {
+        if self.dice[1].len() == self.num_dice[1] && self.dice[0].len() == self.num_dice[0] {
             self.phase = Phase::Betting;
             self.is_chance_node = false;
         }
     }
 
     fn apply_action_bids(&mut self, a: Action) {
+        // Can't bid without any other bids or directly after a bid
+        if self.bids.len() == 0 || self.bids[self.bids.len() - 1] == BluffActions::Call.into() {
+            panic!("invalid action");
+        }
+
         if self.bids.len() != 0 && a != BluffActions::Call.into() {
             let lb = self.bids[self.bids.len() - 1];
             assert!(a > lb);
@@ -363,11 +370,7 @@ impl GameState for BluffGameState {
     }
 
     fn is_terminal(&self) -> bool {
-        if self.bids.len() == 0 {
-            return false;
-        }
-
-        return self.bids[self.bids.len() - 1] == BluffActions::Call.into();
+        return self.num_dice[0] == 0 || self.num_dice[1] == 0;
     }
 
     fn is_chance_node(&self) -> bool {

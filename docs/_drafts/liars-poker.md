@@ -27,7 +27,7 @@ Going to use Liar's poker bots to illustrate why.
 [*] Use IStateKey until the final step when converting to a string for storage
     * And use bit shift to cut to the right
     * Move the conversion of istate key to string to be deeper in code -- make pages work with istate key and avoid the need to create strings all together (except on page faults). Can just bitshift the key to get the proper page name.
-[ ] pruning optimization from Section 2.2.2 from Marc's thesis -- should reduce some computation
+[*] pruning optimization from Section 2.2.2 from Marc's thesis -- should reduce some computation
 [ ] Move IO to a separate thread
     *Probably want to do with raw threads and maybe use rayon for computation?
     *<https://doc.rust-lang.org/book/ch16-02-message-passing.html>
@@ -42,8 +42,20 @@ Going to use Liar's poker bots to illustrate why.
 [*] Imlement other CFR algorithms, see Marc's phd and website for implementations
     * May already be using chance sampling -- need to fix my algorithm
     * Probably should implement vanilla cfr as well to ensure working as expected
-[ ] Use an object pool for gamestates
+[*] Use an object pool for gamestates
     * doesn't seem to speed anything up
+    * Didn't help, but swapping to a copyable arrayvec, that's always sorted did
+[*] Optimize IstateKey Read -- probaby just switch to using an array vec of the actions for the key? -- makes indexing near instant
+[ ] Improve the Tree
+    * Have get functions make the node and cache the id for later use
+    * use https://crates.io/crates/rustc-hash for hashmap for children
+    * save the last place and navigate to the right node from there, e.g. step back then forward
+[*] IMPORTANT: Make sure Istate keys are sorted for dealt cards
+
+Need to decide what to include in the first blog post.
+
+Should probably implement some other games for comparison, e.g. liars pokers / bluff? Any others from marks thesis?
+
 
 
 ## Design
