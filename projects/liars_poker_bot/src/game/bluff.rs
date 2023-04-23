@@ -181,6 +181,31 @@ enum Phase {
     Betting,
 }
 
+pub struct Bluff {}
+
+impl Bluff {
+    pub fn new_state() -> BluffGameState {
+        BluffGameState {
+            phase: Phase::RollingDice,
+            dice: [SortedArrayVec::new(); 2],
+            cur_player: 0,
+            num_players: 2,
+            keys: [IStateKey::new(); 2],
+            bids: ArrayVec::new(),
+            num_dice: [STARTING_DICE; 2],
+            last_winner: 0,
+        }
+    }
+
+    pub fn game() -> Game<BluffGameState> {
+        Game {
+            new: Box::new(|| -> BluffGameState { Self::new_state() }),
+            max_players: 2,
+            max_actions: 31, // 4 * 6 for bets + 6 for roll + 1 for call
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct BluffGameState {
     phase: Phase,
@@ -194,29 +219,8 @@ pub struct BluffGameState {
 }
 
 impl BluffGameState {
-    pub fn new_state() -> Self {
-        Self {
-            phase: Phase::RollingDice,
-            dice: [SortedArrayVec::new(); 2],
-            cur_player: 0,
-            num_players: 2,
-            keys: [IStateKey::new(); 2],
-            bids: ArrayVec::new(),
-            num_dice: [STARTING_DICE; 2],
-            last_winner: 0,
-        }
-    }
-
-    pub fn game() -> Game<Self> {
-        Game {
-            new: Box::new(|| -> Self { Self::new_state() }),
-            max_players: 2,
-            max_actions: 31, // 4 * 6 for bets + 6 for roll + 1 for call
-        }
-    }
-
     pub fn from_actions(actions: &[BluffActions]) -> Self {
-        let mut g = (Self::game().new)();
+        let mut g = (Bluff::game().new)();
         for &a in actions {
             g.apply_action(a.into());
         }
@@ -466,7 +470,7 @@ mod tests {
     use std::collections::HashSet;
 
     use crate::game::{
-        bluff::{BluffGameState, Phase, FACES},
+        bluff::{Bluff, BluffGameState, Phase, FACES},
         Action, GameState,
     };
 
@@ -500,7 +504,7 @@ mod tests {
 
     #[test]
     fn test_bluff_legal_actions_and_evaluate() {
-        let mut gs = BluffGameState::new_state();
+        let mut gs = Bluff::new_state();
 
         assert!(gs.is_chance_node());
         assert_eq!(gs.phase, Phase::RollingDice);

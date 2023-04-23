@@ -8,6 +8,7 @@ use liars_poker_bot::agents::{Agent, RandomAgent};
 use liars_poker_bot::cfragent::CFRAgent;
 use liars_poker_bot::database::memory_node_store::MemoryNodeStore;
 use liars_poker_bot::database::{tune_page, Storage};
+use liars_poker_bot::game::bluff::Bluff;
 use liars_poker_bot::game::euchre::{Euchre, EuchreGameState};
 use liars_poker_bot::game::{run_game, Action, GameState};
 
@@ -165,7 +166,7 @@ fn run(args: Args) {
         "" => Storage::Temp,
         _ => panic!("need to add support to create named files"), // Storage::Named(args.file),
     };
-    let _cfr = CFRAgent::new(KuhnPoker::game(), 1, 5000, MemoryNodeStore::new());
+    let _cfr = CFRAgent::new(Bluff::game(), 1, 5000, MemoryNodeStore::new());
 }
 
 fn run_benchmark(args: Args) {
