@@ -106,6 +106,14 @@ impl PartialOrd for BluffActions {
             todo!();
         }
 
+        // handle 0 bids
+        match (*sn, *on) {
+            (0, 0) => panic!("can't compare 2 zero bids"),
+            (0, _) => return Some(std::cmp::Ordering::Less),
+            (_, 0) => return Some(std::cmp::Ordering::Greater),
+            _ => {}
+        }
+
         // if same dice, go on number of bid
         if sd == od {
             if sn < on {
@@ -117,6 +125,7 @@ impl PartialOrd for BluffActions {
             }
         }
 
+        // If different dice, go on the face value
         if sd < od {
             return Some(std::cmp::Ordering::Less);
         } else if sd > od {
@@ -174,7 +183,6 @@ enum Phase {
 
 #[derive(Copy, Clone, Debug)]
 pub struct BluffGameState {
-    is_chance_node: bool,
     phase: Phase,
     dice: [SortedArrayVec<STARTING_DICE>; 2],
     num_dice: [usize; 2],
@@ -182,12 +190,12 @@ pub struct BluffGameState {
     cur_player: Player,
     num_players: usize,
     keys: [IStateKey; 2],
+    last_winner: Player,
 }
 
 impl BluffGameState {
     pub fn new_state() -> Self {
         Self {
-            is_chance_node: true,
             phase: Phase::RollingDice,
             dice: [SortedArrayVec::new(); 2],
             cur_player: 0,
@@ -195,6 +203,7 @@ impl BluffGameState {
             keys: [IStateKey::new(); 2],
             bids: ArrayVec::new(),
             num_dice: [STARTING_DICE; 2],
+            last_winner: 0,
         }
     }
 
@@ -217,18 +226,26 @@ impl BluffGameState {
 
     fn apply_action_rolling(&mut self, a: Action) {
         self.dice[self.cur_player].push(a);
-        self.cur_player = (self.cur_player + 1) % 2;
+
+        // Roll for each player in series
+        if self.dice[self.cur_player].len() == self.num_dice[self.cur_player] {
+            self.cur_player = (self.cur_player + 1) % 2;
+        }
 
         // check if done rolling
         if self.dice[1].len() == self.num_dice[1] && self.dice[0].len() == self.num_dice[0] {
             self.phase = Phase::Betting;
-            self.is_chance_node = false;
+            self.cur_player = self.last_winner;
         }
     }
 
     fn apply_action_bids(&mut self, a: Action) {
         // Can't bid without any other bids or directly after a bid
-        if self.bids.len() == 0 || self.bids[self.bids.len() - 1] == BluffActions::Call.into() {
+        if a == BluffActions::Call.into()
+            && (self.bids.len() == 0
+                || (self.bids.len() > 0
+                    && self.bids[self.bids.len() - 1] == BluffActions::Call.into()))
+        {
             panic!("invalid action");
         }
 
@@ -238,6 +255,19 @@ impl BluffGameState {
         }
 
         self.bids.push(a);
+
+        if a == BluffActions::Call.into() {
+            self.phase = Phase::RollingDice;
+            let calling_player = self.cur_player();
+            let (loser, lost_dice) =
+                calulate_lost_dice(self.dice, self.bids, self.num_players, calling_player);
+            self.dice = [SortedArrayVec::new(); 2];
+            self.num_dice[loser] = self.num_dice[loser] - lost_dice.min(self.num_dice[loser]);
+            self.last_winner = (loser + 1) % 2;
+            return;
+        }
+
+        self.cur_player = (self.cur_player + 1) % 2;
     }
 
     fn legal_actions_rolling(&self) -> Vec<Action> {
@@ -257,7 +287,11 @@ impl BluffGameState {
             return Vec::new();
         }
 
-        let mut legal_actions: Vec<Action> = vec![BluffActions::Call.into()];
+        let mut legal_actions = Vec::new();
+        if self.bids.len() > 0 && self.bids[self.bids.len() - 1] != BluffActions::Call.into() {
+            legal_actions.push(BluffActions::Call.into());
+        }
+
         if self.bids.len() == 0 {
             let max_bets = STARTING_DICE * 2;
             for &f in &FACES[0..FACES.len() - 1] {
@@ -306,6 +340,41 @@ impl BluffGameState {
     }
 }
 
+/// Returns the number of dice lost by a player after a call is made
+/// This number is not bound by the current number of dice
+///
+/// If the caller is right, the other player loses a dice. If the caller is wrong, they lose a dice
+fn calulate_lost_dice<const N: usize>(
+    dice: [SortedArrayVec<STARTING_DICE>; 2],
+    bids: ArrayVec<N>,
+    num_players: usize,
+    calling_player: Player,
+) -> (Player, usize) {
+    assert!(bids.len() > 0);
+    assert_eq!(bids[bids.len() - 1], BluffActions::Call.into());
+
+    let lb = BluffActions::from(bids[bids.len() - 2]);
+    let f = lb.get_dice();
+
+    let mut n = 0;
+
+    for p in 0..num_players {
+        for d in 0..dice[p].len() {
+            if dice[p][d] == f.into() || dice[p][d] == Dice::Wild.into() {
+                n += 1;
+            }
+        }
+    }
+
+    let actual = BluffActions::Bid(n, f);
+    // if >= dice than the bid, the calling player loses a dice
+    if actual >= lb {
+        return (calling_player, 1);
+    } else {
+        return ((calling_player + 1) % 2, 1);
+    }
+}
+
 impl GameState for BluffGameState {
     fn apply_action(&mut self, a: Action) {
         self.update_keys(a);
@@ -324,28 +393,12 @@ impl GameState for BluffGameState {
     }
 
     fn evaluate(&self) -> Vec<f32> {
-        assert!(self.is_terminal());
-
-        let calling_player = (self.bids.len() + 1) % 2;
-        let lb = BluffActions::from(self.bids[self.bids.len() - 2]);
-        let f = lb.get_dice();
-
-        let mut n = 0;
-
-        for p in 0..self.num_players {
-            for d in 0..self.dice[p].len() {
-                if self.dice[p][d] == f.into() || self.dice[p][d] == Dice::Wild.into() {
-                    n += 1;
-                }
-            }
-        }
-
-        let is_call_right = BluffActions::Bid(n, f) < lb;
-
-        return match (calling_player, is_call_right) {
-            (0, true) | (1, false) => vec![1.0, -1.0],
-            (0, false) | (1, true) => vec![-1.0, 1.0],
-            _ => todo!("only 2 players supported"),
+        assert_eq!(self.num_players, 2);
+        return match (self.num_dice[0], self.num_dice[1]) {
+            (0, 0) => panic!("invalid state, both players have no dice"),
+            (_, 0) => vec![1.0, -1.0],
+            (0, _) => vec![-1.0, 1.0],
+            _ => panic!("one of the players isn't at 0 dice"),
         };
     }
 
@@ -374,7 +427,7 @@ impl GameState for BluffGameState {
     }
 
     fn is_chance_node(&self) -> bool {
-        return self.is_chance_node;
+        return self.phase == Phase::RollingDice;
     }
 
     fn num_players(&self) -> usize {
@@ -446,7 +499,7 @@ mod tests {
     }
 
     #[test]
-    fn test_bluff_legal_actions() {
+    fn test_bluff_legal_actions_and_evaluate() {
         let mut gs = BluffGameState::new_state();
 
         assert!(gs.is_chance_node());
@@ -471,7 +524,7 @@ mod tests {
         assert!(!gs.is_chance_node());
         assert_eq!(gs.phase, Phase::Betting);
 
-        let mut legal_actions: Vec<Action> = vec![BluffActions::Call.into()];
+        let mut legal_actions = Vec::new();
         let max_bets = STARTING_DICE * 2;
         for &f in &FACES[0..FACES.len() - 1] {
             // don't include the wild
@@ -497,19 +550,37 @@ mod tests {
         }
 
         assert_eq!(gs.legal_actions(), legal_actions);
-    }
 
-    #[test]
-    fn test_bluff_evaluate() {
-        todo!()
+        // player 1 calls, they are right
+        assert_eq!(gs.cur_player(), 1);
+        gs.apply_action(BluffActions::Call.into());
+        assert_eq!(gs.phase, Phase::RollingDice);
+        assert_eq!(gs.num_dice[0], 1);
+        assert_eq!(gs.num_dice[1], 2);
+
+        while gs.is_chance_node() {
+            gs.apply_action(BluffActions::Roll(Dice::One).into());
+        }
+        assert_eq!(gs.dice[0].len(), 1);
+        assert_eq!(gs.dice[1].len(), 2);
+
+        // winning player goes first
+        assert_eq!(gs.cur_player(), 1);
+        gs.apply_action(BluffActions::Bid(1, Dice::Two).into());
+        gs.apply_action(BluffActions::Bid(2, Dice::Two).into());
+        assert_eq!(gs.cur_player(), 1);
+        gs.apply_action(BluffActions::Call.into());
+
+        assert!(gs.is_terminal());
+        assert_eq!(gs.evaluate(), vec![-1.0, 1.0]);
     }
 
     #[test]
     fn test_bluff_istate() {
         let mut gs = BluffGameState::from_actions(&[
             BluffActions::Roll(Dice::One),
-            BluffActions::Roll(Dice::Three),
             BluffActions::Roll(Dice::Two),
+            BluffActions::Roll(Dice::Three),
             BluffActions::Roll(Dice::Four),
             BluffActions::Bid(4, Dice::One),
         ]);
