@@ -1,4 +1,4 @@
-use crate::{cfragent::CFRNode, istate::IStateKey};
+use crate::{cfragent::cfrnode::CFRNode, istate::IStateKey};
 
 use super::{node_tree::Tree, NodeStore};
 

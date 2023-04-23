@@ -91,7 +91,7 @@ impl<T> Debug for Page<T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{cfragent::CFRNode, istate::IStateKey};
+    use crate::{cfragent::cfrnode::CFRNode, istate::IStateKey};
 
     use super::{Page, MAX_PAGE_LEN};
 

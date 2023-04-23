@@ -1,5 +1,5 @@
 use crate::{
-    cfragent::CFRNode,
+    cfragent::cfrnode::CFRNode,
     database::{memory_node_store::MemoryNodeStore, NodeStore},
     game::kuhn_poker::{KPAction, KuhnPoker},
     game::{Action, GameState, Player},

@@ -9,9 +9,10 @@ use std::collections::{HashMap, VecDeque};
 
 use log::{debug, trace};
 
+use crate::cfragent::cfrnode::CFRNode;
 use crate::database::page::Page;
+use crate::database::page::EUCHRE_PAGE_TRIM;
 use crate::istate::IStateKey;
-use crate::{cfragent::CFRNode, database::page::EUCHRE_PAGE_TRIM};
 
 use self::disk_backend::DiskBackend;
 
@@ -170,7 +171,7 @@ impl<T: DiskBackend<CFRNode>> Clone for FileNodeStore<T> {
 mod tests {
 
     use crate::{
-        cfragent::CFRNode,
+        cfragent::cfrnode::CFRNode,
         database::{file_backend::FileBackend, FileNodeStore, NodeStore, Storage},
         istate::IStateKey,
     };

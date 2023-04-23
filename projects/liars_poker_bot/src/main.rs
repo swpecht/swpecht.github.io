@@ -12,7 +12,6 @@ use liars_poker_bot::game::bluff::Bluff;
 use liars_poker_bot::game::euchre::{Euchre, EuchreGameState};
 use liars_poker_bot::game::{run_game, Action, GameState};
 
-use liars_poker_bot::game::kuhn_poker::KuhnPoker;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{thread_rng, SeedableRng};
