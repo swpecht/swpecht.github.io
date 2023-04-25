@@ -236,8 +236,7 @@ impl BestResponse {
                 opp_prob = 1.0 / gs.legal_actions().len() as f32;
             } else {
                 let node = node.unwrap();
-                let idx = node.get_index(action);
-                opp_prob = node.get_average_strategy()[idx];
+                opp_prob = node.get_average_strategy()[action];
             }
 
             // TODO: figure out what CHKPROB does

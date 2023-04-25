@@ -1,43 +1,29 @@
 use serde::{Deserialize, Serialize};
 
-use crate::game::Action;
-
-const MAX_ACTIONS: usize = 6;
+const MAX_ACTIONS: usize = 32;
 
 /// Adapted from: https://towardsdatascience.com/counterfactual-regret-minimization-ff4204bf4205
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Copy)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CFRNode {
-    /// Stores what action each index represents.
-    /// There are at most 5 actions (one for each card in hand)
-    actions: [usize; MAX_ACTIONS],
-    num_actions: usize,
-    pub regret_sum: [f32; MAX_ACTIONS],
-    pub move_prob: [f32; MAX_ACTIONS],
-    pub total_move_prob: [f32; MAX_ACTIONS],
+    pub regret_sum: Vec<f32>,
+    pub move_prob: Vec<f32>,
+    pub total_move_prob: Vec<f32>,
 }
 
 impl CFRNode {
-    pub fn new(legal_moves: &Vec<Action>) -> Self {
-        let num_actions = legal_moves.len();
-        let mut actions = [0; MAX_ACTIONS];
-        for i in 0..num_actions {
-            actions[i] = legal_moves[i]
-        }
-
+    pub fn new() -> Self {
         Self {
-            actions: actions,
-            num_actions: num_actions,
-            regret_sum: [0.0; MAX_ACTIONS],
-            move_prob: [0.0; MAX_ACTIONS],
-            total_move_prob: [0.0; MAX_ACTIONS],
+            regret_sum: new_vec(MAX_ACTIONS),
+            move_prob: new_vec(MAX_ACTIONS),
+            total_move_prob: new_vec(MAX_ACTIONS),
         }
     }
 
     /// Combine the positive regrets into a strategy.
     ///
     /// Defaults to a uniform action strategy if no regrets are present
-    pub(super) fn get_move_prob(&mut self, realization_weight: f32) -> [f32; MAX_ACTIONS] {
-        let num_actions = self.num_actions;
+    pub(super) fn get_move_prob(&mut self, realization_weight: f32) -> Vec<f32> {
+        let num_actions = self.regret_sum.len();
         let mut normalizing_sum = 0.0;
 
         for i in 0..num_actions {
@@ -74,14 +60,13 @@ impl CFRNode {
 
         return avg_strat;
     }
+}
 
-    /// Returns the index storing a given action
-    pub(super) fn get_index(&self, action: Action) -> usize {
-        for i in 0..self.actions.len() {
-            if action == self.actions[i] {
-                return i;
-            }
-        }
-        panic!("action not found")
+fn new_vec(n: usize) -> Vec<f32> {
+    let mut v = Vec::with_capacity(n);
+    for _ in 0..n {
+        v.push(0.0);
     }
+
+    return v;
 }

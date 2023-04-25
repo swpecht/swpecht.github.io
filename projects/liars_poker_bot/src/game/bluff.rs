@@ -90,6 +90,15 @@ impl BluffActions {
 
 impl PartialOrd for BluffActions {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match (*self == BluffActions::Call, *other == BluffActions::Call) {
+            (true, true) => {
+                return Some(std::cmp::Ordering::Equal);
+            }
+            (true, false) => return Some(std::cmp::Ordering::Greater),
+            (false, true) => return Some(std::cmp::Ordering::Less),
+            _ => {}
+        }
+
         let (sn, &sd) = match self {
             BluffActions::Roll(_) => todo!(),
             BluffActions::Bid(n, d) => (n, d),

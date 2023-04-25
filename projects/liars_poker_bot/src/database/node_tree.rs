@@ -1,3 +1,5 @@
+use std::process::id;
+
 use rustc_hash::FxHashMap;
 
 use crate::{
@@ -8,7 +10,7 @@ use crate::{
 type HashMap<K, V> = FxHashMap<K, V>;
 
 /// A performant datastructure for storing nodes in memory
-pub struct Tree<T: Copy> {
+pub struct Tree<T> {
     nodes: Vec<Node<T>>,
     /// the starting roots of the tree
     roots: HashMap<Action, usize>,
@@ -26,6 +28,8 @@ struct Node<T> {
     children: HashMap<Action, usize>,
     action: Action,
     v: Option<T>,
+    /// Track if the node value has been borrowed
+    is_borrowed: bool,
 }
 
 impl<T> Node<T> {
@@ -35,11 +39,12 @@ impl<T> Node<T> {
             children: HashMap::default(),
             action: a,
             v: v,
+            is_borrowed: false,
         }
     }
 }
 
-impl<T: Copy> Tree<T> {
+impl<T> Tree<T> {
     pub fn new() -> Self {
         Self {
             nodes: Vec::new(),
@@ -54,6 +59,7 @@ impl<T: Copy> Tree<T> {
         let id = self.find_node(ka);
         let n = &mut self.nodes[id];
         n.v = Some(v);
+        n.is_borrowed = false;
 
         return None;
     }
@@ -151,13 +157,22 @@ impl<T: Copy> Tree<T> {
         return Some((cur_node, last_same));
     }
 
+    /// Gets a value from the tree. The replaces the previouls value with None.
     pub fn get(&mut self, k: &IStateKey) -> Option<T> {
         let root = self.roots.get(&k[0]);
         if root.is_none() {
             return None;
         }
         let idx = self.find_node(k.get_actions());
-        return self.nodes[idx].v;
+
+        if self.nodes[idx].is_borrowed {
+            panic!("attempting to get a node that is already borrowed");
+        }
+
+        let old = std::mem::replace(&mut self.nodes[idx].v, None);
+        self.nodes[idx].is_borrowed = true;
+
+        return old;
     }
 
     pub fn contains_key(&mut self, k: &IStateKey) -> bool {
@@ -210,7 +225,9 @@ mod tests {
         gs.apply_action(gs.legal_actions()[0]);
         let k1 = gs.istate_key(0);
         t.insert(k1.clone(), 1);
-        assert_eq!(t.get(&k1), Some(1));
+        let v = t.get(&k1);
+        assert_eq!(v, Some(1));
+        t.insert(k1, v.unwrap());
 
         gs.apply_action(gs.legal_actions()[0]);
         let mut ogs = gs.clone();

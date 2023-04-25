@@ -86,7 +86,7 @@ impl VanillaCFR {
             move_evs.push(0.0);
         }
 
-        let mut node = ns.get_node_mut(&is).unwrap_or(CFRNode::new(&actions));
+        let mut node = ns.get_node_mut(&is).unwrap_or(CFRNode::new());
         let param = match cur_player {
             0 | 2 => reach0,
             1 | 3 => reach1,
@@ -96,17 +96,15 @@ impl VanillaCFR {
 
         // // iterate over the actions
         for &a in &actions {
-            let idx = node.get_index(a);
-
             let newreach0 = match gs.cur_player() {
-                0 | 2 => reach0 * move_prob[idx],
+                0 | 2 => reach0 * move_prob[a],
                 1 | 3 => reach0,
                 _ => panic!("invalid player"),
             };
 
             let newreach1 = match gs.cur_player() {
                 0 | 2 => reach1,
-                1 | 3 => reach1 * move_prob[idx],
+                1 | 3 => reach1 * move_prob[a],
                 _ => panic!("invalid player"),
             };
 
@@ -121,8 +119,8 @@ impl VanillaCFR {
                 newreach1,
                 chance_reach,
             );
-            move_evs[idx] = payoff;
-            strat_ev += move_prob[idx] * payoff;
+            move_evs[a] = payoff;
+            strat_ev += move_prob[a] * payoff;
         }
 
         // // post-traversals: update the infoset
@@ -134,9 +132,8 @@ impl VanillaCFR {
             };
 
             for a in actions {
-                let idx = node.get_index(a);
-                node.regret_sum[idx] += (chance_reach * opp_reach) * (move_evs[idx] - strat_ev);
-                node.total_move_prob[idx] += my_reach * node.move_prob[idx]
+                node.regret_sum[a] += (chance_reach * opp_reach) * (move_evs[a] - strat_ev);
+                node.total_move_prob[a] += my_reach * node.move_prob[a]
             }
 
             ns.insert_node(is, node);

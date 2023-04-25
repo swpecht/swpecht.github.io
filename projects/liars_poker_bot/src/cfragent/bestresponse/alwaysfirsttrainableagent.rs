@@ -23,7 +23,7 @@ pub(super) fn _populate_always_n<T: GameState, N: NodeStore<CFRNode>>(
             if !gs.is_chance_node() {
                 let p = gs.cur_player();
                 let k = gs.istate_key(p);
-                let mut node = CFRNode::new(&gs.legal_actions());
+                let mut node = CFRNode::new();
                 node.total_move_prob[idx] = 1.0; // set the moveprob to 1 for the action of the target index
                 ns.insert_node(k, node);
             }
@@ -54,27 +54,22 @@ mod tests {
         _populate_always_n(&mut ns, &g, 0);
 
         let k = KuhnPoker::from_actions(&[0, 1]).istate_key(0);
-        assert_eq!(
-            ns.get_node_mut(&k).unwrap().get_average_strategy(),
-            [1.0, 0.0, 0.0, 0.0, 0.0]
-        );
+        assert_first_is_one(ns.get_node_mut(&k).unwrap().get_average_strategy());
 
         let k = KuhnPoker::from_actions(&[1, 0]).istate_key(0);
-        assert_eq!(
-            ns.get_node_mut(&k).unwrap().get_average_strategy(),
-            [1.0, 0.0, 0.0, 0.0, 0.0]
-        );
+        assert_first_is_one(ns.get_node_mut(&k).unwrap().get_average_strategy());
 
         let k = KuhnPoker::from_actions(&[0, 1, 0]).istate_key(0);
-        assert_eq!(
-            ns.get_node_mut(&k).unwrap().get_average_strategy(),
-            [1.0, 0.0, 0.0, 0.0, 0.0]
-        );
+        assert_first_is_one(ns.get_node_mut(&k).unwrap().get_average_strategy());
 
         let k = KuhnPoker::from_actions(&[0, 1, 1]).istate_key(0);
-        assert_eq!(
-            ns.get_node_mut(&k).unwrap().get_average_strategy(),
-            [1.0, 0.0, 0.0, 0.0, 0.0]
-        );
+        assert_first_is_one(ns.get_node_mut(&k).unwrap().get_average_strategy());
+    }
+
+    fn assert_first_is_one(v: Vec<f32>) {
+        assert!(v.len() > 0);
+        assert_eq!(v[0], 1.0);
+        let s: f32 = v.iter().sum();
+        assert_eq!(s, 1.0);
     }
 }

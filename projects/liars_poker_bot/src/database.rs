@@ -181,7 +181,7 @@ mod tests {
         let mut store = FileNodeStore::new(FileBackend::new(Storage::Temp));
         let istate = IStateKey::new();
 
-        let mut n = CFRNode::new(&vec![0]);
+        let mut n = CFRNode::new();
         store.insert_node(istate.clone(), n.clone());
         let r = store.get_node_mut(&istate).unwrap();
 
@@ -189,7 +189,7 @@ mod tests {
             assert_eq!(r.regret_sum[i], 0.0);
         }
 
-        n.regret_sum = [1.0; 6];
+        n.regret_sum = vec![1.0; 32];
         store.insert_node(istate.clone(), n);
         let r = store.get_node_mut(&istate).unwrap();
         for i in 0..r.regret_sum.len() {
