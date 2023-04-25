@@ -1,5 +1,3 @@
-use std::process::id;
-
 use rustc_hash::FxHashMap;
 
 use crate::{
@@ -234,7 +232,9 @@ mod tests {
         gs.apply_action(gs.legal_actions()[0]);
         let k2 = gs.istate_key(0);
         t.insert(k2, 2);
-        assert_eq!(t.get(&k2), Some(2));
+        let v = t.get(&k2);
+        assert_eq!(v, Some(2));
+        t.insert(k2, v.unwrap());
 
         ogs.apply_action(ogs.legal_actions()[1]);
         let k3 = ogs.istate_key(0);
