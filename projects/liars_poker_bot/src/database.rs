@@ -8,8 +8,6 @@ pub mod tune_page;
 use std::collections::{HashMap, VecDeque};
 
 use log::{debug, trace};
-use serde::de::DeserializeOwned;
-use serde::Serialize;
 
 use crate::cfragent::cfrnode::CFRNode;
 use crate::database::page::Page;

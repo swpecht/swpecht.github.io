@@ -442,25 +442,25 @@ impl GameState for BluffGameState {
         self.cur_player
     }
 
-    fn chance_outcomes(&self, fixed_player: super::Player) -> Vec<super::Action> {
+    fn chance_outcomes(&self, _fixed_player: super::Player) -> Vec<super::Action> {
         todo!()
     }
 
     fn co_istate(
         &self,
-        player: super::Player,
-        chance_outcome: super::Action,
+        _player: super::Player,
+        _chance_outcome: super::Action,
     ) -> crate::istate::IStateKey {
         todo!()
     }
 
-    fn get_payoff(&self, fixed_player: super::Player, chance_outcome: super::Action) -> f64 {
+    fn get_payoff(&self, _fixed_player: super::Player, _chance_outcome: super::Action) -> f64 {
         todo!()
     }
 }
 
 impl Display for BluffGameState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         todo!()
     }
 }
