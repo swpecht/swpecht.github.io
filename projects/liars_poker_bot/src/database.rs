@@ -8,6 +8,8 @@ pub mod tune_page;
 use std::collections::{HashMap, VecDeque};
 
 use log::{debug, trace};
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 
 use crate::cfragent::cfrnode::CFRNode;
 use crate::database::page::Page;
@@ -23,9 +25,9 @@ pub enum Storage {
     Named(String),
 }
 
-pub trait NodeStore {
-    fn get_node_mut(&mut self, istate: &IStateKey) -> Option<CFRNode>;
-    fn insert_node(&mut self, istate: IStateKey, n: CFRNode) -> Option<CFRNode>;
+pub trait NodeStore<T> {
+    fn get_node_mut(&mut self, istate: &IStateKey) -> Option<T>;
+    fn insert_node(&mut self, istate: IStateKey, n: T) -> Option<T>;
     fn contains_node(&mut self, istate: &IStateKey) -> bool;
 }
 
@@ -44,20 +46,20 @@ impl NodeStoreStats {
 /// NodeStore is a cache for istates and their associated game nodes.
 ///
 /// It stores an FIFO queue of Pages. When a page is evicted, it's written by the diskbackend.
-pub struct FileNodeStore<T: DiskBackend<CFRNode>> {
+pub struct FileNodeStore<T, B: DiskBackend<T>> {
     max_nodes: usize,
-    pages: HashMap<IStateKey, Page<CFRNode>>,
+    pages: HashMap<IStateKey, Page<T>>,
     page_queue: VecDeque<IStateKey>,
     // Keeps count of how often a given page is loaded into memory
     stats: NodeStoreStats,
-    backend: T,
+    backend: B,
 }
 
-impl<T: DiskBackend<CFRNode>> NodeStore for FileNodeStore<T> {
-    fn get_node_mut(&mut self, istate: &IStateKey) -> Option<CFRNode> {
+impl<T, B: DiskBackend<T>> NodeStore<T> for FileNodeStore<T, B> {
+    fn get_node_mut(&mut self, istate: &IStateKey) -> Option<T> {
         let pgi = Page::<CFRNode>::get_page_key(istate, EUCHRE_PAGE_TRIM);
         if let Some(p) = self.pages.get_mut(&pgi) {
-            return p.cache.get(istate).cloned();
+            return p.cache.remove(istate);
         }
 
         self.load_page(istate);
@@ -65,7 +67,7 @@ impl<T: DiskBackend<CFRNode>> NodeStore for FileNodeStore<T> {
         return self.get_node_mut(istate);
     }
 
-    fn insert_node(&mut self, istate: IStateKey, n: CFRNode) -> Option<CFRNode> {
+    fn insert_node(&mut self, istate: IStateKey, n: T) -> Option<T> {
         let pgi = Page::<CFRNode>::get_page_key(&istate, EUCHRE_PAGE_TRIM);
         if let Some(p) = self.pages.get_mut(&pgi) {
             return p.cache.insert(istate, n);
@@ -88,8 +90,8 @@ impl<T: DiskBackend<CFRNode>> NodeStore for FileNodeStore<T> {
     }
 }
 
-impl<T: DiskBackend<CFRNode>> FileNodeStore<T> {
-    pub fn new_with_pages(backend: T, max_nodes: usize) -> Self {
+impl<T, B: DiskBackend<T>> FileNodeStore<T, B> {
+    pub fn new_with_pages(backend: B, max_nodes: usize) -> Self {
         Self {
             pages: HashMap::new(),
             max_nodes: max_nodes,
@@ -99,12 +101,12 @@ impl<T: DiskBackend<CFRNode>> FileNodeStore<T> {
         }
     }
 
-    pub fn new(backend: T) -> Self {
+    pub fn new(backend: B) -> Self {
         FileNodeStore::new_with_pages(backend, 5_000_000)
     }
 
     /// Commits all data in the pages to sqlite
-    fn commit(&mut self, page: Page<CFRNode>) {
+    fn commit(&mut self, page: Page<T>) {
         debug!(
             "commiting {} for page {}",
             page.cache.len(),
@@ -161,7 +163,7 @@ impl<T: DiskBackend<CFRNode>> FileNodeStore<T> {
     }
 }
 
-impl<T: DiskBackend<CFRNode>> Clone for FileNodeStore<T> {
+impl<T, B: DiskBackend<T>> Clone for FileNodeStore<T, B> {
     fn clone(&self) -> Self {
         FileNodeStore::new_with_pages(self.backend.clone(), self.max_nodes)
     }
@@ -183,12 +185,17 @@ mod tests {
 
         let mut n = CFRNode::new(&vec![0]);
         store.insert_node(istate.clone(), n.clone());
-        let r = store.get_node_mut(&istate);
-        assert_eq!(r.unwrap().regret_sum, [0.0; 5]);
+        let r = store.get_node_mut(&istate).unwrap();
 
-        n.regret_sum = [1.0; 5];
+        for i in 0..r.regret_sum.len() {
+            assert_eq!(r.regret_sum[i], 0.0);
+        }
+
+        n.regret_sum = [1.0; 6];
         store.insert_node(istate.clone(), n);
-        let r = store.get_node_mut(&istate);
-        assert_eq!(r.unwrap().regret_sum, [1.0; 5]);
+        let r = store.get_node_mut(&istate).unwrap();
+        for i in 0..r.regret_sum.len() {
+            assert_eq!(r.regret_sum[i], 1.0);
+        }
     }
 }

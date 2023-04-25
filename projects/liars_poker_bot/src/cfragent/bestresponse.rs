@@ -11,6 +11,8 @@ use crate::{
     game::{Action, Game, GameState, Player},
 };
 
+use super::cfrnode::CFRNode;
+
 pub struct BestResponse {
     /// Vector of possible private chance outcomes for a given game. For example
     /// in KuhnPoker, this would be the dealt cards [[0], [1], [2]]. In Euchre, this would be all
@@ -28,7 +30,7 @@ impl BestResponse {
     }
 
     /// Estimates exploitability using MC method
-    pub fn estimate_exploitability<T: NodeStore, G: GameState>(
+    pub fn estimate_exploitability<T: NodeStore<CFRNode>, G: GameState>(
         &mut self,
         g: &Game<G>,
         ns: &mut T,
@@ -54,7 +56,7 @@ impl BestResponse {
     /// Runs the best response algorithm
     ///
     /// The `fixed_player` is the player using the stored policy from `ns`
-    pub fn compute_best_response<T: NodeStore, G: GameState>(
+    pub fn compute_best_response<T: NodeStore<CFRNode>, G: GameState>(
         &mut self,
         gs: G,
         fixed_player: Player,
@@ -76,7 +78,7 @@ impl BestResponse {
     ///     opp_reach: chance of reaching this istate given the corresponsding opp chance outcomes
     ///     fixed_player: player with the policy in the node store
     ///     ns: node store
-    pub fn expectimaxbr<T: NodeStore, G: GameState>(
+    pub fn expectimaxbr<T: NodeStore<CFRNode>, G: GameState>(
         &mut self,
         gs: G,
         fixed_player: Player,
@@ -209,7 +211,7 @@ impl BestResponse {
     /// Compute the weight for this action over all chance outcomes
     /// Used for determining probability of action
     /// Done only at fixed_player nodes
-    fn compute_action_dist<N: NodeStore, G: GameState>(
+    fn compute_action_dist<N: NodeStore<CFRNode>, G: GameState>(
         &mut self,
         ns: &mut N,
         gs: &G,

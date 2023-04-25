@@ -5,7 +5,11 @@ use crate::{
 };
 
 /// Populates a nodestore to always pick a given action index
-pub(super) fn _populate_always_n<T: GameState, N: NodeStore>(ns: &mut N, g: &Game<T>, idx: usize) {
+pub(super) fn _populate_always_n<T: GameState, N: NodeStore<CFRNode>>(
+    ns: &mut N,
+    g: &Game<T>,
+    idx: usize,
+) {
     for _ in 0..100 {
         let gs = (g.new)();
         let mut q = Vec::new();
@@ -36,6 +40,7 @@ pub(super) fn _populate_always_n<T: GameState, N: NodeStore>(ns: &mut N, g: &Gam
 #[cfg(test)]
 mod tests {
     use crate::{
+        cfragent::cfrnode::CFRNode,
         database::{memory_node_store::MemoryNodeStore, NodeStore},
         game::{kuhn_poker::KuhnPoker, GameState},
     };
@@ -44,7 +49,7 @@ mod tests {
 
     #[test]
     fn test_populate_ns() {
-        let mut ns = MemoryNodeStore::new();
+        let mut ns: MemoryNodeStore<CFRNode> = MemoryNodeStore::new();
         let g = KuhnPoker::game();
         _populate_always_n(&mut ns, &g, 0);
 

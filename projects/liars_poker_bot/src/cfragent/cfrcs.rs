@@ -24,7 +24,12 @@ enum CFRPhase {
 }
 
 impl Algorithm for CFRCS {
-    fn run<T: GameState, N: NodeStore>(&mut self, ns: &mut N, gs: &T, update_player: Player) {
+    fn run<T: GameState, N: NodeStore<CFRNode>>(
+        &mut self,
+        ns: &mut N,
+        gs: &T,
+        update_player: Player,
+    ) {
         self.cfrcs(ns, gs, update_player, 0, 1.0, 1.0, CFRPhase::Phase1);
     }
 
@@ -41,7 +46,7 @@ impl CFRCS {
         }
     }
 
-    fn cfrcs<T: GameState, N: NodeStore>(
+    fn cfrcs<T: GameState, N: NodeStore<CFRNode>>(
         &mut self,
         ns: &mut N,
         gs: &T,

@@ -7,7 +7,12 @@ use crate::{
 };
 
 pub trait Algorithm {
-    fn run<T: GameState, N: NodeStore>(&mut self, ns: &mut N, gs: &T, update_player: Player);
+    fn run<T: GameState, N: NodeStore<CFRNode>>(
+        &mut self,
+        ns: &mut N,
+        gs: &T,
+        update_player: Player,
+    );
     fn nodes_touched(&self) -> usize;
 }
 
@@ -16,7 +21,12 @@ pub struct VanillaCFR {
 }
 
 impl Algorithm for VanillaCFR {
-    fn run<T: GameState, N: NodeStore>(&mut self, ns: &mut N, gs: &T, update_player: Player) {
+    fn run<T: GameState, N: NodeStore<CFRNode>>(
+        &mut self,
+        ns: &mut N,
+        gs: &T,
+        update_player: Player,
+    ) {
         self.vcfr(ns, gs, update_player, 0, 1.0, 1.0, 1.0);
     }
 
@@ -26,7 +36,7 @@ impl Algorithm for VanillaCFR {
 }
 
 impl VanillaCFR {
-    fn vcfr<T: GameState, N: NodeStore>(
+    fn vcfr<T: GameState, N: NodeStore<CFRNode>>(
         &mut self,
         ns: &mut N,
         gs: &T,
@@ -140,7 +150,7 @@ impl VanillaCFR {
 }
 
 /// Returns the policy of a given istate
-fn _get_policy<T: NodeStore>(ns: &mut T, istate: &IStateKey) -> Vec<f32> {
+fn _get_policy<T: NodeStore<CFRNode>>(ns: &mut T, istate: &IStateKey) -> Vec<f32> {
     let n = ns.get_node_mut(istate).unwrap();
     let p = n.get_average_strategy();
     return p;

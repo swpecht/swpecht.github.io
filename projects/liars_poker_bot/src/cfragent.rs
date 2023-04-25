@@ -19,7 +19,7 @@ use crate::{
 
 use self::cfrnode::CFRNode;
 
-pub struct CFRAgent<T: GameState, N: NodeStore> {
+pub struct CFRAgent<T: GameState, N: NodeStore<CFRNode>> {
     game: Game<T>,
     rng: StdRng,
     // store: FileNodeStore<FileBackend>,
@@ -27,7 +27,7 @@ pub struct CFRAgent<T: GameState, N: NodeStore> {
     _phantom: PhantomData<T>,
 }
 
-impl<T: GameState, N: NodeStore> CFRAgent<T, N> {
+impl<T: GameState, N: NodeStore<CFRNode>> CFRAgent<T, N> {
     pub fn new(game: Game<T>, seed: u64, iterations: usize, ns: N) -> Self {
         let mut agent = Self {
             game: game.clone(),
@@ -77,7 +77,7 @@ impl<T: GameState, N: NodeStore> CFRAgent<T, N> {
     }
 }
 
-impl<T: GameState, N: NodeStore> Agent<T> for CFRAgent<T, N> {
+impl<T: GameState, N: NodeStore<CFRNode>> Agent<T> for CFRAgent<T, N> {
     /// Chooses a random action weighted by the policy for the current istate.
     ///
     /// If the I state has not be
