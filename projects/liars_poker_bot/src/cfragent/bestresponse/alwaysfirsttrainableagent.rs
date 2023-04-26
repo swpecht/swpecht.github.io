@@ -56,16 +56,16 @@ mod tests {
         _populate_always_n(&mut ns, &g, 0);
 
         let k = KuhnPoker::from_actions(&[0, 1]).istate_key(0);
-        assert_first_is_one(ns.get_owned(&k).unwrap().borrow().get_average_strategy());
+        assert_first_is_one(ns.get(&k).unwrap().borrow().get_average_strategy());
 
         let k = KuhnPoker::from_actions(&[1, 0]).istate_key(0);
-        assert_first_is_one(ns.get_owned(&k).unwrap().borrow().get_average_strategy());
+        assert_first_is_one(ns.get(&k).unwrap().borrow().get_average_strategy());
 
         let k = KuhnPoker::from_actions(&[0, 1, 0]).istate_key(0);
-        assert_first_is_one(ns.get_owned(&k).unwrap().borrow().get_average_strategy());
+        assert_first_is_one(ns.get(&k).unwrap().borrow().get_average_strategy());
 
         let k = KuhnPoker::from_actions(&[0, 1, 1]).istate_key(0);
-        assert_first_is_one(ns.get_owned(&k).unwrap().borrow().get_average_strategy());
+        assert_first_is_one(ns.get(&k).unwrap().borrow().get_average_strategy());
     }
 
     fn assert_first_is_one(v: Vec<f32>) {

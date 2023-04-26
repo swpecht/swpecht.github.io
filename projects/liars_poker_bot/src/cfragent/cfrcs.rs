@@ -122,9 +122,7 @@ impl CFRCS {
             move_evs.push(0.0);
         }
 
-        let node = ns
-            .get_owned(&is)
-            .unwrap_or(Rc::new(RefCell::new(CFRNode::new())));
+        let node = ns.get(&is).unwrap_or(Rc::new(RefCell::new(CFRNode::new())));
         let param = match cur_player {
             0 | 2 => reach0,
             1 | 3 => reach1,

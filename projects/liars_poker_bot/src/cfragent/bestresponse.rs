@@ -230,7 +230,7 @@ impl BestResponse {
             let key = gs.co_istate(player, chance_outcome);
 
             //     double oppProb = getMoveProb(is, action, actionshere);
-            let node = ns.get_owned(&key);
+            let node = ns.get(&key);
             let opp_prob;
             if node.is_none() {
                 opp_prob = 1.0 / gs.legal_actions().len() as f32;

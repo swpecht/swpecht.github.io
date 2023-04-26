@@ -88,9 +88,7 @@ impl VanillaCFR {
             move_evs.push(0.0);
         }
 
-        let node = ns
-            .get_owned(&is)
-            .unwrap_or(Rc::new(RefCell::new(CFRNode::new())));
+        let node = ns.get(&is).unwrap_or(Rc::new(RefCell::new(CFRNode::new())));
         let param = match cur_player {
             0 | 2 => reach0,
             1 | 3 => reach1,
@@ -154,7 +152,7 @@ impl VanillaCFR {
 
 /// Returns the policy of a given istate
 fn _get_policy<T: NodeStore<CFRNode>>(ns: &mut T, istate: &IStateKey) -> Vec<f32> {
-    let n = ns.get_owned(istate).unwrap();
+    let n = ns.get(istate).unwrap();
     let p = n.borrow().get_average_strategy();
     return p;
 }

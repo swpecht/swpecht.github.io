@@ -15,7 +15,7 @@ impl<T> MemoryNodeStore<T> {
 }
 
 impl<T> NodeStore<T> for MemoryNodeStore<T> {
-    fn get_owned(&mut self, istate: &IStateKey) -> Option<Rc<RefCell<T>>> {
+    fn get(&mut self, istate: &IStateKey) -> Option<Rc<RefCell<T>>> {
         return self.store.get_owned(istate);
     }
 

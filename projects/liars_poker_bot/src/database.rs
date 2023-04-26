@@ -19,7 +19,7 @@ pub enum Storage {
 }
 
 pub trait NodeStore<T> {
-    fn get_owned(&mut self, istate: &IStateKey) -> Option<Rc<RefCell<T>>>;
+    fn get(&mut self, istate: &IStateKey) -> Option<Rc<RefCell<T>>>;
     fn insert_node(&mut self, istate: IStateKey, n: Rc<RefCell<T>>);
     fn contains_node(&mut self, istate: &IStateKey) -> bool;
 }
