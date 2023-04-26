@@ -66,13 +66,10 @@ impl<T: GameState, N: NodeStore<CFRNode>> CFRAgent<T, N> {
         return agent;
     }
 
-    fn get_node_mut(&mut self, istate: &IStateKey) -> Option<CFRNode> {
-        self.ns.get_node_mut(istate)
-    }
-
     fn get_policy(&mut self, istate: &IStateKey) -> Vec<f32> {
-        let n = self.get_node_mut(istate).unwrap();
-        let p = n.get_average_strategy();
+        let n = self.ns.get_owned(istate).unwrap();
+        let p = n.borrow().get_average_strategy();
+        self.ns.insert_node(*istate, n); // return the node
         return p;
     }
 }

@@ -1,3 +1,5 @@
+use std::{cell::RefCell, rc::Rc};
+
 use crate::{
     cfragent::cfrnode::CFRNode,
     database::{memory_node_store::MemoryNodeStore, NodeStore},
@@ -86,13 +88,15 @@ impl VanillaCFR {
             move_evs.push(0.0);
         }
 
-        let mut node = ns.get_node_mut(&is).unwrap_or(CFRNode::new());
+        let node = ns
+            .get_owned(&is)
+            .unwrap_or(Rc::new(RefCell::new(CFRNode::new())));
         let param = match cur_player {
             0 | 2 => reach0,
             1 | 3 => reach1,
             _ => panic!("invalid player"),
         };
-        let move_prob = node.get_move_prob(param);
+        let move_prob = node.borrow_mut().get_move_prob(param);
 
         // // iterate over the actions
         for &a in &actions {
@@ -132,10 +136,12 @@ impl VanillaCFR {
             };
 
             for a in actions {
-                node.regret_sum[a] += (chance_reach * opp_reach) * (move_evs[a] - strat_ev);
-                node.total_move_prob[a] += my_reach * node.move_prob[a]
+                let mut n = node.borrow_mut();
+                n.regret_sum[a] += (chance_reach * opp_reach) * (move_evs[a] - strat_ev);
+                n.total_move_prob[a] += my_reach * n.move_prob[a]
             }
 
+            // Todo: move memory to be managed by nodestore -- a get call always returns a node, initialized by the store
             ns.insert_node(is, node);
         }
         return strat_ev;
@@ -148,8 +154,8 @@ impl VanillaCFR {
 
 /// Returns the policy of a given istate
 fn _get_policy<T: NodeStore<CFRNode>>(ns: &mut T, istate: &IStateKey) -> Vec<f32> {
-    let n = ns.get_node_mut(istate).unwrap();
-    let p = n.get_average_strategy();
+    let n = ns.get_owned(istate).unwrap();
+    let p = n.borrow().get_average_strategy();
     return p;
 }
 

@@ -26,8 +26,6 @@ struct Node<T> {
     children: HashMap<Action, usize>,
     action: Action,
     v: Option<T>,
-    /// Track if the node value has been borrowed
-    is_borrowed: bool,
 }
 
 impl<T> Node<T> {
@@ -37,12 +35,11 @@ impl<T> Node<T> {
             children: HashMap::default(),
             action: a,
             v: v,
-            is_borrowed: false,
         }
     }
 }
 
-impl<T> Tree<T> {
+impl<T: Clone> Tree<T> {
     pub fn new() -> Self {
         Self {
             nodes: Vec::new(),
@@ -51,15 +48,12 @@ impl<T> Tree<T> {
         }
     }
 
-    pub fn insert(&mut self, k: IStateKey, v: T) -> Option<T> {
+    pub fn insert(&mut self, k: IStateKey, v: T) {
         let ka = k.get_actions();
 
         let id = self.find_node(ka);
         let n = &mut self.nodes[id];
         n.v = Some(v);
-        n.is_borrowed = false;
-
-        return None;
     }
 
     fn get_or_create_root(&mut self, action: Action) -> usize {
@@ -156,25 +150,18 @@ impl<T> Tree<T> {
     }
 
     /// Gets a value from the tree. The replaces the previouls value with None.
-    pub fn get(&mut self, k: &IStateKey) -> Option<T> {
+    pub fn get_owned(&mut self, k: &IStateKey) -> Option<T> {
         let root = self.roots.get(&k[0]);
         if root.is_none() {
             return None;
         }
         let idx = self.find_node(k.get_actions());
 
-        if self.nodes[idx].is_borrowed {
-            panic!("attempting to get a node that is already borrowed");
-        }
-
-        let old = std::mem::replace(&mut self.nodes[idx].v, None);
-        self.nodes[idx].is_borrowed = true;
-
-        return old;
+        return self.nodes[idx].v.clone();
     }
 
     pub fn contains_key(&mut self, k: &IStateKey) -> bool {
-        return self.get(k).is_some();
+        return self.get_owned(k).is_some();
     }
 }
 
@@ -218,12 +205,12 @@ mod tests {
             gs.apply_action(a);
         }
 
-        assert_eq!(t.get(&gs.istate_key(0)), None);
+        assert_eq!(t.get_owned(&gs.istate_key(0)), None);
 
         gs.apply_action(gs.legal_actions()[0]);
         let k1 = gs.istate_key(0);
         t.insert(k1.clone(), 1);
-        let v = t.get(&k1);
+        let v = t.get_owned(&k1);
         assert_eq!(v, Some(1));
         t.insert(k1, v.unwrap());
 
@@ -232,7 +219,7 @@ mod tests {
         gs.apply_action(gs.legal_actions()[0]);
         let k2 = gs.istate_key(0);
         t.insert(k2, 2);
-        let v = t.get(&k2);
+        let v = t.get_owned(&k2);
         assert_eq!(v, Some(2));
         t.insert(k2, v.unwrap());
 
@@ -240,18 +227,18 @@ mod tests {
         let k3 = ogs.istate_key(0);
         t.insert(k3, 3);
 
-        assert_eq!(t.get(&k1), Some(1));
-        assert_eq!(t.get(&k2), Some(2));
-        assert_eq!(t.get(&k3), Some(3));
+        assert_eq!(t.get_owned(&k1), Some(1));
+        assert_eq!(t.get_owned(&k2), Some(2));
+        assert_eq!(t.get_owned(&k3), Some(3));
 
         let k4 = gs.istate_key(1); // differnt player
-        assert_eq!(t.get(&k4), None);
+        assert_eq!(t.get_owned(&k4), None);
 
         t.insert(k1.clone(), 11);
-        assert_eq!(t.get(&k1), Some(11));
+        assert_eq!(t.get_owned(&k1), Some(11));
 
         t.insert(k2.clone(), 12);
-        assert_eq!(t.get(&k2), Some(12));
+        assert_eq!(t.get_owned(&k2), Some(12));
     }
 
     #[test]
@@ -263,7 +250,7 @@ mod tests {
 
         t.insert(k1.clone(), 1);
 
-        assert_eq!(t.get(&k1), Some(1));
+        assert_eq!(t.get_owned(&k1), Some(1));
     }
 
     #[test]

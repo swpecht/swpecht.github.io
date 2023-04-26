@@ -230,13 +230,13 @@ impl BestResponse {
             let key = gs.co_istate(player, chance_outcome);
 
             //     double oppProb = getMoveProb(is, action, actionshere);
-            let node = ns.get_node_mut(&key);
+            let node = ns.get_owned(&key);
             let opp_prob;
             if node.is_none() {
                 opp_prob = 1.0 / gs.legal_actions().len() as f32;
             } else {
                 let node = node.unwrap();
-                opp_prob = node.get_average_strategy()[action];
+                opp_prob = node.borrow().get_average_strategy()[action];
             }
 
             // TODO: figure out what CHKPROB does

@@ -3,14 +3,6 @@ use std::fmt::Debug;
 
 use crate::istate::IStateKey;
 
-/// Magic number dependant on the format of the istate key.
-///
-/// For Euchre:
-/// * 6: represents the deal and the face up card, 24 choose 6 options: 134k istates
-/// * 4:
-pub(super) const EUCHRE_PAGE_TRIM: &[usize] = &[6, 5];
-// Need to eventually implement another cut, can't have all nodes loaded to ""
-
 const MAX_PAGE_LEN: usize = 999999;
 
 /// Represents a collection of istates that are loaded into the cache.

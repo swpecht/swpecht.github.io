@@ -1,3 +1,5 @@
+use std::{cell::RefCell, rc::Rc};
+
 use crate::{
     cfragent::CFRNode,
     database::NodeStore,
@@ -25,7 +27,7 @@ pub(super) fn _populate_always_n<T: GameState, N: NodeStore<CFRNode>>(
                 let k = gs.istate_key(p);
                 let mut node = CFRNode::new();
                 node.total_move_prob[idx] = 1.0; // set the moveprob to 1 for the action of the target index
-                ns.insert_node(k, node);
+                ns.insert_node(k, Rc::new(RefCell::new(node)));
             }
 
             for a in gs.legal_actions() {
@@ -54,16 +56,16 @@ mod tests {
         _populate_always_n(&mut ns, &g, 0);
 
         let k = KuhnPoker::from_actions(&[0, 1]).istate_key(0);
-        assert_first_is_one(ns.get_node_mut(&k).unwrap().get_average_strategy());
+        assert_first_is_one(ns.get_owned(&k).unwrap().borrow().get_average_strategy());
 
         let k = KuhnPoker::from_actions(&[1, 0]).istate_key(0);
-        assert_first_is_one(ns.get_node_mut(&k).unwrap().get_average_strategy());
+        assert_first_is_one(ns.get_owned(&k).unwrap().borrow().get_average_strategy());
 
         let k = KuhnPoker::from_actions(&[0, 1, 0]).istate_key(0);
-        assert_first_is_one(ns.get_node_mut(&k).unwrap().get_average_strategy());
+        assert_first_is_one(ns.get_owned(&k).unwrap().borrow().get_average_strategy());
 
         let k = KuhnPoker::from_actions(&[0, 1, 1]).istate_key(0);
-        assert_first_is_one(ns.get_node_mut(&k).unwrap().get_average_strategy());
+        assert_first_is_one(ns.get_owned(&k).unwrap().borrow().get_average_strategy());
     }
 
     fn assert_first_is_one(v: Vec<f32>) {

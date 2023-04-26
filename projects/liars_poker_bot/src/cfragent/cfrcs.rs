@@ -1,3 +1,5 @@
+use std::{cell::RefCell, rc::Rc};
+
 use log::{debug, trace};
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
@@ -120,13 +122,15 @@ impl CFRCS {
             move_evs.push(0.0);
         }
 
-        let mut node = ns.get_node_mut(&is).unwrap_or(CFRNode::new());
+        let node = ns
+            .get_owned(&is)
+            .unwrap_or(Rc::new(RefCell::new(CFRNode::new())));
         let param = match cur_player {
             0 | 2 => reach0,
             1 | 3 => reach1,
             _ => panic!("invalid player"),
         };
-        let move_prob = node.get_move_prob(param);
+        let move_prob = node.borrow_mut().get_move_prob(param);
 
         // // iterate over the actions
         for &a in &actions {
@@ -166,16 +170,18 @@ impl CFRCS {
         // // post-traversals: update the infoset
         if phase == CFRPhase::Phase1 && cur_player == update_player {
             for &a in &actions {
-                node.regret_sum[a] += opp_reach * (move_evs[a] - strat_ev);
+                node.borrow_mut().regret_sum[a] += opp_reach * (move_evs[a] - strat_ev);
             }
         }
 
         if phase == CFRPhase::Phase2 && cur_player == update_player {
             for a in actions {
-                node.total_move_prob[a] += my_reach * node.move_prob[a];
+                let mut n = node.borrow_mut();
+                n.total_move_prob[a] += my_reach * n.move_prob[a];
             }
         }
 
+        // todo: figure out if need the explicit updates
         if cur_player == update_player {
             ns.insert_node(is, node);
         }
@@ -192,6 +198,6 @@ mod tests {
 
     #[test]
     fn cfrcs_nash_test() {
-        _test_kp_nash(CFRCS::new(42), 50000)
+        _test_kp_nash(CFRCS::new(5), 50000)
     }
 }
