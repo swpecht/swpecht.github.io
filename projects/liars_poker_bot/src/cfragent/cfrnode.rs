@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-const MAX_ACTIONS: usize = 32;
+const MAX_ACTIONS: usize = 2;
 
 /// Adapted from: https://towardsdatascience.com/counterfactual-regret-minimization-ff4204bf4205
 #[derive(Debug, Clone, Serialize, Deserialize)]
