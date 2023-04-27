@@ -25,7 +25,7 @@ pub(super) fn _populate_always_n<T: GameState, N: NodeStore<CFRNode>>(
             if !gs.is_chance_node() {
                 let p = gs.cur_player();
                 let k = gs.istate_key(p);
-                let mut node = CFRNode::new();
+                let mut node = CFRNode::new(gs.legal_actions());
                 node.total_move_prob[idx] = 1.0; // set the moveprob to 1 for the action of the target index
                 ns.insert_node(k, Rc::new(RefCell::new(node)));
             }

@@ -88,25 +88,28 @@ impl VanillaCFR {
             move_evs.push(0.0);
         }
 
-        let node = ns.get(&is).unwrap_or(Rc::new(RefCell::new(CFRNode::new())));
+        let node = ns
+            .get(&is)
+            .unwrap_or(Rc::new(RefCell::new(CFRNode::new(gs.legal_actions()))));
         let param = match cur_player {
             0 | 2 => reach0,
             1 | 3 => reach1,
             _ => panic!("invalid player"),
         };
-        let move_prob = node.borrow_mut().get_move_prob(param);
 
         // // iterate over the actions
         for &a in &actions {
+            let move_prob = node.borrow_mut().move_prob(a, param);
+
             let newreach0 = match gs.cur_player() {
-                0 | 2 => reach0 * move_prob[a],
+                0 | 2 => reach0 * move_prob,
                 1 | 3 => reach0,
                 _ => panic!("invalid player"),
             };
 
             let newreach1 = match gs.cur_player() {
                 0 | 2 => reach1,
-                1 | 3 => reach1 * move_prob[a],
+                1 | 3 => reach1 * move_prob,
                 _ => panic!("invalid player"),
             };
 
@@ -122,7 +125,7 @@ impl VanillaCFR {
                 chance_reach,
             );
             move_evs[a] = payoff;
-            strat_ev += move_prob[a] * payoff;
+            strat_ev += move_prob * payoff;
         }
 
         // // post-traversals: update the infoset

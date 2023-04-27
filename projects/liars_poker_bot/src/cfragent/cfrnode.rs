@@ -1,28 +1,39 @@
-use serde::{Deserialize, Serialize};
+use std::ops::{Index, IndexMut};
 
-const MAX_ACTIONS: usize = 2;
+use crate::game::Action;
 
 /// Adapted from: https://towardsdatascience.com/counterfactual-regret-minimization-ff4204bf4205
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct CFRNode {
-    pub regret_sum: Vec<f32>,
-    pub move_prob: Vec<f32>,
-    pub total_move_prob: Vec<f32>,
+    pub regret_sum: ActionVec<f32>,
+    pub move_prob: ActionVec<f32>,
+    pub total_move_prob: ActionVec<f32>,
 }
 
 impl CFRNode {
-    pub fn new() -> Self {
-        Self {
-            regret_sum: new_vec(MAX_ACTIONS),
-            move_prob: new_vec(MAX_ACTIONS),
-            total_move_prob: new_vec(MAX_ACTIONS),
+    pub fn new(actions: Vec<Action>) -> Self {
+        for i in 0..actions.len() {
+            if actions[i] != i {
+                panic!("only support nodes with sequential actions")
+            }
         }
+
+        Self {
+            regret_sum: ActionVec::new(&actions),
+            move_prob: ActionVec::new(&actions),
+            total_move_prob: ActionVec::new(&actions),
+        }
+    }
+
+    pub(super) fn move_prob(&mut self, a: Action, realization_weight: f32) -> f32 {
+        return self.get_move_prob(realization_weight)[a];
     }
 
     /// Combine the positive regrets into a strategy.
     ///
     /// Defaults to a uniform action strategy if no regrets are present
-    pub(super) fn get_move_prob(&mut self, realization_weight: f32) -> Vec<f32> {
+    // Fix how this handles no data -- can't initialize all to 0
+    fn get_move_prob(&mut self, realization_weight: f32) -> ActionVec<f32> {
         let num_actions = self.regret_sum.len();
         let mut normalizing_sum = 0.0;
 
@@ -62,11 +73,51 @@ impl CFRNode {
     }
 }
 
-fn new_vec(n: usize) -> Vec<f32> {
-    let mut v = Vec::with_capacity(n);
-    for _ in 0..n {
-        v.push(0.0);
+#[derive(Clone, Debug)]
+pub struct ActionVec<T: Default> {
+    data: Vec<T>,
+    // TODO: Can change this to a reference to same memory in the future
+    actions: Vec<u8>,
+}
+
+impl<T: Default> ActionVec<T> {
+    fn new(actions: &Vec<Action>) -> Self {
+        let mut map = Vec::with_capacity(actions.len());
+        let mut data = Vec::with_capacity(map.len());
+        for &a in actions {
+            map.push(a as u8);
+            data.push(T::default())
+        }
+
+        return Self { data, actions: map };
     }
 
-    return v;
+    fn get_index(&self, a: Action) -> usize {
+        for i in 0..self.actions.len() {
+            if self.actions[i] == a as u8 {
+                return i;
+            }
+        }
+        panic!("invalid index")
+    }
+
+    pub fn len(&self) -> usize {
+        return self.data.len();
+    }
+}
+
+impl<T: Default> Index<usize> for ActionVec<T> {
+    type Output = T;
+
+    fn index(&self, a: usize) -> &Self::Output {
+        let idx = self.get_index(a);
+        return &self.data[idx];
+    }
+}
+
+impl<T: Default> IndexMut<usize> for ActionVec<T> {
+    fn index_mut(&mut self, a: usize) -> &mut Self::Output {
+        let idx = self.get_index(a);
+        return &mut self.data[idx];
+    }
 }
