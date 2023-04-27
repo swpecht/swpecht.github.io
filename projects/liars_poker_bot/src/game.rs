@@ -7,7 +7,7 @@ pub mod kuhn_poker;
 use log::info;
 use rand::{seq::SliceRandom, Rng};
 
-use crate::{agents::Agent, istate::IStateKey};
+use crate::{agents::Agent, bestresponse::ChanceOutcome, istate::IStateKey};
 
 pub type Action = usize;
 pub type IState = f64;
@@ -34,9 +34,9 @@ pub trait GameState: Display + Clone {
     fn is_chance_node(&self) -> bool;
     fn num_players(&self) -> usize;
     fn cur_player(&self) -> Player;
-    fn chance_outcomes(&self, fixed_player: Player) -> Vec<Action>;
-    fn co_istate(&self, player: Player, chance_outcome: Action) -> IStateKey;
-    fn get_payoff(&self, fixed_player: Player, chance_outcome: Action) -> f64;
+    fn chance_outcomes(&self, fixed_player: Player) -> Vec<ChanceOutcome>;
+    fn co_istate(&self, player: Player, chance_outcome: ChanceOutcome) -> IStateKey;
+    fn get_payoff(&self, fixed_player: Player, chance_outcome: ChanceOutcome) -> f64;
 }
 
 pub fn run_game<G, R>(s: &mut G, agents: &mut Vec<&mut dyn Agent<G>>, rng: &mut R)

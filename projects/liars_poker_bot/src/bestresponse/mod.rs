@@ -3,14 +3,45 @@
 mod alwaysfirsttrainableagent;
 mod normalizer;
 
+use std::ops::Index;
+
 use rand::{seq::SliceRandom, thread_rng};
 
 use crate::{
     bestresponse::normalizer::{NormalizerMap, NormalizerVector},
     cfragent::cfrnode::CFRNode,
+    collections::ArrayVec,
     database::NodeStore,
     game::{Action, Game, GameState, Player},
 };
+
+#[derive(Copy, Clone)]
+pub struct ChanceOutcome {
+    data: ArrayVec<5>,
+}
+
+impl ChanceOutcome {
+    pub fn new(actions: Vec<Action>) -> Self {
+        let mut data = ArrayVec::new();
+        for a in actions {
+            data.push(a)
+        }
+
+        return Self { data: data };
+    }
+
+    pub fn len(&self) -> usize {
+        return self.data.len();
+    }
+}
+
+impl Index<usize> for ChanceOutcome {
+    type Output = Action;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        return &self.data[index];
+    }
+}
 
 pub struct BestResponse {
     /// Vector of possible private chance outcomes for a given game. For example
@@ -18,7 +49,7 @@ pub struct BestResponse {
     /// possible hand states [[0, 1, 2, 3, 4], [0, 1, 2, 3, 5],  ...]
     ///
     /// For now we're ignoring how to handle the discard card in Euchre.
-    opp_chance_outcomes: Vec<Action>,
+    opp_chance_outcomes: Vec<ChanceOutcome>,
 }
 
 impl BestResponse {
@@ -137,7 +168,13 @@ impl BestResponse {
             for i in 0..cos.len() {
                 let oc = cos[i];
                 let mut ngs = gs.clone();
-                ngs.apply_action(oc);
+
+                // need to apply each iteration of the chance node
+                for i in 0..oc.len() {
+                    ngs.apply_action(oc[i]);
+                    // Only support setting randomness in a single block
+                    assert_eq!(gs.cur_player(), fixed_player)
+                }
 
                 let mut new_op_reach = opp_reach.clone();
                 new_op_reach[i] = 0.0; // we know the opponent can't have this card
@@ -145,7 +182,8 @@ impl BestResponse {
 
                 // TODO: Similar to above this was a call to `getChanceProb` may need to support
                 // something other than just the naive uniform distribution
-                ev += 1.0 / num_cos as f64 * self.expectimaxbr(ngs, fixed_player, new_op_reach, ns);
+                ev += (1.0 / num_cos as f64).powf(oc.len() as f64)
+                    * self.expectimaxbr(ngs, fixed_player, new_op_reach, ns);
             }
 
             return ev;
