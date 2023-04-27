@@ -154,39 +154,9 @@ impl BestResponse {
         }
 
         if gs.is_chance_node() {
-            if gs.cur_player() == fixed_player {
-                // filling with a dummy variable since this is never used
-                let mut ngs = gs.clone();
-                let a = gs.legal_actions()[0];
-                ngs.apply_action(a);
-                return self.expectimaxbr(ngs, fixed_player, opp_reach.clone(), ns);
-            }
-
-            let mut ev = 0.0;
-            let cos = gs.chance_outcomes(fixed_player);
-            let num_cos = cos.len();
-            for i in 0..cos.len() {
-                let oc = cos[i];
-                let mut ngs = gs.clone();
-
-                // need to apply each iteration of the chance node
-                for i in 0..oc.len() {
-                    ngs.apply_action(oc[i]);
-                    // Only support setting randomness in a single block
-                    assert_eq!(gs.cur_player(), fixed_player)
-                }
-
-                let mut new_op_reach = opp_reach.clone();
-                new_op_reach[i] = 0.0; // we know the opponent can't have this card
-                                       // Need to account for opponent no longer being able to get the cards I'm dealt
-
-                // TODO: Similar to above this was a call to `getChanceProb` may need to support
-                // something other than just the naive uniform distribution
-                ev += (1.0 / num_cos as f64).powf(oc.len() as f64)
-                    * self.expectimaxbr(ngs, fixed_player, new_op_reach, ns);
-            }
-
-            return ev;
+            panic!(
+                "don't yet support chance nodes, set all chance outcomes before calling expectimax"
+            );
         }
 
         // declare variables and get # actions available
