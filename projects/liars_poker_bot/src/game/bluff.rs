@@ -220,7 +220,7 @@ pub struct BluffGameState {
     phase: Phase,
     dice: [SortedArrayVec<STARTING_DICE>; 2],
     num_dice: [usize; 2],
-    bids: ArrayVec<20>,
+    bids: ArrayVec<32>,
     cur_player: Player,
     num_players: usize,
     keys: [IStateKey; 2],

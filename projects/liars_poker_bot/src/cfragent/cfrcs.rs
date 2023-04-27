@@ -4,6 +4,7 @@ use log::{debug, trace};
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
 use crate::{
+    cfragent::cfrnode::ActionVec,
     database::NodeStore,
     game::{GameState, Player},
 };
@@ -117,10 +118,7 @@ impl CFRCS {
         trace!("node:\t{}", gs);
         let mut strat_ev = 0.0;
 
-        let mut move_evs = Vec::new();
-        for _ in 0..actions.len() {
-            move_evs.push(0.0);
-        }
+        let mut move_evs = ActionVec::new(&actions);
 
         let node = ns
             .get(&is)
