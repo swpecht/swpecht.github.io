@@ -200,12 +200,13 @@ impl BestResponse {
         if gs.cur_player() == fixed_player {
             opp_action_dist.normalize();
             for i in 0..actions.len() {
+                let a = actions[i];
                 // TODO: unclear what `CHKPROB` and `CHKDBL` are doing, may need other asserts
                 //     CHKPROB(oppActionDist[i]);
                 //     CHKDBL(childEVs[i]);
                 // the child_evs are getting a neg infinity because they wouldn't be chosen, need to account for this
-                if opp_action_dist[i] > 0.0 {
-                    ev += opp_action_dist[i] * child_evs[i];
+                if opp_action_dist[a] > 0.0 {
+                    ev += opp_action_dist[a] * child_evs[i];
                 }
             }
         } else {

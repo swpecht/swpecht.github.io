@@ -1,5 +1,7 @@
 use std::fmt::{Display, Write};
 
+use itertools::Itertools;
+
 use crate::{
     bestresponse::ChanceOutcome,
     collections::{ArrayVec, SortedArrayVec},
@@ -427,20 +429,51 @@ impl GameState for BluffGameState {
         self.cur_player
     }
 
-    fn chance_outcomes(&self, _fixed_player: super::Player) -> Vec<ChanceOutcome> {
-        todo!()
+    fn chance_outcomes(&self, fixed_player: Player) -> Vec<ChanceOutcome> {
+        let num_dice = self.num_dice[fixed_player];
+        assert_eq!(num_dice, 2);
+
+        let rolls = FACES.into_iter().combinations(num_dice);
+        let mut outcomes = Vec::new();
+
+        for r in rolls {
+            outcomes.push(ChanceOutcome::new(
+                r.iter()
+                    .map(|x| BluffActions::Roll(*x).into())
+                    .collect_vec(),
+            ))
+        }
+
+        return outcomes;
     }
 
     fn co_istate(
         &self,
-        _player: super::Player,
-        _chance_outcome: ChanceOutcome,
+        player: super::Player,
+        chance_outcome: ChanceOutcome,
     ) -> crate::istate::IStateKey {
-        todo!()
+        let mut ngs = self.clone();
+        let mut dice = SortedArrayVec::new();
+
+        for o in 0..chance_outcome.len() {
+            dice.push(o);
+        }
+        ngs.dice[player] = dice;
+        return ngs.istate_key(player);
     }
 
-    fn get_payoff(&self, _fixed_player: super::Player, _chance_outcome: ChanceOutcome) -> f64 {
-        todo!()
+    fn get_payoff(&self, fixed_player: super::Player, chance_outcome: ChanceOutcome) -> f64 {
+        let non_fixed = if fixed_player == 0 { 1 } else { 0 };
+        let mut ngs = self.clone();
+
+        let mut dice = SortedArrayVec::new();
+
+        for o in 0..chance_outcome.len() {
+            dice.push(o);
+        }
+
+        ngs.dice[fixed_player] = dice;
+        return ngs.evaluate()[non_fixed] as f64;
     }
 }
 

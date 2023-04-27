@@ -247,8 +247,6 @@ impl GameState for KPGameState {
         return result;
     }
 
-    /// Get the payoff for the non-fixed player assuming the fixed players chance
-    /// outcomes are replaced with the sepficied one
     fn get_payoff(&self, fixed_player: Player, chance_outcome: ChanceOutcome) -> f64 {
         let non_fixed = if fixed_player == 0 { 1 } else { 0 };
         let mut ngs = self.clone();
