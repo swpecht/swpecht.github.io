@@ -451,7 +451,7 @@ impl GameState for BluffGameState {
         self.cur_player
     }
 
-    fn chance_outcomes(&self, _fixed_player: super::Player) -> Vec<super::Action> {
+    fn chance_outcomes(&self, _fixed_player: super::Player) -> Vec<Action> {
         todo!()
     }
 
@@ -463,7 +463,7 @@ impl GameState for BluffGameState {
         todo!()
     }
 
-    fn get_payoff(&self, _fixed_player: super::Player, _chance_outcome: super::Action) -> f64 {
+    fn get_payoff(&self, _fixed_player: super::Player, _chance_outcome: Action) -> f64 {
         todo!()
     }
 }

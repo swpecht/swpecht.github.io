@@ -10,6 +10,7 @@ use liars_poker_bot::database::memory_node_store::MemoryNodeStore;
 use liars_poker_bot::database::{tune_page, Storage};
 use liars_poker_bot::game::bluff::Bluff;
 use liars_poker_bot::game::euchre::{Euchre, EuchreGameState};
+use liars_poker_bot::game::kuhn_poker::KuhnPoker;
 use liars_poker_bot::game::{run_game, Action, GameState};
 
 use rand::rngs::StdRng;
@@ -18,8 +19,9 @@ use rand::{thread_rng, SeedableRng};
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ArgEnum, Debug)]
 enum GameType {
-    KP,
+    KuhnPoker,
     Euchre,
+    Bluff,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ArgEnum, Debug)]
@@ -43,7 +45,7 @@ struct Args {
     #[clap(arg_enum, long, value_parser, default_value_t = Mode::Run)]
     mode: Mode,
 
-    #[clap(arg_enum, value_parser, default_value_t = GameType::Euchre)]
+    #[clap(arg_enum, value_parser, default_value_t = GameType::Bluff)]
     game: GameType,
 
     #[clap(short, long, action, default_value = "")]
@@ -165,7 +167,18 @@ fn run(args: Args) {
         "" => Storage::Temp,
         _ => panic!("need to add support to create named files"), // Storage::Named(args.file),
     };
-    let _cfr = CFRAgent::new(Bluff::game(), 1, 5000, MemoryNodeStore::new());
+
+    match args.game {
+        GameType::KuhnPoker => {
+            CFRAgent::new(KuhnPoker::game(), 1, 5000, MemoryNodeStore::new());
+        }
+        GameType::Euchre => {
+            CFRAgent::new(Euchre::game(), 1, 5000, MemoryNodeStore::new());
+        }
+        GameType::Bluff => {
+            CFRAgent::new(Bluff::game(), 1, 5000, MemoryNodeStore::new());
+        }
+    };
 }
 
 fn run_benchmark(args: Args) {
