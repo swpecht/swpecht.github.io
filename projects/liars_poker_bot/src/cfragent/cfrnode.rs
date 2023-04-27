@@ -12,12 +12,6 @@ pub struct CFRNode {
 
 impl CFRNode {
     pub fn new(actions: Vec<Action>) -> Self {
-        for i in 0..actions.len() {
-            if actions[i] != i {
-                panic!("only support nodes with sequential actions")
-            }
-        }
-
         Self {
             regret_sum: ActionVec::new(&actions),
             move_prob: ActionVec::new(&actions),
@@ -25,15 +19,11 @@ impl CFRNode {
         }
     }
 
-    pub(super) fn move_prob(&mut self, a: Action, realization_weight: f32) -> f32 {
-        return self.get_move_prob(realization_weight)[a];
-    }
-
     /// Combine the positive regrets into a strategy.
     ///
     /// Defaults to a uniform action strategy if no regrets are present
     // Fix how this handles no data -- can't initialize all to 0
-    fn get_move_prob(&mut self, realization_weight: f32) -> ActionVec<f32> {
+    pub fn get_move_prob(&mut self, realization_weight: f32) -> ActionVec<f32> {
         let num_actions = self.regret_sum.len();
         let mut normalizing_sum = 0.0;
 

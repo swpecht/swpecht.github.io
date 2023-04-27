@@ -132,18 +132,17 @@ impl CFRCS {
         };
 
         // // iterate over the actions
+        let move_probs = node.borrow_mut().get_move_prob(param);
         for &a in &actions {
-            let move_prob = node.borrow_mut().move_prob(a, param);
-
             let newreach0 = match gs.cur_player() {
-                0 | 2 => reach0 * move_prob,
+                0 | 2 => reach0 * move_probs[a],
                 1 | 3 => reach0,
                 _ => panic!("invalid player"),
             };
 
             let newreach1 = match gs.cur_player() {
                 0 | 2 => reach1,
-                1 | 3 => reach1 * move_prob,
+                1 | 3 => reach1 * move_probs[a],
                 _ => panic!("invalid player"),
             };
 
@@ -159,7 +158,7 @@ impl CFRCS {
                 phase,
             );
             move_evs[a] = payoff;
-            strat_ev += move_prob * payoff;
+            strat_ev += move_probs[a] * payoff;
         }
 
         let (my_reach, opp_reach) = match gs.cur_player() {
