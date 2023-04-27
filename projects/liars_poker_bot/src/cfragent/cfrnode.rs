@@ -68,6 +68,9 @@ impl CFRNode {
     }
 }
 
+/// A helper struct to make working with sparse action vectors easy
+///
+/// It uses actions to index into a vector
 #[derive(Clone, Debug)]
 pub struct ActionVec<T: Default> {
     data: Vec<T>,
