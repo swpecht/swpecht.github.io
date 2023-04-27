@@ -191,12 +191,12 @@ pub(super) fn _test_kp_nash<T: Algorithm>(mut alg: T, iterations: usize) {
     // 2b
     let k = _get_key(&[2, 0, KPAction::Bet as usize]);
     let w = _get_policy(&mut ns, &k);
-    _check_floats(w[KPAction::Bet as usize], 1.0, 2);
+    _check_floats(w[KPAction::Bet as usize], 1.0, 3);
 
     // 2p
     let k = _get_key(&[2, 0, KPAction::Pass as usize]);
     let w = _get_policy(&mut ns, &k);
-    _check_floats(w[KPAction::Bet as usize], 1.0, 2);
+    _check_floats(w[KPAction::Bet as usize], 1.0, 3);
 
     // when having a Queen, checking if possible, otherwise calling with the probability of 1/3
     // 1p
@@ -262,6 +262,6 @@ mod tests {
 
     #[test]
     fn vcfr_nash_test() {
-        _test_kp_nash(VanillaCFR::new(), 10000)
+        _test_kp_nash(VanillaCFR::new(), 1000)
     }
 }
