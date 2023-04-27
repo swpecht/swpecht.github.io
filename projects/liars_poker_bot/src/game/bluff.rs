@@ -1,6 +1,7 @@
 use std::fmt::{Display, Write};
 
 use crate::{
+    bestresponse::ChanceOutcome,
     collections::{ArrayVec, SortedArrayVec},
     istate::IStateKey,
 };
@@ -193,7 +194,10 @@ enum Phase {
 pub struct Bluff {}
 
 impl Bluff {
-    pub fn new_state() -> BluffGameState {
+    pub fn new_state(dice1: usize, dice2: usize) -> BluffGameState {
+        assert_eq!(dice1, 2);
+        assert_eq!(dice2, 2);
+
         BluffGameState {
             phase: Phase::RollingDice,
             dice: [SortedArrayVec::new(); 2],
@@ -201,14 +205,14 @@ impl Bluff {
             num_players: 2,
             keys: [IStateKey::new(); 2],
             bids: ArrayVec::new(),
-            num_dice: [STARTING_DICE; 2],
+            num_dice: [dice1, dice2],
             last_winner: 0,
         }
     }
 
     pub fn game() -> Game<BluffGameState> {
         Game {
-            new: Box::new(|| -> BluffGameState { Self::new_state() }),
+            new: Box::new(|| -> BluffGameState { Self::new_state(2, 2) }),
             max_players: 2,
             max_actions: 31, // 4 * 6 for bets + 6 for roll + 1 for call
         }
@@ -254,11 +258,7 @@ impl BluffGameState {
 
     fn apply_action_bids(&mut self, a: Action) {
         // Can't bid without any other bids or directly after a bid
-        if a == BluffActions::Call.into()
-            && (self.bids.len() == 0
-                || (self.bids.len() > 0
-                    && self.bids[self.bids.len() - 1] == BluffActions::Call.into()))
-        {
+        if a == BluffActions::Call.into() && self.bids.len() == 0 {
             panic!("invalid action");
         }
 
@@ -269,18 +269,10 @@ impl BluffGameState {
 
         self.bids.push(a);
 
-        if a == BluffActions::Call.into() {
-            self.phase = Phase::RollingDice;
-            let calling_player = self.cur_player();
-            let (loser, lost_dice) =
-                calulate_lost_dice(self.dice, self.bids, self.num_players, calling_player);
-            self.dice = [SortedArrayVec::new(); 2];
-            self.num_dice[loser] = self.num_dice[loser] - lost_dice.min(self.num_dice[loser]);
-            self.last_winner = (loser + 1) % 2;
-            return;
+        // only change the player if not over
+        if a != BluffActions::Call.into() {
+            self.cur_player = (self.cur_player + 1) % 2;
         }
-
-        self.cur_player = (self.cur_player + 1) % 2;
     }
 
     fn legal_actions_rolling(&self) -> Vec<Action> {
@@ -353,41 +345,6 @@ impl BluffGameState {
     }
 }
 
-/// Returns the number of dice lost by a player after a call is made
-/// This number is not bound by the current number of dice
-///
-/// If the caller is right, the other player loses a dice. If the caller is wrong, they lose a dice
-fn calulate_lost_dice<const N: usize>(
-    dice: [SortedArrayVec<STARTING_DICE>; 2],
-    bids: ArrayVec<N>,
-    num_players: usize,
-    calling_player: Player,
-) -> (Player, usize) {
-    assert!(bids.len() > 0);
-    assert_eq!(bids[bids.len() - 1], BluffActions::Call.into());
-
-    let lb = BluffActions::from(bids[bids.len() - 2]);
-    let f = lb.get_dice();
-
-    let mut n = 0;
-
-    for p in 0..num_players {
-        for d in 0..dice[p].len() {
-            if dice[p][d] == f.into() || dice[p][d] == Dice::Wild.into() {
-                n += 1;
-            }
-        }
-    }
-
-    let actual = BluffActions::Bid(n, f);
-    // if >= dice than the bid, the calling player loses a dice
-    if actual >= lb {
-        return (calling_player, 1);
-    } else {
-        return ((calling_player + 1) % 2, 1);
-    }
-}
-
 impl GameState for BluffGameState {
     fn apply_action(&mut self, a: Action) {
         self.update_keys(a);
@@ -407,11 +364,30 @@ impl GameState for BluffGameState {
 
     fn evaluate(&self) -> Vec<f32> {
         assert_eq!(self.num_players, 2);
-        return match (self.num_dice[0], self.num_dice[1]) {
-            (0, 0) => panic!("invalid state, both players have no dice"),
-            (_, 0) => vec![1.0, -1.0],
-            (0, _) => vec![-1.0, 1.0],
-            _ => panic!("one of the players isn't at 0 dice"),
+
+        let lb = BluffActions::from(self.bids[self.bids.len() - 2]);
+        let f = lb.get_dice();
+
+        let mut n = 0;
+
+        for p in 0..self.num_players {
+            for d in 0..self.dice[p].len() {
+                if self.dice[p][d] == f.into() || self.dice[p][d] == Dice::Wild.into() {
+                    n += 1;
+                }
+            }
+        }
+
+        let actual = BluffActions::Bid(n, f);
+        let calling_player = self.cur_player;
+        let caller_right = actual < lb;
+
+        return match (calling_player, caller_right) {
+            (0, true) => vec![1.0, -1.0],
+            (1, true) => vec![-1.0, 1.0],
+            (1, false) => vec![1.0, -1.0],
+            (0, false) => vec![-1.0, 1.0],
+            _ => panic!("invalid cur player"),
         };
     }
 
@@ -436,7 +412,7 @@ impl GameState for BluffGameState {
     }
 
     fn is_terminal(&self) -> bool {
-        return self.num_dice[0] == 0 || self.num_dice[1] == 0;
+        return self.bids.len() > 0 && self.bids[self.bids.len() - 1] == BluffActions::Call.into();
     }
 
     fn is_chance_node(&self) -> bool {
@@ -451,19 +427,19 @@ impl GameState for BluffGameState {
         self.cur_player
     }
 
-    fn chance_outcomes(&self, _fixed_player: super::Player) -> Vec<Action> {
+    fn chance_outcomes(&self, _fixed_player: super::Player) -> Vec<ChanceOutcome> {
         todo!()
     }
 
     fn co_istate(
         &self,
         _player: super::Player,
-        _chance_outcome: super::Action,
+        _chance_outcome: ChanceOutcome,
     ) -> crate::istate::IStateKey {
         todo!()
     }
 
-    fn get_payoff(&self, _fixed_player: super::Player, _chance_outcome: Action) -> f64 {
+    fn get_payoff(&self, _fixed_player: super::Player, _chance_outcome: ChanceOutcome) -> f64 {
         todo!()
     }
 }
@@ -513,7 +489,7 @@ mod tests {
 
     #[test]
     fn test_bluff_legal_actions_and_evaluate() {
-        let mut gs = Bluff::new_state();
+        let mut gs = Bluff::new_state(2, 2);
 
         assert!(gs.is_chance_node());
         assert_eq!(gs.phase, Phase::RollingDice);
@@ -565,22 +541,6 @@ mod tests {
         assert_eq!(gs.legal_actions(), legal_actions);
 
         // player 1 calls, they are right
-        assert_eq!(gs.cur_player(), 1);
-        gs.apply_action(BluffActions::Call.into());
-        assert_eq!(gs.phase, Phase::RollingDice);
-        assert_eq!(gs.num_dice[0], 1);
-        assert_eq!(gs.num_dice[1], 2);
-
-        while gs.is_chance_node() {
-            gs.apply_action(BluffActions::Roll(Dice::One).into());
-        }
-        assert_eq!(gs.dice[0].len(), 1);
-        assert_eq!(gs.dice[1].len(), 2);
-
-        // winning player goes first
-        assert_eq!(gs.cur_player(), 1);
-        gs.apply_action(BluffActions::Bid(1, Dice::Two).into());
-        gs.apply_action(BluffActions::Bid(2, Dice::Two).into());
         assert_eq!(gs.cur_player(), 1);
         gs.apply_action(BluffActions::Call.into());
 
