@@ -6,12 +6,11 @@ mod normalizer;
 use rand::{seq::SliceRandom, thread_rng};
 
 use crate::{
-    cfragent::bestresponse::normalizer::{NormalizerMap, NormalizerVector},
+    bestresponse::normalizer::{NormalizerMap, NormalizerVector},
+    cfragent::cfrnode::CFRNode,
     database::NodeStore,
     game::{Action, Game, GameState, Player},
 };
-
-use super::cfrnode::CFRNode;
 
 pub struct BestResponse {
     /// Vector of possible private chance outcomes for a given game. For example
@@ -259,7 +258,7 @@ impl BestResponse {
 mod tests {
 
     use crate::{
-        cfragent::bestresponse::alwaysfirsttrainableagent::_populate_always_n,
+        bestresponse::alwaysfirsttrainableagent::_populate_always_n,
         database::memory_node_store::MemoryNodeStore,
         game::kuhn_poker::{KPAction, KuhnPoker},
     };

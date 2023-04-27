@@ -45,7 +45,7 @@ impl CFRNode {
         return self.move_prob.clone();
     }
 
-    pub(super) fn get_average_strategy(&self) -> Vec<f32> {
+    pub fn get_average_strategy(&self) -> Vec<f32> {
         let actions = &self.regret_sum.actions;
 
         let mut avg_strat = vec![0.0; self.move_prob.len()];

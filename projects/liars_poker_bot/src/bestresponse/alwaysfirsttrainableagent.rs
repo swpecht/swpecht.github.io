@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{
-    cfragent::CFRNode,
+    cfragent::cfrnode::CFRNode,
     database::NodeStore,
     game::{Game, GameState},
 };

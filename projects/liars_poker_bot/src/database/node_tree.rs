@@ -1,9 +1,6 @@
 use rustc_hash::FxHashMap;
 
-use crate::{
-    game::{arrayvec::ArrayVec, Action},
-    istate::IStateKey,
-};
+use crate::{collections::ArrayVec, game::Action, istate::IStateKey};
 
 type HashMap<K, V> = FxHashMap<K, V>;
 
@@ -188,10 +185,8 @@ fn find_last_same<const N: usize>(ka: ArrayVec<N>, ca: ArrayVec<N>) -> Option<us
 mod tests {
 
     use crate::{
-        database::node_tree::find_last_same,
-        game::euchre::Euchre,
-        game::{arrayvec::ArrayVec, GameState},
-        istate::IStateKey,
+        collections::ArrayVec, database::node_tree::find_last_same, game::euchre::Euchre,
+        game::GameState, istate::IStateKey,
     };
 
     use super::Tree;

@@ -3,7 +3,7 @@ use std::{hash::Hash, ops::Index};
 use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;
 
-use super::Action;
+use crate::game::Action;
 
 /// Array backed card storage that implements Vector-like features and is copyable
 /// It also always remains sorted

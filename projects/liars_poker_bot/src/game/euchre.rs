@@ -1,7 +1,8 @@
 use std::fmt::{Display, Write};
 
 use crate::{
-    game::{arrayvec::SortedArrayVec, Action, Game, GameState, Player},
+    collections::SortedArrayVec,
+    game::{Action, Game, GameState, Player},
     istate::IStateKey,
 };
 

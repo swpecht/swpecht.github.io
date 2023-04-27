@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use std::{hash::Hash, ops::Index};
 
-use crate::game::{arrayvec::ArrayVec, Action};
+use crate::{collections::ArrayVec, game::Action};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash, PartialOrd, Ord)]
 pub struct IStateKey {

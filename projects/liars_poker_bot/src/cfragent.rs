@@ -1,4 +1,3 @@
-pub mod bestresponse;
 pub mod cfr;
 pub mod cfrcs;
 pub mod cfrnode;
@@ -11,7 +10,8 @@ use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
 use crate::{
     agents::Agent,
-    cfragent::{bestresponse::BestResponse, cfr::Algorithm, cfrcs::CFRCS},
+    bestresponse::BestResponse,
+    cfragent::{cfr::Algorithm, cfrcs::CFRCS},
     database::NodeStore,
     game::{Action, Game, GameState},
     istate::IStateKey,

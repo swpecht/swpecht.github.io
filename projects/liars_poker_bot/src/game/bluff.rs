@@ -1,11 +1,11 @@
 use std::fmt::{Display, Write};
 
-use crate::istate::IStateKey;
-
-use super::{
-    arrayvec::{ArrayVec, SortedArrayVec},
-    Action, Game, GameState, Player,
+use crate::{
+    collections::{ArrayVec, SortedArrayVec},
+    istate::IStateKey,
 };
+
+use super::{Action, Game, GameState, Player};
 
 const STARTING_DICE: usize = 2;
 
