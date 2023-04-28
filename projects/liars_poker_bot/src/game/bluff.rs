@@ -452,7 +452,6 @@ impl GameState for BluffGameState {
         istate[1] = chance_outcome[1];
 
         assert!(chance_outcome[0] <= chance_outcome[1]);
-
         return istate;
     }
 

@@ -267,9 +267,10 @@ impl GameState for KPGameState {
 
     // returns the istate key for a given player with the chance outcomes replaced with the specified one
     fn co_istate(&self, player: Player, chance_outcome: ChanceOutcome) -> IStateKey {
-        let mut ngs = self.clone();
-        ngs.hands[player] = chance_outcome[0];
-        return ngs.istate_key(player);
+        let mut istate = self.istate_key(player);
+        istate[0] = chance_outcome[0];
+
+        return istate;
     }
 }
 
