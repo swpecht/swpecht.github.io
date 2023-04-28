@@ -2,15 +2,13 @@ use std::fmt::{Display, Write};
 
 use itertools::Itertools;
 
-use crate::{
-    bestresponse::ChanceOutcome,
-    collections::{ArrayVec, SortedArrayVec},
-    istate::IStateKey,
-};
+use crate::{bestresponse::ChanceOutcome, collections::SortedArrayVec, istate::IStateKey};
 
 use super::{Action, Game, GameState, Player};
 
 const STARTING_DICE: usize = 2;
+/// The value `last_bid` is initialized with, represents the lowest bid
+const STARTING_BID: BluffActions = BluffActions::Bid(0, Dice::One);
 
 /// Helper variable for iterating over dice faces
 const FACES: [Dice; 6] = [
@@ -206,8 +204,9 @@ impl Bluff {
             cur_player: 0,
             num_players: 2,
             keys: [IStateKey::new(); 2],
-            bids: ArrayVec::new(),
+            last_bid: STARTING_BID, // lowest possible bid
             num_dice: [dice1, dice2],
+            is_terminal: false,
         }
     }
 
@@ -225,10 +224,11 @@ pub struct BluffGameState {
     phase: Phase,
     dice: [SortedArrayVec<STARTING_DICE>; 2],
     num_dice: [usize; 2],
-    bids: ArrayVec<32>,
+    last_bid: BluffActions,
     cur_player: Player,
     num_players: usize,
     keys: [IStateKey; 2],
+    is_terminal: bool,
 }
 
 impl BluffGameState {
@@ -256,21 +256,19 @@ impl BluffGameState {
     }
 
     fn apply_action_bids(&mut self, a: Action) {
-        // Can't bid without any other bids or directly after a bid
-        if a == BluffActions::Call.into() && self.bids.len() == 0 {
+        // Can't bid without any other bids or after a call
+        if a == BluffActions::Call.into() && self.last_bid == STARTING_BID {
             panic!("invalid action");
         }
 
-        if self.bids.len() != 0 && a != BluffActions::Call.into() {
-            let lb = self.bids[self.bids.len() - 1];
-            assert!(a > lb);
-        }
+        assert!(BluffActions::from(a) > self.last_bid);
 
-        self.bids.push(a);
-
-        // only change the player if not over
+        // only change the player if not over, and if not a call
         if a != BluffActions::Call.into() {
             self.cur_player = (self.cur_player + 1) % 2;
+            self.last_bid = BluffActions::from(a);
+        } else {
+            self.is_terminal = true;
         }
     }
 
@@ -292,11 +290,11 @@ impl BluffGameState {
         }
 
         let mut legal_actions = Vec::with_capacity(32);
-        if self.bids.len() > 0 && self.bids[self.bids.len() - 1] != BluffActions::Call.into() {
+        if self.last_bid != BluffActions::Call && self.last_bid != STARTING_BID {
             legal_actions.push(BluffActions::Call.into());
         }
 
-        if self.bids.len() == 0 {
+        if self.last_bid == STARTING_BID {
             let max_bets = STARTING_DICE * 2;
             for &f in &FACES[0..FACES.len() - 1] {
                 // don't include the wild
@@ -307,14 +305,12 @@ impl BluffGameState {
             return legal_actions;
         }
 
-        let lb = BluffActions::from(self.bids[self.bids.len() - 1]);
-
         let max_bets = STARTING_DICE * 2;
         for &f in &FACES[0..FACES.len() - 1] {
             // don't include the wild
             for n in 1..max_bets + 1 {
                 let b = BluffActions::Bid(n, f);
-                if b > lb {
+                if b > self.last_bid {
                     legal_actions.push(b.into())
                 }
             }
@@ -364,8 +360,7 @@ impl GameState for BluffGameState {
     fn evaluate(&self) -> Vec<f32> {
         assert_eq!(self.num_players, 2);
 
-        let lb = BluffActions::from(self.bids[self.bids.len() - 2]);
-        let f = lb.get_dice();
+        let f = self.last_bid.get_dice();
 
         let mut n = 0;
 
@@ -379,7 +374,7 @@ impl GameState for BluffGameState {
 
         let actual = BluffActions::Bid(n, f);
         let calling_player = self.cur_player;
-        let caller_right = actual < lb;
+        let caller_right = actual < self.last_bid;
 
         return match (calling_player, caller_right) {
             (0, true) => vec![1.0, -1.0],
@@ -411,7 +406,7 @@ impl GameState for BluffGameState {
     }
 
     fn is_terminal(&self) -> bool {
-        return self.bids.len() > 0 && self.bids[self.bids.len() - 1] == BluffActions::Call.into();
+        return self.is_terminal;
     }
 
     fn is_chance_node(&self) -> bool {
@@ -452,6 +447,7 @@ impl GameState for BluffGameState {
         let mut ngs = self.clone();
         let mut dice = SortedArrayVec::new();
 
+        ///manually mutate the istate with the new dice outcomes
         for o in 0..chance_outcome.len() {
             dice.push(o);
         }

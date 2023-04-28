@@ -3,7 +3,7 @@
 mod alwaysfirsttrainableagent;
 mod normalizer;
 
-use std::ops::Index;
+use std::{collections::HashMap, ops::Index};
 
 use log::debug;
 
@@ -70,13 +70,15 @@ impl BestResponse {
         let mut n = 0;
 
         let mut chance_nodes = Vec::new();
-        let mut play_nodes = Vec::new();
+        let mut play_nodes = HashMap::new();
 
         let ogs = (&g.new)();
         assert!(ogs.is_chance_node());
-        chance_nodes.push(ogs);
+        chance_nodes.push(ogs.clone());
+        let nf = (fixed_player + 1) % 2;
 
         // collect all the chance nodes
+        let default = &(ogs, 0);
         while let Some(gs) = chance_nodes.pop() {
             for a in gs.legal_actions() {
                 let mut ngs = gs.clone();
@@ -84,18 +86,22 @@ impl BestResponse {
                 if ngs.is_chance_node() {
                     chance_nodes.push(ngs);
                 } else {
-                    play_nodes.push(ngs);
+                    let non_fixed_key = ngs.istate_key(nf);
+                    // We only need to evaluate the unique nodes for the non_fixed player, so we just weight the outcomes
+                    let (_, count) = play_nodes.get(&non_fixed_key).unwrap_or(default);
+                    play_nodes.insert(non_fixed_key, (ngs, count + 1));
                 }
             }
         }
 
         debug!("found {} starting nodes to evaluate", play_nodes.len());
-
-        while let Some(gs) = play_nodes.pop() {
-            let v = self.compute_best_response(gs, fixed_player, ns);
-            value_sum += v;
-            n += 1;
-            debug!("nodes remaining: {}", play_nodes.len());
+        let mut remaining_nodes = play_nodes.len();
+        for (gs, count) in play_nodes.values() {
+            let v = self.compute_best_response(gs.clone(), fixed_player, ns);
+            value_sum += v * *count as f64;
+            n += count;
+            remaining_nodes -= 1;
+            debug!("nodes remaining: {}", remaining_nodes);
         }
 
         return value_sum / n as f64;

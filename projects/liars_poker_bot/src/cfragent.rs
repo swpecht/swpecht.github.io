@@ -49,7 +49,7 @@ impl<T: GameState, N: NodeStore<CFRNode>> CFRAgent<T, N> {
                 alg.run(&mut agent.ns, &gs, p);
             }
 
-            if iteration % 1 == 0 {
+            if iteration % 100 == 0 {
                 info!(
                     "\t{}\t{}\t{}",
                     iteration,
