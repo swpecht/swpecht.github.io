@@ -1,9 +1,7 @@
 use log::debug;
-use rustc_hash::FxHashMap;
+use rustc_hash::FxHashMap as HashMap;
 
 use crate::{collections::ArrayVec, game::Action, istate::IStateKey};
-
-type HashMap<K, V> = FxHashMap<K, V>;
 
 /// A performant datastructure for storing nodes in memory
 pub struct Tree<T> {
@@ -17,6 +15,7 @@ pub struct Tree<T> {
 
 #[derive(Clone, Copy, Debug)]
 pub struct TreeStats {
+    pub get_calls: usize,
     pub nodes_touched: usize,
     pub naive_nodes_touched: usize,
 }
@@ -24,6 +23,7 @@ pub struct TreeStats {
 impl TreeStats {
     fn new() -> Self {
         Self {
+            get_calls: 0,
             nodes_touched: 0,
             naive_nodes_touched: 0,
         }
@@ -167,6 +167,8 @@ impl<T: Clone> Tree<T> {
 
     /// Gets a clone of the value from the tree.
     pub fn get(&mut self, k: &IStateKey) -> Option<T> {
+        self.stats.get_calls += 1;
+
         let root = self.roots.get(&k[0]);
         if root.is_none() {
             return None;
@@ -175,7 +177,7 @@ impl<T: Clone> Tree<T> {
         self.stats.naive_nodes_touched += actions.len();
         let idx = self.find_node(actions);
 
-        if self.stats.nodes_touched % 1_000_000 == 0 {
+        if self.stats.get_calls % 10_000_000 == 0 {
             debug!("nodestore stats: {:?}", self.stats);
         }
 
