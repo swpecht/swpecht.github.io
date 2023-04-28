@@ -17,7 +17,7 @@ use crate::{
     istate::IStateKey,
 };
 
-use self::cfrnode::CFRNode;
+use self::cfrnode::{ActionVec, CFRNode};
 
 pub struct CFRAgent<T: GameState, N: NodeStore<CFRNode>> {
     game: Game<T>,
@@ -67,7 +67,7 @@ impl<T: GameState, N: NodeStore<CFRNode>> CFRAgent<T, N> {
         return agent;
     }
 
-    fn get_policy(&mut self, istate: &IStateKey) -> Vec<f32> {
+    fn get_policy(&mut self, istate: &IStateKey) -> ActionVec<f32> {
         let n = self.ns.get(istate).unwrap();
         let p = n.borrow().get_average_strategy();
         self.ns.insert_node(*istate, n); // return the node

@@ -42,7 +42,7 @@ pub(super) fn _populate_always_n<T: GameState, N: NodeStore<CFRNode>>(
 #[cfg(test)]
 mod tests {
     use crate::{
-        cfragent::cfrnode::CFRNode,
+        cfragent::cfrnode::{ActionVec, CFRNode},
         database::{memory_node_store::MemoryNodeStore, NodeStore},
         game::{kuhn_poker::KuhnPoker, GameState},
     };
@@ -68,10 +68,9 @@ mod tests {
         assert_first_is_one(ns.get(&k).unwrap().borrow().get_average_strategy());
     }
 
-    fn assert_first_is_one(v: Vec<f32>) {
+    fn assert_first_is_one(v: ActionVec<f32>) {
         assert!(v.len() > 0);
-        assert_eq!(v[0], 1.0);
-        let s: f32 = v.iter().sum();
-        assert_eq!(s, 1.0);
+        assert_eq!(v[0 as usize], 1.0);
+        assert_eq!(v[1 as usize], 0.0);
     }
 }

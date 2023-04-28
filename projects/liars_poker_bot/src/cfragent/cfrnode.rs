@@ -45,22 +45,20 @@ impl CFRNode {
         return self.move_prob.clone();
     }
 
-    pub fn get_average_strategy(&self) -> Vec<f32> {
+    pub fn get_average_strategy(&self) -> ActionVec<f32> {
         let actions = &self.regret_sum.actions;
 
-        let mut avg_strat = vec![0.0; self.move_prob.len()];
+        let mut avg_strat = ActionVec::new_from(&actions);
         let mut normalizing_sum = 0.0;
-        for i in 0..self.move_prob.len() {
-            let a = actions[i];
+        for &a in actions {
             normalizing_sum += self.total_move_prob[a];
         }
 
-        for i in 0..self.move_prob.len() {
-            let a = actions[i];
+        for &a in actions {
             if normalizing_sum > 0.0 {
-                avg_strat[i] = self.total_move_prob[a] / normalizing_sum;
+                avg_strat[a] = self.total_move_prob[a] / normalizing_sum;
             } else {
-                avg_strat[i] = 1.0 / self.move_prob.len() as f32;
+                avg_strat[a] = 1.0 / self.move_prob.len() as f32;
             }
         }
 
@@ -81,13 +79,24 @@ pub struct ActionVec<T: Default> {
 impl<T: Default> ActionVec<T> {
     pub fn new(actions: &Vec<Action>) -> Self {
         let mut map = Vec::with_capacity(actions.len());
-        let mut data = Vec::with_capacity(map.len());
+
         for &a in actions {
             map.push(a as u8);
+        }
+
+        return ActionVec::new_from(&map);
+    }
+
+    fn new_from(actions: &Vec<u8>) -> Self {
+        let mut data = Vec::with_capacity(actions.len());
+        for _ in actions {
             data.push(T::default())
         }
 
-        return Self { data, actions: map };
+        return Self {
+            data,
+            actions: actions.clone(),
+        };
     }
 
     fn get_index(&self, a: Action) -> usize {

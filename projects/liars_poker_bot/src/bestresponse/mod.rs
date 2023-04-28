@@ -59,6 +59,17 @@ impl BestResponse {
         }
     }
 
+    /// Get exploitability by iterating over all possible chance outcomes
+    pub fn get_exploitability<T: NodeStore<CFRNode>, G: GameState>(
+        &mut self,
+        g: &Game<G>,
+        ns: &mut T,
+        fixed_player: Player,
+        n: usize,
+    ) -> f64 {
+        todo!()
+    }
+
     /// Estimates exploitability using MC method
     pub fn estimate_exploitability<T: NodeStore<CFRNode>, G: GameState>(
         &mut self,

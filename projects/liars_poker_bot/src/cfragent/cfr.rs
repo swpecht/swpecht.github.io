@@ -8,6 +8,8 @@ use crate::{
     istate::IStateKey,
 };
 
+use super::cfrnode::ActionVec;
+
 pub trait Algorithm {
     fn run<T: GameState, N: NodeStore<CFRNode>>(
         &mut self,
@@ -153,7 +155,7 @@ impl VanillaCFR {
 }
 
 /// Returns the policy of a given istate
-fn _get_policy<T: NodeStore<CFRNode>>(ns: &mut T, istate: &IStateKey) -> Vec<f32> {
+fn _get_policy<T: NodeStore<CFRNode>>(ns: &mut T, istate: &IStateKey) -> ActionVec<f32> {
     let n = ns.get(istate).unwrap();
     let p = n.borrow().get_average_strategy();
     return p;
