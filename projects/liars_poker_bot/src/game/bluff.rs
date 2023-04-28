@@ -360,29 +360,7 @@ impl GameState for BluffGameState {
     fn evaluate(&self) -> Vec<f32> {
         assert_eq!(self.num_players, 2);
 
-        let f = self.last_bid.get_dice();
-
-        let mut n = 0;
-
-        for p in 0..self.num_players {
-            for d in 0..self.dice[p].len() {
-                if self.dice[p][d] == f.into() || self.dice[p][d] == Dice::Wild.into() {
-                    n += 1;
-                }
-            }
-        }
-
-        let actual = BluffActions::Bid(n, f);
-        let calling_player = self.cur_player;
-        let caller_right = actual < self.last_bid;
-
-        return match (calling_player, caller_right) {
-            (0, true) => vec![1.0, -1.0],
-            (1, true) => vec![-1.0, 1.0],
-            (1, false) => vec![1.0, -1.0],
-            (0, false) => vec![-1.0, 1.0],
-            _ => panic!("invalid cur player"),
-        };
+        return calculate_payoff(&self.dice, self.last_bid, &self.cur_player);
     }
 
     fn istate_key(&self, player: Player) -> crate::istate::IStateKey {
@@ -457,17 +435,45 @@ impl GameState for BluffGameState {
 
     fn get_payoff(&self, fixed_player: super::Player, chance_outcome: ChanceOutcome) -> f64 {
         let non_fixed = if fixed_player == 0 { 1 } else { 0 };
-        let mut ngs = self.clone();
-
-        let mut dice = SortedArrayVec::new();
-
+        let mut new_roll = SortedArrayVec::new();
         for o in 0..chance_outcome.len() {
-            dice.push(o);
+            new_roll.push(o);
         }
 
-        ngs.dice[fixed_player] = dice;
-        return ngs.evaluate()[non_fixed] as f64;
+        let mut dice = self.dice;
+
+        dice[fixed_player] = new_roll;
+        return calculate_payoff(&dice, self.last_bid, &self.cur_player)[non_fixed] as f64;
     }
+}
+
+fn calculate_payoff(
+    dice: &[SortedArrayVec<2>; 2],
+    last_bid: BluffActions,
+    calling_player: &Player,
+) -> Vec<f32> {
+    let f = last_bid.get_dice();
+
+    let mut n = 0;
+
+    for p in 0..2 {
+        for d in 0..dice[p].len() {
+            if dice[p][d] == f.into() || dice[p][d] == Dice::Wild.into() {
+                n += 1;
+            }
+        }
+    }
+
+    let actual = BluffActions::Bid(n, f);
+    let caller_right = actual < last_bid;
+
+    return match (calling_player, caller_right) {
+        (0, true) => vec![1.0, -1.0],
+        (1, true) => vec![-1.0, 1.0],
+        (1, false) => vec![1.0, -1.0],
+        (0, false) => vec![-1.0, 1.0],
+        _ => panic!("invalid cur player"),
+    };
 }
 
 impl Display for BluffGameState {
