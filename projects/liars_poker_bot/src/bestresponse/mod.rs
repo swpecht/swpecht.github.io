@@ -5,6 +5,8 @@ mod normalizer;
 
 use std::ops::Index;
 
+use log::debug;
+
 use crate::{
     bestresponse::normalizer::{NormalizerMap, NormalizerVector},
     cfragent::cfrnode::CFRNode,
@@ -87,10 +89,13 @@ impl BestResponse {
             }
         }
 
+        debug!("found {} starting nodes to evaluate", play_nodes.len());
+
         while let Some(gs) = play_nodes.pop() {
             let v = self.compute_best_response(gs, fixed_player, ns);
             value_sum += v;
             n += 1;
+            debug!("nodes remaining: {}", play_nodes.len());
         }
 
         return value_sum / n as f64;
