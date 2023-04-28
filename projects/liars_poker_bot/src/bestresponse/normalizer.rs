@@ -11,7 +11,7 @@ impl NormalizerVector {
         Self {
             normalized: false,
             total: 0.0,
-            values: Vec::new(),
+            values: Vec::with_capacity(32), // number of actions for bluff
         }
     }
 

@@ -208,7 +208,6 @@ impl Bluff {
             keys: [IStateKey::new(); 2],
             bids: ArrayVec::new(),
             num_dice: [dice1, dice2],
-            last_winner: 0,
         }
     }
 
@@ -230,7 +229,6 @@ pub struct BluffGameState {
     cur_player: Player,
     num_players: usize,
     keys: [IStateKey; 2],
-    last_winner: Player,
 }
 
 impl BluffGameState {
@@ -254,7 +252,6 @@ impl BluffGameState {
         // check if done rolling
         if self.dice[1].len() == self.num_dice[1] && self.dice[0].len() == self.num_dice[0] {
             self.phase = Phase::Betting;
-            self.cur_player = self.last_winner;
         }
     }
 
@@ -294,7 +291,7 @@ impl BluffGameState {
             return Vec::new();
         }
 
-        let mut legal_actions = Vec::new();
+        let mut legal_actions = Vec::with_capacity(32);
         if self.bids.len() > 0 && self.bids[self.bids.len() - 1] != BluffActions::Call.into() {
             legal_actions.push(BluffActions::Call.into());
         }
