@@ -5,8 +5,6 @@ mod normalizer;
 
 use std::ops::Index;
 
-use rand::{seq::SliceRandom, thread_rng};
-
 use crate::{
     bestresponse::normalizer::{NormalizerMap, NormalizerVector},
     cfragent::cfrnode::CFRNode,
@@ -65,30 +63,34 @@ impl BestResponse {
         g: &Game<G>,
         ns: &mut T,
         fixed_player: Player,
-        n: usize,
-    ) -> f64 {
-        todo!()
-    }
-
-    /// Estimates exploitability using MC method
-    pub fn estimate_exploitability<T: NodeStore<CFRNode>, G: GameState>(
-        &mut self,
-        g: &Game<G>,
-        ns: &mut T,
-        fixed_player: Player,
-        n: usize,
     ) -> f64 {
         let mut value_sum = 0.0;
-        for _ in 0..n {
-            let mut gs = (&g.new)();
-            while gs.is_chance_node() {
-                let actions = gs.legal_actions();
-                let a = *actions.choose(&mut thread_rng()).unwrap();
-                gs.apply_action(a);
-            }
+        let mut n = 0;
 
+        let mut chance_nodes = Vec::new();
+        let mut play_nodes = Vec::new();
+
+        let ogs = (&g.new)();
+        assert!(ogs.is_chance_node());
+        chance_nodes.push(ogs);
+
+        // collect all the chance nodes
+        while let Some(gs) = chance_nodes.pop() {
+            for a in gs.legal_actions() {
+                let mut ngs = gs.clone();
+                ngs.apply_action(a);
+                if ngs.is_chance_node() {
+                    chance_nodes.push(ngs);
+                } else {
+                    play_nodes.push(ngs);
+                }
+            }
+        }
+
+        while let Some(gs) = play_nodes.pop() {
             let v = self.compute_best_response(gs, fixed_player, ns);
             value_sum += v;
+            n += 1;
         }
 
         return value_sum / n as f64;
@@ -322,13 +324,13 @@ mod tests {
         //
         // Total should be 1/3 * (0 + -1 + 2) = 1/3
 
-        let avg = br.estimate_exploitability(&g, &mut ns, 0, 5000);
-        assert!(avg <= 0.36);
-        assert!(avg >= 0.31);
+        let avg = br.get_exploitability(&g, &mut ns, 0);
+        assert!(avg <= 0.34);
+        assert!(avg >= 0.32);
 
         // same for player 1
-        let avg = br.estimate_exploitability(&g, &mut ns, 1, 5000);
-        assert!(avg <= 0.36);
-        assert!(avg >= 0.31);
+        let avg = br.get_exploitability(&g, &mut ns, 1);
+        assert!(avg <= 0.34);
+        assert!(avg >= 0.32);
     }
 }

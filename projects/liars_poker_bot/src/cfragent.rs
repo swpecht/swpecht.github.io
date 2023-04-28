@@ -54,7 +54,7 @@ impl<T: GameState, N: NodeStore<CFRNode>> CFRAgent<T, N> {
                     "\t{}\t{}\t{}",
                     iteration,
                     alg.nodes_touched(),
-                    br.estimate_exploitability(&game, &mut agent.ns, 0, 5000)
+                    br.get_exploitability(&game, &mut agent.ns, 0)
                 )
             }
 
