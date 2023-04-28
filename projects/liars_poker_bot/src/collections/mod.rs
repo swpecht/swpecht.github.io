@@ -1,4 +1,7 @@
-use std::{hash::Hash, ops::Index};
+use std::{
+    hash::Hash,
+    ops::{Index, IndexMut},
+};
 
 use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;
@@ -147,6 +150,13 @@ where
 
     fn index(&self, index: Idx) -> &Self::Output {
         return &self.data[index];
+    }
+}
+
+impl<const N: usize> IndexMut<usize> for ArrayVec<N> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        debug_assert!(index < self.len);
+        return &mut self.data[index];
     }
 }
 

@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use std::{hash::Hash, ops::Index};
+use std::{
+    hash::Hash,
+    ops::{Index, IndexMut},
+};
 
 use crate::{collections::ArrayVec, game::Action};
 
@@ -59,8 +62,14 @@ impl Index<usize> for IStateKey {
     type Output = Action;
 
     fn index(&self, index: usize) -> &Self::Output {
-        assert!(index <= self.actions.len());
+        debug_assert!(index <= self.actions.len());
         return &self.actions[index];
+    }
+}
+
+impl IndexMut<usize> for IStateKey {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        return &mut self.actions[index];
     }
 }
 

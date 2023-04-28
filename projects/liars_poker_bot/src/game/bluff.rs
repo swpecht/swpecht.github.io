@@ -444,15 +444,16 @@ impl GameState for BluffGameState {
         player: super::Player,
         chance_outcome: ChanceOutcome,
     ) -> crate::istate::IStateKey {
-        let mut ngs = self.clone();
-        let mut dice = SortedArrayVec::new();
+        let mut istate = self.istate_key(player);
 
-        ///manually mutate the istate with the new dice outcomes
-        for o in 0..chance_outcome.len() {
-            dice.push(o);
-        }
-        ngs.dice[player] = dice;
-        return ngs.istate_key(player);
+        // the first 2 items in the istate are the rolls for the player, we replace them with
+        // the chance outcomes
+        istate[0] = chance_outcome[0];
+        istate[1] = chance_outcome[1];
+
+        assert!(chance_outcome[0] <= chance_outcome[1]);
+
+        return istate;
     }
 
     fn get_payoff(&self, fixed_player: super::Player, chance_outcome: ChanceOutcome) -> f64 {
