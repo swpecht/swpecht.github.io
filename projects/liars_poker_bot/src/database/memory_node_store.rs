@@ -16,7 +16,7 @@ impl<T> MemoryNodeStore<T> {
 
 impl<T> NodeStore<T> for MemoryNodeStore<T> {
     fn get(&mut self, istate: &IStateKey) -> Option<Rc<RefCell<T>>> {
-        return self.store.get_owned(istate);
+        return self.store.get(istate);
     }
 
     fn insert_node(&mut self, istate: IStateKey, n: Rc<RefCell<T>>) {

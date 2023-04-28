@@ -1,3 +1,4 @@
+use log::debug;
 use rustc_hash::FxHashMap;
 
 use crate::{collections::ArrayVec, game::Action, istate::IStateKey};
@@ -11,6 +12,22 @@ pub struct Tree<T> {
     roots: HashMap<Action, usize>,
     /// a cursor for each root of the tree
     cursors: HashMap<Action, Cursor>,
+    stats: TreeStats,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct TreeStats {
+    pub nodes_touched: usize,
+    pub naive_nodes_touched: usize,
+}
+
+impl TreeStats {
+    fn new() -> Self {
+        Self {
+            nodes_touched: 0,
+            naive_nodes_touched: 0,
+        }
+    }
 }
 
 struct Cursor {
@@ -42,6 +59,7 @@ impl<T: Clone> Tree<T> {
             nodes: Vec::new(),
             roots: HashMap::default(),
             cursors: HashMap::default(),
+            stats: TreeStats::new(),
         }
     }
 
@@ -114,6 +132,7 @@ impl<T: Clone> Tree<T> {
             let next_action = ka[depth + 1];
             let child = self.get_or_create_child(cur_node, next_action);
 
+            self.stats.nodes_touched += 1;
             cur_node = child;
             depth += 1;
         }
@@ -146,19 +165,29 @@ impl<T: Clone> Tree<T> {
         return Some((cur_node, last_same));
     }
 
-    /// Gets a value from the tree. The replaces the previouls value with None.
-    pub fn get_owned(&mut self, k: &IStateKey) -> Option<T> {
+    /// Gets a clone of the value from the tree.
+    pub fn get(&mut self, k: &IStateKey) -> Option<T> {
         let root = self.roots.get(&k[0]);
         if root.is_none() {
             return None;
         }
-        let idx = self.find_node(k.get_actions());
+        let actions = k.get_actions();
+        self.stats.naive_nodes_touched += actions.len();
+        let idx = self.find_node(actions);
+
+        if self.stats.nodes_touched % 1_000_000 == 0 {
+            debug!("nodestore stats: {:?}", self.stats);
+        }
 
         return self.nodes[idx].v.clone();
     }
 
     pub fn contains_key(&mut self, k: &IStateKey) -> bool {
-        return self.get_owned(k).is_some();
+        return self.get(k).is_some();
+    }
+
+    pub fn get_stats(&self) -> TreeStats {
+        return self.stats;
     }
 }
 
@@ -200,12 +229,12 @@ mod tests {
             gs.apply_action(a);
         }
 
-        assert_eq!(t.get_owned(&gs.istate_key(0)), None);
+        assert_eq!(t.get(&gs.istate_key(0)), None);
 
         gs.apply_action(gs.legal_actions()[0]);
         let k1 = gs.istate_key(0);
         t.insert(k1.clone(), 1);
-        let v = t.get_owned(&k1);
+        let v = t.get(&k1);
         assert_eq!(v, Some(1));
         t.insert(k1, v.unwrap());
 
@@ -214,7 +243,7 @@ mod tests {
         gs.apply_action(gs.legal_actions()[0]);
         let k2 = gs.istate_key(0);
         t.insert(k2, 2);
-        let v = t.get_owned(&k2);
+        let v = t.get(&k2);
         assert_eq!(v, Some(2));
         t.insert(k2, v.unwrap());
 
@@ -222,18 +251,18 @@ mod tests {
         let k3 = ogs.istate_key(0);
         t.insert(k3, 3);
 
-        assert_eq!(t.get_owned(&k1), Some(1));
-        assert_eq!(t.get_owned(&k2), Some(2));
-        assert_eq!(t.get_owned(&k3), Some(3));
+        assert_eq!(t.get(&k1), Some(1));
+        assert_eq!(t.get(&k2), Some(2));
+        assert_eq!(t.get(&k3), Some(3));
 
         let k4 = gs.istate_key(1); // differnt player
-        assert_eq!(t.get_owned(&k4), None);
+        assert_eq!(t.get(&k4), None);
 
         t.insert(k1.clone(), 11);
-        assert_eq!(t.get_owned(&k1), Some(11));
+        assert_eq!(t.get(&k1), Some(11));
 
         t.insert(k2.clone(), 12);
-        assert_eq!(t.get_owned(&k2), Some(12));
+        assert_eq!(t.get(&k2), Some(12));
     }
 
     #[test]
@@ -245,7 +274,7 @@ mod tests {
 
         t.insert(k1.clone(), 1);
 
-        assert_eq!(t.get_owned(&k1), Some(1));
+        assert_eq!(t.get(&k1), Some(1));
     }
 
     #[test]
