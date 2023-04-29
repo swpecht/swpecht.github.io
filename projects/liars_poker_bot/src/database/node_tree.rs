@@ -3,6 +3,8 @@ use rustc_hash::FxHashMap as HashMap;
 
 use crate::{collections::ArrayVec, game::Action, istate::IStateKey};
 
+const MAX_CHILDREN: usize = 32;
+
 /// A performant datastructure for storing nodes in memory
 pub struct Tree<T> {
     nodes: Vec<Node<T>>,
@@ -37,8 +39,8 @@ struct Cursor {
 
 struct Node<T> {
     parent: usize,
-    children: HashMap<Action, usize>,
-    action: Action,
+    children: [usize; MAX_CHILDREN],
+    action: usize,
     v: Option<T>,
 }
 
@@ -46,7 +48,7 @@ impl<T> Node<T> {
     fn new(p: Action, a: Action, v: Option<T>) -> Self {
         Self {
             parent: p,
-            children: HashMap::default(),
+            children: [0; MAX_CHILDREN],
             action: a,
             v: v,
         }
@@ -88,10 +90,11 @@ impl<T: Clone> Tree<T> {
     /// Return the index of the child node for a given actions, creating one if needed
     fn get_or_create_child(&mut self, parent: usize, action: Action) -> usize {
         let p = &self.nodes[parent];
-        let c = p.children.get(&action);
+        // let c = p.children.get(&action);
+        let c = p.children[action];
 
-        if c.is_some() {
-            return *c.unwrap();
+        if c != 0 {
+            return c;
         }
 
         let cn: Node<T> = Node::new(parent, action, None);
@@ -99,7 +102,7 @@ impl<T: Clone> Tree<T> {
         self.nodes.push(cn);
 
         let p = &mut self.nodes[parent];
-        p.children.insert(action, c);
+        p.children[action] = c;
 
         return c;
     }
