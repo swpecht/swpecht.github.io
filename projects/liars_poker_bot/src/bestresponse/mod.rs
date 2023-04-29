@@ -264,7 +264,7 @@ impl BestResponse {
             let node = ns.get(&key);
             let opp_prob;
             if node.is_none() {
-                opp_prob = 1.0 / gs.legal_actions().len() as f32;
+                opp_prob = 1.0 / gs.legal_actions().len() as f64;
             } else {
                 let node = node.unwrap();
                 opp_prob = node.borrow().get_average_strategy()[action];

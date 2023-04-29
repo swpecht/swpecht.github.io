@@ -46,10 +46,10 @@ impl VanillaCFR {
         gs: &T,
         update_player: Player,
         depth: usize,
-        reach0: f32,
-        reach1: f32,
-        chance_reach: f32,
-    ) -> f32 {
+        reach0: f64,
+        reach1: f64,
+        chance_reach: f64,
+    ) -> f64 {
         let cur_player = gs.cur_player();
         if gs.is_terminal() {
             return gs.evaluate()[update_player].into();
@@ -64,7 +64,7 @@ impl VanillaCFR {
                 let mut ngs = gs.clone();
                 ngs.apply_action(a);
 
-                let chance_prob = 1.0 / actions.len() as f32;
+                let chance_prob = 1.0 / actions.len() as f64;
                 let new_chance_reach = chance_prob * chance_reach;
                 ev += chance_prob
                     * self.vcfr(
@@ -155,14 +155,14 @@ impl VanillaCFR {
 }
 
 /// Returns the policy of a given istate
-fn _get_policy<T: NodeStore<CFRNode>>(ns: &mut T, istate: &IStateKey) -> ActionVec<f32> {
+fn _get_policy<T: NodeStore<CFRNode>>(ns: &mut T, istate: &IStateKey) -> ActionVec<f64> {
     let n = ns.get(istate).unwrap();
     let p = n.borrow().get_average_strategy();
     return p;
 }
 
-fn _check_floats(x: f32, y: f32, i: i32) {
-    let diff = (x * (10.0f32).powi(i)) - (y * (10.0f32).powi(i));
+fn _check_floats(x: f64, y: f64, i: i32) {
+    let diff = (x * (10.0f64).powi(i)) - (y * (10.0f64).powi(i));
 
     if diff > 2.0 {
         panic!("got: {} expected: {}", x, y);

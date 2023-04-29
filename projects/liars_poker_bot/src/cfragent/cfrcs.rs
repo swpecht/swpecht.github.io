@@ -55,10 +55,10 @@ impl CFRCS {
         gs: &T,
         update_player: Player,
         depth: usize,
-        reach0: f32,
-        reach1: f32,
+        reach0: f64,
+        reach1: f64,
         mut phase: CFRPhase,
-    ) -> f32 {
+    ) -> f64 {
         if self.nodes_touched % 1000000 == 0 {
             debug!("cfr touched {} nodes", self.nodes_touched);
         }

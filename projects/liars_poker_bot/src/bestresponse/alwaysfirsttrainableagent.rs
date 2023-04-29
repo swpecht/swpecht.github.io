@@ -68,7 +68,7 @@ mod tests {
         assert_first_is_one(ns.get(&k).unwrap().borrow().get_average_strategy());
     }
 
-    fn assert_first_is_one(v: ActionVec<f32>) {
+    fn assert_first_is_one(v: ActionVec<f64>) {
         assert!(v.len() > 0);
         assert_eq!(v[0 as usize], 1.0);
         assert_eq!(v[1 as usize], 0.0);
