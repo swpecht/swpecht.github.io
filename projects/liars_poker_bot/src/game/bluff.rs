@@ -403,7 +403,7 @@ impl GameState for BluffGameState {
         let num_dice = self.num_dice[fixed_player];
         assert_eq!(num_dice, 2);
 
-        let rolls = FACES.into_iter().combinations(num_dice);
+        let rolls = FACES.into_iter().combinations_with_replacement(num_dice);
         let mut outcomes = Vec::new();
 
         for r in rolls {
