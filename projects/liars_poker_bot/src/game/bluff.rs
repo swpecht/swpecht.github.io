@@ -1,7 +1,5 @@
 use std::fmt::{Display, Write};
 
-use itertools::Itertools;
-
 use crate::{bestresponse::ChanceOutcome, collections::SortedArrayVec, istate::IStateKey};
 
 use super::{Action, Game, GameState, Player};
@@ -195,9 +193,6 @@ pub struct Bluff {}
 
 impl Bluff {
     pub fn new_state(dice0: usize, dice1: usize) -> BluffGameState {
-        assert_eq!(dice0, 2);
-        assert_eq!(dice1, 2);
-
         BluffGameState {
             phase: Phase::RollingDice,
             dice: [SortedArrayVec::new(); 2],
@@ -301,8 +296,8 @@ impl BluffGameState {
             legal_actions.push(BluffActions::Call.into());
         }
 
+        let max_bets = self.num_dice[0] + self.num_dice[1];
         if self.last_bid == STARTING_BID {
-            let max_bets = STARTING_DICE * 2;
             for &f in &FACES[0..FACES.len() - 1] {
                 // don't include the wild
                 for n in 1..max_bets + 1 {
@@ -312,7 +307,6 @@ impl BluffGameState {
             return legal_actions;
         }
 
-        let max_bets = STARTING_DICE * 2;
         for &f in &FACES[0..FACES.len() - 1] {
             // don't include the wild
             for n in 1..max_bets + 1 {
@@ -327,18 +321,7 @@ impl BluffGameState {
 
     fn update_keys(&mut self, a: Action) {
         // private actions for rolling, and we don't push the dice until we have all of them sorted
-        if self.dice[0].len() == 2 && self.dice[1].len() == 1 {
-            self.keys[0].push(self.dice[0][0]);
-            self.keys[0].push(self.dice[0][1]);
-
-            // since not sorted, ensure we push the keys in the right order
-            if self.dice[1][0] < a {
-                self.keys[1].push(self.dice[1][0]);
-                self.keys[1].push(a);
-            } else {
-                self.keys[1].push(a);
-                self.keys[1].push(self.dice[1][0]);
-            }
+        if self.push_player_dice(a, 0) || self.push_player_dice(a, 1) {
             return;
         }
 
@@ -349,6 +332,30 @@ impl BluffGameState {
         for i in 0..self.num_players {
             self.keys[i].push(a);
         }
+    }
+
+    fn push_player_dice(&mut self, a: Action, p: Player) -> bool {
+        assert!(self.num_dice[p] <= 2);
+
+        let is_last_dice = self.dice[p].len() + 1 == self.num_dice[p];
+        if self.cur_player == p && is_last_dice {
+            if self.num_dice[p] == 1 {
+                self.keys[p].push(a);
+                return true;
+            }
+
+            if self.dice[p][0] < a {
+                self.keys[p].push(self.dice[p][0]);
+                self.keys[p].push(a);
+            } else {
+                self.keys[p].push(a);
+                self.keys[p].push(self.dice[p][0]);
+            }
+
+            return true;
+        }
+
+        return false;
     }
 }
 
@@ -383,11 +390,19 @@ impl GameState for BluffGameState {
         let mut istate = String::new();
 
         let k = self.istate_key(player);
-        for i in 0..k.len() {
+
+        // push the dice
+        for i in 0..self.num_dice[player] {
+            let s = format!("{}", BluffActions::from(k[i]));
+            istate.push_str(&s);
+        }
+        istate.push('|');
+
+        for i in self.num_dice[player]..k.len() {
             let s = format!("{}", BluffActions::from(k[i]));
             istate.push_str(&s);
 
-            if i >= 1 && i != k.len() - 1 {
+            if i != k.len() - 1 {
                 istate.push('|');
             }
         }
@@ -413,20 +428,109 @@ impl GameState for BluffGameState {
 
     fn chance_outcomes(&self, fixed_player: Player) -> Vec<ChanceOutcome> {
         let num_dice = self.num_dice[fixed_player];
-        assert_eq!(num_dice, 2);
+        let outcomes = match num_dice {
+            1 => vec![
+                ChanceOutcome::new(vec![BluffActions::Roll(Dice::One).into()]),
+                ChanceOutcome::new(vec![BluffActions::Roll(Dice::Two).into()]),
+                ChanceOutcome::new(vec![BluffActions::Roll(Dice::Three).into()]),
+                ChanceOutcome::new(vec![BluffActions::Roll(Dice::Four).into()]),
+                ChanceOutcome::new(vec![BluffActions::Roll(Dice::Five).into()]),
+                ChanceOutcome::new(vec![BluffActions::Roll(Dice::Wild).into()]),
+            ],
+            2 => vec![
+                ChanceOutcome::new(vec![
+                    BluffActions::Roll(Dice::One).into(),
+                    BluffActions::Roll(Dice::One).into(),
+                ]),
+                ChanceOutcome::new(vec![
+                    BluffActions::Roll(Dice::One).into(),
+                    BluffActions::Roll(Dice::Two).into(),
+                ]),
+                ChanceOutcome::new(vec![
+                    BluffActions::Roll(Dice::One).into(),
+                    BluffActions::Roll(Dice::Three).into(),
+                ]),
+                ChanceOutcome::new(vec![
+                    BluffActions::Roll(Dice::One).into(),
+                    BluffActions::Roll(Dice::Four).into(),
+                ]),
+                ChanceOutcome::new(vec![
+                    BluffActions::Roll(Dice::One).into(),
+                    BluffActions::Roll(Dice::Five).into(),
+                ]),
+                ChanceOutcome::new(vec![
+                    BluffActions::Roll(Dice::One).into(),
+                    BluffActions::Roll(Dice::Wild).into(),
+                ]),
+                ChanceOutcome::new(vec![
+                    BluffActions::Roll(Dice::Two).into(),
+                    BluffActions::Roll(Dice::Two).into(),
+                ]),
+                ChanceOutcome::new(vec![
+                    BluffActions::Roll(Dice::Two).into(),
+                    BluffActions::Roll(Dice::Three).into(),
+                ]),
+                ChanceOutcome::new(vec![
+                    BluffActions::Roll(Dice::Two).into(),
+                    BluffActions::Roll(Dice::Four).into(),
+                ]),
+                ChanceOutcome::new(vec![
+                    BluffActions::Roll(Dice::Two).into(),
+                    BluffActions::Roll(Dice::Five).into(),
+                ]),
+                ChanceOutcome::new(vec![
+                    BluffActions::Roll(Dice::Two).into(),
+                    BluffActions::Roll(Dice::Wild).into(),
+                ]),
+                ChanceOutcome::new(vec![
+                    BluffActions::Roll(Dice::Three).into(),
+                    BluffActions::Roll(Dice::Three).into(),
+                ]),
+                ChanceOutcome::new(vec![
+                    BluffActions::Roll(Dice::Three).into(),
+                    BluffActions::Roll(Dice::Four).into(),
+                ]),
+                ChanceOutcome::new(vec![
+                    BluffActions::Roll(Dice::Three).into(),
+                    BluffActions::Roll(Dice::Five).into(),
+                ]),
+                ChanceOutcome::new(vec![
+                    BluffActions::Roll(Dice::Three).into(),
+                    BluffActions::Roll(Dice::Wild).into(),
+                ]),
+                ChanceOutcome::new(vec![
+                    BluffActions::Roll(Dice::Four).into(),
+                    BluffActions::Roll(Dice::Four).into(),
+                ]),
+                ChanceOutcome::new(vec![
+                    BluffActions::Roll(Dice::Four).into(),
+                    BluffActions::Roll(Dice::Five).into(),
+                ]),
+                ChanceOutcome::new(vec![
+                    BluffActions::Roll(Dice::Four).into(),
+                    BluffActions::Roll(Dice::Wild).into(),
+                ]),
+                ChanceOutcome::new(vec![
+                    BluffActions::Roll(Dice::Five).into(),
+                    BluffActions::Roll(Dice::Five).into(),
+                ]),
+                ChanceOutcome::new(vec![
+                    BluffActions::Roll(Dice::Five).into(),
+                    BluffActions::Roll(Dice::Wild).into(),
+                ]),
+                ChanceOutcome::new(vec![
+                    BluffActions::Roll(Dice::Wild).into(),
+                    BluffActions::Roll(Dice::Wild).into(),
+                ]),
+            ],
+            _ => panic!("invalid number of dice"),
+        };
 
-        let rolls = FACES.into_iter().combinations_with_replacement(num_dice);
-        let mut outcomes = Vec::new();
-
-        for r in rolls {
-            outcomes.push(ChanceOutcome::new(
-                r.iter()
-                    .map(|x| BluffActions::Roll(*x).into())
-                    .collect_vec(),
-            ))
-        }
-
-        assert_eq!(outcomes.len(), 6 + 5 + 4 + 3 + 2 + 1);
+        match num_dice {
+            1 => assert_eq!(outcomes.len(), 6),
+            2 => assert_eq!(outcomes.len(), 6 + 5 + 4 + 3 + 2 + 1),
+            _ => panic!("unsupported number of dice"),
+        };
         return outcomes;
     }
 
@@ -439,10 +543,10 @@ impl GameState for BluffGameState {
 
         // the first 2 items in the istate are the rolls for the player, we replace them with
         // the chance outcomes
-        istate[0] = chance_outcome[0];
-        istate[1] = chance_outcome[1];
+        for i in 0..chance_outcome.len() {
+            istate[i] = chance_outcome[i];
+        }
 
-        assert!(chance_outcome[0] <= chance_outcome[1]);
         return istate;
     }
 
@@ -497,7 +601,7 @@ impl Display for BluffGameState {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use std::{collections::HashSet, vec};
 
     use crate::game::{
         bluff::{Bluff, BluffGameState, Phase, FACES},
@@ -633,5 +737,150 @@ mod tests {
                 assert_eq!(from_bid, bid);
             }
         }
+    }
+
+    #[test]
+    fn test_bluff_1_1() {
+        let mut gs = (Bluff::game(1, 1).new)();
+        assert_eq!(
+            gs.legal_actions(),
+            vec![
+                BluffActions::Roll(Dice::One).into(),
+                BluffActions::Roll(Dice::Two).into(),
+                BluffActions::Roll(Dice::Three).into(),
+                BluffActions::Roll(Dice::Four).into(),
+                BluffActions::Roll(Dice::Five).into(),
+                BluffActions::Roll(Dice::Wild).into()
+            ]
+        );
+
+        assert_eq!(gs.cur_player(), 0);
+        gs.apply_action(BluffActions::Roll(Dice::One).into());
+        assert_eq!(gs.cur_player(), 1);
+
+        gs.apply_action(BluffActions::Roll(Dice::Wild).into());
+        assert_eq!(gs.cur_player(), 0);
+
+        assert_eq!(
+            gs.legal_actions(),
+            vec![
+                BluffActions::Bid(1, Dice::One).into(),
+                BluffActions::Bid(2, Dice::One).into(),
+                BluffActions::Bid(1, Dice::Two).into(),
+                BluffActions::Bid(2, Dice::Two).into(),
+                BluffActions::Bid(1, Dice::Three).into(),
+                BluffActions::Bid(2, Dice::Three).into(),
+                BluffActions::Bid(1, Dice::Four).into(),
+                BluffActions::Bid(2, Dice::Four).into(),
+                BluffActions::Bid(1, Dice::Five).into(),
+                BluffActions::Bid(2, Dice::Five).into()
+            ]
+        );
+
+        gs.apply_action(BluffActions::Bid(1, Dice::One).into());
+
+        assert_eq!(
+            gs.legal_actions(),
+            vec![
+                BluffActions::Call.into(),
+                BluffActions::Bid(2, Dice::One).into(),
+                BluffActions::Bid(1, Dice::Two).into(),
+                BluffActions::Bid(2, Dice::Two).into(),
+                BluffActions::Bid(1, Dice::Three).into(),
+                BluffActions::Bid(2, Dice::Three).into(),
+                BluffActions::Bid(1, Dice::Four).into(),
+                BluffActions::Bid(2, Dice::Four).into(),
+                BluffActions::Bid(1, Dice::Five).into(),
+                BluffActions::Bid(2, Dice::Five).into()
+            ]
+        );
+
+        gs.apply_action(BluffActions::Bid(2, Dice::One).into());
+        gs.apply_action(BluffActions::Call.into());
+
+        assert_eq!(gs.evaluate(), vec![-1.0, 1.0]);
+
+        let istate = gs.istate_string(0);
+        assert_eq!(istate, "1|11|21|C");
+        let istate = gs.istate_string(1);
+        assert_eq!(istate, "*|11|21|C");
+    }
+
+    #[test]
+    fn test_bluff_2_1() {
+        let mut gs = (Bluff::game(2, 1).new)();
+        assert_eq!(
+            gs.legal_actions(),
+            vec![
+                BluffActions::Roll(Dice::One).into(),
+                BluffActions::Roll(Dice::Two).into(),
+                BluffActions::Roll(Dice::Three).into(),
+                BluffActions::Roll(Dice::Four).into(),
+                BluffActions::Roll(Dice::Five).into(),
+                BluffActions::Roll(Dice::Wild).into()
+            ]
+        );
+
+        assert_eq!(gs.cur_player(), 0);
+        gs.apply_action(BluffActions::Roll(Dice::One).into());
+        gs.apply_action(BluffActions::Roll(Dice::One).into());
+        assert_eq!(gs.cur_player(), 1);
+
+        gs.apply_action(BluffActions::Roll(Dice::Wild).into());
+        assert_eq!(gs.cur_player(), 0);
+
+        assert_eq!(
+            gs.legal_actions(),
+            vec![
+                BluffActions::Bid(1, Dice::One).into(),
+                BluffActions::Bid(2, Dice::One).into(),
+                BluffActions::Bid(3, Dice::One).into(),
+                BluffActions::Bid(1, Dice::Two).into(),
+                BluffActions::Bid(2, Dice::Two).into(),
+                BluffActions::Bid(3, Dice::Two).into(),
+                BluffActions::Bid(1, Dice::Three).into(),
+                BluffActions::Bid(2, Dice::Three).into(),
+                BluffActions::Bid(3, Dice::Three).into(),
+                BluffActions::Bid(1, Dice::Four).into(),
+                BluffActions::Bid(2, Dice::Four).into(),
+                BluffActions::Bid(3, Dice::Four).into(),
+                BluffActions::Bid(1, Dice::Five).into(),
+                BluffActions::Bid(2, Dice::Five).into(),
+                BluffActions::Bid(3, Dice::Five).into()
+            ]
+        );
+
+        gs.apply_action(BluffActions::Bid(1, Dice::One).into());
+
+        assert_eq!(
+            gs.legal_actions(),
+            vec![
+                BluffActions::Call.into(),
+                BluffActions::Bid(2, Dice::One).into(),
+                BluffActions::Bid(3, Dice::One).into(),
+                BluffActions::Bid(1, Dice::Two).into(),
+                BluffActions::Bid(2, Dice::Two).into(),
+                BluffActions::Bid(3, Dice::Two).into(),
+                BluffActions::Bid(1, Dice::Three).into(),
+                BluffActions::Bid(2, Dice::Three).into(),
+                BluffActions::Bid(3, Dice::Three).into(),
+                BluffActions::Bid(1, Dice::Four).into(),
+                BluffActions::Bid(2, Dice::Four).into(),
+                BluffActions::Bid(3, Dice::Four).into(),
+                BluffActions::Bid(1, Dice::Five).into(),
+                BluffActions::Bid(2, Dice::Five).into(),
+                BluffActions::Bid(3, Dice::Five).into()
+            ]
+        );
+
+        gs.apply_action(BluffActions::Bid(3, Dice::One).into());
+        gs.apply_action(BluffActions::Call.into());
+
+        assert_eq!(gs.evaluate(), vec![-1.0, 1.0]);
+
+        let istate = gs.istate_string(0);
+        assert_eq!(istate, "11|11|31|C");
+        let istate = gs.istate_string(1);
+        assert_eq!(istate, "*|11|31|C");
     }
 }

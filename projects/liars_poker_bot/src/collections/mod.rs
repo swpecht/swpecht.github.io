@@ -99,7 +99,7 @@ impl<const N: usize> Index<usize> for SortedArrayVec<N> {
     type Output = Action;
 
     fn index(&self, index: usize) -> &Self::Output {
-        assert!(index <= self.len);
+        assert!(index < self.len);
         return &self.data[index];
     }
 }
