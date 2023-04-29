@@ -93,7 +93,6 @@ impl BestResponse {
                 }
             }
         }
-
         debug!("found {} starting nodes to evaluate", play_nodes.len());
         let mut remaining_nodes = play_nodes.len();
         for (gs, count) in play_nodes.values() {

@@ -151,7 +151,7 @@ impl<T: Clone> Tree<T> {
         }
         let cursor = cursor.unwrap();
         let ca = cursor.path;
-        let last_same = find_last_same(ka, ca);
+        let last_same = find_last_same(&ka, &ca);
         if last_same.is_none() {
             return Some((cursor.id, ca.len() - 1));
         }
@@ -197,7 +197,7 @@ impl<T: Clone> Tree<T> {
 }
 
 /// finds the index of the last action in the same path
-fn find_last_same<const N: usize>(ka: ArrayVec<N>, ca: ArrayVec<N>) -> Option<usize> {
+fn find_last_same<const N: usize>(ka: &ArrayVec<N>, ca: &ArrayVec<N>) -> Option<usize> {
     assert!(ka.len() != 0);
     assert!(ca.len() != 0);
 
@@ -290,26 +290,26 @@ mod tests {
         let mut b = ArrayVec::new();
         b.push(1);
 
-        let fd = find_last_same(a, b);
+        let fd = find_last_same(&a, &b);
         assert_eq!(fd, Some(0));
 
         let mut c = ArrayVec::new();
         c.push(42);
-        let fd = find_last_same(a, c);
+        let fd = find_last_same(&a, &c);
         assert_eq!(fd, None);
 
         a.push(2);
         b.push(3);
 
-        let fd = find_last_same(a, b);
+        let fd = find_last_same(&a, &b);
         assert_eq!(fd.unwrap(), 0);
 
         a.push(2);
-        let fd = find_last_same(a, b);
+        let fd = find_last_same(&a, &b);
         assert_eq!(fd.unwrap(), 0);
 
         b.push(3);
-        let fd = find_last_same(a, b);
+        let fd = find_last_same(&a, &b);
         assert_eq!(fd.unwrap(), 0);
 
         let mut a = ArrayVec::<10>::new();
@@ -318,10 +318,10 @@ mod tests {
         a.push(2);
         let b = a.clone();
         a.push(3);
-        let fd = find_last_same(a, b);
+        let fd = find_last_same(&a, &b);
         assert_eq!(fd.unwrap(), 2);
 
-        let fd = find_last_same(b, a);
+        let fd = find_last_same(&b, &a);
         assert_eq!(fd.unwrap(), 2);
     }
 }

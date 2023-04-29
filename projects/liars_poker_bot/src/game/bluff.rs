@@ -321,12 +321,17 @@ impl BluffGameState {
     fn update_keys(&mut self, a: Action) {
         // private actions for rolling, and we don't push the dice until we have all of them sorted
         if self.dice[0].len() == 2 && self.dice[1].len() == 1 {
-            for p in 0..self.num_players {
-                for d in 0..self.dice[p].len() {
-                    self.keys[p].push(self.dice[p][d])
-                }
+            self.keys[0].push(self.dice[0][0]);
+            self.keys[0].push(self.dice[0][1]);
+
+            // since not sorted, ensure we push the keys in the right order
+            if self.dice[1][0] < a {
+                self.keys[1].push(self.dice[1][0]);
+                self.keys[1].push(a);
+            } else {
+                self.keys[1].push(a);
+                self.keys[1].push(self.dice[1][0]);
             }
-            self.keys[1].push(a);
             return;
         }
 
@@ -414,6 +419,7 @@ impl GameState for BluffGameState {
             ))
         }
 
+        assert_eq!(outcomes.len(), 6 + 5 + 4 + 3 + 2 + 1);
         return outcomes;
     }
 
