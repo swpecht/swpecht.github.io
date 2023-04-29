@@ -176,7 +176,7 @@ fn run(args: Args) {
             CFRAgent::new(Euchre::game(), 1, 5000, MemoryNodeStore::new());
         }
         GameType::Bluff => {
-            CFRAgent::new(Bluff::game(), 1, 5000, MemoryNodeStore::new());
+            CFRAgent::new(Bluff::game(2, 2), 1, 100_001, MemoryNodeStore::new());
         }
     };
 }

@@ -42,6 +42,7 @@ impl<T: GameState, N: NodeStore<CFRNode>> CFRAgent<T, N> {
         info!("Starting self play for CFR");
         let mut alg = CFRCS::new(seed);
         // let mut alg = VanillaCFR::new();
+        let mut print_freq = 1;
         for iteration in 0..iterations {
             let gs = (agent.game.new)();
 
@@ -49,13 +50,14 @@ impl<T: GameState, N: NodeStore<CFRNode>> CFRAgent<T, N> {
                 alg.run(&mut agent.ns, &gs, p);
             }
 
-            if iteration % 100 == 0 {
+            if iteration % print_freq == 0 {
                 info!(
-                    "\t{}\t{}\t{}",
+                    "exploitability:\t{}\t{}\t{}",
                     iteration,
                     alg.nodes_touched(),
                     br.get_exploitability(&game, &mut agent.ns, 0)
-                )
+                );
+                print_freq *= 10;
             }
 
             // info!("Finished iteration {} for CFR", i);

@@ -37,6 +37,10 @@ struct Cursor {
     path: ArrayVec<64>,
 }
 
+/// Tree structure for looking up values by information state.
+///
+/// Exploring imlementing storing the private information state data at the end of the node, this would enable us to have the policy looksups for
+/// best response be close together. But this would make it difficult to use for cfr -- since we might need intermediate nodes
 struct Node<T> {
     parent: usize,
     children: [usize; MAX_CHILDREN],

@@ -194,9 +194,9 @@ enum Phase {
 pub struct Bluff {}
 
 impl Bluff {
-    pub fn new_state(dice1: usize, dice2: usize) -> BluffGameState {
+    pub fn new_state(dice0: usize, dice1: usize) -> BluffGameState {
+        assert_eq!(dice0, 2);
         assert_eq!(dice1, 2);
-        assert_eq!(dice2, 2);
 
         BluffGameState {
             phase: Phase::RollingDice,
@@ -205,14 +205,21 @@ impl Bluff {
             num_players: 2,
             keys: [IStateKey::new(); 2],
             last_bid: STARTING_BID, // lowest possible bid
-            num_dice: [dice1, dice2],
+            num_dice: [dice0, dice1],
             is_terminal: false,
         }
     }
 
-    pub fn game() -> Game<BluffGameState> {
+    pub fn game(dice0: usize, dice1: usize) -> Game<BluffGameState> {
+        let new_f = match (dice0, dice1) {
+            (1, 1) => || -> BluffGameState { Self::new_state(1, 1) },
+            (2, 1) => || -> BluffGameState { Self::new_state(2, 1) },
+            (2, 2) => || -> BluffGameState { Self::new_state(2, 2) },
+            _ => panic!("invalid dice configuration"),
+        };
+
         Game {
-            new: Box::new(|| -> BluffGameState { Self::new_state(2, 2) }),
+            new: Box::new(new_f),
             max_players: 2,
             max_actions: 31, // 4 * 6 for bets + 6 for roll + 1 for call
         }
@@ -233,7 +240,7 @@ pub struct BluffGameState {
 
 impl BluffGameState {
     pub fn from_actions(actions: &[BluffActions]) -> Self {
-        let mut g = (Bluff::game().new)();
+        let mut g = (Bluff::game(2, 2).new)();
         for &a in actions {
             g.apply_action(a.into());
         }
