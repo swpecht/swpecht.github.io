@@ -85,10 +85,7 @@ impl VanillaCFR {
 
         let actions = gs.legal_actions();
 
-        let mut move_evs = Vec::new();
-        for _ in 0..actions.len() {
-            move_evs.push(0.0);
-        }
+        let mut move_evs = ActionVec::new(&actions);
 
         let node = ns
             .get(&is)

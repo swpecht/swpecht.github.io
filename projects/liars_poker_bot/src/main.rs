@@ -170,13 +170,13 @@ fn run(args: Args) {
 
     match args.game {
         GameType::KuhnPoker => {
-            CFRAgent::new(KuhnPoker::game(), 1, 5000, MemoryNodeStore::new());
+            CFRAgent::new(KuhnPoker::game(), 1, 100_001, MemoryNodeStore::new());
         }
         GameType::Euchre => {
             CFRAgent::new(Euchre::game(), 1, 5000, MemoryNodeStore::new());
         }
         GameType::Bluff => {
-            CFRAgent::new(Bluff::game(1, 1), 1, 100_001, MemoryNodeStore::new());
+            CFRAgent::new(Bluff::game(1, 1), 1, 100_000_001, MemoryNodeStore::new());
         }
     };
 }

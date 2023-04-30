@@ -11,7 +11,10 @@ use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 use crate::{
     agents::Agent,
     bestresponse::BestResponse,
-    cfragent::{cfr::Algorithm, cfrcs::CFRCS},
+    cfragent::{
+        cfr::{Algorithm, VanillaCFR},
+        cfrcs::CFRCS,
+    },
     database::NodeStore,
     game::{Action, Game, GameState},
     istate::IStateKey,
@@ -40,8 +43,8 @@ impl<T: GameState, N: NodeStore<CFRNode>> CFRAgent<T, N> {
         // Use CFR to train the agent
         let mut br = BestResponse::new();
         info!("Starting self play for CFR");
-        let mut alg = CFRCS::new(seed);
-        // let mut alg = VanillaCFR::new();
+        // let mut alg = CFRCS::new(seed);
+        let mut alg = VanillaCFR::new();
         let mut print_freq = 1;
         for iteration in 0..iterations {
             let gs = (agent.game.new)();
