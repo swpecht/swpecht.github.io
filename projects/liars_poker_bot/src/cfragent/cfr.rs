@@ -207,7 +207,7 @@ pub(super) fn _test_kp_nash<T: Algorithm>(mut alg: T, iterations: usize) {
     // 1b
     let k = _get_key(&[1, 0, KPAction::Bet as usize]);
     let w = _get_policy(&mut ns, &k);
-    _check_floats(w[KPAction::Bet as usize], 0.3333, 2);
+    _check_floats(w[KPAction::Bet as usize], 1.0 / 3.0, 2);
 
     // when having a Jack, never calling and betting with the probability of 1/3.
     // 0b
@@ -227,7 +227,7 @@ pub(super) fn _test_kp_nash<T: Algorithm>(mut alg: T, iterations: usize) {
     // 0
     let k = _get_key(&[0]);
     let alpha = _get_policy(&mut ns, &k)[KPAction::Bet as usize];
-    assert!(alpha < 0.4);
+    assert!(alpha < 1.0 / 3.0);
 
     // 0pb
     let k = _get_key(&[0, 1, KPAction::Pass as usize, KPAction::Bet as usize]);
@@ -252,7 +252,7 @@ pub(super) fn _test_kp_nash<T: Algorithm>(mut alg: T, iterations: usize) {
     let k = _get_key(&[1, 0, KPAction::Pass as usize, KPAction::Bet as usize]);
     let w = _get_policy(&mut ns, &k);
     // We nudge the optimal weight here to save on iterations for convergence
-    _check_floats(w[KPAction::Bet as usize], alpha + 0.35, 2);
+    _check_floats(w[KPAction::Bet as usize], alpha + 1.0 / 3.0, 2);
 }
 
 #[cfg(test)]
