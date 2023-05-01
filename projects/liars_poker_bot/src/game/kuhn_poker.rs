@@ -11,6 +11,28 @@ use log::trace;
 pub enum KPAction {
     Bet,
     Pass,
+    Jack,
+    Queen,
+    King,
+}
+
+impl Into<Action> for KPAction {
+    fn into(self) -> Action {
+        return Action(self as u8);
+    }
+}
+
+impl From<Action> for KPAction {
+    fn from(value: Action) -> Self {
+        match value {
+            x if x == KPAction::Bet.into() => KPAction::Bet,
+            x if x == KPAction::Pass.into() => KPAction::Pass,
+            x if x == KPAction::Jack.into() => KPAction::Jack,
+            x if x == KPAction::Queen.into() => KPAction::Queen,
+            x if x == KPAction::King.into() => KPAction::King,
+            _ => panic!("invalid action"),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -39,7 +61,7 @@ impl Display for KPGameState {
         let mut result = String::new();
         result.push_str("[");
         for c in &self.hands {
-            result.push_str(&format!("{}", c));
+            result.push_str(&format!("{:?}", KPAction::from(*c)));
         }
         result.push_str("]");
 
@@ -47,6 +69,7 @@ impl Display for KPGameState {
             let char = match h {
                 KPAction::Bet => 'b',
                 KPAction::Pass => 'p',
+                _ => panic!("invalid action for history"),
             };
             result.push(char)
         }
@@ -77,10 +100,10 @@ impl KuhnPoker {
         }
     }
 
-    pub fn from_actions(actions: &[Action]) -> KPGameState {
+    pub fn from_actions(actions: &[KPAction]) -> KPGameState {
         let mut g = (KuhnPoker::game().new)();
         for &a in actions {
-            g.apply_action(a);
+            g.apply_action(a.into());
         }
 
         return g;
@@ -102,9 +125,9 @@ impl KPGameState {
     }
 
     fn apply_action_playing(&mut self, a: Action) {
-        match a {
-            x if x == KPAction::Bet as usize => self.history.push(KPAction::Bet),
-            x if x == KPAction::Pass as usize => self.history.push(KPAction::Pass),
+        match KPAction::from(a) {
+            KPAction::Bet => self.history.push(KPAction::Bet),
+            KPAction::Pass => self.history.push(KPAction::Pass),
             _ => panic!("attempted invalid action"),
         }
 
@@ -122,19 +145,18 @@ impl KPGameState {
     }
 
     fn get_dealing_actions(&self, actions: &mut Vec<Action>) {
-        for i in 0..self.num_players + 1 {
-            let card = i as Action;
-            if self.hands.contains(&card) {
+        for card in [KPAction::Jack, KPAction::Queen, KPAction::King] {
+            if self.hands.contains(&card.into()) {
                 // Don't return cards already dealt
                 continue;
             }
-            actions.push(card);
+            actions.push(card.into());
         }
     }
 
     fn get_betting_actions(&self, actions: &mut Vec<Action>) {
-        actions.push(KPAction::Bet as Action);
-        actions.push(KPAction::Pass as Action);
+        actions.push(KPAction::Bet.into());
+        actions.push(KPAction::Pass.into());
     }
 }
 
@@ -207,8 +229,7 @@ impl GameState for KPGameState {
         i_state.push(self.hands[player]);
 
         for &h in &self.history {
-            let u = h as usize;
-            i_state.push(u);
+            i_state.push(h.into());
         }
         return i_state;
     }
@@ -233,12 +254,12 @@ impl GameState for KPGameState {
         let istate = self.istate_key(player);
         let mut result = String::new();
 
-        result.push_str(format!("{}", istate[0]).as_str());
+        result.push_str(format!("{:?}", KPAction::from(istate[0])).as_str());
 
         for i in 1..istate.len() {
             let char = match istate[i] {
-                x if x == KPAction::Bet as usize => 'b',
-                x if x == KPAction::Pass as usize => 'p',
+                x if x == KPAction::Bet.into() => 'b',
+                x if x == KPAction::Pass.into() => 'p',
                 _ => panic!("invalid history"),
             };
             result.push(char);
@@ -257,10 +278,19 @@ impl GameState for KPGameState {
     fn chance_outcomes(&self, fixed_player: Player) -> Vec<ChanceOutcome> {
         let nf = if fixed_player == 0 { 1 } else { 0 };
 
-        return match self.hands[nf] {
-            0 => vec![ChanceOutcome::new(vec![1]), ChanceOutcome::new(vec![2])],
-            1 => vec![ChanceOutcome::new(vec![0]), ChanceOutcome::new(vec![2])],
-            2 => vec![ChanceOutcome::new(vec![0]), ChanceOutcome::new(vec![1])],
+        return match KPAction::from(self.hands[nf]) {
+            KPAction::Jack => vec![
+                ChanceOutcome::new(vec![KPAction::Queen.into()]),
+                ChanceOutcome::new(vec![KPAction::King.into()]),
+            ],
+            KPAction::Queen => vec![
+                ChanceOutcome::new(vec![KPAction::Jack.into()]),
+                ChanceOutcome::new(vec![KPAction::King.into()]),
+            ],
+            KPAction::King => vec![
+                ChanceOutcome::new(vec![KPAction::Jack.into()]),
+                ChanceOutcome::new(vec![KPAction::Queen.into()]),
+            ],
             _ => panic!("not implemented for other hands"),
         };
     }
@@ -281,7 +311,7 @@ mod tests {
     use crate::{
         agents::RecordedAgent,
         game::kuhn_poker::{KPAction, KuhnPoker},
-        game::{run_game, Action, GameState},
+        game::{run_game, GameState},
     };
     use rand::{rngs::StdRng, SeedableRng};
 
@@ -289,12 +319,12 @@ mod tests {
     fn kuhn_poker_test_bb() {
         let mut g = KuhnPoker::new_state();
         let mut rng: StdRng = SeedableRng::seed_from_u64(0);
-        let mut a1 = RecordedAgent::new(vec![KPAction::Bet as Action; 1]);
-        let mut a2 = RecordedAgent::new(vec![KPAction::Bet as Action; 1]);
+        let mut a1 = RecordedAgent::new(vec![KPAction::Bet.into(); 1]);
+        let mut a2 = RecordedAgent::new(vec![KPAction::Bet.into(); 1]);
 
         run_game(&mut g, &mut vec![&mut a1, &mut a2], &mut rng);
 
-        assert_eq!(format!("{}", g), "[21]bb");
+        assert_eq!(format!("{}", g), "[KingQueen]bb");
         assert_eq!(g.evaluate(), vec![2.0, -2.0])
     }
 
@@ -302,12 +332,12 @@ mod tests {
     fn kuhn_poker_test_pbp() {
         let mut g = KuhnPoker::new_state();
         let mut rng: StdRng = SeedableRng::seed_from_u64(0);
-        let mut a1 = RecordedAgent::new(vec![KPAction::Pass as Action; 2]);
-        let mut a2 = RecordedAgent::new(vec![KPAction::Bet as Action; 1]);
+        let mut a1 = RecordedAgent::new(vec![KPAction::Pass.into(); 2]);
+        let mut a2 = RecordedAgent::new(vec![KPAction::Bet.into(); 1]);
 
         run_game(&mut g, &mut vec![&mut a1, &mut a2], &mut rng);
 
-        assert_eq!(format!("{}", g), "[21]pbp");
+        assert_eq!(format!("{}", g), "[KingQueen]pbp");
         assert_eq!(g.evaluate(), vec![-1.0, 1.0])
     }
 }

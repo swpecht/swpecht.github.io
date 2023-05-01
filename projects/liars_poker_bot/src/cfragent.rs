@@ -2,9 +2,8 @@ pub mod cfr;
 pub mod cfrcs;
 pub mod cfrnode;
 
-use std::{iter::zip, marker::PhantomData};
+use std::marker::PhantomData;
 
-use itertools::Itertools;
 use log::{debug, info, trace};
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
@@ -43,8 +42,8 @@ impl<T: GameState, N: NodeStore<CFRNode>> CFRAgent<T, N> {
         // Use CFR to train the agent
         let mut br = BestResponse::new();
         info!("Starting self play for CFR");
-        // let mut alg = CFRCS::new(seed);
-        let mut alg = VanillaCFR::new();
+        let mut alg = CFRCS::new(seed);
+        // let mut alg = VanillaCFR::new();
         let mut print_freq = 1;
         for iteration in 0..iterations {
             let gs = (agent.game.new)();
@@ -89,12 +88,12 @@ impl<T: GameState, N: NodeStore<CFRNode>> Agent<T> for CFRAgent<T, N> {
 
         let p = self.get_policy(&istate);
         trace!("evaluating istate {} for {:?}", istate.to_string(), p);
-        let mut weights = vec![0.0; s.legal_actions().len()];
+        let mut weights = ActionVec::new(&s.legal_actions());
         for &a in &s.legal_actions() {
             weights[a] = p[a];
         }
-        return zip(s.legal_actions(), weights)
-            .collect_vec()
+        return weights
+            .to_vec()
             .choose_weighted(&mut self.rng, |item| item.1)
             .unwrap()
             .0;
@@ -106,6 +105,7 @@ mod tests {
     use super::CFRAgent;
     use crate::{
         agents::Agent,
+        cfragent::cfrnode::ActionVec,
         database::memory_node_store::MemoryNodeStore,
         game::{
             kuhn_poker::{KPAction, KuhnPoker},
@@ -117,20 +117,20 @@ mod tests {
     fn cfragent_sample_test() {
         let mut qa = CFRAgent::new(KuhnPoker::game(), 42, 50000, MemoryNodeStore::new());
         let mut s = KuhnPoker::new_state();
-        s.apply_action(1);
-        s.apply_action(0);
-        s.apply_action(KPAction::Pass as usize);
+        s.apply_action(KPAction::Queen.into());
+        s.apply_action(KPAction::Jack.into());
+        s.apply_action(KPAction::Pass.into());
 
-        assert_eq!(s.istate_string(1), "0p");
+        assert_eq!(s.istate_string(1), "Jackp");
 
-        let mut action_counter = vec![0; 2];
+        let mut action_counter: ActionVec<usize> = ActionVec::new(&s.legal_actions());
         for _ in 0..1000 {
             let a = qa.step(&s);
             action_counter[a] += 1;
         }
 
         // For state 0p, should bet about 33% of the time in nash equilibrium
-        assert!(action_counter[KPAction::Bet as usize] > 300);
-        assert!(action_counter[KPAction::Bet as usize] < 400);
+        assert!(action_counter[KPAction::Bet.into()] > 320);
+        assert!(action_counter[KPAction::Bet.into()] < 340);
     }
 }

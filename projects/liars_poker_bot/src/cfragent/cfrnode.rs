@@ -48,7 +48,7 @@ impl CFRNode {
     pub fn get_average_strategy(&self) -> ActionVec<f64> {
         let actions = &self.regret_sum.actions;
 
-        let mut avg_strat = ActionVec::new_from(&actions);
+        let mut avg_strat = ActionVec::new(&actions);
         let mut normalizing_sum = 0.0;
         for &a in actions {
             normalizing_sum += self.total_move_prob[a];
@@ -70,26 +70,19 @@ impl CFRNode {
 ///
 /// It uses actions to index into a vector
 #[derive(Clone, Debug)]
-pub struct ActionVec<T: Default> {
+pub struct ActionVec<T: Default + Clone> {
     data: Vec<T>,
     // TODO: Can change this to a reference to same memory in the future
-    actions: Vec<u8>,
+    actions: Vec<Action>,
 }
 
-impl<T: Default> ActionVec<T> {
+impl<T: Default + Clone> ActionVec<T> {
     pub fn new(actions: &Vec<Action>) -> Self {
         let mut map = Vec::with_capacity(actions.len());
+        let mut data = Vec::with_capacity(actions.len());
 
         for &a in actions {
-            map.push(a as u8);
-        }
-
-        return ActionVec::new_from(&map);
-    }
-
-    fn new_from(actions: &Vec<u8>) -> Self {
-        let mut data = Vec::with_capacity(actions.len());
-        for _ in actions {
+            map.push(a);
             data.push(T::default())
         }
 
@@ -101,12 +94,12 @@ impl<T: Default> ActionVec<T> {
 
     fn get_index(&self, a: Action) -> usize {
         for i in 0..self.actions.len() {
-            if self.actions[i] == a as u8 {
+            if self.actions[i] == a {
                 return i;
             }
         }
         panic!(
-            "invalid index: got action of: {}, valid actions are: {:?}",
+            "invalid index: got action of: {:?}, valid actions are: {:?}",
             a, self.actions
         )
     }
@@ -114,36 +107,30 @@ impl<T: Default> ActionVec<T> {
     pub fn len(&self) -> usize {
         return self.data.len();
     }
+
+    pub fn to_vec(&self) -> Vec<(Action, T)> {
+        let mut output = Vec::new();
+
+        for i in 0..self.actions.len() {
+            output.push((self.actions[i], self.data[i].clone()))
+        }
+
+        return output;
+    }
 }
 
-impl<T: Default> Index<usize> for ActionVec<T> {
+impl<T: Default + Clone> Index<Action> for ActionVec<T> {
     type Output = T;
 
-    fn index(&self, a: usize) -> &Self::Output {
+    fn index(&self, a: Action) -> &Self::Output {
         let idx = self.get_index(a);
         return &self.data[idx];
     }
 }
 
-impl<T: Default> IndexMut<usize> for ActionVec<T> {
-    fn index_mut(&mut self, a: usize) -> &mut Self::Output {
+impl<T: Default + Clone> IndexMut<Action> for ActionVec<T> {
+    fn index_mut(&mut self, a: Action) -> &mut Self::Output {
         let idx = self.get_index(a);
-        return &mut self.data[idx];
-    }
-}
-
-impl<T: Default> Index<u8> for ActionVec<T> {
-    type Output = T;
-
-    fn index(&self, a: u8) -> &Self::Output {
-        let idx = self.get_index(a as usize);
-        return &self.data[idx];
-    }
-}
-
-impl<T: Default> IndexMut<u8> for ActionVec<T> {
-    fn index_mut(&mut self, a: u8) -> &mut Self::Output {
-        let idx = self.get_index(a as usize);
         return &mut self.data[idx];
     }
 }

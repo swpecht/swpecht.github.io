@@ -312,18 +312,18 @@ mod tests {
         _populate_always_n(&mut ns, &g, KPAction::Bet as usize);
 
         // best response against player 0, so as player 1
-        let gs = KuhnPoker::from_actions(&[0, 1]);
+        let gs = KuhnPoker::from_actions(&[KPAction::Jack, KPAction::Queen]);
         let v_0 = br.compute_best_response(gs, 0, &mut ns);
-        let gs = KuhnPoker::from_actions(&[2, 1]);
+        let gs = KuhnPoker::from_actions(&[KPAction::King, KPAction::Queen]);
         let v_2 = br.compute_best_response(gs, 0, &mut ns);
 
         assert_eq!(v_0, v_2); // shouldn't depend on opponents actual card, this should be normalized over the possible outcomes
 
-        let gs = KuhnPoker::from_actions(&[1, 0]);
+        let gs = KuhnPoker::from_actions(&[KPAction::Queen, KPAction::Jack]);
         let v = br.compute_best_response(gs, 0, &mut ns);
         assert_eq!(v, -1.0);
 
-        let gs = KuhnPoker::from_actions(&[1, 2]);
+        let gs = KuhnPoker::from_actions(&[KPAction::Queen, KPAction::King]);
         let v = br.compute_best_response(gs, 0, &mut ns);
         assert_eq!(v, 2.0);
 

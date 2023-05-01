@@ -1,5 +1,7 @@
 use std::{collections::HashMap, ops::Index};
 
+use crate::game::Action;
+
 pub(super) struct NormalizerVector {
     normalized: bool,
     total: f64,
@@ -44,7 +46,7 @@ impl Index<usize> for NormalizerVector {
 pub(super) struct NormalizerMap {
     normalized: bool,
     total: f64,
-    values: HashMap<usize, f64>,
+    values: HashMap<Action, f64>,
 }
 
 impl NormalizerMap {
@@ -67,17 +69,17 @@ impl NormalizerMap {
         self.normalized = true;
     }
 
-    pub fn add(&mut self, k: usize, v: f64) {
+    pub fn add(&mut self, k: Action, v: f64) {
         assert!(v >= 0.0);
         self.total += v;
         self.values.insert(k, v);
     }
 }
 
-impl Index<usize> for NormalizerMap {
+impl Index<Action> for NormalizerMap {
     type Output = f64;
 
-    fn index(&self, index: usize) -> &Self::Output {
+    fn index(&self, index: Action) -> &Self::Output {
         return &self.values[&index];
     }
 }

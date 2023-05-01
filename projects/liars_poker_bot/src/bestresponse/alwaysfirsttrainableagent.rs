@@ -26,7 +26,8 @@ pub(super) fn _populate_always_n<T: GameState, N: NodeStore<CFRNode>>(
                 let p = gs.cur_player();
                 let k = gs.istate_key(p);
                 let mut node = CFRNode::new(gs.legal_actions());
-                node.total_move_prob[idx] = 1.0; // set the moveprob to 1 for the action of the target index
+                let a = gs.legal_actions()[idx];
+                node.total_move_prob[a] = 1.0; // set the moveprob to 1 for the action of the target index
                 ns.insert_node(k, Rc::new(RefCell::new(node)));
             }
 
@@ -44,7 +45,10 @@ mod tests {
     use crate::{
         cfragent::cfrnode::{ActionVec, CFRNode},
         database::{memory_node_store::MemoryNodeStore, NodeStore},
-        game::{kuhn_poker::KuhnPoker, GameState},
+        game::{
+            kuhn_poker::{KPAction, KuhnPoker},
+            GameState,
+        },
     };
 
     use super::_populate_always_n;
@@ -55,22 +59,34 @@ mod tests {
         let g = KuhnPoker::game();
         _populate_always_n(&mut ns, &g, 0);
 
-        let k = KuhnPoker::from_actions(&[0, 1]).istate_key(0);
+        let k =
+            KuhnPoker::from_actions(&[KPAction::Jack.into(), KPAction::Queen.into()]).istate_key(0);
         assert_first_is_one(ns.get(&k).unwrap().borrow().get_average_strategy());
 
-        let k = KuhnPoker::from_actions(&[1, 0]).istate_key(0);
+        let k =
+            KuhnPoker::from_actions(&[KPAction::Queen.into(), KPAction::Jack.into()]).istate_key(0);
         assert_first_is_one(ns.get(&k).unwrap().borrow().get_average_strategy());
 
-        let k = KuhnPoker::from_actions(&[0, 1, 0]).istate_key(0);
+        let k = KuhnPoker::from_actions(&[
+            KPAction::Jack.into(),
+            KPAction::Queen.into(),
+            KPAction::Bet.into(),
+        ])
+        .istate_key(0);
         assert_first_is_one(ns.get(&k).unwrap().borrow().get_average_strategy());
 
-        let k = KuhnPoker::from_actions(&[0, 1, 1]).istate_key(0);
+        let k = KuhnPoker::from_actions(&[
+            KPAction::Jack.into(),
+            KPAction::Queen.into(),
+            KPAction::Pass.into(),
+        ])
+        .istate_key(0);
         assert_first_is_one(ns.get(&k).unwrap().borrow().get_average_strategy());
     }
 
     fn assert_first_is_one(v: ActionVec<f64>) {
         assert!(v.len() > 0);
-        assert_eq!(v[0 as usize], 1.0);
-        assert_eq!(v[1 as usize], 0.0);
+        assert_eq!(v[KPAction::Bet.into()], 1.0);
+        assert_eq!(v[KPAction::Pass.into()], 0.0);
     }
 }

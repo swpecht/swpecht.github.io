@@ -268,5 +268,6 @@ fn handle_player_turn<T: GameState>(s: &mut T) -> Action {
         .read_line(&mut buffer)
         .expect("Failed to read input");
 
-    return buffer.trim().parse().expect("Failed to parse digits");
+    todo!()
+    // return buffer.trim().parse().expect("Failed to parse digits");
 }

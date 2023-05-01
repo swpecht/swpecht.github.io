@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 
 pub mod bluff;
 pub mod euchre;
@@ -6,10 +6,30 @@ pub mod kuhn_poker;
 
 use log::info;
 use rand::{seq::SliceRandom, Rng};
+use serde::{Deserialize, Serialize};
 
 use crate::{agents::Agent, bestresponse::ChanceOutcome, istate::IStateKey};
 
-pub type Action = usize;
+// pub type Action = usize;
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord, Default)]
+pub struct Action(pub u8);
+impl Into<u8> for Action {
+    fn into(self) -> u8 {
+        return self.0;
+    }
+}
+
+impl Display for Action {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl Debug for Action {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 pub type IState = f64;
 pub type Player = usize;
 

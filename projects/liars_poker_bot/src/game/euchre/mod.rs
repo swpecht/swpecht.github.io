@@ -1,4 +1,4 @@
-use std::fmt::{Display, Write};
+use std::fmt::Display;
 
 use crate::{
     bestresponse::ChanceOutcome,
@@ -7,15 +7,17 @@ use crate::{
     istate::IStateKey,
 };
 
-const JACK: usize = 2;
-const CARD_PER_SUIT: usize = 6;
+use self::actions::{EAction, Face, Suit, CARD_PER_SUIT};
+
 const NUM_CARDS: usize = 24;
+
+pub mod actions;
 
 pub struct Euchre {}
 impl Euchre {
     pub fn new_state() -> EuchreGameState {
         let keys = [IStateKey::new(); 4];
-        let hands = [SortedArrayVec::<5>::new(); 4];
+        let hands = [SortedArrayVec::<Action, 5>::new(); 4];
 
         EuchreGameState {
             num_players: 4,
@@ -24,8 +26,8 @@ impl Euchre {
             is_terminal: false,
             phase: EPhase::DealHands,
             cur_player: 0,
-            trump: Suit::Clubs, // Default to one for now
-            face_up: 0,         // Default for now
+            trump: Suit::Clubs,     // Default to one for now
+            face_up: EAction::Pass, // Default for now
             trump_caller: 0,
             istate_keys: keys,
             first_played: None,
@@ -47,10 +49,10 @@ impl Euchre {
 pub struct EuchreGameState {
     num_players: usize,
     /// Holds the cards for each player in the game
-    hands: [SortedArrayVec<5>; 4],
+    hands: [SortedArrayVec<Action, 5>; 4],
     trump: Suit,
     trump_caller: usize,
-    face_up: Action,
+    face_up: EAction,
     is_chance_node: bool,
     is_terminal: bool,
     phase: EPhase,
@@ -72,81 +74,6 @@ enum EPhase {
     Play,
 }
 
-#[derive(PartialEq)]
-enum EAction {
-    Pickup,
-    Pass,
-    Clubs,
-    Spades,
-    Hearts,
-    Diamonds,
-    Card { a: usize },
-}
-
-impl EAction {
-    // Converts a non card action to the enum
-    fn non_card_from(value: usize) -> Self {
-        match value {
-            0 => EAction::Pickup,
-            1 => EAction::Pass,
-            2 => EAction::Clubs,
-            3 => EAction::Spades,
-            4 => EAction::Hearts,
-            5 => EAction::Diamonds,
-            _ => panic!("unsupported action"),
-        }
-    }
-}
-
-impl Into<usize> for EAction {
-    fn into(self) -> usize {
-        match self {
-            EAction::Pickup => 0,
-            EAction::Pass => 1,
-            EAction::Clubs => 2,
-            EAction::Spades => 3,
-            EAction::Hearts => 4,
-            EAction::Diamonds => 5,
-            EAction::Card { a: x } => x,
-        }
-    }
-}
-
-impl Display for EAction {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            EAction::Clubs => f.write_char('C'),
-            EAction::Spades => f.write_char('S'),
-            EAction::Hearts => f.write_char('H'),
-            EAction::Diamonds => f.write_char('D'),
-            EAction::Pickup => f.write_char('T'),
-            EAction::Pass => f.write_char('P'),
-            EAction::Card { a: c } => f.write_str(&format_card(*c)),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
-enum Suit {
-    Clubs,
-    Spades,
-    Hearts,
-    Diamonds,
-}
-
-impl Display for Suit {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let c = match self {
-            Suit::Clubs => 'C',
-            Suit::Spades => 'S',
-            Suit::Hearts => 'H',
-            Suit::Diamonds => 'D',
-        };
-
-        f.write_char(c)
-    }
-}
-
 impl EuchreGameState {
     fn apply_action_deal_hands(&mut self, a: Action) {
         self.hands[self.cur_player].push(a);
@@ -159,14 +86,14 @@ impl EuchreGameState {
     }
 
     fn apply_action_deal_face_up(&mut self, a: Action) {
-        self.face_up = a;
+        self.face_up = EAction::from(a);
         self.phase = EPhase::Pickup;
         self.cur_player = 0;
         self.is_chance_node = false;
     }
 
     fn apply_action_pickup(&mut self, a: Action) {
-        match EAction::non_card_from(a) {
+        match EAction::from(a) {
             EAction::Pass => {
                 if self.cur_player == self.num_players - 1 {
                     // Dealer has passed, move to choosing
@@ -176,7 +103,7 @@ impl EuchreGameState {
             }
             EAction::Pickup => {
                 self.trump_caller = self.cur_player;
-                self.trump = self.get_suit(self.face_up);
+                self.trump = self.get_suit(self.face_up.into());
                 self.cur_player = 3; // dealers turn
                 self.phase = EPhase::Discard;
             }
@@ -185,7 +112,7 @@ impl EuchreGameState {
     }
 
     fn apply_action_choose_trump(&mut self, a: Action) {
-        let a = EAction::non_card_from(a);
+        let a = EAction::from(a);
         match a {
             EAction::Clubs => self.trump = Suit::Clubs,
             EAction::Spades => self.trump = Suit::Spades,
@@ -210,7 +137,7 @@ impl EuchreGameState {
             panic!("attempted to discard a card not in hand")
         }
         self.hands[3].remove(a);
-        self.hands[3].push(self.face_up);
+        self.hands[3].push(self.face_up.into());
 
         self.cur_player = 0;
         self.phase = EPhase::Play;
@@ -274,7 +201,7 @@ impl EuchreGameState {
         // all keys should see the same tricks, so just use the first one
         let key = self.istate_keys[0];
         let sidx = key.len() - 4 * (n + 1);
-        let mut trick = [0; 4];
+        let mut trick = [Action::default(); 4];
         for i in 0..4 {
             trick[i] = key[sidx + i];
         }
@@ -302,13 +229,13 @@ impl EuchreGameState {
         for i in 0..NUM_CARDS {
             let mut is_dealt = false;
             for h in 0..self.num_players {
-                if self.hands[h].contains(&i) {
+                if self.hands[h].contains(&EAction::Card { a: i as u8 }.into()) {
                     is_dealt = true;
                     break;
                 }
             }
             if !is_dealt {
-                deck.push(i);
+                deck.push(EAction::Card { a: i as u8 }.into());
             }
         }
         return deck;
@@ -324,7 +251,7 @@ impl EuchreGameState {
             actions.push(EAction::Pass.into())
         }
 
-        let face_up = self.get_suit(self.face_up);
+        let face_up = self.get_suit(self.face_up.into());
         if face_up != Suit::Clubs {
             actions.push(EAction::Clubs.into());
         }
@@ -417,16 +344,12 @@ impl EuchreGameState {
     /// Gets the suit of a given card. Accounts for the weird scoring of the trump suit
     /// if in the playing phase of the game
     fn get_suit(&self, c: Action) -> Suit {
-        let mut suit = match c / CARD_PER_SUIT {
-            x if x == Suit::Clubs as usize => Suit::Clubs,
-            x if x == Suit::Hearts as usize => Suit::Hearts,
-            x if x == Suit::Spades as usize => Suit::Spades,
-            x if x == Suit::Diamonds as usize => Suit::Diamonds,
-            _ => panic!("invalid card"),
-        };
+        let c = EAction::from(c);
+        let mut suit = c.get_suit();
+        let face = c.get_face();
 
         // Correct the jack if in play phase
-        if self.phase == EPhase::Play && c % CARD_PER_SUIT == JACK {
+        if self.phase == EPhase::Play && face == Face::J {
             suit = match (suit.clone(), self.trump.clone()) {
                 (Suit::Clubs, Suit::Spades) => Suit::Spades,
                 (Suit::Spades, Suit::Clubs) => Suit::Clubs,
@@ -442,19 +365,13 @@ impl EuchreGameState {
     /// but can be used to compare card values of the same suit. It accounts for
     /// left and right jack.
     fn get_card_value(&self, c: Action) -> usize {
-        if self.get_suit(c) != self.trump || self.phase != EPhase::Play || c % CARD_PER_SUIT != JACK
-        {
-            return c % CARD_PER_SUIT;
+        let face = EAction::from(c).get_face();
+        if self.get_suit(c) != self.trump || self.phase != EPhase::Play || face != Face::J {
+            return face as usize;
         }
 
         // Get the suit "on the card" determine if left or right
-        let pure_suit = match c / CARD_PER_SUIT {
-            x if x == Suit::Clubs as usize => Suit::Clubs,
-            x if x == Suit::Hearts as usize => Suit::Hearts,
-            x if x == Suit::Spades as usize => Suit::Spades,
-            x if x == Suit::Diamonds as usize => Suit::Diamonds,
-            _ => panic!("invalid card"),
-        };
+        let pure_suit = EAction::from(c).get_suit();
         let is_right = pure_suit == self.trump;
 
         return match is_right {
@@ -504,46 +421,11 @@ impl Display for EuchreGameState {
                 "{:?}: {:?} {:?} {:?}",
                 self.phase,
                 self.hands,
-                format_card(self.face_up),
+                self.face_up,
                 self.istate_string(0)
             ),
         }
     }
-}
-
-/// Populates a string buffer with formated card. Must be 2 characters long
-fn format_card(c: Action) -> String {
-    let mut out = "XX".to_string();
-    put_card(c, &mut out);
-    return out.to_string();
-}
-
-fn put_card(c: Action, out: &mut str) {
-    assert_eq!(out.len(), 2);
-
-    let suit_char = match c / CARD_PER_SUIT {
-        x if x == Suit::Clubs as usize => 'C',
-        x if x == Suit::Hearts as usize => 'H',
-        x if x == Suit::Spades as usize => 'S',
-        x if x == Suit::Diamonds as usize => 'D',
-        _ => panic!("invalid card"),
-    };
-
-    let num_char = match c % CARD_PER_SUIT {
-        0 => '9',
-        1 => 'T',
-        2 => 'J',
-        3 => 'Q',
-        4 => 'K',
-        5 => 'A',
-        _ => panic!("invalid card"),
-    };
-
-    let s_bytes: &mut [u8] = unsafe { out.as_bytes_mut() };
-    assert_eq!(s_bytes.len(), 2);
-    // we've made sure this is safe.
-    s_bytes[0] = num_char as u8;
-    s_bytes[1] = suit_char as u8;
 }
 
 impl GameState for EuchreGameState {
@@ -621,7 +503,7 @@ impl GameState for EuchreGameState {
 
         for i in 0..5 {
             let a = istate[i];
-            let s = EAction::Card { a }.to_string();
+            let s = EAction::from(a).to_string();
             r.push_str(&s);
         }
 
@@ -633,7 +515,7 @@ impl GameState for EuchreGameState {
         let a = istate[5];
 
         r.push('|');
-        let s = EAction::Card { a }.to_string();
+        let s = EAction::from(a).to_string();
         r.push_str(&s);
         r.push('|');
 
@@ -642,7 +524,7 @@ impl GameState for EuchreGameState {
         let mut num_pickups = 0;
         for i in 6..(istate.len()).min(6 + 4) {
             let a = istate[i];
-            let a = EAction::non_card_from(a);
+            let a = EAction::from(a);
             let s = a.to_string();
             r.push_str(&s);
             num_pickups += 1;
@@ -664,7 +546,7 @@ impl GameState for EuchreGameState {
         if !pickup_called {
             for i in 10..(istate.len()).min(6 + 4 + 4) {
                 let a = istate[i];
-                let a = EAction::non_card_from(a);
+                let a = EAction::from(a);
                 let s = a.to_string();
                 r.push_str(&s);
                 num_calls += 1;
@@ -692,7 +574,7 @@ impl GameState for EuchreGameState {
             r.push('|');
             let a = istate[6 + num_pickups];
 
-            let d = EAction::Card { a: a }.to_string();
+            let d = EAction::from(a).to_string();
             r.push_str(&d);
         }
 
@@ -709,7 +591,7 @@ impl GameState for EuchreGameState {
             }
 
             let a = istate[i];
-            let c = EAction::Card { a: a }.to_string();
+            let c = EAction::from(a).to_string();
 
             r.push_str(&c);
             turn += 1;
@@ -752,6 +634,8 @@ impl GameState for EuchreGameState {
 mod tests {
     use std::{collections::HashSet, vec};
 
+    use itertools::Itertools;
+
     use crate::{
         agents::{Agent, RandomAgent},
         game::euchre::{EAction, EPhase, Euchre, Suit},
@@ -765,11 +649,11 @@ mod tests {
 
         assert_eq!(s.phase, EPhase::DealHands);
         for i in 0..20 {
-            s.apply_action(i);
+            s.apply_action(EAction::Card { a: i }.into());
         }
 
         assert_eq!(s.phase, EPhase::DealFaceUp);
-        s.apply_action(20);
+        s.apply_action(EAction::Card { a: 20 }.into());
 
         assert_eq!(s.phase, EPhase::Pickup);
         assert!(!s.is_chance_node);
@@ -793,11 +677,11 @@ mod tests {
 
         assert_eq!(s.phase, EPhase::DealHands);
         for i in 0..20 {
-            s.apply_action(i);
+            s.apply_action(EAction::Card { a: i }.into());
         }
 
         assert_eq!(s.phase, EPhase::DealFaceUp);
-        s.apply_action(20);
+        s.apply_action(EAction::Card { a: 20 }.into());
 
         assert_eq!(s.phase, EPhase::Pickup);
         assert!(!s.is_chance_node);
@@ -807,7 +691,7 @@ mod tests {
         s.apply_action(EAction::Pickup.into());
 
         assert_eq!(s.phase, EPhase::Discard);
-        s.apply_action(3);
+        s.apply_action(EAction::Card { a: 3 }.into());
 
         assert_eq!(s.phase, EPhase::Play);
         assert_eq!(s.cur_player, 0);
@@ -818,60 +702,80 @@ mod tests {
         let mut s = Euchre::new_state();
 
         for i in 0..20 {
-            s.apply_action(i);
+            s.apply_action(EAction::Card { a: i }.into());
             let legal = s.legal_actions();
             for j in 0..i + 1 {
-                let index = legal.iter().position(|&x| x == j);
+                let index = legal
+                    .iter()
+                    .position(|&x| x == EAction::Card { a: j }.into());
                 assert_eq!(index, None);
             }
         }
 
         // Deal the face up card
-        s.apply_action(21);
-        assert_eq!(s.face_up, 21);
+        s.apply_action(EAction::Card { a: 21 }.into());
+        assert_eq!(s.face_up, EAction::Card { a: 21 });
 
         assert_eq!(
             s.legal_actions(),
-            vec![Into::<usize>::into(EAction::Pass), EAction::Pickup.into()]
+            vec![EAction::Pass.into(), EAction::Pickup.into()]
         );
 
         s.apply_action(EAction::Pickup.into());
         // Cards in dealers hand
-        assert_eq!(s.legal_actions(), vec![3, 7, 11, 15, 19]);
+        assert_eq!(
+            s.legal_actions(),
+            vec![3, 7, 11, 15, 19]
+                .iter()
+                .map(|&x| EAction::Card { a: x }.into())
+                .collect_vec()
+        );
         assert_eq!(s.phase, EPhase::Discard);
-        s.apply_action(3);
+        s.apply_action(EAction::Card { a: 3 }.into());
 
         // Cards player 0s hand
         assert_eq!(s.phase, EPhase::Play);
-        assert_eq!(s.legal_actions(), vec![0, 4, 8, 12, 16]);
+        assert_eq!(
+            s.legal_actions(),
+            vec![0, 4, 8, 12, 16]
+                .iter()
+                .map(|&x| EAction::Card { a: x }.into())
+                .collect_vec()
+        );
 
-        s.apply_action(0);
+        s.apply_action(EAction::Card { a: 0 }.into());
         // Player 1 must follow suit
-        assert_eq!(s.legal_actions(), vec![1, 5]);
+        assert_eq!(
+            s.legal_actions(),
+            vec![1, 5]
+                .iter()
+                .map(|&x| EAction::Card { a: x }.into())
+                .collect_vec()
+        );
     }
 
     #[test]
     fn euchre_test_suit() {
         let mut s = Euchre::new_state();
 
-        assert_eq!(s.get_suit(0), Suit::Clubs);
+        assert_eq!(s.get_suit(EAction::Card { a: 0 }.into()), Suit::Clubs);
         // Jack of spades is still a spade
-        assert_eq!(s.get_suit(8), Suit::Spades);
-        assert_eq!(s.get_suit(7), Suit::Spades);
+        assert_eq!(s.get_suit(EAction::Card { a: 8 }.into()), Suit::Spades);
+        assert_eq!(s.get_suit(EAction::Card { a: 7 }.into()), Suit::Spades);
 
         // Deal the cards
         for i in 1..21 {
-            s.apply_action(i);
+            s.apply_action(EAction::Card { a: i }.into());
         }
 
-        s.apply_action(0); // Deal the 9 face up
+        s.apply_action(EAction::Card { a: 0 }.into()); // Deal the 9 face up
         s.apply_action(EAction::Pickup.into());
-        s.apply_action(4);
+        s.apply_action(EAction::Card { a: 4 }.into());
         assert_eq!(s.trump, Suit::Clubs);
         assert_eq!(s.phase, EPhase::Play);
         // Jack of spades is now a club since it's trump
-        assert_eq!(s.get_suit(8), Suit::Clubs);
-        assert_eq!(s.get_suit(7), Suit::Spades);
+        assert_eq!(s.get_suit(EAction::Card { a: 8 }.into()), Suit::Clubs);
+        assert_eq!(s.get_suit(EAction::Card { a: 7 }.into()), Suit::Spades);
     }
 
     #[test]
@@ -879,7 +783,7 @@ mod tests {
         let mut s = Euchre::new_state();
         // Deal the cards
         for i in 0..20 {
-            s.apply_action(i);
+            s.apply_action(EAction::Card { a: i }.into());
         }
 
         assert_eq!(s.istate_string(0), "9CKCJS9HKH");
@@ -887,7 +791,7 @@ mod tests {
         assert_eq!(s.istate_string(2), "JC9SKSJH9D");
         assert_eq!(s.istate_string(3), "QCTSASQHTD");
 
-        s.apply_action(20);
+        s.apply_action(EAction::Card { a: 20 }.into());
         assert_eq!(s.istate_string(0), "9CKCJS9HKH|JD|");
         assert_eq!(s.istate_string(1), "TCACQSTHAH|JD|");
         assert_eq!(s.istate_string(2), "JC9SKSJH9D|JD|");
@@ -900,7 +804,7 @@ mod tests {
 
         // Dealer discards the QC
         assert_eq!(s.istate_string(3), "QCTSASQHTD|JD|T|0D");
-        s.apply_action(3);
+        s.apply_action(EAction::Card { a: 3 }.into());
         assert_eq!(s.istate_string(3), "QCTSASQHTD|JD|T|0D|QC");
 
         for _ in 0..4 {

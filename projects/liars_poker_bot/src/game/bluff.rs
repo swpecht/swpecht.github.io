@@ -18,8 +18,9 @@ const FACES: [Dice; 6] = [
     Dice::Wild,
 ];
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
 pub enum Dice {
+    #[default]
     One,
     Two,
     Three,
@@ -43,8 +44,8 @@ impl Display for Dice {
     }
 }
 
-impl Into<usize> for Dice {
-    fn into(self) -> usize {
+impl Into<u8> for Dice {
+    fn into(self) -> u8 {
         match self {
             Dice::One => 1,
             Dice::Two => 2,
@@ -56,8 +57,8 @@ impl Into<usize> for Dice {
     }
 }
 
-impl From<usize> for Dice {
-    fn from(value: usize) -> Self {
+impl From<u8> for Dice {
+    fn from(value: u8) -> Self {
         match value {
             1 => Dice::One,
             2 => Dice::Two,
@@ -144,32 +145,38 @@ impl PartialOrd for BluffActions {
     }
 }
 
-impl Into<usize> for BluffActions {
-    fn into(self) -> usize {
+impl Into<Action> for BluffActions {
+    fn into(self) -> Action {
         match self {
-            BluffActions::Call => 0,
-            BluffActions::Roll(d) => d.into(), // 1-6
+            BluffActions::Call => Action(0),
+            BluffActions::Roll(d) => Action(d.into()), // 1-6
             BluffActions::Bid(n, d) => {
-                let d: usize = d.into();
-                6 + ((d - 1) * STARTING_DICE * 2) + n
+                let d: u8 = d.into();
+                Action(6 + ((d - 1) * STARTING_DICE as u8 * 2) + n as u8)
             }
         }
     }
 }
 
-impl From<usize> for BluffActions {
-    fn from(value: usize) -> Self {
-        match value {
+impl From<Action> for BluffActions {
+    fn from(value: Action) -> Self {
+        match value.0 {
             0 => BluffActions::Call,
             x if x >= 1 && x <= 6 => BluffActions::Roll(Dice::from(x)),
             x if x <= 30 => {
-                let n = (x - 6) % (STARTING_DICE * 2);
+                let n = (x as usize - 6) % (STARTING_DICE * 2);
                 let n = if n == 0 { 4 } else { n };
                 let d = (x - 7) / 4 + 1;
                 BluffActions::Bid(n, Dice::from(d))
             }
             _ => panic!("invalid action"),
         }
+    }
+}
+
+impl From<Dice> for BluffActions {
+    fn from(value: Dice) -> Self {
+        BluffActions::Roll(value)
     }
 }
 
@@ -224,7 +231,7 @@ impl Bluff {
 #[derive(Copy, Clone, Debug)]
 pub struct BluffGameState {
     phase: Phase,
-    dice: [SortedArrayVec<STARTING_DICE>; 2],
+    dice: [SortedArrayVec<Dice, STARTING_DICE>; 2],
     num_dice: [usize; 2],
     last_bid: BluffActions,
     cur_player: Player,
@@ -244,7 +251,7 @@ impl BluffGameState {
     }
 
     fn apply_action_rolling(&mut self, a: Action) {
-        self.dice[self.cur_player].push(a);
+        self.dice[self.cur_player].push(BluffActions::from(a).get_dice());
 
         // Roll for each player in series
         if self.dice[self.cur_player].len() == self.num_dice[self.cur_player] {
@@ -344,12 +351,12 @@ impl BluffGameState {
                 return true;
             }
 
-            if self.dice[p][0] < a {
-                self.keys[p].push(self.dice[p][0]);
+            if self.dice[p][0] < BluffActions::from(a).get_dice() {
+                self.keys[p].push(BluffActions::from(self.dice[p][0]).into());
                 self.keys[p].push(a);
             } else {
                 self.keys[p].push(a);
-                self.keys[p].push(self.dice[p][0]);
+                self.keys[p].push(BluffActions::from(self.dice[p][0]).into());
             }
 
             return true;
@@ -553,19 +560,18 @@ impl GameState for BluffGameState {
     fn get_payoff(&self, fixed_player: super::Player, chance_outcome: ChanceOutcome) -> f64 {
         let non_fixed = if fixed_player == 0 { 1 } else { 0 };
         let mut new_roll = SortedArrayVec::new();
-        for o in 0..chance_outcome.len() {
-            new_roll.push(o);
+        for i in 0..chance_outcome.len() {
+            new_roll.push(BluffActions::from(chance_outcome[i]).get_dice());
         }
 
         let mut dice = self.dice;
-
         dice[fixed_player] = new_roll;
         return calculate_payoff(&dice, self.last_bid, &self.cur_player)[non_fixed] as f64;
     }
 }
 
 fn calculate_payoff(
-    dice: &[SortedArrayVec<2>; 2],
+    dice: &[SortedArrayVec<Dice, 2>; 2],
     last_bid: BluffActions,
     calling_player: &Player,
 ) -> Vec<f32> {
@@ -612,14 +618,13 @@ mod tests {
 
     /// Ensure the actions are all unique
     #[test]
-    fn test_bluff_actions_to_usize() {
-        let mut values: HashSet<usize> = HashSet::new();
+    fn test_bluff_actions_to_action() {
+        let mut values: HashSet<Action> = HashSet::new();
 
-        let c: usize = BluffActions::Call.into();
-        values.insert(c);
+        values.insert(BluffActions::Call.into());
 
         for &f in &FACES {
-            let d: usize = BluffActions::Roll(f).into();
+            let d = BluffActions::Roll(f).into();
             assert!(!values.contains(&d));
             values.insert(d);
         }
@@ -627,7 +632,7 @@ mod tests {
         let max_bets = STARTING_DICE * 2;
         for n in 1..max_bets + 1 {
             for &f in &FACES {
-                let a: usize = BluffActions::Bid(n, f).into();
+                let a = BluffActions::Bid(n, f).into();
                 assert!(!values.contains(&a));
                 values.insert(a);
             }
@@ -732,7 +737,7 @@ mod tests {
             // don't include the wild
             for n in 1..max_bets + 1 {
                 let bid = BluffActions::Bid(n, f);
-                let a: usize = bid.into();
+                let a: Action = bid.into();
                 let from_bid = BluffActions::from(a);
                 assert_eq!(from_bid, bid);
             }

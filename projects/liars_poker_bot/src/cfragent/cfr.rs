@@ -4,7 +4,7 @@ use crate::{
     cfragent::cfrnode::CFRNode,
     database::{memory_node_store::MemoryNodeStore, NodeStore},
     game::kuhn_poker::{KPAction, KuhnPoker},
-    game::{Action, GameState, Player},
+    game::{GameState, Player},
     istate::IStateKey,
 };
 
@@ -167,9 +167,8 @@ fn _check_floats(x: f64, y: f64, i: i32) {
 }
 
 /// Gets a key for player 0 of a new gamestate after applying the passed actions
-fn _get_key(actions: &[Action]) -> IStateKey {
+fn _get_key(actions: &[KPAction]) -> IStateKey {
     let g = KuhnPoker::from_actions(actions);
-
     return g.istate_key(0);
 }
 
@@ -187,34 +186,34 @@ pub(super) fn _test_kp_nash<T: Algorithm>(mut alg: T, iterations: usize) {
     // The second player has a single equilibrium strategy:
     // Always betting or calling when having a King
     // 2b
-    let k = _get_key(&[2, 0, KPAction::Bet as usize]);
+    let k = _get_key(&[KPAction::King, KPAction::Jack, KPAction::Bet]);
     let w = _get_policy(&mut ns, &k);
-    _check_floats(w[KPAction::Bet as usize], 1.0, 3);
+    _check_floats(w[KPAction::Bet.into()], 1.0, 3);
 
     // 2p
-    let k = _get_key(&[2, 0, KPAction::Pass as usize]);
+    let k = _get_key(&[KPAction::King, KPAction::Jack, KPAction::Pass]);
     let w = _get_policy(&mut ns, &k);
-    _check_floats(w[KPAction::Bet as usize], 1.0, 3);
+    _check_floats(w[KPAction::Bet.into()], 1.0, 3);
 
     // when having a Queen, checking if possible, otherwise calling with the probability of 1/3
     // 1p
-    let k = _get_key(&[1, 0, KPAction::Pass as usize]);
+    let k = _get_key(&[KPAction::Queen, KPAction::Jack, KPAction::Pass]);
     let w = _get_policy(&mut ns, &k);
-    _check_floats(w[KPAction::Pass as usize], 1.0, 2);
+    _check_floats(w[KPAction::Pass.into()], 1.0, 2);
     // 1b
-    let k = _get_key(&[1, 0, KPAction::Bet as usize]);
+    let k = _get_key(&[KPAction::Queen, KPAction::Jack, KPAction::Bet]);
     let w = _get_policy(&mut ns, &k);
-    _check_floats(w[KPAction::Bet as usize], 1.0 / 3.0, 2);
+    _check_floats(w[KPAction::Bet.into()], 1.0 / 3.0, 2);
 
     // when having a Jack, never calling and betting with the probability of 1/3.
     // 0b
-    let k = _get_key(&[0, 1, KPAction::Bet as usize]);
+    let k = _get_key(&[KPAction::Jack, KPAction::Queen, KPAction::Bet]);
     let w = _get_policy(&mut ns, &k);
-    _check_floats(w[KPAction::Pass as usize], 1.0, 2);
+    _check_floats(w[KPAction::Pass.into()], 1.0, 2);
     // 0p
-    let k = _get_key(&[0, 1, KPAction::Pass as usize]);
+    let k = _get_key(&[KPAction::Jack, KPAction::Queen, KPAction::Pass]);
     let w = _get_policy(&mut ns, &k);
-    _check_floats(w[KPAction::Bet as usize], 0.3333, 2);
+    _check_floats(w[KPAction::Bet.into()], 0.3333, 2);
 
     // First player equilibrium
     // In one possible formulation, player one freely chooses the probability
@@ -222,34 +221,44 @@ pub(super) fn _test_kp_nash<T: Algorithm>(mut alg: T, iterations: usize) {
     // with which he will bet when having a Jack (otherwise he checks; if the
     //other player bets, he should always fold).
     // 0
-    let k = _get_key(&[0]);
-    let alpha = _get_policy(&mut ns, &k)[KPAction::Bet as usize];
+    let k = _get_key(&[KPAction::Jack]);
+    let alpha = _get_policy(&mut ns, &k)[KPAction::Bet.into()];
     assert!(alpha < 1.0 / 3.0);
 
     // 0pb
-    let k = _get_key(&[0, 1, KPAction::Pass as usize, KPAction::Bet as usize]);
+    let k = _get_key(&[
+        KPAction::Jack,
+        KPAction::Queen,
+        KPAction::Pass,
+        KPAction::Bet,
+    ]);
     let w = _get_policy(&mut ns, &k);
-    _check_floats(w[KPAction::Pass as usize], 1.0, 2);
+    _check_floats(w[KPAction::Pass.into()], 1.0, 2);
 
     // When having a King, he should bet with the probability of {\displaystyle 3\alpha }3\alpha
     // (otherwise he checks; if the other player bets, he should always call)
     // 2
-    let k = _get_key(&[2]);
+    let k = _get_key(&[KPAction::King]);
     let w = _get_policy(&mut ns, &k);
-    _check_floats(w[KPAction::Bet as usize], 3.0 * alpha, 2);
+    _check_floats(w[KPAction::Bet.into()], 3.0 * alpha, 2);
 
     // He should always check when having a Queen, and if the other player bets after this check,
     // he should call with the probability of {\displaystyle \alpha +1/3}{\displaystyle \alpha +1/3}.
     // 1
-    let k = _get_key(&[1]);
+    let k = _get_key(&[KPAction::Queen]);
     let w = _get_policy(&mut ns, &k);
-    _check_floats(w[KPAction::Pass as usize], 1.0, 2);
+    _check_floats(w[KPAction::Pass.into()], 1.0, 2);
 
     // 1pb
-    let k = _get_key(&[1, 0, KPAction::Pass as usize, KPAction::Bet as usize]);
+    let k = _get_key(&[
+        KPAction::Queen,
+        KPAction::Jack,
+        KPAction::Pass,
+        KPAction::Bet,
+    ]);
     let w = _get_policy(&mut ns, &k);
     // We nudge the optimal weight here to save on iterations for convergence
-    _check_floats(w[KPAction::Bet as usize], alpha + 1.0 / 3.0, 2);
+    _check_floats(w[KPAction::Bet.into()], alpha + 1.0 / 3.0, 2);
 }
 
 #[cfg(test)]

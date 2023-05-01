@@ -44,12 +44,12 @@ struct Cursor {
 struct Node<T> {
     parent: usize,
     children: [usize; MAX_CHILDREN],
-    action: usize,
+    action: Action,
     v: Option<T>,
 }
 
 impl<T> Node<T> {
-    fn new(p: Action, a: Action, v: Option<T>) -> Self {
+    fn new(p: usize, a: Action, v: Option<T>) -> Self {
         Self {
             parent: p,
             children: [0; MAX_CHILDREN],
@@ -95,7 +95,8 @@ impl<T: Clone> Tree<T> {
     fn get_or_create_child(&mut self, parent: usize, action: Action) -> usize {
         let p = &self.nodes[parent];
         // let c = p.children.get(&action);
-        let c = p.children[action];
+        let v: u8 = action.into();
+        let c = p.children[v as usize];
 
         if c != 0 {
             return c;
@@ -106,7 +107,7 @@ impl<T: Clone> Tree<T> {
         self.nodes.push(cn);
 
         let p = &mut self.nodes[parent];
-        p.children[action] = c;
+        p.children[v as usize] = c;
 
         return c;
     }
@@ -223,8 +224,11 @@ fn find_last_same<const N: usize>(ka: &ArrayVec<N>, ca: &ArrayVec<N>) -> Option<
 mod tests {
 
     use crate::{
-        collections::ArrayVec, database::node_tree::find_last_same, game::euchre::Euchre,
-        game::GameState, istate::IStateKey,
+        collections::ArrayVec,
+        database::node_tree::find_last_same,
+        game::euchre::Euchre,
+        game::{Action, GameState},
+        istate::IStateKey,
     };
 
     use super::Tree;
@@ -278,8 +282,8 @@ mod tests {
     fn test_node_tree_simple() {
         let mut t = Tree::new();
         let mut k1 = IStateKey::new();
-        k1.push(0);
-        k1.push(1);
+        k1.push(Action(0));
+        k1.push(Action(1));
 
         t.insert(k1.clone(), 1);
 
@@ -289,39 +293,39 @@ mod tests {
     #[test]
     fn test_find_last_same() {
         let mut a = ArrayVec::<10>::new();
-        a.push(1);
+        a.push(Action(1));
 
         let mut b = ArrayVec::new();
-        b.push(1);
+        b.push(Action(1));
 
         let fd = find_last_same(&a, &b);
         assert_eq!(fd, Some(0));
 
         let mut c = ArrayVec::new();
-        c.push(42);
+        c.push(Action(42));
         let fd = find_last_same(&a, &c);
         assert_eq!(fd, None);
 
-        a.push(2);
-        b.push(3);
+        a.push(Action(2));
+        b.push(Action(3));
 
         let fd = find_last_same(&a, &b);
         assert_eq!(fd.unwrap(), 0);
 
-        a.push(2);
+        a.push(Action(2));
         let fd = find_last_same(&a, &b);
         assert_eq!(fd.unwrap(), 0);
 
-        b.push(3);
+        b.push(Action(3));
         let fd = find_last_same(&a, &b);
         assert_eq!(fd.unwrap(), 0);
 
         let mut a = ArrayVec::<10>::new();
-        a.push(0);
-        a.push(1);
-        a.push(2);
+        a.push(Action(0));
+        a.push(Action(1));
+        a.push(Action(2));
         let b = a.clone();
-        a.push(3);
+        a.push(Action(3));
         let fd = find_last_same(&a, &b);
         assert_eq!(fd.unwrap(), 2);
 

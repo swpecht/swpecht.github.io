@@ -11,20 +11,20 @@ use crate::game::Action;
 /// Array backed card storage that implements Vector-like features and is copyable
 /// It also always remains sorted
 #[derive(Clone, Copy, Debug)]
-pub struct SortedArrayVec<const N: usize> {
+pub struct SortedArrayVec<T: Copy + Clone + Default, const N: usize> {
     len: usize,
-    data: [Action; N],
+    data: [T; N],
 }
 
-impl<const N: usize> SortedArrayVec<N> {
+impl<T: Copy + Clone + Default + PartialOrd + PartialEq, const N: usize> SortedArrayVec<T, N> {
     pub fn new() -> Self {
         Self {
             len: 0,
-            data: [0; N],
+            data: [T::default(); N],
         }
     }
 
-    pub fn push(&mut self, c: Action) {
+    pub fn push(&mut self, c: T) {
         assert!(self.len < self.data.len());
 
         if self.len == 0 || self.data[self.len - 1] <= c {
@@ -57,7 +57,7 @@ impl<const N: usize> SortedArrayVec<N> {
         }
     }
 
-    pub fn remove(&mut self, c: Action) {
+    pub fn remove(&mut self, c: T) {
         for i in 0..self.len {
             if self.data[i] == c {
                 self.shift_left(i + 1);
@@ -73,7 +73,7 @@ impl<const N: usize> SortedArrayVec<N> {
         return self.len;
     }
 
-    pub fn to_vec(&self) -> Vec<Action> {
+    pub fn to_vec(&self) -> Vec<T> {
         let mut v = Vec::with_capacity(self.len);
         for i in 0..self.len {
             v.push(self.data[i]);
@@ -82,7 +82,7 @@ impl<const N: usize> SortedArrayVec<N> {
         return v;
     }
 
-    pub fn contains(&self, c: &Action) -> bool {
+    pub fn contains(&self, c: &T) -> bool {
         let mut contains = false;
 
         for i in 0..self.len {
@@ -95,8 +95,16 @@ impl<const N: usize> SortedArrayVec<N> {
     }
 }
 
-impl<const N: usize> Index<usize> for SortedArrayVec<N> {
-    type Output = Action;
+impl<T: Copy + Clone + Default + PartialEq + PartialOrd, const N: usize> Default
+    for SortedArrayVec<T, N>
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T: Copy + Clone + Default, const N: usize> Index<usize> for SortedArrayVec<T, N> {
+    type Output = T;
 
     fn index(&self, index: usize) -> &Self::Output {
         assert!(index < self.len);
@@ -115,7 +123,7 @@ impl<const N: usize> ArrayVec<N> {
     pub fn new() -> Self {
         Self {
             len: 0,
-            data: [0; N],
+            data: [Action(0); N],
         }
     }
 
@@ -176,43 +184,45 @@ impl<const N: usize> Hash for ArrayVec<N> {
 
 #[cfg(test)]
 mod tests {
+    use crate::game::Action;
+
     use super::{ArrayVec, SortedArrayVec};
 
     #[test]
     fn test_sorted_array_vec() {
-        let mut h: SortedArrayVec<5> = SortedArrayVec::new();
+        let mut h: SortedArrayVec<Action, 5> = SortedArrayVec::new();
 
         // test basic add and index
-        h.push(0);
-        h.push(1);
-        assert_eq!(h[0], 0);
-        assert_eq!(h[1], 1);
-        assert!(h.contains(&1));
-        assert!(!h.contains(&10));
+        h.push(Action(0));
+        h.push(Action(1));
+        assert_eq!(h[0], Action(0));
+        assert_eq!(h[1], Action(1));
+        assert!(h.contains(&Action(1)));
+        assert!(!h.contains(&Action(10)));
         assert_eq!(h.len(), 2);
 
         // test sorting
-        h.push(10);
-        h.push(2);
-        assert_eq!(h[2], 2);
-        assert_eq!(h[3], 10);
+        h.push(Action(10));
+        h.push(Action(2));
+        assert_eq!(h[2], Action(2));
+        assert_eq!(h[3], Action(10));
         assert_eq!(h.len(), 4);
 
-        h.remove(1);
-        assert_eq!(h[0], 0);
-        assert_eq!(h[1], 2);
-        assert_eq!(h[2], 10);
+        h.remove(Action(1));
+        assert_eq!(h[0], Action(0));
+        assert_eq!(h[1], Action(2));
+        assert_eq!(h[2], Action(10));
         assert_eq!(h.len(), 3);
     }
 
     #[test]
     fn test_array_vec() {
         let mut v = ArrayVec::<5>::new();
-        v.push(42);
-        v.push(10);
+        v.push(Action(42));
+        v.push(Action(10));
 
-        assert_eq!(v[0], 42);
-        assert_eq!(v[1], 10);
+        assert_eq!(v[0], Action(42));
+        assert_eq!(v[1], Action(10));
         assert_eq!(v.len(), 2);
 
         let n = v.trim(3);

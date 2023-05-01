@@ -75,6 +75,7 @@ mod tests {
 
     use crate::{
         database::{disk_backend::DiskBackend, file_backend::FileBackend, page::Page, Storage},
+        game::Action,
         istate::IStateKey,
     };
 
@@ -86,7 +87,7 @@ mod tests {
             let mut k = IStateKey::new();
             for _ in 0..5 {
                 let p: u8 = rand::thread_rng().gen();
-                k.push(p.into());
+                k.push(Action(p));
             }
             let v: Vec<char> = rand::thread_rng()
                 .sample_iter(&Alphanumeric)

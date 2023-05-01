@@ -83,30 +83,32 @@ impl<T> Debug for Page<T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{cfragent::cfrnode::CFRNode, istate::IStateKey};
+    use itertools::Itertools;
+
+    use crate::{cfragent::cfrnode::CFRNode, game::Action, istate::IStateKey};
 
     use super::{Page, MAX_PAGE_LEN};
 
     #[test]
     fn test_page_contains() {
         let mut k = IStateKey::new();
-        k.append(&[1, 0, 0, 0, 1]);
+        k.append(&[1, 0, 0, 0, 1].iter().map(|&x| Action(x)).collect_vec());
         let p: Page<CFRNode> = Page::new(&k, &[3]);
 
         let mut pk = IStateKey::new();
-        pk.append(&[1, 0, 0]);
+        pk.append(&[1, 0, 0].iter().map(|&x| Action(x)).collect_vec());
         assert_eq!(p.istate, pk);
 
         assert!(p.contains(&k));
-        k.push(5);
+        k.push(Action(5));
         assert!(p.contains(&k));
 
         let mut dk = IStateKey::new();
-        dk.append(&[1, 1, 0, 0, 1]);
+        dk.append(&[1, 1, 0, 0, 1].iter().map(|&x| Action(x)).collect_vec());
         assert!(!p.contains(&dk));
 
         let mut sk = IStateKey::new();
-        sk.append(&[1, 0]);
+        sk.append(&[1, 0].iter().map(|&x| Action(x)).collect_vec());
         let p: Page<CFRNode> = Page::new(&sk, &[3]);
         let pk = IStateKey::new(); // blank key
         assert_eq!(p.istate, pk);
