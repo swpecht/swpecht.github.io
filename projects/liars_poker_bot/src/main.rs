@@ -5,7 +5,7 @@ use clap::Parser;
 use clap::clap_derive::ArgEnum;
 
 use liars_poker_bot::agents::{Agent, RandomAgent};
-use liars_poker_bot::cfragent::CFRAgent;
+use liars_poker_bot::cfragent::{CFRAgent, CFRAlgorithm};
 use liars_poker_bot::database::memory_node_store::MemoryNodeStore;
 use liars_poker_bot::database::{tune_page, Storage};
 use liars_poker_bot::game::bluff::Bluff;
@@ -52,6 +52,9 @@ struct Args {
 
     #[clap(short, long, action, default_value = "")]
     file: String,
+
+    #[clap(arg_enum, long, value_parser, default_value_t = CFRAlgorithm::CFRCS)]
+    alg: CFRAlgorithm,
 
     /// Allow module to log
     #[structopt(long = "module")]
@@ -170,22 +173,46 @@ fn run(args: Args) {
         _ => panic!("need to add support to create named files"), // Storage::Named(args.file),
     };
 
-    println!("running for: {:?}", args.game);
+    println!("running for: {:?} with {:?}", args.game, args.alg);
     match args.game {
         GameType::KuhnPoker => {
-            CFRAgent::new(KuhnPoker::game(), 1, 100_001, MemoryNodeStore::new());
+            CFRAgent::new(
+                KuhnPoker::game(),
+                1,
+                100_001,
+                MemoryNodeStore::new(),
+                args.alg,
+            );
         }
         GameType::Euchre => {
-            CFRAgent::new(Euchre::game(), 1, 5000, MemoryNodeStore::new());
+            CFRAgent::new(Euchre::game(), 1, 5000, MemoryNodeStore::new(), args.alg);
         }
         GameType::Bluff11 => {
-            CFRAgent::new(Bluff::game(1, 1), 1, 100_000_001, MemoryNodeStore::new());
+            CFRAgent::new(
+                Bluff::game(1, 1),
+                1,
+                100_000_001,
+                MemoryNodeStore::new(),
+                args.alg,
+            );
         }
         GameType::Bluff21 => {
-            CFRAgent::new(Bluff::game(2, 1), 1, 100_000_001, MemoryNodeStore::new());
+            CFRAgent::new(
+                Bluff::game(2, 1),
+                1,
+                100_000_001,
+                MemoryNodeStore::new(),
+                args.alg,
+            );
         }
         GameType::Bluff22 => {
-            CFRAgent::new(Bluff::game(2, 2), 1, 100_000_001, MemoryNodeStore::new());
+            CFRAgent::new(
+                Bluff::game(2, 2),
+                1,
+                100_000_001,
+                MemoryNodeStore::new(),
+                args.alg,
+            );
         }
     };
 }

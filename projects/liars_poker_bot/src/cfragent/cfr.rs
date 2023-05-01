@@ -59,11 +59,12 @@ impl VanillaCFR {
         chance_reach: f64,
         mut phase: CFRPhase,
     ) -> f64 {
+        self.nodes_touched += 1;
+
         let cur_player = gs.cur_player();
         if gs.is_terminal() {
             return gs.evaluate()[update_player].into();
         }
-        self.nodes_touched += 1;
 
         if gs.is_chance_node() {
             let mut ev = 0.0;
