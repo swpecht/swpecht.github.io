@@ -9,7 +9,10 @@ use crate::{
     game::{GameState, Player},
 };
 
-use super::{cfr::Algorithm, CFRNode};
+use super::{
+    cfr::{Algorithm, CFRPhase},
+    CFRNode,
+};
 
 /// Implementation of chance sampled CFR
 ///
@@ -18,12 +21,6 @@ use super::{cfr::Algorithm, CFRNode};
 pub struct CFRCS {
     nodes_touched: usize,
     rng: StdRng,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum CFRPhase {
-    Phase1,
-    Phase2,
 }
 
 impl Algorithm for CFRCS {

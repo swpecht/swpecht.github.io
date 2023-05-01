@@ -1,5 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
+use log::trace;
+
 use crate::{
     cfragent::cfrnode::CFRNode,
     database::{memory_node_store::MemoryNodeStore, NodeStore},
@@ -20,6 +22,12 @@ pub trait Algorithm {
     fn nodes_touched(&self) -> usize;
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum CFRPhase {
+    Phase1,
+    Phase2,
+}
+
 pub struct VanillaCFR {
     nodes_touched: usize,
 }
@@ -31,7 +39,7 @@ impl Algorithm for VanillaCFR {
         gs: &T,
         update_player: Player,
     ) {
-        self.vcfr(ns, gs, update_player, 0, 1.0, 1.0, 1.0);
+        self.vcfr(ns, gs, update_player, 0, 1.0, 1.0, 1.0, CFRPhase::Phase1);
     }
 
     fn nodes_touched(&self) -> usize {
@@ -49,6 +57,7 @@ impl VanillaCFR {
         reach0: f64,
         reach1: f64,
         chance_reach: f64,
+        mut phase: CFRPhase,
     ) -> f64 {
         let cur_player = gs.cur_player();
         if gs.is_terminal() {
@@ -75,9 +84,37 @@ impl VanillaCFR {
                         reach0,
                         reach1,
                         new_chance_reach,
+                        phase,
                     );
             }
             return ev;
+        }
+
+        // check for cuts  (pruning optimization from Section 2.2.2) of Marc's thesis
+        let team = match cur_player {
+            0 | 2 => 0,
+            1 | 3 => 1,
+            _ => panic!("invald player"),
+        };
+        let update_team = match update_player {
+            0 | 2 => 0,
+            1 | 3 => 1,
+            _ => panic!("invald player"),
+        };
+
+        if phase == CFRPhase::Phase1
+            && ((team == 0 && update_team == 0 && reach1 <= 0.0)
+                || (team == 1 && update_team == 1 && reach0 <= 0.0))
+        {
+            phase = CFRPhase::Phase2;
+        }
+
+        if phase == CFRPhase::Phase2
+            && ((team == 0 && update_team == 0 && reach0 <= 0.0)
+                || (team == 1 && update_team == 1 && reach1 <= 0.0))
+        {
+            trace!("pruning cfr tree");
+            return 0.0;
         }
 
         let is = gs.istate_key(gs.cur_player());
@@ -121,28 +158,37 @@ impl VanillaCFR {
                 newreach0,
                 newreach1,
                 chance_reach,
+                phase,
             );
             move_evs[a] = payoff;
             strat_ev += move_probs[a] * payoff;
         }
 
-        // // post-traversals: update the infoset
-        if cur_player == update_player {
-            let (my_reach, opp_reach) = match gs.cur_player() {
-                0 | 2 => (reach0, reach1),
-                1 | 3 => (reach1, reach0),
-                _ => panic!("invalid player"),
-            };
-
-            for a in actions {
+        // post-traversals: update the infoset
+        let (my_reach, opp_reach) = match gs.cur_player() {
+            0 | 2 => (reach0, reach1),
+            1 | 3 => (reach1, reach0),
+            _ => panic!("invalid player"),
+        };
+        if phase == CFRPhase::Phase1 && cur_player == update_player {
+            for &a in &actions {
                 let mut n = node.borrow_mut();
                 n.regret_sum[a] += (chance_reach * opp_reach) * (move_evs[a] - strat_ev);
+            }
+        }
+
+        if phase == CFRPhase::Phase2 && cur_player == update_player {
+            for a in actions {
+                let mut n = node.borrow_mut();
                 n.total_move_prob[a] += my_reach * n.move_prob[a]
             }
+        }
 
+        if cur_player == update_player {
             // Todo: move memory to be managed by nodestore -- a get call always returns a node, initialized by the store
             ns.insert_node(is, node);
         }
+
         return strat_ev;
     }
 
