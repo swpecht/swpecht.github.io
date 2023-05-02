@@ -23,7 +23,8 @@ Going to use Liar's poker bots to illustrate why.
     * 011011101001001110100001011000001111001001001011
     *01100100010101100000010111000000111100100100101100111
 [*] Implement lookup improvement for pages -- use hash table for pages. Store keys in a vector so can use that still to manage when to write things to disk
-[ ] have database return references to nodes rather than clones?
+[*] have database return references to nodes rather than clones?
+    * And fix the need to reinsert after getting something from nodestore -- have a get always return a node, and then can manipulate in place
 [*] Use IStateKey until the final step when converting to a string for storage
     * And use bit shift to cut to the right
     * Move the conversion of istate key to string to be deeper in code -- make pages work with istate key and avoid the need to create strings all together (except on page faults). Can just bitshift the key to get the proper page name.
@@ -31,14 +32,9 @@ Going to use Liar's poker bots to illustrate why.
 [ ] Move IO to a separate thread
     *Probably want to do with raw threads and maybe use rayon for computation?
     *<https://doc.rust-lang.org/book/ch16-02-message-passing.html>
-[ ] Implement metric to track performance -- see how close to converging
+[*] Implement metric to track performance -- see how close to converging
     * Use this to compare the vanilla CFR and chance samples CFR algorithms for a simple game -- first blog post?
     * Could also do this for a single deal of Euchre to see how things are converging
-[ ] Train a single deal repeatedly, seed 1? See if converges to good play?
-    *May need to add way to judge performance, see thesis on possible metrics
-    *results going into /tmp/seed_0
-    *See Thesis, pg 139, algorithm 8
-    * <http://mlanctot.info/>
 [*] Imlement other CFR algorithms, see Marc's phd and website for implementations
     * May already be using chance sampling -- need to fix my algorithm
     * Probably should implement vanilla cfr as well to ensure working as expected
@@ -46,11 +42,31 @@ Going to use Liar's poker bots to illustrate why.
     * doesn't seem to speed anything up
     * Didn't help, but swapping to a copyable arrayvec, that's always sorted did
 [*] Optimize IstateKey Read -- probaby just switch to using an array vec of the actions for the key? -- makes indexing near instant
-[ ] Improve the Tree
+[*] Improve the Tree
     * Have get functions make the node and cache the id for later use
     * use https://crates.io/crates/rustc-hash for hashmap for children
     * save the last place and navigate to the right node from there, e.g. step back then forward
 [*] IMPORTANT: Make sure Istate keys are sorted for dealt cards
+[*] Fix how CFR node tracks how many valid actions there are
+[*] Need to change how chance outcomes are tracked -- probably want to just have a vec of arrays for the number of chance outcomes
+    * Should then work for bluff which can have up to 2 chance outcomes -- maybe use ArrayVec for this?
+
+[ ] Best response doesn't follow same access pattern as CFR -- nodes actuall aren't that close to each other
+    * Slowdown happens when doing the loop for the CO state calls
+    * Arrays didn't meaningfully improve things -- why not? should future calls of the same starting node be close together?
+        * Might be a bug in cursor code
+    * Alternative, more drastic approach is to store the policy at each node for every possible private state that could be part of it
+        * Would make the reads close together -- but might impact CFR?
+[*] IMPORTANT: Switch to f64 for nodestore -- avoid any issues with percision
+[*] IMPORTANT: Implement Bluff(1,1) and Bluff(2,1) to compare to marc's thesis results
+    * Bluff(1,1) not converging, likely something wrong in the implementation
+    * Maybe try running with the other person as the fixed player?
+    * Maybe switch to action being a concrete type to avoid an indexing bugs
+        * https://doc.rust-lang.org/stable/book/ch19-04-advanced-types.html?highlight=newtype#using-the-newtype-pattern-for-type-safety-and-abstraction
+        * https://doc.rust-lang.org/stable/book/ch19-03-advanced-traits.html#using-the-newtype-pattern-to-implement-external-traits-on-external-types
+        * Should be as performant
+        * Probably make Action a trait, and then have game actions implement it
+[ ] Implement pruning for CFR to match CFRCS
 
 Need to decide what to include in the first blog post.
 
