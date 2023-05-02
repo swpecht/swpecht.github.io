@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
-use log::trace;
+use log::{debug, trace};
 
 use crate::{
     cfragent::cfrnode::CFRNode,
@@ -59,6 +59,9 @@ impl VanillaCFR {
         chance_reach: f64,
         mut phase: CFRPhase,
     ) -> f64 {
+        if self.nodes_touched % 1000000 == 0 {
+            debug!("cfr touched {} nodes", self.nodes_touched);
+        }
         self.nodes_touched += 1;
 
         let cur_player = gs.cur_player();
