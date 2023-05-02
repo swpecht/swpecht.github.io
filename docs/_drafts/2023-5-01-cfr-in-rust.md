@@ -11,20 +11,11 @@ All the code for this post can be found [on Github](https://github.com/swpecht/s
 
 I have implemented both vanilla CFR and CFR with chance sampling (CFRCS). Both algorithms have been evaluated on [Kuhn Poker](https://en.wikipedia.org/wiki/Kuhn_poker) and Bluff ([liar's dice](https://en.wikipedia.org/wiki/Liar%27s_dice)). Overall, for larger games, CFRCS converges to a more optimal strategy faster than CFR.
 
-
-# CFR overview
-I used 3 main components to implement CFR for games:
-* the CFR algorithms themselves
-* A `node` object to store the cumulative regrets and move probabilities for every istate
-* A node store that can retrieve and save `node`s based on an istate key (think a HashMap)
-
-I found the second two to be well documented with other sources. But I struggled with implementing 1 and especially understanding the difference between vanilla CFR and CFRCS.
-
 # CFR algorithm
 The CFR algorithm is taken from [section 2.2.2 of Marc Lanctot's thesis](http://mlanctot.info/files/papers/PhD_Thesis_MarcLanctot.pdf):
 ![CFR algorithm](/assets/cfr-in-rust/vCFR.png)
 
-As someone without an academic background in the subject, this made essentially zero sense to me. After doing my own implementation, here a line-by-line breakdown for how I understand this:
+As someone without an academic background in the subject, this made little sense to me. I understood the high-level concept for CFR -- choose an action that minimizes regret. But I didn't understand the details of how to actually implement it. After doing my own implementation, here a line-by-line breakdown for how I understand this:
 
 --------------
 ![CFR lines 1-4](/assets/cfr-in-rust/vCFR%201-4.png)

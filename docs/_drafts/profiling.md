@@ -20,3 +20,8 @@ sudo sysctl -w kernel.perf_event_paranoid=-1
 
 
  https://gist.github.com/dlaehnemann/df31787c41bd50c0fe223df07cf6eb89
+
+ https://github.com/koute/bytehound
+
+ heaptrack_gui heaptrack.liars_poker_bot.15629.zst
+ heaptrack {program}
