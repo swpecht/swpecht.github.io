@@ -383,10 +383,10 @@ impl GameState for BluffGameState {
         }
     }
 
-    fn evaluate(&self) -> Vec<f32> {
+    fn evaluate(&self, p: Player) -> f64 {
         assert_eq!(self.num_players, 2);
 
-        return calculate_payoff(&self.dice, self.last_bid, &self.cur_player);
+        return calculate_payoff(&self.dice, self.last_bid, &self.cur_player, p);
     }
 
     fn istate_key(&self, player: Player) -> crate::istate::IStateKey {
@@ -566,7 +566,7 @@ impl GameState for BluffGameState {
 
         let mut dice = self.dice;
         dice[fixed_player] = new_roll;
-        return calculate_payoff(&dice, self.last_bid, &self.cur_player)[non_fixed] as f64;
+        return calculate_payoff(&dice, self.last_bid, &self.cur_player, non_fixed);
     }
 }
 
@@ -574,7 +574,8 @@ fn calculate_payoff(
     dice: &[SortedArrayVec<Dice, 2>; 2],
     last_bid: BluffActions,
     calling_player: &Player,
-) -> Vec<f32> {
+    player: Player,
+) -> f64 {
     let f = last_bid.get_dice();
 
     let mut n = 0;
@@ -590,12 +591,11 @@ fn calculate_payoff(
     let actual = BluffActions::Bid(n, f);
     let caller_right = actual < last_bid;
 
-    return match (calling_player, caller_right) {
-        (0, true) => vec![1.0, -1.0],
-        (1, true) => vec![-1.0, 1.0],
-        (1, false) => vec![1.0, -1.0],
-        (0, false) => vec![-1.0, 1.0],
-        _ => panic!("invalid cur player"),
+    return match (*calling_player == player, caller_right) {
+        (true, true) => 1.0,
+        (true, false) => -1.0,
+        (false, true) => -1.0,
+        (false, false) => 1.0,
     };
 }
 
@@ -699,7 +699,8 @@ mod tests {
         gs.apply_action(BluffActions::Call.into());
 
         assert!(gs.is_terminal());
-        assert_eq!(gs.evaluate(), vec![-1.0, 1.0]);
+        assert_eq!(gs.evaluate(0), -1.0);
+        assert_eq!(gs.evaluate(1), 1.0);
     }
 
     #[test]
@@ -803,7 +804,8 @@ mod tests {
         gs.apply_action(BluffActions::Bid(2, Dice::One).into());
         gs.apply_action(BluffActions::Call.into());
 
-        assert_eq!(gs.evaluate(), vec![-1.0, 1.0]);
+        assert_eq!(gs.evaluate(0), -1.0);
+        assert_eq!(gs.evaluate(1), 1.0);
 
         let istate = gs.istate_string(0);
         assert_eq!(istate, "1|11|21|C");
@@ -881,7 +883,8 @@ mod tests {
         gs.apply_action(BluffActions::Bid(3, Dice::One).into());
         gs.apply_action(BluffActions::Call.into());
 
-        assert_eq!(gs.evaluate(), vec![-1.0, 1.0]);
+        assert_eq!(gs.evaluate(0), -1.0);
+        assert_eq!(gs.evaluate(1), 1.0);
 
         let istate = gs.istate_string(0);
         assert_eq!(istate, "11|11|31|C");

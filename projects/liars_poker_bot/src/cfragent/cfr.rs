@@ -66,7 +66,7 @@ impl VanillaCFR {
 
         let cur_player = gs.cur_player();
         if gs.is_terminal() {
-            return gs.evaluate()[update_player].into();
+            return gs.evaluate(update_player);
         }
 
         let actions = gs.legal_actions();

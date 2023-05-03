@@ -249,9 +249,8 @@ fn run_benchmark(args: Args) {
                     ],
                     &mut rng,
                 );
-                let result = s.evaluate();
-                score[0] += result[0];
-                score[1] += result[1];
+                score[0] += s.evaluate(0);
+                score[1] += s.evaluate(1);
             }
             println!(
                 "{} vs {}: {} to {}",

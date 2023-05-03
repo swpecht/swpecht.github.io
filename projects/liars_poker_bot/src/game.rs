@@ -47,7 +47,7 @@ pub trait GameState: Display + Clone {
     fn legal_actions(&self) -> Vec<Action>;
     /// Returns a vector of the score for each player
     /// at the end of the game
-    fn evaluate(&self) -> Vec<f32>;
+    fn evaluate(&self, p: Player) -> f64;
     fn istate_key(&self, player: Player) -> IStateKey;
     fn istate_string(&self, player: Player) -> String;
     fn is_terminal(&self) -> bool;
@@ -93,5 +93,5 @@ where
     }
 
     info!("game state: {}", s);
-    info!("game over, rewards: {:?}", s.evaluate());
+    info!("game over, rewards: {}, {}", s.evaluate(0), s.evaluate(1));
 }

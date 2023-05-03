@@ -185,9 +185,9 @@ impl GameState for KPGameState {
 
     /// Returns a vector of the score for each player
     /// at the end of the game
-    fn evaluate(&self) -> Vec<f32> {
+    fn evaluate(&self, p: Player) -> f64 {
         if !self.is_terminal {
-            return vec![0.0; self.num_players]; // No one gets points
+            panic!("evaluate called on non-terminal gamestate");
         }
 
         if self.num_players != 2 {
@@ -218,7 +218,7 @@ impl GameState for KPGameState {
             _ => panic!("invalid history"),
         };
 
-        return payoffs.to_vec();
+        return payoffs[p];
     }
 
     /// Returns an information state with the following data at each index:
@@ -272,7 +272,7 @@ impl GameState for KPGameState {
         let non_fixed = if fixed_player == 0 { 1 } else { 0 };
         let mut ngs = self.clone();
         ngs.hands[fixed_player] = chance_outcome[0];
-        return ngs.evaluate()[non_fixed] as f64;
+        return ngs.evaluate(non_fixed);
     }
 
     fn chance_outcomes(&self, fixed_player: Player) -> Vec<ChanceOutcome> {
@@ -325,7 +325,8 @@ mod tests {
         run_game(&mut g, &mut vec![&mut a1, &mut a2], &mut rng);
 
         assert_eq!(format!("{}", g), "[KingQueen]bb");
-        assert_eq!(g.evaluate(), vec![2.0, -2.0])
+        assert_eq!(g.evaluate(0), 2.0);
+        assert_eq!(g.evaluate(1), -2.0);
     }
 
     #[test]
@@ -338,6 +339,7 @@ mod tests {
         run_game(&mut g, &mut vec![&mut a1, &mut a2], &mut rng);
 
         assert_eq!(format!("{}", g), "[KingQueen]pbp");
-        assert_eq!(g.evaluate(), vec![-1.0, 1.0])
+        assert_eq!(g.evaluate(0), -1.0);
+        assert_eq!(g.evaluate(1), 1.0);
     }
 }

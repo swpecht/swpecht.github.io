@@ -452,9 +452,9 @@ impl GameState for EuchreGameState {
         }
     }
 
-    fn evaluate(&self) -> Vec<f32> {
+    fn evaluate(&self, p: Player) -> f64 {
         if !self.is_terminal {
-            return vec![0.0; self.num_players];
+            panic!("evaluate called on non-terminal gamestate");
         }
 
         let mut won_tricks = [0; 2];
@@ -469,14 +469,16 @@ impl GameState for EuchreGameState {
         let team_0_win = won_tricks[0] > won_tricks[1];
         let team_0_call = self.trump_caller % 2 == 0;
 
-        match (team_0_win, team_0_call, won_tricks[0]) {
+        let v = match (team_0_win, team_0_call, won_tricks[0]) {
             (true, true, 5) => vec![2.0, 0.0, 2.0, 0.0],
             (true, true, _) => vec![1.0, 0.0, 1.0, 0.0],
             (true, false, _) => vec![2.0, 0.0, 2.0, 0.0],
             (false, false, 0) => vec![0.0, 2.0, 0.0, 2.0],
             (false, false, _) => vec![0.0, 1.0, 0.0, 1.0],
             (false, true, _) => vec![0.0, 2.0, 0.0, 2.0],
-        }
+        };
+
+        return v[p];
     }
 
     /// Returns an information state with the following format:
@@ -821,7 +823,10 @@ mod tests {
             s.apply_action(a);
             s.istate_string(0);
         }
-        assert_eq!(s.evaluate(), vec![0.0, 2.0, 0.0, 2.0]);
+        assert_eq!(s.evaluate(0), 0.0);
+        assert_eq!(s.evaluate(1), 2.0);
+        assert_eq!(s.evaluate(2), 0.0);
+        assert_eq!(s.evaluate(3), 2.0);
 
         // Different calling path
         for _ in 0..5 {
