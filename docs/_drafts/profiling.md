@@ -12,6 +12,9 @@ perf record -F 99 --call-graph dwarf,65528 ./target/release/liars_poker_bot -v3 
 Need the 65528 to have a large enough stack size
 
 
+Then hotspot for viewing perf report
+
+
  perf report --no-inline
 
  perf script | stackcollapse-perf.pl | stackcollapse-recursive.pl | c++filt | flamegraph.pl > flame.svg
