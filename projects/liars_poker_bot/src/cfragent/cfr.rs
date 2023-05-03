@@ -69,6 +69,23 @@ impl VanillaCFR {
             return gs.evaluate()[update_player].into();
         }
 
+        let actions = gs.legal_actions();
+        if actions.len() == 1 {
+            // avoid processing nodes with no choices
+            let mut ngs = gs.clone();
+            ngs.apply_action(actions[0]);
+            return self.vcfr(
+                ns,
+                &ngs,
+                update_player,
+                depth + 1,
+                reach0,
+                reach1,
+                chance_reach,
+                phase,
+            );
+        }
+
         if gs.is_chance_node() {
             let mut ev = 0.0;
 
@@ -123,8 +140,6 @@ impl VanillaCFR {
 
         let is = gs.istate_key(gs.cur_player());
         let mut strat_ev = 0.0;
-
-        let actions = gs.legal_actions();
 
         let mut move_evs = ActionVec::new(&actions);
 
