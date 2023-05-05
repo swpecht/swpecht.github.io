@@ -8,7 +8,7 @@ use std::{collections::HashMap, ops::Index};
 use log::debug;
 
 use crate::{
-    actions,
+    alloc::Pool,
     bestresponse::normalizer::{NormalizerMap, NormalizerVector},
     cfragent::cfrnode::CFRNode,
     collections::ArrayVec,
@@ -51,12 +51,17 @@ pub struct BestResponse {
     ///
     /// For now we're ignoring how to handle the discard card in Euchre.
     opp_chance_outcomes: Vec<ChanceOutcome>,
+
+    vector_pool: Pool<Vec<Action>>,
+    normalizer_pool: Pool<NormalizerVector>,
 }
 
 impl BestResponse {
     pub fn new() -> Self {
         Self {
             opp_chance_outcomes: Vec::new(),
+            vector_pool: Pool::new(|| Vec::with_capacity(32)),
+            normalizer_pool: Pool::new(|| NormalizerVector::new()),
         }
     }
 
@@ -80,8 +85,11 @@ impl BestResponse {
 
         // collect all the chance nodes
         let default = &(ogs, 0);
+
         while let Some(gs) = chance_nodes.pop() {
-            for a in actions!(gs) {
+            let mut actions = self.vector_pool.detach();
+            gs.legal_actions(&mut actions);
+            for &a in &actions {
                 let mut ngs = gs.clone();
                 ngs.apply_action(a);
                 if ngs.is_chance_node() {
@@ -93,6 +101,9 @@ impl BestResponse {
                     play_nodes.insert(non_fixed_key, (ngs, count + 1));
                 }
             }
+
+            actions.clear();
+            self.vector_pool.attach(actions);
         }
         debug!("found {} starting nodes to evaluate", play_nodes.len());
         let mut remaining_nodes = play_nodes.len();
@@ -153,7 +164,7 @@ impl BestResponse {
                 return f64::NEG_INFINITY;
             }
 
-            let mut opp_dist = NormalizerVector::new();
+            let mut opp_dist = self.normalizer_pool.detach();
 
             for i in 0..self.opp_chance_outcomes.len() {
                 // TODO: this may need updated, unclear on what `getChanceProb()` is doing in the original version
@@ -174,6 +185,8 @@ impl BestResponse {
                 exp_payoff += opp_dist[i] * payoff
             }
 
+            opp_dist.clear();
+            self.normalizer_pool.attach(opp_dist);
             return exp_payoff;
         }
 
@@ -186,7 +199,8 @@ impl BestResponse {
         // declare variables and get # actions available
         let mut ev = 0.0;
 
-        let actions = actions!(gs);
+        let mut actions = self.vector_pool.detach();
+        gs.legal_actions(&mut actions);
 
         let mut max_ev = f64::NEG_INFINITY;
         let mut child_evs = Vec::with_capacity(actions.len());
@@ -256,6 +270,7 @@ impl BestResponse {
         assert_eq!(player, fixed_player);
 
         let mut weight = 0.0;
+        let mut actions = self.vector_pool.detach();
 
         for i in 0..self.opp_chance_outcomes.len() {
             let chance_outcome = self.opp_chance_outcomes[i];
@@ -264,8 +279,9 @@ impl BestResponse {
             //     double oppProb = getMoveProb(is, action, actionshere);
             let node = ns.get(&key);
             let opp_prob;
+            gs.legal_actions(&mut actions);
             if node.is_none() {
-                opp_prob = 1.0 / actions!(gs).len() as f64;
+                opp_prob = 1.0 / actions.len() as f64;
             } else {
                 let node = node.unwrap();
                 opp_prob = node.borrow().get_average_strategy()[action];
@@ -283,6 +299,7 @@ impl BestResponse {
         //   CHKDBL(weight);
 
         opp_action_dist.add(action, weight);
+        self.vector_pool.attach(actions);
         return (opp_action_dist, new_opp_reach);
     }
 }

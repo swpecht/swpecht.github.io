@@ -17,6 +17,12 @@ impl NormalizerVector {
         }
     }
 
+    pub fn clear(&mut self) {
+        self.normalized = false;
+        self.total = 0.0;
+        self.values.clear();
+    }
+
     pub fn push(&mut self, v: f64) {
         assert!(v >= 0.0);
         self.total += v;

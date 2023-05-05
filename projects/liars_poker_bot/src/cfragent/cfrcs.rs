@@ -45,7 +45,7 @@ impl CFRCS {
         Self {
             nodes_touched: 0,
             rng: SeedableRng::seed_from_u64(seed),
-            vector_pool: Pool::new(|| Vec::new()),
+            vector_pool: Pool::new(|| Vec::with_capacity(32)),
         }
     }
 
