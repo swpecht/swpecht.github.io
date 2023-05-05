@@ -67,6 +67,7 @@ Going to use Liar's poker bots to illustrate why.
         * Should be as performant
         * Probably make Action a trait, and then have game actions implement it
 [ ] Implement pruning for CFR to match CFRCS
+[ ] Change Gamestate::evaluate to just return a float and not a vector to save some allocations
 
 Need to decide what to include in the first blog post.
 
