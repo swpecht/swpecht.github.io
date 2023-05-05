@@ -19,7 +19,7 @@ As someone without an academic background in the subject, this made little sense
 
 --------------
 ![CFR lines 1-4](/assets/cfr-in-rust/vCFR%201-4.png)
-Inititialize all `nodes` with 0 regrest, 0 cumulative probability, and if a move probability needs to be sampled, use a uniform probability over all possible actions.
+Initialize all `nodes` with 0 regrets, 0 cumulative probability, and if a move probability needs to be sampled, use a uniform probability over all possible actions.
 
 --------------
 ![CFR line 5](/assets/cfr-in-rust/vCFR%205.png)
@@ -52,7 +52,7 @@ If the gamestate represents a state where the game is over (i.e. is terminal) re
 
 The second if-statement is for when gamstate is a chance node -- where random action like rolling dice or dealing cards determines what happens instead of player actions. Here we update the reach probability for the acting player ($$\pi_1'$$) as the current reach probability ($$\pi_1$$) times the chance of achieving the random outcome on this gamestate ($$\sigma_c(h,a)$$).
 
-We then call the CFR function on the gamestate with the action applied $$ha$$ and with the updated reach probabilities. We do this for all possible actions and sum the result times the chance of that outcome to get the execected value for the CFR over all chance nodes.
+We then call the CFR function on the gamestate with the action applied $$ha$$ and with the updated reach probabilities. We do this for all possible actions and sum the result times the chance of that outcome to get the expected value for the CFR over all chance nodes.
 
 As an example, imagine $$h$$ represents a new game of Kuhn Poker. $$h$$ is a chance node with 3 possible outcomes (Jack, Queen, King) and we're dealing to Player 1. We'd could unroll line 11 to the following:
 
@@ -94,7 +94,7 @@ if gs.is_chance_node() {
 
 --------------
 ![CFR line 13-16](/assets/cfr-in-rust/vCFR%2013-16.png)
-$$I$$ is the [information set](https://en.wikipedia.org/wiki/Information_set_(game_theory)) for the current gamestate ($$h$$). You can think of $$I$$ as the information available to a given player. For example in Kuhn Poker, my information set could be: `Jack|Bid|Bid` -- I know that I was dealt a Jack, and I know the public actions that have occured a Bid followed by a Bid. But I don't know any of my opponents private information (like what card they were dealt).
+$$I$$ is the [information set](https://en.wikipedia.org/wiki/Information_set_(game_theory)) for the current gamestate ($$h$$). You can think of $$I$$ as the information available to a given player. For example in Kuhn Poker, my information set could be: `Jack|Bid|Bid` -- I know that I was dealt a Jack, and I know the public actions that have ocurred a Bid followed by a Bid. But I don't know any of my opponents private information (like what card they were dealt).
 
 $$\sigma^t(I)$$ is the policy at information state $$I$$. You can think of it as a HashMap where the keys are the actions that are legal for the current gamestate and the values are the probability of taking each of those actions.
 
@@ -224,7 +224,7 @@ These minimal changes allows CFRCS to converge faster than vanilla CFR. For exam
 The exploitability is based on the best response algorithm. More details can be found in [Marc Lanctot's thesis](http://mlanctot.info/files/papers/PhD_Thesis_MarcLanctot.pdf).
 
 # Code
-All the code for this post can be found [on Github](https://github.com/swpecht/swpecht.github.io/tree/master/projects/liars_poker_bot). But each implementation is repeated below for convience.
+All the code for this post can be found [on Github](https://github.com/swpecht/swpecht.github.io/tree/master/projects/liars_poker_bot). But each implementation is repeated below for convenience.
 
 **Vanilla CFR**
 ```rust
