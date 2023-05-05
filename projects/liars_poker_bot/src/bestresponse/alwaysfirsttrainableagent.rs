@@ -1,6 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{
+    actions,
     cfragent::cfrnode::CFRNode,
     database::NodeStore,
     game::{Game, GameState},
@@ -25,13 +26,13 @@ pub(super) fn _populate_always_n<T: GameState, N: NodeStore<CFRNode>>(
             if !gs.is_chance_node() {
                 let p = gs.cur_player();
                 let k = gs.istate_key(p);
-                let mut node = CFRNode::new(gs.legal_actions());
-                let a = gs.legal_actions()[idx];
+                let mut node = CFRNode::new(actions!(gs));
+                let a = actions!(gs)[idx];
                 node.total_move_prob[a] = 1.0; // set the moveprob to 1 for the action of the target index
                 ns.insert_node(k, Rc::new(RefCell::new(node)));
             }
 
-            for a in gs.legal_actions() {
+            for a in actions!(gs) {
                 let mut ngs = gs.clone();
                 ngs.apply_action(a);
                 q.push(ngs);

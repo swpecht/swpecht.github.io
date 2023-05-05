@@ -9,6 +9,7 @@ use log::{debug, info, trace};
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
 use crate::{
+    actions,
     agents::Agent,
     bestresponse::BestResponse,
     cfragent::{
@@ -71,8 +72,8 @@ impl<T: GameState, N: NodeStore<CFRNode>> Agent<T> for CFRAgent<T, N> {
 
         let p = self.get_policy(&istate);
         trace!("evaluating istate {} for {:?}", istate.to_string(), p);
-        let mut weights = ActionVec::new(&s.legal_actions());
-        for &a in &s.legal_actions() {
+        let mut weights = ActionVec::new(&actions!(s));
+        for &a in &actions!(s) {
             weights[a] = p[a];
         }
         return weights
@@ -123,6 +124,7 @@ fn train<T: GameState, N: NodeStore<CFRNode>, A: Algorithm>(
 mod tests {
     use super::CFRAgent;
     use crate::{
+        actions,
         agents::Agent,
         cfragent::{cfrnode::ActionVec, CFRAlgorithm},
         database::memory_node_store::MemoryNodeStore,
@@ -148,7 +150,7 @@ mod tests {
 
         assert_eq!(s.istate_string(1), "Jackp");
 
-        let mut action_counter: ActionVec<usize> = ActionVec::new(&s.legal_actions());
+        let mut action_counter: ActionVec<usize> = ActionVec::new(&actions!(s));
         for _ in 0..1000 {
             let a = qa.step(&s);
             action_counter[a] += 1;

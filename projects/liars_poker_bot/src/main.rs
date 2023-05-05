@@ -4,10 +4,11 @@ use clap::Parser;
 
 use clap::clap_derive::ArgEnum;
 
+use liars_poker_bot::actions;
 use liars_poker_bot::agents::{Agent, RandomAgent};
 use liars_poker_bot::cfragent::{CFRAgent, CFRAlgorithm};
 use liars_poker_bot::database::memory_node_store::MemoryNodeStore;
-use liars_poker_bot::database::{tune_page, Storage};
+use liars_poker_bot::database::Storage;
 use liars_poker_bot::game::bluff::Bluff;
 use liars_poker_bot::game::euchre::{Euchre, EuchreGameState};
 use liars_poker_bot::game::kuhn_poker::KuhnPoker;
@@ -83,8 +84,6 @@ fn main() {
 fn run_analyze(args: Args) {
     assert_eq!(args.game, GameType::Euchre);
 
-    tune_page::tune_page_size();
-
     let mut total_end_states = 0;
     let mut total_states = 0;
     let mut total_rounds = 0;
@@ -95,19 +94,19 @@ fn run_analyze(args: Args) {
     for _ in 0..runs {
         let mut round = 0;
         let mut end_states = 1;
-        let mut s = Euchre::new_state();
-        while !s.is_terminal() {
-            if s.is_chance_node() {
-                let a = agent.step(&s);
-                s.apply_action(a);
+        let mut gs = Euchre::new_state();
+        while !gs.is_terminal() {
+            if gs.is_chance_node() {
+                let a = agent.step(&gs);
+                gs.apply_action(a);
             } else {
-                let legal_move_count = s.legal_actions().len();
+                let legal_move_count = actions!(gs).len();
                 end_states *= legal_move_count;
                 total_states = total_states + end_states;
                 children[round] += legal_move_count as f64;
                 round += 1;
-                let a = agent.step(&s);
-                s.apply_action(a);
+                let a = agent.step(&gs);
+                gs.apply_action(a);
             }
         }
         total_end_states += end_states;
@@ -129,36 +128,36 @@ fn run_analyze(args: Args) {
     }
 
     // traverse gametress
-    let mut s = Euchre::new_state();
+    let mut gs = Euchre::new_state();
     // let mut s = KuhnPoker::new_state();
 
     // TODO: A seed of 0 here seems to break things. Why?
     let mut rng: StdRng = SeedableRng::seed_from_u64(0);
-    while s.is_chance_node() {
-        let a = *s.legal_actions().choose(&mut rng).unwrap();
-        s.apply_action(a);
+    while gs.is_chance_node() {
+        let a = *actions!(gs).choose(&mut rng).unwrap();
+        gs.apply_action(a);
     }
 
-    println!("total storable nodes: {}", traverse_game_tree(s, 0));
+    println!("total storable nodes: {}", traverse_game_tree(gs, 0));
 }
 
-fn traverse_game_tree<T: GameState>(s: T, depth: usize) -> usize {
-    if s.is_terminal() {
+fn traverse_game_tree<T: GameState>(gs: T, depth: usize) -> usize {
+    if gs.is_terminal() {
         return 0; // don't need to store leaf node
     }
 
     let mut count = 1;
-    for a in s.legal_actions() {
+    for a in actions!(gs) {
         if depth <= 2 {
             println!("depth: {}, nodes: {}", depth, count)
         }
 
-        let mut new_s = s.clone();
+        let mut new_s = gs.clone();
         new_s.apply_action(a);
 
         // don't need to store if only 1 action
-        while new_s.legal_actions().len() == 1 {
-            new_s.apply_action(new_s.legal_actions()[0])
+        while actions!(new_s).len() == 1 {
+            new_s.apply_action(actions!(new_s)[0])
         }
 
         count += traverse_game_tree(new_s, depth + 1);
@@ -264,39 +263,39 @@ fn run_benchmark(args: Args) {
 }
 
 fn run_play(_args: Args) {
-    let mut s = Euchre::new_state();
+    let mut gs = Euchre::new_state();
     let mut rng: StdRng = SeedableRng::seed_from_u64(1);
 
     let mut agent = RandomAgent::new();
     let user = 0;
 
-    while !s.is_terminal() {
-        if s.is_chance_node() {
-            let actions = s.legal_actions();
+    while !gs.is_terminal() {
+        if gs.is_chance_node() {
+            let actions = actions!(gs);
             let a = *actions.choose(&mut rng).unwrap();
-            s.apply_action(a);
+            gs.apply_action(a);
             continue;
         }
 
         let a;
-        if s.cur_player() == user {
-            a = handle_player_turn(&mut s);
+        if gs.cur_player() == user {
+            a = handle_player_turn(&mut gs);
         } else {
-            a = agent.step(&s);
+            a = agent.step(&gs);
         }
 
-        let cur_player = s.cur_player();
-        s.apply_action(a);
-        println!("{}: {}", cur_player, s.istate_string(user));
+        let cur_player = gs.cur_player();
+        gs.apply_action(a);
+        println!("{}: {}", cur_player, gs.istate_string(user));
     }
 
     todo!()
 }
 
-fn handle_player_turn<T: GameState>(s: &mut T) -> Action {
-    let player = s.cur_player();
-    println!("{}", s.istate_string(player));
-    println!("{:?}", s.legal_actions());
+fn handle_player_turn<T: GameState>(gs: &mut T) -> Action {
+    let player = gs.cur_player();
+    println!("{}", gs.istate_string(player));
+    println!("{:?}", actions!(gs));
 
     let mut buffer = String::new();
     io::stdin()

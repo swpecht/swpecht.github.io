@@ -21,7 +21,9 @@ impl RandomAgent {
 
 impl<T: GameState> Agent<T> for RandomAgent {
     fn step(&mut self, s: &T) -> Action {
-        return *s.legal_actions().choose(&mut self.rng).unwrap();
+        let mut actions = Vec::new();
+        s.legal_actions(&mut actions);
+        return *actions.choose(&mut self.rng).unwrap();
     }
 }
 
@@ -35,7 +37,9 @@ impl AlwaysFirstAgent {
 
 impl<T: GameState> Agent<T> for AlwaysFirstAgent {
     fn step(&mut self, s: &T) -> Action {
-        return s.legal_actions()[0];
+        let mut actions = Vec::new();
+        s.legal_actions(&mut actions);
+        return actions[0];
     }
 }
 

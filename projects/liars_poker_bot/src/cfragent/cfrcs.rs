@@ -4,9 +4,10 @@ use log::{debug, trace};
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
 use crate::{
+    alloc::Pool,
     cfragent::cfrnode::ActionVec,
     database::NodeStore,
-    game::{GameState, Player},
+    game::{Action, GameState, Player},
 };
 
 use super::{
@@ -21,6 +22,7 @@ use super::{
 pub struct CFRCS {
     nodes_touched: usize,
     rng: StdRng,
+    vector_pool: Pool<Vec<Action>>,
 }
 
 impl Algorithm for CFRCS {
@@ -43,6 +45,7 @@ impl CFRCS {
         Self {
             nodes_touched: 0,
             rng: SeedableRng::seed_from_u64(seed),
+            vector_pool: Pool::new(|| Vec::new()),
         }
     }
 
@@ -66,7 +69,8 @@ impl CFRCS {
         }
 
         let cur_player = gs.cur_player();
-        let actions = gs.legal_actions();
+        let mut actions = self.vector_pool.detach();
+        gs.legal_actions(&mut actions);
         if actions.len() == 1 {
             // avoid processing nodes with no choices
             let mut ngs = gs.clone();
@@ -119,7 +123,7 @@ impl CFRCS {
 
         let node = ns
             .get(&is)
-            .unwrap_or(Rc::new(RefCell::new(CFRNode::new(gs.legal_actions()))));
+            .unwrap_or(Rc::new(RefCell::new(CFRNode::new(actions.clone()))));
         let param = match cur_player {
             0 | 2 => reach0,
             1 | 3 => reach1,

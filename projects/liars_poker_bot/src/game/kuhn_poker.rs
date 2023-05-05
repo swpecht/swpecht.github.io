@@ -161,19 +161,19 @@ impl KPGameState {
 }
 
 impl GameState for KPGameState {
-    fn legal_actions(&self) -> Vec<Action> {
-        let mut actions = Vec::new();
+    fn legal_actions(&self, actions: &mut Vec<Action>) {
+        actions.clear();
 
         if self.is_terminal {
-            return actions;
+            return;
         }
 
         match self.phase {
-            KPPhase::Dealing => self.get_dealing_actions(&mut actions),
-            KPPhase::Playing => self.get_betting_actions(&mut actions),
+            KPPhase::Dealing => self.get_dealing_actions(actions),
+            KPPhase::Playing => self.get_betting_actions(actions),
         }
 
-        return actions;
+        return;
     }
 
     fn apply_action(&mut self, a: Action) {

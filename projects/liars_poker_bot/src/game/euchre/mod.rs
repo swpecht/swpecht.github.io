@@ -224,8 +224,7 @@ impl EuchreGameState {
         return first_card;
     }
 
-    fn legal_actions_dealing(&self) -> Vec<Action> {
-        let mut deck = Vec::with_capacity(NUM_CARDS);
+    fn legal_actions_dealing(&self, actions: &mut Vec<Action>) {
         for i in 0..NUM_CARDS {
             let mut is_dealt = false;
             for h in 0..self.num_players {
@@ -235,17 +234,14 @@ impl EuchreGameState {
                 }
             }
             if !is_dealt {
-                deck.push(EAction::Card { a: i as u8 }.into());
+                actions.push(EAction::Card { a: i as u8 }.into());
             }
         }
-        return deck;
     }
 
     /// Can choose any trump except for the one from the faceup card
     /// For the dealer they aren't able to pass.
-    fn legal_actions_choose_trump(&self) -> Vec<Action> {
-        let mut actions = Vec::new();
-
+    fn legal_actions_choose_trump(&self, actions: &mut Vec<Action>) {
         // Dealer can't pass
         if self.cur_player != 3 {
             actions.push(EAction::Pass.into())
@@ -264,21 +260,20 @@ impl EuchreGameState {
         if face_up != Suit::Diamonds {
             actions.push(EAction::Diamonds.into());
         }
-        return actions;
     }
 
     /// Needs to consider following suit if possible
     /// Can only play cards from hand
-    fn legal_actions_play(&self) -> Vec<Action> {
+    fn legal_actions_play(&self, actions: &mut Vec<Action>) {
         // If they are the first to act on a trick then can play any card in hand
         if self.is_trick_over() {
-            return self.hands[self.cur_player].to_vec();
+            actions.append(&mut self.hands[self.cur_player].to_vec());
+            return;
         }
 
         let leading_card = self.get_leading_card();
         let suit = self.get_suit(leading_card);
 
-        let mut actions = Vec::with_capacity(5);
         for i in 0..self.hands[self.cur_player].len() {
             let c = self.hands[self.cur_player][i];
             if self.get_suit(c) == suit {
@@ -288,9 +283,7 @@ impl EuchreGameState {
 
         if actions.len() == 0 {
             // no suit, can play any card
-            return self.hands[self.cur_player].to_vec();
-        } else {
-            return actions;
+            actions.append(&mut self.hands[self.cur_player].to_vec());
         }
     }
 
@@ -442,14 +435,18 @@ impl GameState for EuchreGameState {
         }
     }
 
-    fn legal_actions(&self) -> Vec<Action> {
+    fn legal_actions(&self, actions: &mut Vec<Action>) {
+        actions.clear();
+
         match self.phase {
-            EPhase::DealHands | EPhase::DealFaceUp => self.legal_actions_dealing(),
-            EPhase::Pickup => vec![EAction::Pass.into(), EAction::Pickup.into()],
-            EPhase::Discard => self.hands[3].to_vec(), // Dealer can discard any card
-            EPhase::ChooseTrump => self.legal_actions_choose_trump(),
-            EPhase::Play => self.legal_actions_play(),
-        }
+            EPhase::DealHands | EPhase::DealFaceUp => self.legal_actions_dealing(actions),
+            EPhase::Pickup => {
+                actions.append(&mut vec![EAction::Pass.into(), EAction::Pickup.into()])
+            }
+            EPhase::Discard => actions.append(&mut self.hands[3].to_vec()), // Dealer can discard any card
+            EPhase::ChooseTrump => self.legal_actions_choose_trump(actions),
+            EPhase::Play => self.legal_actions_play(actions),
+        };
     }
 
     fn evaluate(&self, p: Player) -> f64 {
@@ -639,6 +636,7 @@ mod tests {
     use itertools::Itertools;
 
     use crate::{
+        actions,
         agents::{Agent, RandomAgent},
         game::euchre::{EAction, EPhase, Euchre, Suit},
     };
@@ -701,11 +699,11 @@ mod tests {
 
     #[test]
     fn euchre_test_legal_actions() {
-        let mut s = Euchre::new_state();
+        let mut gs = Euchre::new_state();
 
         for i in 0..20 {
-            s.apply_action(EAction::Card { a: i }.into());
-            let legal = s.legal_actions();
+            gs.apply_action(EAction::Card { a: i }.into());
+            let legal = actions!(gs);
             for j in 0..i + 1 {
                 let index = legal
                     .iter()
@@ -715,40 +713,40 @@ mod tests {
         }
 
         // Deal the face up card
-        s.apply_action(EAction::Card { a: 21 }.into());
-        assert_eq!(s.face_up, EAction::Card { a: 21 });
+        gs.apply_action(EAction::Card { a: 21 }.into());
+        assert_eq!(gs.face_up, EAction::Card { a: 21 });
 
         assert_eq!(
-            s.legal_actions(),
+            actions!(gs),
             vec![EAction::Pass.into(), EAction::Pickup.into()]
         );
 
-        s.apply_action(EAction::Pickup.into());
+        gs.apply_action(EAction::Pickup.into());
         // Cards in dealers hand
         assert_eq!(
-            s.legal_actions(),
+            actions!(gs),
             vec![3, 7, 11, 15, 19]
                 .iter()
                 .map(|&x| EAction::Card { a: x }.into())
                 .collect_vec()
         );
-        assert_eq!(s.phase, EPhase::Discard);
-        s.apply_action(EAction::Card { a: 3 }.into());
+        assert_eq!(gs.phase, EPhase::Discard);
+        gs.apply_action(EAction::Card { a: 3 }.into());
 
         // Cards player 0s hand
-        assert_eq!(s.phase, EPhase::Play);
+        assert_eq!(gs.phase, EPhase::Play);
         assert_eq!(
-            s.legal_actions(),
+            actions!(gs),
             vec![0, 4, 8, 12, 16]
                 .iter()
                 .map(|&x| EAction::Card { a: x }.into())
                 .collect_vec()
         );
 
-        s.apply_action(EAction::Card { a: 0 }.into());
+        gs.apply_action(EAction::Card { a: 0 }.into());
         // Player 1 must follow suit
         assert_eq!(
-            s.legal_actions(),
+            actions!(gs),
             vec![1, 5]
                 .iter()
                 .map(|&x| EAction::Card { a: x }.into())
@@ -782,51 +780,51 @@ mod tests {
 
     #[test]
     fn euchre_test_istate() {
-        let mut s = Euchre::new_state();
+        let mut gs = Euchre::new_state();
         // Deal the cards
         for i in 0..20 {
-            s.apply_action(EAction::Card { a: i }.into());
+            gs.apply_action(EAction::Card { a: i }.into());
         }
 
-        assert_eq!(s.istate_string(0), "9CKCJS9HKH");
-        assert_eq!(s.istate_string(1), "TCACQSTHAH");
-        assert_eq!(s.istate_string(2), "JC9SKSJH9D");
-        assert_eq!(s.istate_string(3), "QCTSASQHTD");
+        assert_eq!(gs.istate_string(0), "9CKCJS9HKH");
+        assert_eq!(gs.istate_string(1), "TCACQSTHAH");
+        assert_eq!(gs.istate_string(2), "JC9SKSJH9D");
+        assert_eq!(gs.istate_string(3), "QCTSASQHTD");
 
-        s.apply_action(EAction::Card { a: 20 }.into());
-        assert_eq!(s.istate_string(0), "9CKCJS9HKH|JD|");
-        assert_eq!(s.istate_string(1), "TCACQSTHAH|JD|");
-        assert_eq!(s.istate_string(2), "JC9SKSJH9D|JD|");
-        assert_eq!(s.istate_string(3), "QCTSASQHTD|JD|");
+        gs.apply_action(EAction::Card { a: 20 }.into());
+        assert_eq!(gs.istate_string(0), "9CKCJS9HKH|JD|");
+        assert_eq!(gs.istate_string(1), "TCACQSTHAH|JD|");
+        assert_eq!(gs.istate_string(2), "JC9SKSJH9D|JD|");
+        assert_eq!(gs.istate_string(3), "QCTSASQHTD|JD|");
 
-        let mut new_s = s.clone(); // for alternative pickup parsing
+        let mut new_s = gs.clone(); // for alternative pickup parsing
 
-        s.apply_action(EAction::Pickup.into());
-        assert_eq!(s.istate_string(0), "9CKCJS9HKH|JD|T|0D");
+        gs.apply_action(EAction::Pickup.into());
+        assert_eq!(gs.istate_string(0), "9CKCJS9HKH|JD|T|0D");
 
         // Dealer discards the QC
-        assert_eq!(s.istate_string(3), "QCTSASQHTD|JD|T|0D");
-        s.apply_action(EAction::Card { a: 3 }.into());
-        assert_eq!(s.istate_string(3), "QCTSASQHTD|JD|T|0D|QC");
+        assert_eq!(gs.istate_string(3), "QCTSASQHTD|JD|T|0D");
+        gs.apply_action(EAction::Card { a: 3 }.into());
+        assert_eq!(gs.istate_string(3), "QCTSASQHTD|JD|T|0D|QC");
 
         for _ in 0..4 {
-            let a = s.legal_actions()[0];
-            s.apply_action(a);
+            let a = actions!(gs)[0];
+            gs.apply_action(a);
         }
-        assert_eq!(s.istate_string(0), "9CKCJS9HKH|JD|T|0D|9CTCJCTS");
-        assert_eq!(s.istate_string(1), "TCACQSTHAH|JD|T|0D|9CTCJCTS");
-        assert_eq!(s.istate_string(2), "JC9SKSJH9D|JD|T|0D|9CTCJCTS");
-        assert_eq!(s.istate_string(3), "QCTSASQHTD|JD|T|0D|QC|9CTCJCTS");
+        assert_eq!(gs.istate_string(0), "9CKCJS9HKH|JD|T|0D|9CTCJCTS");
+        assert_eq!(gs.istate_string(1), "TCACQSTHAH|JD|T|0D|9CTCJCTS");
+        assert_eq!(gs.istate_string(2), "JC9SKSJH9D|JD|T|0D|9CTCJCTS");
+        assert_eq!(gs.istate_string(3), "QCTSASQHTD|JD|T|0D|QC|9CTCJCTS");
 
-        while !s.is_terminal() {
-            let a = s.legal_actions()[0];
-            s.apply_action(a);
-            s.istate_string(0);
+        while !gs.is_terminal() {
+            let a = actions!(gs)[0];
+            gs.apply_action(a);
+            gs.istate_string(0);
         }
-        assert_eq!(s.evaluate(0), 0.0);
-        assert_eq!(s.evaluate(1), 2.0);
-        assert_eq!(s.evaluate(2), 0.0);
-        assert_eq!(s.evaluate(3), 2.0);
+        assert_eq!(gs.evaluate(0), 0.0);
+        assert_eq!(gs.evaluate(1), 2.0);
+        assert_eq!(gs.evaluate(2), 0.0);
+        assert_eq!(gs.evaluate(3), 2.0);
 
         // Different calling path
         for _ in 0..5 {

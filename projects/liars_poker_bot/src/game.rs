@@ -44,7 +44,7 @@ pub trait GameState: Display + Clone {
     /// Applies an action in place
     fn apply_action(&mut self, a: Action);
     /// Returns all legal actions at a given game state
-    fn legal_actions(&self) -> Vec<Action>;
+    fn legal_actions(&self, actions: &mut Vec<Action>);
     /// Returns a vector of the score for each player
     /// at the end of the game
     fn evaluate(&self, p: Player) -> f64;
@@ -75,12 +75,13 @@ where
             agents.len()
         );
     }
+    let mut actions = Vec::new();
 
     while !s.is_terminal() {
         info!("game state: {}", s);
 
         if s.is_chance_node() {
-            let actions = s.legal_actions();
+            s.legal_actions(&mut actions);
             let a = *actions.choose(rng).unwrap();
             info!("chance action: {}", a);
             s.apply_action(a);
@@ -94,4 +95,13 @@ where
 
     info!("game state: {}", s);
     info!("game over, rewards: {}, {}", s.evaluate(0), s.evaluate(1));
+}
+
+#[macro_export]
+macro_rules! actions {
+    ( $x:expr ) => {{
+        let mut temp_vec = Vec::new();
+        $x.legal_actions(&mut temp_vec);
+        temp_vec
+    }};
 }

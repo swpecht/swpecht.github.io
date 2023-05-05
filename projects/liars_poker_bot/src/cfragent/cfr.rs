@@ -3,6 +3,7 @@ use std::{cell::RefCell, rc::Rc};
 use log::{debug, trace};
 
 use crate::{
+    actions,
     cfragent::cfrnode::CFRNode,
     database::{memory_node_store::MemoryNodeStore, NodeStore},
     game::kuhn_poker::{KPAction, KuhnPoker},
@@ -69,7 +70,7 @@ impl VanillaCFR {
             return gs.evaluate(update_player);
         }
 
-        let actions = gs.legal_actions();
+        let actions = actions!(gs);
         if actions.len() == 1 {
             // avoid processing nodes with no choices
             let mut ngs = gs.clone();
@@ -89,7 +90,7 @@ impl VanillaCFR {
         if gs.is_chance_node() {
             let mut ev = 0.0;
 
-            let actions = &gs.legal_actions();
+            let actions = &actions!(gs);
             for &a in actions {
                 let mut ngs = gs.clone();
                 ngs.apply_action(a);
@@ -145,7 +146,7 @@ impl VanillaCFR {
 
         let node = ns
             .get(&is)
-            .unwrap_or(Rc::new(RefCell::new(CFRNode::new(gs.legal_actions()))));
+            .unwrap_or(Rc::new(RefCell::new(CFRNode::new(actions!(gs)))));
         let param = match cur_player {
             0 | 2 => reach0,
             1 | 3 => reach1,

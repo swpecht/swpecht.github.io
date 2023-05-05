@@ -8,6 +8,7 @@ use std::{collections::HashMap, ops::Index};
 use log::debug;
 
 use crate::{
+    actions,
     bestresponse::normalizer::{NormalizerMap, NormalizerVector},
     cfragent::cfrnode::CFRNode,
     collections::ArrayVec,
@@ -80,7 +81,7 @@ impl BestResponse {
         // collect all the chance nodes
         let default = &(ogs, 0);
         while let Some(gs) = chance_nodes.pop() {
-            for a in gs.legal_actions() {
+            for a in actions!(gs) {
                 let mut ngs = gs.clone();
                 ngs.apply_action(a);
                 if ngs.is_chance_node() {
@@ -185,7 +186,7 @@ impl BestResponse {
         // declare variables and get # actions available
         let mut ev = 0.0;
 
-        let actions = gs.legal_actions();
+        let actions = actions!(gs);
 
         let mut max_ev = f64::NEG_INFINITY;
         let mut child_evs = Vec::with_capacity(actions.len());
@@ -264,7 +265,7 @@ impl BestResponse {
             let node = ns.get(&key);
             let opp_prob;
             if node.is_none() {
-                opp_prob = 1.0 / gs.legal_actions().len() as f64;
+                opp_prob = 1.0 / actions!(gs).len() as f64;
             } else {
                 let node = node.unwrap();
                 opp_prob = node.borrow().get_average_strategy()[action];

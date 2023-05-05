@@ -281,26 +281,25 @@ impl BluffGameState {
         }
     }
 
-    fn legal_actions_rolling(&self) -> Vec<Action> {
+    fn legal_actions_rolling(&self, actions: &mut Vec<Action>) {
         // Actions are independent
-        return vec![
+        actions.append(&mut vec![
             BluffActions::Roll(Dice::One).into(),
             BluffActions::Roll(Dice::Two).into(),
             BluffActions::Roll(Dice::Three).into(),
             BluffActions::Roll(Dice::Four).into(),
             BluffActions::Roll(Dice::Five).into(),
             BluffActions::Roll(Dice::Wild).into(),
-        ];
+        ]);
     }
 
-    fn legal_actions_bids(&self) -> Vec<Action> {
+    fn legal_actions_bids(&self, actions: &mut Vec<Action>) {
         if self.is_terminal() {
-            return Vec::new();
+            return;
         }
 
-        let mut legal_actions = Vec::with_capacity(32);
         if self.last_bid != BluffActions::Call && self.last_bid != STARTING_BID {
-            legal_actions.push(BluffActions::Call.into());
+            actions.push(BluffActions::Call.into());
         }
 
         let max_bets = self.num_dice[0] + self.num_dice[1];
@@ -308,10 +307,10 @@ impl BluffGameState {
             for &f in &FACES[0..FACES.len() - 1] {
                 // don't include the wild
                 for n in 1..max_bets + 1 {
-                    legal_actions.push(BluffActions::Bid(n, f).into())
+                    actions.push(BluffActions::Bid(n, f).into())
                 }
             }
-            return legal_actions;
+            return;
         }
 
         for &f in &FACES[0..FACES.len() - 1] {
@@ -319,11 +318,10 @@ impl BluffGameState {
             for n in 1..max_bets + 1 {
                 let b = BluffActions::Bid(n, f);
                 if b > self.last_bid {
-                    legal_actions.push(b.into())
+                    actions.push(b.into())
                 }
             }
         }
-        return legal_actions;
     }
 
     fn update_keys(&mut self, a: Action) {
@@ -376,10 +374,11 @@ impl GameState for BluffGameState {
         }
     }
 
-    fn legal_actions(&self) -> Vec<Action> {
+    fn legal_actions(&self, actions: &mut Vec<Action>) {
+        actions.clear();
         match self.phase {
-            Phase::RollingDice => self.legal_actions_rolling(),
-            Phase::Betting => self.legal_actions_bids(),
+            Phase::RollingDice => self.legal_actions_rolling(actions),
+            Phase::Betting => self.legal_actions_bids(actions),
         }
     }
 
@@ -609,9 +608,12 @@ impl Display for BluffGameState {
 mod tests {
     use std::{collections::HashSet, vec};
 
-    use crate::game::{
-        bluff::{Bluff, BluffGameState, Phase, FACES},
-        Action, GameState,
+    use crate::{
+        actions,
+        game::{
+            bluff::{Bluff, BluffGameState, Phase, FACES},
+            Action, GameState,
+        },
     };
 
     use super::{BluffActions, Dice, STARTING_DICE};
@@ -649,7 +651,7 @@ mod tests {
         assert_eq!(gs.phase, Phase::RollingDice);
 
         assert_eq!(
-            gs.legal_actions(),
+            actions!(gs),
             vec![
                 BluffActions::Roll(Dice::One).into(),
                 BluffActions::Roll(Dice::Two).into(),
@@ -676,7 +678,7 @@ mod tests {
             }
         }
 
-        assert_eq!(gs.legal_actions(), legal_actions);
+        assert_eq!(actions!(gs), legal_actions);
 
         gs.apply_action(BluffActions::Bid(2, Dice::Three).into());
         let mut legal_actions: Vec<Action> = vec![BluffActions::Call.into()];
@@ -692,7 +694,7 @@ mod tests {
             }
         }
 
-        assert_eq!(gs.legal_actions(), legal_actions);
+        assert_eq!(actions!(gs), legal_actions);
 
         // player 1 calls, they are right
         assert_eq!(gs.cur_player(), 1);
@@ -749,7 +751,7 @@ mod tests {
     fn test_bluff_1_1() {
         let mut gs = (Bluff::game(1, 1).new)();
         assert_eq!(
-            gs.legal_actions(),
+            actions!(gs),
             vec![
                 BluffActions::Roll(Dice::One).into(),
                 BluffActions::Roll(Dice::Two).into(),
@@ -768,7 +770,7 @@ mod tests {
         assert_eq!(gs.cur_player(), 0);
 
         assert_eq!(
-            gs.legal_actions(),
+            actions!(gs),
             vec![
                 BluffActions::Bid(1, Dice::One).into(),
                 BluffActions::Bid(2, Dice::One).into(),
@@ -786,7 +788,7 @@ mod tests {
         gs.apply_action(BluffActions::Bid(1, Dice::One).into());
 
         assert_eq!(
-            gs.legal_actions(),
+            actions!(gs),
             vec![
                 BluffActions::Call.into(),
                 BluffActions::Bid(2, Dice::One).into(),
@@ -817,7 +819,7 @@ mod tests {
     fn test_bluff_2_1() {
         let mut gs = (Bluff::game(2, 1).new)();
         assert_eq!(
-            gs.legal_actions(),
+            actions!(gs),
             vec![
                 BluffActions::Roll(Dice::One).into(),
                 BluffActions::Roll(Dice::Two).into(),
@@ -837,7 +839,7 @@ mod tests {
         assert_eq!(gs.cur_player(), 0);
 
         assert_eq!(
-            gs.legal_actions(),
+            actions!(gs),
             vec![
                 BluffActions::Bid(1, Dice::One).into(),
                 BluffActions::Bid(2, Dice::One).into(),
@@ -860,7 +862,7 @@ mod tests {
         gs.apply_action(BluffActions::Bid(1, Dice::One).into());
 
         assert_eq!(
-            gs.legal_actions(),
+            actions!(gs),
             vec![
                 BluffActions::Call.into(),
                 BluffActions::Bid(2, Dice::One).into(),

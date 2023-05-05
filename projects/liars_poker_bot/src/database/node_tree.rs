@@ -224,6 +224,7 @@ fn find_last_same<const N: usize>(ka: &ArrayVec<N>, ca: &ArrayVec<N>) -> Option<
 mod tests {
 
     use crate::{
+        actions,
         collections::ArrayVec,
         database::node_tree::find_last_same,
         game::euchre::Euchre,
@@ -238,29 +239,29 @@ mod tests {
         let mut t = Tree::new();
         let mut gs = (Euchre::game().new)();
         while gs.is_chance_node() {
-            let a = gs.legal_actions()[0];
+            let a = actions!(gs)[0];
             gs.apply_action(a);
         }
 
         assert_eq!(t.get(&gs.istate_key(0)), None);
 
-        gs.apply_action(gs.legal_actions()[0]);
+        gs.apply_action(actions!(gs)[0]);
         let k1 = gs.istate_key(0);
         t.insert(k1.clone(), 1);
         let v = t.get(&k1);
         assert_eq!(v, Some(1));
         t.insert(k1, v.unwrap());
 
-        gs.apply_action(gs.legal_actions()[0]);
+        gs.apply_action(actions!(gs)[0]);
         let mut ogs = gs.clone();
-        gs.apply_action(gs.legal_actions()[0]);
+        gs.apply_action(actions!(gs)[0]);
         let k2 = gs.istate_key(0);
         t.insert(k2, 2);
         let v = t.get(&k2);
         assert_eq!(v, Some(2));
         t.insert(k2, v.unwrap());
 
-        ogs.apply_action(ogs.legal_actions()[1]);
+        ogs.apply_action(actions!(ogs)[1]);
         let k3 = ogs.istate_key(0);
         t.insert(k3, 3);
 

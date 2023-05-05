@@ -1,5 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use liars_poker_bot::{
+    actions,
     cfragent::CFRAlgorithm,
     database::memory_node_store::MemoryNodeStore,
     game::euchre::{Euchre, EuchreGameState},
@@ -18,16 +19,16 @@ fn train_cfr_kp() {
 /// Attempts to mimic the call structure of CFR without actually doing it
 fn traverse_game_tree(n: usize) {
     let game = Euchre::game();
-    let mut s = (game.new)();
+    let mut gs = (game.new)();
 
-    while s.is_chance_node() {
-        let actions = s.legal_actions();
+    while gs.is_chance_node() {
+        let actions = actions!(gs);
         let a = *actions.choose(&mut thread_rng()).unwrap();
-        s.apply_action(a);
+        gs.apply_action(a);
     }
 
     let mut work = Vec::new();
-    work.push((s.istate_key(s.cur_player()), s));
+    work.push((gs.istate_key(gs.cur_player()), gs));
 
     let mut pool: Vec<EuchreGameState> = Vec::new();
 
@@ -36,17 +37,17 @@ fn traverse_game_tree(n: usize) {
     while nodes_processed < n {
         nodes_processed += 1;
 
-        let (_, s) = work.pop().unwrap();
-        let actions = s.legal_actions();
+        let (_, gs) = work.pop().unwrap();
+        let actions = actions!(gs);
         for a in actions {
-            let mut new_s = new_gs(&s, &mut pool);
+            let mut new_s = new_gs(&gs, &mut pool);
 
             new_s.apply_action(a);
             let istate = new_s.istate_key(new_s.cur_player());
             work.push((istate, new_s));
         }
 
-        pool.push(s);
+        pool.push(gs);
     }
 }
 
