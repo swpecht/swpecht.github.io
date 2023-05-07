@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use crate::{
     bestresponse::ChanceOutcome,
-    collections::SortedArrayVec,
+    collections::{ArrayVec, SortedArrayVec},
     game::{Action, Game, GameState, Player},
     istate::IStateKey,
 };
@@ -31,6 +31,7 @@ impl Euchre {
             trump_caller: 0,
             istate_keys: keys,
             first_played: None,
+            trick_winners: [0; 5],
         }
     }
 
@@ -61,6 +62,8 @@ pub struct EuchreGameState {
     /// the index of the 0 player istate where the first played card is
     /// used to make looking up tricks easier
     first_played: Option<usize>,
+    /// keep track of who has won tricks to avoid re-computing
+    trick_winners: [Player; 5],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
@@ -164,6 +167,10 @@ impl EuchreGameState {
             let starter = (self.cur_player + 3) % self.num_players;
             let winner = self.evaluate_trick(&trick, starter);
             self.cur_player = winner;
+
+            // save the trick winner for later
+            let trick = ((self.istate_keys[0].len() - self.first_played.unwrap()) / 4) - 1;
+            self.trick_winners[trick] = winner;
         } else {
             self.cur_player = (self.cur_player + 1) % self.num_players;
         }
@@ -343,7 +350,7 @@ impl EuchreGameState {
 
         // Correct the jack if in play phase
         if self.phase == EPhase::Play && face == Face::J {
-            suit = match (suit.clone(), self.trump.clone()) {
+            suit = match (suit, self.trump) {
                 (Suit::Clubs, Suit::Spades) => Suit::Spades,
                 (Suit::Spades, Suit::Clubs) => Suit::Clubs,
                 (Suit::Hearts, Suit::Diamonds) => Suit::Diamonds,
@@ -455,12 +462,9 @@ impl GameState for EuchreGameState {
         }
 
         let mut won_tricks = [0; 2];
-        let mut starter = 0;
-        for i in 0..5 {
-            let trick = self.get_trick(i);
-            let winner = self.evaluate_trick(&trick, starter);
-            starter = winner;
-            won_tricks[winner % 2] += 1;
+        for i in 0..self.trick_winners.len() {
+            let winner = self.trick_winners[i] % 2;
+            won_tricks[winner] += 1;
         }
 
         let team_0_win = won_tricks[0] > won_tricks[1];
