@@ -2,7 +2,7 @@ use std::fmt::{Display, Write};
 
 use crate::game::Action;
 
-pub(super) const CARD_PER_SUIT: usize = 6;
+pub(super) const CARD_PER_SUIT: u8 = 6;
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub(super) enum EAction {
@@ -22,11 +22,11 @@ impl EAction {
             _ => panic!("can only get the suit of a card action"),
         };
 
-        return match card_index as usize / CARD_PER_SUIT {
-            x if x == Suit::Clubs as usize => Suit::Clubs,
-            x if x == Suit::Hearts as usize => Suit::Hearts,
-            x if x == Suit::Spades as usize => Suit::Spades,
-            x if x == Suit::Diamonds as usize => Suit::Diamonds,
+        return match card_index / CARD_PER_SUIT {
+            0 => Suit::Clubs,
+            1 => Suit::Spades,
+            2 => Suit::Hearts,
+            3 => Suit::Diamonds,
             _ => panic!("invalid card"),
         };
     }
@@ -37,7 +37,7 @@ impl EAction {
             _ => panic!("can only get the suit of a card action"),
         };
 
-        return match card_index as usize % CARD_PER_SUIT {
+        return match card_index % CARD_PER_SUIT {
             0 => Face::N,
             1 => Face::T,
             2 => Face::J,
@@ -127,18 +127,18 @@ impl Display for Suit {
 /// Populates a string buffer with formated card. Must be 2 characters long
 fn format_card(c: u8) -> String {
     let mut out = "XX".to_string();
-    put_card(c as usize, &mut out);
+    put_card(c, &mut out);
     return out.to_string();
 }
 
-fn put_card(c: usize, out: &mut str) {
+fn put_card(c: u8, out: &mut str) {
     assert_eq!(out.len(), 2);
 
     let suit_char = match c / CARD_PER_SUIT {
-        x if x == Suit::Clubs as usize => 'C',
-        x if x == Suit::Hearts as usize => 'H',
-        x if x == Suit::Spades as usize => 'S',
-        x if x == Suit::Diamonds as usize => 'D',
+        x if x == Suit::Clubs as u8 => 'C',
+        x if x == Suit::Hearts as u8 => 'H',
+        x if x == Suit::Spades as u8 => 'S',
+        x if x == Suit::Diamonds as u8 => 'D',
         _ => panic!("invalid card"),
     };
 

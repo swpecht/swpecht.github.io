@@ -368,8 +368,8 @@ impl EuchreGameState {
         let is_right = pure_suit == self.trump;
 
         return match is_right {
-            true => CARD_PER_SUIT + 2,  // right
-            false => CARD_PER_SUIT + 1, // left
+            true => (CARD_PER_SUIT + 2) as usize,  // right
+            false => (CARD_PER_SUIT + 1) as usize, // left
         };
     }
 

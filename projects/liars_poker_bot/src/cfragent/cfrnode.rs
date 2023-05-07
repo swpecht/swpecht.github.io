@@ -78,11 +78,9 @@ pub struct ActionVec<T: Default + Clone> {
 
 impl<T: Default + Clone> ActionVec<T> {
     pub fn new(actions: &Vec<Action>) -> Self {
-        let mut map = Vec::with_capacity(actions.len());
         let mut data = Vec::with_capacity(actions.len());
 
-        for &a in actions {
-            map.push(a);
+        for _ in actions {
             data.push(T::default())
         }
 
