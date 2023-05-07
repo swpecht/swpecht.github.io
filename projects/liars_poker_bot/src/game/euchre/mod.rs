@@ -288,7 +288,7 @@ impl EuchreGameState {
     }
 
     /// Returns the player who won the trick
-    fn evaluate_trick(&self, cards: &[Action], trick_starter: Player) -> usize {
+    fn evaluate_trick(&self, cards: &[Action], trick_starter: Player) -> Player {
         assert_eq!(cards.len(), 4); // only support 4 players
 
         let mut winner = 0;
@@ -306,7 +306,7 @@ impl EuchreGameState {
             if suit == winning_suit && suit != self.trump && cards[i] > winning_card {
                 winner = i;
                 winning_card = cards[i];
-                winning_suit = self.get_suit(cards[i]);
+                winning_suit = suit;
                 continue;
             }
 
@@ -314,7 +314,7 @@ impl EuchreGameState {
             if suit == self.trump && winning_suit != self.trump {
                 winner = i;
                 winning_card = cards[i];
-                winning_suit = self.get_suit(cards[i]);
+                winning_suit = suit;
                 continue;
             }
 
@@ -325,7 +325,7 @@ impl EuchreGameState {
                 if cur_card_value > winning_card_value {
                     winner = i;
                     winning_card = cards[i];
-                    winning_suit = self.get_suit(cards[i]);
+                    winning_suit = suit;
                     continue;
                 }
             }
