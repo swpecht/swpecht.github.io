@@ -122,6 +122,14 @@ impl KuhnPoker {
 impl KPGameState {
     fn apply_action_dealing(&mut self, card: Action) {
         trace!("player {} dealt card {}", self.cur_player, card);
+
+        assert!(vec![
+            KPAction::Jack.into(),
+            KPAction::Queen.into(),
+            KPAction::King.into()
+        ]
+        .contains(&card));
+
         self.hands.push(card);
         self.cur_player += 1;
 
