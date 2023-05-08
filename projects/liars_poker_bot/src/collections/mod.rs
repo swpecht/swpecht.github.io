@@ -1,4 +1,5 @@
 use std::{
+    fmt::Debug,
     hash::Hash,
     ops::{Index, IndexMut},
 };
@@ -112,7 +113,7 @@ impl<T: Copy + Clone + Default, const N: usize> Index<usize> for SortedArrayVec<
     }
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialOrd, Ord)]
+#[derive(Clone, Copy, Serialize, Deserialize, PartialOrd, Ord)]
 pub struct ArrayVec<const N: usize> {
     len: usize,
     #[serde(with = "BigArray")]
@@ -147,6 +148,12 @@ impl<const N: usize> ArrayVec<N> {
 
     pub fn len(&self) -> usize {
         return self.len;
+    }
+}
+
+impl<const N: usize> Debug for ArrayVec<N> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", &self.data[..self.len])
     }
 }
 

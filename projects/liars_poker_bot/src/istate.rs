@@ -1,13 +1,14 @@
 use serde::{Deserialize, Serialize};
 
 use std::{
+    fmt::Debug,
     hash::Hash,
     ops::{Index, IndexMut},
 };
 
 use crate::{collections::ArrayVec, game::Action};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash, PartialOrd, Ord)]
 pub struct IStateKey {
     actions: ArrayVec<64>,
 }
@@ -55,6 +56,12 @@ impl IStateKey {
 impl ToString for IStateKey {
     fn to_string(&self) -> String {
         format!("{:?}", self.actions)
+    }
+}
+
+impl Debug for IStateKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.actions)
     }
 }
 

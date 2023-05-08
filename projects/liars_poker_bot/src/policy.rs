@@ -7,7 +7,7 @@ use crate::{
 /// Wrapper for game policies, usually backed by a node store for CFR
 pub trait Policy<G: GameState> {
     /// Returns an ActionVec of legal moves and their associated probability for the current player
-    fn action_probabilities(&mut self, gs: &G) -> ActionVec<f64>;
+    fn action_probabilities(&self, gs: &G) -> ActionVec<f64>;
 }
 
 pub struct UniformRandomPolicy {}
@@ -19,7 +19,7 @@ impl UniformRandomPolicy {
 }
 
 impl<G: GameState> Policy<G> for UniformRandomPolicy {
-    fn action_probabilities(&mut self, gs: &G) -> ActionVec<f64> {
+    fn action_probabilities(&self, gs: &G) -> ActionVec<f64> {
         let mut actions = Vec::new();
         gs.legal_actions(&mut actions);
         let prob = 1.0 / actions.len() as f64; // uniform random
@@ -45,7 +45,7 @@ impl AlwaysPolicy {
 }
 
 impl<G: GameState> Policy<G> for AlwaysPolicy {
-    fn action_probabilities(&mut self, gs: &G) -> ActionVec<f64> {
+    fn action_probabilities(&self, gs: &G) -> ActionVec<f64> {
         let actions = actions!(gs);
         if !actions.contains(&self.action) {
             panic!("attempted to call always policy when action wasn't possible");

@@ -66,7 +66,7 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
             descendants.push((parent_state.clone(), 1.0));
         }
 
-        for (action, p_action) in self.transitions(parent_state.clone()) {
+        for (action, p_action) in self.transitions(&parent_state) {
             let mut child_state = parent_state.clone();
             child_state.apply_action(action);
             for (state, p_state) in self.decision_nodes(child_state) {
@@ -78,7 +78,7 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
     }
 
     /// Returns a list of (action, cf_prob) pairs from the specified state.
-    fn transitions(&mut self, gs: G) -> Vec<(Action, f64)> {
+    fn transitions(&self, gs: &G) -> Vec<(Action, f64)> {
         let mut list = Vec::new();
 
         if gs.cur_player() == self.player {
@@ -107,18 +107,21 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
 
     /// Returns the value of the specified state to the best-responder.
     fn value(&self, gs: &G) -> f64 {
-        //     if state.is_terminal():
-        //       return state.player_return(self._player_id)
-        //     elif (state.current_player() == self._player_id or
-        //           state.is_simultaneous_node()):
-        //       action = self.best_response_action(
-        //           state.information_state_string(self._player_id))
-        //       return self.q_value(state, action)
-        //     else:
-        //       return sum(p * self.q_value(state, a)
-        //                  for a, p in self.transitions(state)
-        //                  if p > self._cut_threshold)
-        todo!();
+        if gs.is_terminal() {
+            return gs.evaluate(self.player);
+        } else if gs.cur_player() == self.player {
+            let action = self.best_response_action(&gs.istate_key(self.player));
+            return self.q_value(gs, action);
+        } else {
+            let mut v = 0.0;
+            for (a, p) in self.transitions(gs) {
+                if p > self.cut_threshold {
+                    v += self.q_value(gs, a);
+                }
+            }
+
+            return v;
+        }
     }
 
     /// Returns the value of the (state, action) to the best-responder.
@@ -129,8 +132,12 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
     }
 
     /// Returns the best response for this information state.
-    pub fn best_response_action(&mut self, infostate: &IStateKey) -> Action {
-        let infoset = self.info_sets.get(&infostate).unwrap();
+    pub fn best_response_action(&self, infostate: &IStateKey) -> Action {
+        let infoset = self.info_sets.get(&infostate);
+        if infoset.is_none() {
+            panic!("couldn't find key");
+        }
+        let infoset = infoset.unwrap();
 
         // Get actions from the first (state, cf_prob) pair in the infoset list.
         // Return the best action by counterfactual-reach-weighted state-value.
@@ -157,7 +164,7 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
 
 impl<'a, G: GameState, P: Policy<G>> Policy<G> for TabularBestResponse<'a, G, P> {
     /// Returns the policy for a player in a state.
-    fn action_probabilities(&mut self, gs: &G) -> crate::cfragent::cfrnode::ActionVec<f64> {
+    fn action_probabilities(&self, gs: &G) -> crate::cfragent::cfrnode::ActionVec<f64> {
         let actions = actions!(gs);
         let mut probs = ActionVec::new(&actions);
         let br = self.best_response_action(&gs.istate_key(gs.cur_player()));
@@ -171,33 +178,44 @@ impl<'a, G: GameState, P: Policy<G>> Policy<G> for TabularBestResponse<'a, G, P>
 mod tests {
     use std::collections::HashMap;
 
-    use crate::game::GameState;
     use crate::{
         bestresponse::tabular_best_response::TabularBestResponse,
-        game::kuhn_poker::{KPAction as A, KuhnPoker},
+        game::kuhn_poker::{KPAction as A, KuhnPoker as KP},
         policy::UniformRandomPolicy,
     };
 
     #[test]
     fn test_tabular_best_response() {
         let mut policy = UniformRandomPolicy::new();
-        let mut br = TabularBestResponse::new(&mut policy, KuhnPoker::new_state(), 0, 0.0);
+        let br = TabularBestResponse::new(&mut policy, KP::new_state(), 0, 0.0);
 
         let expected_policy = HashMap::from([
-            (KuhnPoker::istate_key(&[A::Jack], 0), 1), // Bet in case opponent folds when winning
-            (KuhnPoker::istate_key(&[A::Queen], 0), 1), // Bet in case opponent folds when winning
-            (KuhnPoker::istate_key(&[A::King], 0), 0), // Both equally good (we return the lowest action)
+            (KP::istate_key(&[A::Jack], 0), A::Bet.into()), // Bet in case opponent folds when winning
+            (KP::istate_key(&[A::Queen], 0), A::Bet.into()), // Bet in case opponent folds when winning
+            (KP::istate_key(&[A::King], 0), A::Bet.into()), // Both equally good (we return the lowest action)
             // Some of these will never happen under the best-response policy,
             // but we have computed best-response actions anyway.
-            (KuhnPoker::istate_key(&[A::Jack, A::Pass, A::Bet], 0), 0), // Fold - we're losing
-            (KuhnPoker::istate_key(&[A::Queen, A::Pass, A::Bet], 0), 1), // Call - we're 50-50
-            (KuhnPoker::istate_key(&[A::King, A::Pass, A::Bet], 0), 1), // Call - we've won
+            (
+                KP::istate_key(&[A::Jack, A::Queen, A::Pass, A::Bet], 0),
+                A::Pass.into(),
+            ), // Fold - we're losing
+            (
+                KP::istate_key(&[A::Queen, A::Jack, A::Pass, A::Bet], 0),
+                A::Bet.into(),
+            ), // Call - we're 50-50
+            (
+                KP::istate_key(&[A::King, A::Jack, A::Pass, A::Bet], 0),
+                A::Bet.into(),
+            ), // Call - we've won
         ]);
 
         let mut calculated_policy = HashMap::new();
 
         for &k in expected_policy.keys() {
-            calculated_policy.insert(k, br.best_response_action(&k).0);
+            if k.len() == 2 {
+                panic!()
+            }
+            calculated_policy.insert(k, br.best_response_action(&k));
         }
 
         assert_eq!(calculated_policy, expected_policy);
