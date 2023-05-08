@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use log::trace;
+
 use crate::{
     actions,
     cfragent::cfrnode::ActionVec,
@@ -108,15 +110,19 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
     /// Returns the value of the specified state to the best-responder.
     pub fn value(&self, gs: &G) -> f64 {
         if gs.is_terminal() {
-            return gs.evaluate(self.player);
+            let v = gs.evaluate(self.player);
+            trace!("found terminal node: {:?} with value: {}", gs, v);
+            return v;
         } else if gs.cur_player() == self.player && !gs.is_chance_node() {
             let action = self.best_response_action(&gs.istate_key(self.player));
+            trace!("found best response action of {:?} for {:?}", action, gs);
             return self.q_value(gs, action);
         } else {
             let mut v = 0.0;
+            trace!("evaluating childre for {:?}", gs);
             for (a, p) in self.transitions(gs) {
                 if p > self.cut_threshold {
-                    v += self.q_value(gs, a);
+                    v += p * self.q_value(gs, a);
                 }
             }
 
@@ -219,10 +225,5 @@ mod tests {
         }
 
         assert_eq!(calculated_policy, expected_policy);
-
-        let v0 = br.value(&KP::new_state());
-        print!("{}", v0);
-
-        return;
     }
 }

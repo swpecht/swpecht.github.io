@@ -23,6 +23,7 @@ serde-big-array = "0.5"
 bumpalo = "3"
 rustc-hash = "1.1.0"
 memoize = "0.4"
+approx = "0.5"
 
 
 [dev-dependencies]

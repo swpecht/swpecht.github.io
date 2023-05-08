@@ -40,7 +40,7 @@ pub struct Game<T: GameState> {
     pub max_actions: usize,
 }
 
-pub trait GameState: Display + Clone {
+pub trait GameState: Display + Clone + Debug {
     /// Applies an action in place
     fn apply_action(&mut self, a: Action);
     /// Returns all legal actions at a given game state

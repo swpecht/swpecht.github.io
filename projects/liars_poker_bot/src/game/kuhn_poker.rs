@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 
 use crate::{
     bestresponse::ChanceOutcome,
@@ -44,7 +44,7 @@ pub enum KPPhase {
 /// Adapted from: https://github.com/deepmind/open_spiel/blob/master/open_spiel/games/kuhn_poker.cc
 /// All of the randomness occurs outside of the gamestate. Instead some game states are change nodes. And the
 /// "Game runner" will choose of of the random, valid actions
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct KPGameState {
     num_players: usize,
     /// Holds the cards for each player in the game
@@ -57,6 +57,28 @@ pub struct KPGameState {
 }
 
 impl Display for KPGameState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut result = String::new();
+        result.push_str("[");
+        for c in &self.hands {
+            result.push_str(&format!("{:?}", KPAction::from(*c)));
+        }
+        result.push_str("]");
+
+        for &h in &self.history {
+            let char = match h {
+                KPAction::Bet => 'b',
+                KPAction::Pass => 'p',
+                _ => panic!("invalid action for history"),
+            };
+            result.push(char)
+        }
+
+        write!(f, "{}", result)
+    }
+}
+
+impl Debug for KPGameState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut result = String::new();
         result.push_str("[");

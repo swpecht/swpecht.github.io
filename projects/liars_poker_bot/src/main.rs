@@ -6,14 +6,16 @@ use clap::clap_derive::ArgEnum;
 
 use liars_poker_bot::actions;
 use liars_poker_bot::agents::{Agent, RandomAgent};
+use liars_poker_bot::algorithms::exploitability::exploitability;
 use liars_poker_bot::cfragent::{CFRAgent, CFRAlgorithm};
 use liars_poker_bot::database::memory_node_store::MemoryNodeStore;
 use liars_poker_bot::database::Storage;
 use liars_poker_bot::game::bluff::Bluff;
 use liars_poker_bot::game::euchre::{Euchre, EuchreGameState};
-use liars_poker_bot::game::kuhn_poker::KuhnPoker;
+use liars_poker_bot::game::kuhn_poker::{KPAction, KuhnPoker};
 use liars_poker_bot::game::{run_game, Action, GameState};
 
+use liars_poker_bot::policy::AlwaysPolicy;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{thread_rng, SeedableRng};
@@ -33,6 +35,7 @@ enum Mode {
     Benchmark,
     Analyze,
     Play,
+    Scratch,
 }
 
 /// Simple program to greet a person
@@ -78,7 +81,14 @@ fn main() {
         Mode::Benchmark => run_benchmark(args),
         Mode::Analyze => run_analyze(args),
         Mode::Play => run_play(args),
+        Mode::Scratch => run_scratch(args),
     }
+}
+
+fn run_scratch(_args: Args) {
+    let mut policy = AlwaysPolicy::new(KPAction::Bet.into());
+    let data = exploitability(KuhnPoker::game(), &mut policy);
+    assert_eq!(data.nash_conv, 2.0 / 3.0)
 }
 
 fn run_analyze(args: Args) {
