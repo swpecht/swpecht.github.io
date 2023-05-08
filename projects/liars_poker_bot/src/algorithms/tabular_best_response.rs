@@ -116,25 +116,22 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
         } else if gs.cur_player() == self.player && !gs.is_chance_node() {
             let action = self.best_response_action(&gs.istate_key(self.player));
             trace!("found best response action of {:?} for {:?}", action, gs);
-            return self.q_value(gs, action);
+            let mut ngs = gs.clone();
+            ngs.apply_action(action);
+            return self.value(&ngs);
         } else {
             let mut v = 0.0;
             trace!("evaluating childre for {:?}", gs);
             for (a, p) in self.transitions(gs) {
                 if p > self.cut_threshold {
-                    v += p * self.q_value(gs, a);
+                    let mut ngs = gs.clone();
+                    ngs.apply_action(a);
+                    v += p * self.value(&ngs);
                 }
             }
 
             return v;
         }
-    }
-
-    /// Returns the value of the (state, action) to the best-responder.
-    fn q_value(&mut self, gs: &G, a: Action) -> f64 {
-        let mut ngs = gs.clone();
-        ngs.apply_action(a);
-        return self.value(&ngs);
     }
 
     /// Returns the best response for this information state.
@@ -153,10 +150,12 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
         let mut max_action = actions[0];
         let mut max_v = f64::NEG_INFINITY;
         for a in actions {
-            let v = infoset
-                .iter()
-                .map(|(gs, cf_p)| cf_p * self.q_value(gs, a))
-                .sum::<f64>();
+            let mut v = 0.0;
+            for (gs, cf_p) in &infoset {
+                let mut ngs = gs.clone();
+                ngs.apply_action(a);
+                v += cf_p * self.value(&ngs);
+            }
 
             if v > max_v {
                 max_v = v;
