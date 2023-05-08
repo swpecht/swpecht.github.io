@@ -106,14 +106,14 @@ fn train<T: GameState, N: NodeStore<CFRNode>, A: Algorithm>(
                 "finished iteration: {}, starting best response calculation",
                 iteration
             );
-            // let v0 = br.get_exploitability(&game, &mut agent.ns, 0);
-            // let v1 = br.get_exploitability(&game, &mut agent.ns, 1);
-            // info!(
-            //     "exploitability:\t{}\t{}\t{}",
-            //     iteration,
-            //     alg.nodes_touched(),
-            //     v0 + v1
-            // );
+            let v0 = br.get_exploitability(&game, &mut agent.ns, 0);
+            let v1 = br.get_exploitability(&game, &mut agent.ns, 1);
+            info!(
+                "exploitability:\t{}\t{}\t{}",
+                iteration,
+                alg.nodes_touched(),
+                v0 + v1
+            );
             print_freq *= 2;
         }
 

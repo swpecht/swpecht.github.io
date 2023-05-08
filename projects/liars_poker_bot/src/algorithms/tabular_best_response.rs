@@ -15,8 +15,8 @@ use crate::{
 /// Adaption from openspeil's best response algorithm:
 ///     https://github.com/deepmind/open_spiel/blob/master/open_spiel/python/algorithms/best_response.py
 pub struct TabularBestResponse<'a, G: GameState, P: Policy<G>> {
-    root_state: G,
-    num_players: usize,
+    _root_state: G,
+    _num_players: usize,
     player: Player,
     info_sets: HashMap<IStateKey, Vec<(G, f64)>>,
     cut_threshold: f64,
@@ -26,8 +26,8 @@ pub struct TabularBestResponse<'a, G: GameState, P: Policy<G>> {
 impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
     pub fn new(policy: &'a mut P, root_state: &G, player: Player, cut_threshold: f64) -> Self {
         let mut br = Self {
-            root_state: root_state.clone(),
-            num_players: root_state.num_players(),
+            _root_state: root_state.clone(),
+            _num_players: root_state.num_players(),
             player,
             info_sets: HashMap::new(),
             cut_threshold,
