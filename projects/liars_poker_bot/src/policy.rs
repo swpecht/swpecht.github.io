@@ -1,4 +1,8 @@
-use crate::{cfragent::cfrnode::ActionVec, game::GameState};
+use crate::{
+    actions,
+    cfragent::cfrnode::ActionVec,
+    game::{Action, GameState},
+};
 
 /// Wrapper for game policies, usually backed by a node store for CFR
 pub trait Policy<G: GameState> {
@@ -24,6 +28,31 @@ impl<G: GameState> Policy<G> for UniformRandomPolicy {
         for a in actions {
             probs[a] = prob;
         }
+
+        return probs;
+    }
+}
+
+/// Policy always takes a given action. If the action isn't available, it panics.
+pub struct AlwaysPolicy {
+    action: Action,
+}
+
+impl AlwaysPolicy {
+    pub fn new(a: Action) -> Self {
+        Self { action: a }
+    }
+}
+
+impl<G: GameState> Policy<G> for AlwaysPolicy {
+    fn action_probabilities(&mut self, gs: &G) -> ActionVec<f64> {
+        let actions = actions!(gs);
+        if !actions.contains(&self.action) {
+            panic!("attempted to call always policy when action wasn't possible");
+        }
+
+        let mut probs = ActionVec::new(&actions);
+        probs[self.action] = 1.0;
 
         return probs;
     }
