@@ -22,6 +22,7 @@ tempfile = "3.3"
 serde-big-array = "0.5"
 bumpalo = "3"
 rustc-hash = "1.1.0"
+memoize = "0.4"
 
 
 [dev-dependencies]
