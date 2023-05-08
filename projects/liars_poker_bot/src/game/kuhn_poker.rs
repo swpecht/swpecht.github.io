@@ -108,6 +108,15 @@ impl KuhnPoker {
 
         return g;
     }
+
+    pub fn istate_key(actions: &[KPAction], p: Player) -> IStateKey {
+        let mut g = (KuhnPoker::game().new)();
+        for &a in actions {
+            g.apply_action(a.into());
+        }
+
+        return g.istate_key(p);
+    }
 }
 
 impl KPGameState {
@@ -226,7 +235,11 @@ impl GameState for KPGameState {
     /// 1+: History of play
     fn istate_key(&self, player: Player) -> IStateKey {
         let mut i_state = IStateKey::new();
-        i_state.push(self.hands[player]);
+
+        // check if we've dealt cards
+        if self.hands.len() > player {
+            i_state.push(self.hands[player]);
+        }
 
         for &h in &self.history {
             i_state.push(h.into());
