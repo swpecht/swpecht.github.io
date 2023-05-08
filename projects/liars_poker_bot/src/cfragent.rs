@@ -11,6 +11,7 @@ use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 use crate::{
     actions,
     agents::Agent,
+    algorithms::exploitability,
     bestresponse::BestResponse,
     cfragent::{
         cfr::{Algorithm, VanillaCFR},
@@ -19,6 +20,7 @@ use crate::{
     database::NodeStore,
     game::{Action, Game, GameState},
     istate::IStateKey,
+    policy::Policy,
 };
 
 use self::cfrnode::{ActionVec, CFRNode};
@@ -37,7 +39,7 @@ pub struct CFRAgent<T: GameState, N: NodeStore<CFRNode>> {
     _phantom: PhantomData<T>,
 }
 
-impl<T: GameState, N: NodeStore<CFRNode>> CFRAgent<T, N> {
+impl<T: GameState, N: NodeStore<CFRNode> + Policy<T>> CFRAgent<T, N> {
     pub fn new(game: Game<T>, seed: u64, iterations: usize, ns: N, alg: CFRAlgorithm) -> Self {
         let mut agent = Self {
             game: game.clone(),
@@ -63,7 +65,7 @@ impl<T: GameState, N: NodeStore<CFRNode>> CFRAgent<T, N> {
     }
 }
 
-impl<T: GameState, N: NodeStore<CFRNode>> Agent<T> for CFRAgent<T, N> {
+impl<T: GameState, N: NodeStore<CFRNode> + Policy<T>> Agent<T> for CFRAgent<T, N> {
     /// Chooses a random action weighted by the policy for the current istate.
     ///
     /// If the I state has not be
@@ -84,7 +86,7 @@ impl<T: GameState, N: NodeStore<CFRNode>> Agent<T> for CFRAgent<T, N> {
     }
 }
 
-fn train<T: GameState, N: NodeStore<CFRNode>, A: Algorithm>(
+fn train<T: GameState, N: NodeStore<CFRNode> + Policy<T>, A: Algorithm>(
     agent: &mut CFRAgent<T, N>,
     game: Game<T>,
     iterations: usize,
@@ -106,13 +108,15 @@ fn train<T: GameState, N: NodeStore<CFRNode>, A: Algorithm>(
                 "finished iteration: {}, starting best response calculation",
                 iteration
             );
-            let v0 = br.get_exploitability(&game, &mut agent.ns, 0);
-            let v1 = br.get_exploitability(&game, &mut agent.ns, 1);
+            // let v0 = br.get_exploitability(&game, &mut agent.ns, 0);
+            // let v1 = br.get_exploitability(&game, &mut agent.ns, 1);
+            let exploitability =
+                exploitability::exploitability(game.clone(), &mut agent.ns).nash_conv;
             info!(
                 "exploitability:\t{}\t{}\t{}",
                 iteration,
                 alg.nodes_touched(),
-                v0 + v1
+                exploitability
             );
             print_freq *= 2;
         }

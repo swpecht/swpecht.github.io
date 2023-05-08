@@ -80,7 +80,7 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
     }
 
     /// Returns a list of (action, cf_prob) pairs from the specified state.
-    fn transitions(&self, gs: &G) -> Vec<(Action, f64)> {
+    fn transitions(&mut self, gs: &G) -> Vec<(Action, f64)> {
         let mut list = Vec::new();
 
         if gs.is_chance_node() {
@@ -108,7 +108,7 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
     }
 
     /// Returns the value of the specified state to the best-responder.
-    pub fn value(&self, gs: &G) -> f64 {
+    pub fn value(&mut self, gs: &G) -> f64 {
         if gs.is_terminal() {
             let v = gs.evaluate(self.player);
             trace!("found terminal node: {:?} with value: {}", gs, v);
@@ -131,19 +131,19 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
     }
 
     /// Returns the value of the (state, action) to the best-responder.
-    fn q_value(&self, gs: &G, a: Action) -> f64 {
+    fn q_value(&mut self, gs: &G, a: Action) -> f64 {
         let mut ngs = gs.clone();
         ngs.apply_action(a);
         return self.value(&ngs);
     }
 
     /// Returns the best response for this information state.
-    pub fn best_response_action(&self, infostate: &IStateKey) -> Action {
+    pub fn best_response_action(&mut self, infostate: &IStateKey) -> Action {
         let infoset = self.info_sets.get(&infostate);
         if infoset.is_none() {
             panic!("couldn't find key");
         }
-        let infoset = infoset.unwrap();
+        let infoset = infoset.unwrap().clone();
 
         // Get actions from the first (state, cf_prob) pair in the infoset list.
         // Return the best action by counterfactual-reach-weighted state-value.
@@ -170,7 +170,7 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
 
 impl<'a, G: GameState, P: Policy<G>> Policy<G> for TabularBestResponse<'a, G, P> {
     /// Returns the policy for a player in a state.
-    fn action_probabilities(&self, gs: &G) -> crate::cfragent::cfrnode::ActionVec<f64> {
+    fn action_probabilities(&mut self, gs: &G) -> crate::cfragent::cfrnode::ActionVec<f64> {
         let actions = actions!(gs);
         let mut probs = ActionVec::new(&actions);
         let br = self.best_response_action(&gs.istate_key(gs.cur_player()));
@@ -193,7 +193,7 @@ mod tests {
     #[test]
     fn test_tabular_best_response() {
         let mut policy = UniformRandomPolicy::new();
-        let br = TabularBestResponse::new(&mut policy, &KP::new_state(), 0, 0.0);
+        let mut br = TabularBestResponse::new(&mut policy, &KP::new_state(), 0, 0.0);
 
         let expected_policy = HashMap::from([
             (KP::istate_key(&[A::Jack], 0), A::Bet.into()), // Bet in case opponent folds when winning
