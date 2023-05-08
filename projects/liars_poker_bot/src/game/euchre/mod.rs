@@ -1,7 +1,6 @@
 use std::fmt::Display;
 
 use crate::{
-    bestresponse::ChanceOutcome,
     collections::SortedArrayVec,
     game::{Action, Game, GameState, Player},
     istate::IStateKey,
@@ -618,18 +617,6 @@ impl GameState for EuchreGameState {
 
     fn cur_player(&self) -> Player {
         self.cur_player
-    }
-
-    fn chance_outcomes(&self, _fixed_player: Player) -> Vec<ChanceOutcome> {
-        todo!()
-    }
-
-    fn co_istate(&self, _player: Player, _chance_outcome: ChanceOutcome) -> IStateKey {
-        todo!()
-    }
-
-    fn get_payoff(&self, _fixed_player: Player, _chance_outcome: ChanceOutcome) -> f64 {
-        todo!()
     }
 }
 

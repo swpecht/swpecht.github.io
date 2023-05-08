@@ -1,7 +1,6 @@
 pub mod agents;
 pub mod algorithms;
 pub mod alloc;
-pub mod bestresponse;
 pub mod cfragent;
 pub mod collections;
 pub mod database;

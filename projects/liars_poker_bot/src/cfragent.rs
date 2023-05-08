@@ -12,7 +12,6 @@ use crate::{
     actions,
     agents::Agent,
     algorithms::exploitability,
-    bestresponse::BestResponse,
     cfragent::{
         cfr::{Algorithm, VanillaCFR},
         cfrcs::CFRCS,
@@ -94,7 +93,6 @@ fn train<T: GameState, N: NodeStore<CFRNode> + Policy<T>, A: Algorithm>(
 ) {
     info!("Starting self play for CFR");
     let mut print_freq = 1;
-    let mut br = BestResponse::new();
 
     for iteration in 0..iterations {
         let gs = (agent.game.new)();
@@ -108,8 +106,6 @@ fn train<T: GameState, N: NodeStore<CFRNode> + Policy<T>, A: Algorithm>(
                 "finished iteration: {}, starting best response calculation",
                 iteration
             );
-            // let v0 = br.get_exploitability(&game, &mut agent.ns, 0);
-            // let v1 = br.get_exploitability(&game, &mut agent.ns, 1);
             let exploitability =
                 exploitability::exploitability(game.clone(), &mut agent.ns).nash_conv;
             info!(

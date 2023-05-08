@@ -1,7 +1,6 @@
 use std::fmt::{Debug, Display};
 
 use crate::{
-    bestresponse::ChanceOutcome,
     game::{Action, Game, GameState, Player},
     istate::IStateKey,
 };
@@ -309,41 +308,6 @@ impl GameState for KPGameState {
         }
 
         return result;
-    }
-
-    fn get_payoff(&self, fixed_player: Player, chance_outcome: ChanceOutcome) -> f64 {
-        let non_fixed = if fixed_player == 0 { 1 } else { 0 };
-        let mut ngs = self.clone();
-        ngs.hands[fixed_player] = chance_outcome[0];
-        return ngs.evaluate(non_fixed);
-    }
-
-    fn chance_outcomes(&self, fixed_player: Player) -> Vec<ChanceOutcome> {
-        let nf = if fixed_player == 0 { 1 } else { 0 };
-
-        return match KPAction::from(self.hands[nf]) {
-            KPAction::Jack => vec![
-                ChanceOutcome::new(vec![KPAction::Queen.into()]),
-                ChanceOutcome::new(vec![KPAction::King.into()]),
-            ],
-            KPAction::Queen => vec![
-                ChanceOutcome::new(vec![KPAction::Jack.into()]),
-                ChanceOutcome::new(vec![KPAction::King.into()]),
-            ],
-            KPAction::King => vec![
-                ChanceOutcome::new(vec![KPAction::Jack.into()]),
-                ChanceOutcome::new(vec![KPAction::Queen.into()]),
-            ],
-            _ => panic!("not implemented for other hands"),
-        };
-    }
-
-    // returns the istate key for a given player with the chance outcomes replaced with the specified one
-    fn co_istate(&self, player: Player, chance_outcome: ChanceOutcome) -> IStateKey {
-        let mut istate = self.istate_key(player);
-        istate[0] = chance_outcome[0];
-
-        return istate;
     }
 }
 

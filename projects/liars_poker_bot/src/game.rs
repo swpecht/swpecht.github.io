@@ -8,7 +8,7 @@ use log::info;
 use rand::{seq::SliceRandom, Rng};
 use serde::{Deserialize, Serialize};
 
-use crate::{agents::Agent, bestresponse::ChanceOutcome, istate::IStateKey};
+use crate::{agents::Agent, istate::IStateKey};
 
 // pub type Action = usize;
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord, Default)]
@@ -54,13 +54,6 @@ pub trait GameState: Display + Clone + Debug {
     fn is_chance_node(&self) -> bool;
     fn num_players(&self) -> usize;
     fn cur_player(&self) -> Player;
-    /// Returns all the chance outcomes for the current gamestate
-    fn chance_outcomes(&self, fixed_player: Player) -> Vec<ChanceOutcome>;
-    /// Returns the istate for a given chance outcome
-    fn co_istate(&self, player: Player, chance_outcome: ChanceOutcome) -> IStateKey;
-    /// Get the payoff for the non-fixed player assuming the fixed players chance
-    /// outcomes are replaced with the sepficied one
-    fn get_payoff(&self, fixed_player: Player, chance_outcome: ChanceOutcome) -> f64;
 }
 
 pub fn run_game<G, R>(s: &mut G, agents: &mut Vec<&mut dyn Agent<G>>, rng: &mut R)
