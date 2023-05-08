@@ -22,14 +22,14 @@ pub struct TabularBestResponse<'a, G: GameState, P: Policy<G>> {
 }
 
 impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
-    pub fn new(ns: &'a mut P, root_state: G, player: Player, cut_threshold: f64) -> Self {
+    pub fn new(policy: &'a mut P, root_state: &G, player: Player, cut_threshold: f64) -> Self {
         let mut br = Self {
             root_state: root_state.clone(),
             num_players: root_state.num_players(),
             player,
             info_sets: HashMap::new(),
             cut_threshold,
-            policy: ns,
+            policy,
         };
 
         br.info_sets = br.info_sets(root_state);
@@ -38,7 +38,7 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
     }
 
     /// Returns a dict of infostatekey to list of (state, cf_probability).
-    fn info_sets(&mut self, state: G) -> HashMap<IStateKey, Vec<(G, f64)>> {
+    fn info_sets(&mut self, state: &G) -> HashMap<IStateKey, Vec<(G, f64)>> {
         let mut infosets = HashMap::new();
 
         for (s, p) in self.decision_nodes(state) {
@@ -55,7 +55,7 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
     }
 
     /// Yields a (state, cf_prob) pair for each descendant decision node.
-    fn decision_nodes(&mut self, parent_state: G) -> Vec<(G, f64)> {
+    fn decision_nodes(&mut self, parent_state: &G) -> Vec<(G, f64)> {
         let mut descendants = Vec::new();
 
         if parent_state.is_terminal() {
@@ -69,7 +69,7 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
         for (action, p_action) in self.transitions(&parent_state) {
             let mut child_state = parent_state.clone();
             child_state.apply_action(action);
-            for (state, p_state) in self.decision_nodes(child_state) {
+            for (state, p_state) in self.decision_nodes(&child_state) {
                 descendants.push((state, p_state * p_action));
             }
         }
@@ -106,7 +106,7 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
     }
 
     /// Returns the value of the specified state to the best-responder.
-    fn value(&self, gs: &G) -> f64 {
+    pub fn value(&self, gs: &G) -> f64 {
         if gs.is_terminal() {
             return gs.evaluate(self.player);
         } else if gs.cur_player() == self.player && !gs.is_chance_node() {
@@ -179,7 +179,7 @@ mod tests {
     use std::collections::HashMap;
 
     use crate::{
-        bestresponse::tabular_best_response::TabularBestResponse,
+        algorithms::tabular_best_response::TabularBestResponse,
         game::kuhn_poker::{KPAction as A, KuhnPoker as KP},
         policy::UniformRandomPolicy,
     };
@@ -187,7 +187,7 @@ mod tests {
     #[test]
     fn test_tabular_best_response() {
         let mut policy = UniformRandomPolicy::new();
-        let br = TabularBestResponse::new(&mut policy, KP::new_state(), 0, 0.0);
+        let br = TabularBestResponse::new(&mut policy, &KP::new_state(), 0, 0.0);
 
         let expected_policy = HashMap::from([
             (KP::istate_key(&[A::Jack], 0), A::Bet.into()), // Bet in case opponent folds when winning

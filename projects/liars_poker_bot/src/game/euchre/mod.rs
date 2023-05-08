@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use crate::{
     bestresponse::ChanceOutcome,
-    collections::{ArrayVec, SortedArrayVec},
+    collections::SortedArrayVec,
     game::{Action, Game, GameState, Player},
     istate::IStateKey,
 };

@@ -2,7 +2,6 @@
 
 mod alwaysfirsttrainableagent;
 mod normalizer;
-pub mod tabular_best_response;
 
 use std::{collections::HashMap, ops::Index};
 
