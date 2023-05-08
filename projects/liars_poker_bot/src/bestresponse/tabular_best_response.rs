@@ -62,7 +62,7 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
             return descendants;
         }
 
-        if parent_state.cur_player() == self.player {
+        if parent_state.cur_player() == self.player && !parent_state.is_chance_node() {
             descendants.push((parent_state.clone(), 1.0));
         }
 
@@ -81,19 +81,19 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
     fn transitions(&self, gs: &G) -> Vec<(Action, f64)> {
         let mut list = Vec::new();
 
-        if gs.cur_player() == self.player {
-            // Counterfactual reach probabilities exclude the best-responder's actions,
-            // hence return probability 1.0 for every action.
-            for a in actions!(gs) {
-                list.push((a, 1.0));
-            }
-        } else if gs.is_chance_node() {
+        if gs.is_chance_node() {
             // only support uniform probability chance outcomes
             let actions = actions!(gs);
             let prob = 1.0 / actions.len() as f64;
 
             for a in actions {
                 list.push((a, prob));
+            }
+        } else if gs.cur_player() == self.player {
+            // Counterfactual reach probabilities exclude the best-responder's actions,
+            // hence return probability 1.0 for every action.
+            for a in actions!(gs) {
+                list.push((a, 1.0));
             }
         } else {
             let probs = self.policy.action_probabilities(&gs);
@@ -109,7 +109,7 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
     fn value(&self, gs: &G) -> f64 {
         if gs.is_terminal() {
             return gs.evaluate(self.player);
-        } else if gs.cur_player() == self.player {
+        } else if gs.cur_player() == self.player && !gs.is_chance_node() {
             let action = self.best_response_action(&gs.istate_key(self.player));
             return self.q_value(gs, action);
         } else {
@@ -219,5 +219,10 @@ mod tests {
         }
 
         assert_eq!(calculated_policy, expected_policy);
+
+        let v0 = br.value(&KP::new_state());
+        print!("{}", v0);
+
+        return;
     }
 }
