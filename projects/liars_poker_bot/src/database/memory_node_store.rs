@@ -1,7 +1,11 @@
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{
-    actions, cfragent::cfrnode::CFRNode, game::GameState, istate::IStateKey, policy::Policy,
+    actions,
+    cfragent::cfrnode::{ActionVec, CFRNode},
+    game::GameState,
+    istate::IStateKey,
+    policy::Policy,
 };
 
 use super::{node_tree::Tree, NodeStore};
@@ -33,11 +37,22 @@ impl<T> NodeStore<T> for MemoryNodeStore<T> {
 impl<G: GameState> Policy<G> for MemoryNodeStore<CFRNode> {
     fn action_probabilities(&mut self, gs: &G) -> crate::cfragent::cfrnode::ActionVec<f64> {
         let p = gs.cur_player();
+        let key = gs.istate_key(p);
+
+        if self.contains_node(&key) {
+            let node = self.get(&key).unwrap();
+            let probs = node.borrow().get_average_strategy();
+            return probs;
+        }
+
+        // otherwise return a uniform random strategy
         let actions = actions!(gs);
-        let node = self
-            .get(&gs.istate_key(p))
-            .unwrap_or(Rc::new(RefCell::new(CFRNode::new(actions))));
-        let probs = node.borrow().get_average_strategy();
+        let prob = 1.0 / actions.len() as f64;
+        let mut probs = ActionVec::new(&actions);
+
+        for a in actions {
+            probs[a] = prob;
+        }
 
         return probs;
     }
