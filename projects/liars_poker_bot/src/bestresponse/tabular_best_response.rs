@@ -2,9 +2,8 @@ use std::collections::HashMap;
 
 use crate::{
     actions,
-    cfragent::cfrnode::{ActionVec, CFRNode},
-    database::NodeStore,
-    game::{Action, Game, GameState, Player},
+    cfragent::cfrnode::ActionVec,
+    game::{Action, GameState, Player},
     istate::IStateKey,
     policy::Policy,
 };
@@ -106,49 +105,53 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
         return list;
     }
 
-    //   @_memoize_method(key_fn=lambda state: state.history_str())
-    //   def value(self, state):
-    //     """Returns the value of the specified state to the best-responder."""
-    //     if state.is_terminal():
-    //       return state.player_return(self._player_id)
-    //     elif (state.current_player() == self._player_id or
-    //           state.is_simultaneous_node()):
-    //       action = self.best_response_action(
-    //           state.information_state_string(self._player_id))
-    //       return self.q_value(state, action)
-    //     else:
-    //       return sum(p * self.q_value(state, a)
-    //                  for a, p in self.transitions(state)
-    //                  if p > self._cut_threshold)
+    /// Returns the value of the specified state to the best-responder.
+    fn value(&self, gs: &G) -> f64 {
+        //     if state.is_terminal():
+        //       return state.player_return(self._player_id)
+        //     elif (state.current_player() == self._player_id or
+        //           state.is_simultaneous_node()):
+        //       action = self.best_response_action(
+        //           state.information_state_string(self._player_id))
+        //       return self.q_value(state, action)
+        //     else:
+        //       return sum(p * self.q_value(state, a)
+        //                  for a, p in self.transitions(state)
+        //                  if p > self._cut_threshold)
+        todo!();
+    }
 
-    //   def q_value(self, state, action):
-    //     """Returns the value of the (state, action) to the best-responder."""
-    //     if state.is_simultaneous_node():
-
-    //       def q_value_sim(sim_state, sim_actions):
-    //         child = sim_state.clone()
-    //         # change action of _player_id
-    //         sim_actions[self._player_id] = action
-    //         child.apply_actions(sim_actions)
-    //         return self.value(child)
-
-    //       actions, probabilities = zip(*self.transitions(state))
-    //       return sum(p * q_value_sim(state, a)
-    //                  for a, p in zip(actions, probabilities / sum(probabilities))
-    //                  if p > self._cut_threshold)
-    //     else:
-    //       return self.value(state.child(action))
+    /// Returns the value of the (state, action) to the best-responder.
+    fn q_value(&self, gs: &G, a: Action) -> f64 {
+        let mut ngs = gs.clone();
+        ngs.apply_action(a);
+        return self.value(&ngs);
+    }
 
     /// Returns the best response for this information state.
     pub fn best_response_action(&mut self, infostate: &IStateKey) -> Action {
-        //     infoset = self.infosets[infostate]
-        //     # Get actions from the first (state, cf_prob) pair in the infoset list.
-        //     # Return the best action by counterfactual-reach-weighted state-value.
-        //     return max(
-        //         infoset[0][0].legal_actions(self._player_id),
-        //         key=lambda a: sum(cf_p * self.q_value(s, a) for s, cf_p in infoset))
+        let infoset = self.info_sets.get(&infostate).unwrap();
 
-        todo!()
+        // Get actions from the first (state, cf_prob) pair in the infoset list.
+        // Return the best action by counterfactual-reach-weighted state-value.
+        let gs = &infoset[0].0;
+
+        let actions = actions!(gs);
+        let mut max_action = actions[0];
+        let mut max_v = f64::NEG_INFINITY;
+        for a in actions {
+            let v = infoset
+                .iter()
+                .map(|(gs, cf_p)| cf_p * self.q_value(gs, a))
+                .sum::<f64>();
+
+            if v > max_v {
+                max_v = v;
+                max_action = a;
+            }
+        }
+
+        return max_action;
     }
 }
 
