@@ -6,7 +6,7 @@ pub mod kuhn_poker;
 
 use log::info;
 use rand::{seq::SliceRandom, Rng};
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::{agents::Agent, istate::IStateKey};
 
@@ -40,7 +40,7 @@ pub struct Game<T: GameState> {
     pub max_actions: usize,
 }
 
-pub trait GameState: Display + Clone + Debug {
+pub trait GameState: Display + Clone + Debug + Serialize + DeserializeOwned {
     /// Applies an action in place
     fn apply_action(&mut self, a: Action);
     /// Returns all legal actions at a given game state

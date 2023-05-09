@@ -1,5 +1,7 @@
 use std::fmt::Display;
 
+use serde::{Deserialize, Serialize};
+
 use crate::{
     collections::SortedArrayVec,
     game::{Action, Game, GameState, Player},
@@ -45,7 +47,7 @@ impl Euchre {
 
 /// We use Rc for the starting hand information since these values rarely change
 /// and are consistent across all children of the given state
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct EuchreGameState {
     num_players: usize,
     /// Holds the cards for each player in the game
@@ -65,7 +67,7 @@ pub struct EuchreGameState {
     trick_winners: [Player; 5],
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+#[derive(Debug, Clone, PartialEq, Eq, Copy, Serialize, Deserialize)]
 enum EPhase {
     DealHands,
     DealFaceUp,

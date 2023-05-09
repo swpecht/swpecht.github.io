@@ -1,10 +1,12 @@
 use std::fmt::{Display, Write};
 
+use serde::{Deserialize, Serialize};
+
 use crate::game::Action;
 
 pub(super) const CARD_PER_SUIT: u8 = 6;
 
-#[derive(PartialEq, Clone, Copy, Debug)]
+#[derive(PartialEq, Clone, Copy, Debug, Serialize, Deserialize)]
 pub(super) enum EAction {
     Pickup,
     Pass,
@@ -93,7 +95,7 @@ impl Display for EAction {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+#[derive(Debug, Clone, PartialEq, Eq, Copy, Serialize, Deserialize)]
 pub(super) enum Suit {
     Clubs,
     Spades,

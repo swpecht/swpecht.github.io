@@ -1,4 +1,4 @@
-use std::io;
+use std::{io, mem};
 
 use clap::Parser;
 
@@ -6,16 +6,15 @@ use clap::clap_derive::ArgEnum;
 
 use liars_poker_bot::actions;
 use liars_poker_bot::agents::{Agent, RandomAgent};
-use liars_poker_bot::algorithms::exploitability::exploitability;
+
 use liars_poker_bot::cfragent::{CFRAgent, CFRAlgorithm};
 use liars_poker_bot::database::memory_node_store::MemoryNodeStore;
 use liars_poker_bot::database::Storage;
-use liars_poker_bot::game::bluff::Bluff;
+use liars_poker_bot::game::bluff::{Bluff, BluffGameState};
 use liars_poker_bot::game::euchre::{Euchre, EuchreGameState};
-use liars_poker_bot::game::kuhn_poker::{KPAction, KuhnPoker};
+use liars_poker_bot::game::kuhn_poker::{KPGameState, KuhnPoker};
 use liars_poker_bot::game::{run_game, Action, GameState};
 
-use liars_poker_bot::policy::AlwaysPolicy;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{thread_rng, SeedableRng};
@@ -86,9 +85,9 @@ fn main() {
 }
 
 fn run_scratch(_args: Args) {
-    let mut policy = AlwaysPolicy::new(KPAction::Bet.into());
-    let data = exploitability(KuhnPoker::game(), &mut policy);
-    assert_eq!(data.nash_conv, 2.0 / 3.0)
+    println!("bluff size: {}", mem::size_of::<BluffGameState>());
+    println!("kuhn poker size: {}", mem::size_of::<KPGameState>());
+    println!("euchre size: {}", mem::size_of::<EuchreGameState>());
 }
 
 fn run_analyze(args: Args) {

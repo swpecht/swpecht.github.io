@@ -4,20 +4,28 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_big_array::BigArray;
 
 use crate::game::Action;
 
+pub mod diskbackedvec;
+
 /// Array backed card storage that implements Vector-like features and is copyable
 /// It also always remains sorted
-#[derive(Clone, Copy, Debug)]
-pub struct SortedArrayVec<T: Copy + Clone + Default, const N: usize> {
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct SortedArrayVec<T: Copy + Clone + Default + Serialize + DeserializeOwned, const N: usize>
+{
     len: usize,
+    #[serde(with = "BigArray")]
     data: [T; N],
 }
 
-impl<T: Copy + Clone + Default + PartialOrd + PartialEq, const N: usize> SortedArrayVec<T, N> {
+impl<
+        T: Copy + Clone + Default + PartialOrd + PartialEq + Serialize + DeserializeOwned,
+        const N: usize,
+    > SortedArrayVec<T, N>
+{
     pub fn new() -> Self {
         Self {
             len: 0,
@@ -96,15 +104,19 @@ impl<T: Copy + Clone + Default + PartialOrd + PartialEq, const N: usize> SortedA
     }
 }
 
-impl<T: Copy + Clone + Default + PartialEq + PartialOrd, const N: usize> Default
-    for SortedArrayVec<T, N>
+impl<
+        T: Copy + Clone + Default + PartialEq + PartialOrd + Serialize + DeserializeOwned,
+        const N: usize,
+    > Default for SortedArrayVec<T, N>
 {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T: Copy + Clone + Default, const N: usize> Index<usize> for SortedArrayVec<T, N> {
+impl<T: Copy + Clone + Default + Serialize + DeserializeOwned, const N: usize> Index<usize>
+    for SortedArrayVec<T, N>
+{
     type Output = T;
 
     fn index(&self, index: usize) -> &Self::Output {

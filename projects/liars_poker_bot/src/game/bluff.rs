@@ -1,5 +1,7 @@
 use std::fmt::{Display, Write};
 
+use serde::{Deserialize, Serialize};
+
 use crate::{collections::SortedArrayVec, istate::IStateKey};
 
 use super::{Action, Game, GameState, Player};
@@ -18,7 +20,7 @@ const FACES: [Dice; 6] = [
     Dice::Wild,
 ];
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default, Serialize, Deserialize)]
 pub enum Dice {
     #[default]
     One,
@@ -71,7 +73,7 @@ impl From<u8> for Dice {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Debug, Eq)]
+#[derive(Copy, Clone, PartialEq, Debug, Eq, Serialize, Deserialize)]
 pub enum BluffActions {
     Roll(Dice),
     Bid(usize, Dice),
@@ -190,7 +192,7 @@ impl Display for BluffActions {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 enum Phase {
     RollingDice,
     Betting,
@@ -229,7 +231,7 @@ impl Bluff {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct BluffGameState {
     phase: Phase,
     dice: [SortedArrayVec<Dice, STARTING_DICE>; 2],
