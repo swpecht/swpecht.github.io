@@ -49,7 +49,9 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
         debug!("building info sets...");
         let mut infosets = HashMap::new();
 
-        let decision_nodes = self.decision_nodes(state);
+        // let decision_nodes = self.decision_nodes(state);
+        let mut decision_nodes = Vec::new();
+        self._unrolled_decision_nodes(state, &mut decision_nodes, 1.0);
         for (s, p) in decision_nodes {
             let k = s.istate_key(self.player);
 
@@ -88,28 +90,24 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
         return descendants;
     }
 
-    fn unrolled_decision_nodes(
+    fn _unrolled_decision_nodes(
         &mut self,
         parent_state: &G,
         nodes: &mut Vec<(G, f64)>,
-        p_state: f64,
+        mut p_state: f64,
     ) {
         if parent_state.is_terminal() {
             return;
         }
 
         if parent_state.cur_player() == self.player && !parent_state.is_chance_node() {
-            nodes.push((parent_state.clone(), 1.0));
+            nodes.push((parent_state.clone(), p_state));
         }
 
         for (action, p_action) in self.transitions(&parent_state) {
             let mut child_state = parent_state.clone();
             child_state.apply_action(action);
-            self.unrolled_decision_nodes(&child_state, nodes, p_action);
-
-            for (state, p_state) in self.decision_nodes(&child_state) {
-                nodes.push((state, p_state * p_action));
-            }
+            self._unrolled_decision_nodes(&child_state, nodes, p_state * p_action);
         }
     }
 
@@ -233,9 +231,14 @@ impl<'a, G: GameState, P: Policy<G>> Policy<G> for TabularBestResponse<'a, G, P>
 mod tests {
     use std::collections::HashMap;
 
+    use approx::assert_relative_eq;
+
     use crate::{
         algorithms::tabular_best_response::TabularBestResponse,
-        game::kuhn_poker::{KPAction as A, KuhnPoker as KP},
+        game::{
+            bluff::Bluff,
+            kuhn_poker::{KPAction as A, KuhnPoker as KP},
+        },
         policy::UniformRandomPolicy,
     };
 
@@ -274,5 +277,42 @@ mod tests {
         }
 
         assert_eq!(calculated_policy, expected_policy);
+    }
+
+    #[test]
+    fn test_decision_nodes_kuhn_poker() {
+        let mut policy = UniformRandomPolicy::new();
+        let root_state = KP::new_state();
+        let mut br = TabularBestResponse::new(&mut policy, &root_state, 0, 0.0);
+
+        let first_decision_nodes = br.decision_nodes(&root_state);
+
+        let mut unrolled_decision_nodes = Vec::new();
+        br._unrolled_decision_nodes(&root_state, &mut unrolled_decision_nodes, 1.0);
+
+        assert_eq!(unrolled_decision_nodes.len(), first_decision_nodes.len());
+
+        for i in 0..unrolled_decision_nodes.len() {
+            assert_eq!(unrolled_decision_nodes[i], first_decision_nodes[i]);
+        }
+    }
+
+    #[test]
+    fn test_decision_nodes_bluff11() {
+        let mut policy = UniformRandomPolicy::new();
+        let root_state = Bluff::new_state(1, 1);
+        let mut br = TabularBestResponse::new(&mut policy, &root_state, 0, 0.0);
+
+        let first_decision_nodes = br.decision_nodes(&root_state);
+
+        let mut unrolled_decision_nodes = Vec::new();
+        br._unrolled_decision_nodes(&root_state, &mut unrolled_decision_nodes, 1.0);
+
+        assert_eq!(unrolled_decision_nodes.len(), first_decision_nodes.len());
+
+        for i in 0..unrolled_decision_nodes.len() {
+            assert_eq!(unrolled_decision_nodes[i].0, first_decision_nodes[i].0);
+            assert_relative_eq!(unrolled_decision_nodes[i].1, first_decision_nodes[i].1)
+        }
     }
 }

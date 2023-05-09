@@ -34,7 +34,7 @@ impl From<Action> for KPAction {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KPPhase {
     Dealing,
     Playing,
@@ -43,7 +43,7 @@ pub enum KPPhase {
 /// Adapted from: https://github.com/deepmind/open_spiel/blob/master/open_spiel/games/kuhn_poker.cc
 /// All of the randomness occurs outside of the gamestate. Instead some game states are change nodes. And the
 /// "Game runner" will choose of of the random, valid actions
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct KPGameState {
     num_players: usize,
     /// Holds the cards for each player in the game

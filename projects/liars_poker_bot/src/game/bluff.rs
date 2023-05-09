@@ -71,7 +71,7 @@ impl From<u8> for Dice {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq, Debug, Eq)]
 pub enum BluffActions {
     Roll(Dice),
     Bid(usize, Dice),
@@ -474,6 +474,12 @@ fn calculate_payoff(
 impl Display for BluffGameState {
     fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         todo!()
+    }
+}
+
+impl PartialEq for BluffGameState {
+    fn eq(&self, other: &Self) -> bool {
+        self.key == other.key
     }
 }
 
