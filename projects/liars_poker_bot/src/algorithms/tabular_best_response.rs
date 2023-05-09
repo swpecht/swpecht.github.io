@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 
-use log::trace;
+use log::{debug, trace};
 
 use crate::{
     actions,
+    alloc::Pool,
     cfragent::cfrnode::ActionVec,
     database::node_tree::Tree,
     game::{Action, GameState, Player},
@@ -38,7 +39,6 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
             value_cache: Tree::new(),
             best_response_cache: Tree::new(),
         };
-
         br.info_sets = br.info_sets(root_state);
 
         return br;
@@ -46,9 +46,11 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
 
     /// Returns a dict of infostatekey to list of (state, cf_probability).
     fn info_sets(&mut self, state: &G) -> HashMap<IStateKey, Vec<(G, f64)>> {
+        debug!("building info sets...");
         let mut infosets = HashMap::new();
 
-        for (s, p) in self.decision_nodes(state) {
+        let decision_nodes = self.decision_nodes(state);
+        for (s, p) in decision_nodes {
             let k = s.istate_key(self.player);
 
             if !infosets.contains_key(&k) {
@@ -58,6 +60,7 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
             list.push((s, p));
         }
 
+        debug!("{} infosets found", infosets.len());
         return infosets;
     }
 
@@ -76,12 +79,38 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
         for (action, p_action) in self.transitions(&parent_state) {
             let mut child_state = parent_state.clone();
             child_state.apply_action(action);
-            for (state, p_state) in self.decision_nodes(&child_state) {
+            let child_nodes = self.decision_nodes(&child_state);
+            for (state, p_state) in child_nodes {
                 descendants.push((state, p_state * p_action));
             }
         }
 
         return descendants;
+    }
+
+    fn unrolled_decision_nodes(
+        &mut self,
+        parent_state: &G,
+        nodes: &mut Vec<(G, f64)>,
+        p_state: f64,
+    ) {
+        if parent_state.is_terminal() {
+            return;
+        }
+
+        if parent_state.cur_player() == self.player && !parent_state.is_chance_node() {
+            nodes.push((parent_state.clone(), 1.0));
+        }
+
+        for (action, p_action) in self.transitions(&parent_state) {
+            let mut child_state = parent_state.clone();
+            child_state.apply_action(action);
+            self.unrolled_decision_nodes(&child_state, nodes, p_action);
+
+            for (state, p_state) in self.decision_nodes(&child_state) {
+                nodes.push((state, p_state * p_action));
+            }
+        }
     }
 
     /// Returns a list of (action, cf_prob) pairs from the specified state.
