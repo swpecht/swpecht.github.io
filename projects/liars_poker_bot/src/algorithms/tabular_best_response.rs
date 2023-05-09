@@ -4,7 +4,6 @@ use log::{debug, trace};
 
 use crate::{
     actions,
-    alloc::Pool,
     cfragent::cfrnode::ActionVec,
     database::node_tree::Tree,
     game::{Action, GameState, Player},
@@ -67,7 +66,7 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
     }
 
     /// Yields a (state, cf_prob) pair for each descendant decision node.
-    fn decision_nodes(&mut self, parent_state: &G) -> Vec<(G, f64)> {
+    fn _decision_nodes(&mut self, parent_state: &G) -> Vec<(G, f64)> {
         let mut descendants = Vec::new();
 
         if parent_state.is_terminal() {
@@ -81,7 +80,7 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
         for (action, p_action) in self.transitions(&parent_state) {
             let mut child_state = parent_state.clone();
             child_state.apply_action(action);
-            let child_nodes = self.decision_nodes(&child_state);
+            let child_nodes = self._decision_nodes(&child_state);
             for (state, p_state) in child_nodes {
                 descendants.push((state, p_state * p_action));
             }
@@ -90,11 +89,12 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
         return descendants;
     }
 
+    /// Optmized version of OpenSpiel decision nodes algorithm
     fn _unrolled_decision_nodes(
         &mut self,
         parent_state: &G,
         nodes: &mut Vec<(G, f64)>,
-        mut p_state: f64,
+        p_state: f64,
     ) {
         if parent_state.is_terminal() {
             return;
@@ -285,7 +285,7 @@ mod tests {
         let root_state = KP::new_state();
         let mut br = TabularBestResponse::new(&mut policy, &root_state, 0, 0.0);
 
-        let first_decision_nodes = br.decision_nodes(&root_state);
+        let first_decision_nodes = br._decision_nodes(&root_state);
 
         let mut unrolled_decision_nodes = Vec::new();
         br._unrolled_decision_nodes(&root_state, &mut unrolled_decision_nodes, 1.0);
@@ -303,7 +303,7 @@ mod tests {
         let root_state = Bluff::new_state(1, 1);
         let mut br = TabularBestResponse::new(&mut policy, &root_state, 0, 0.0);
 
-        let first_decision_nodes = br.decision_nodes(&root_state);
+        let first_decision_nodes = br._decision_nodes(&root_state);
 
         let mut unrolled_decision_nodes = Vec::new();
         br._unrolled_decision_nodes(&root_state, &mut unrolled_decision_nodes, 1.0);
