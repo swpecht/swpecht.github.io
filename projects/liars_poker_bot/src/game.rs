@@ -54,6 +54,8 @@ pub trait GameState: Display + Clone + Debug {
     fn is_chance_node(&self) -> bool;
     fn num_players(&self) -> usize;
     fn cur_player(&self) -> Player;
+    // A key representing the entire game state, likely a history of all actions
+    fn key(&self) -> IStateKey;
 }
 
 pub fn run_game<G, R>(s: &mut G, agents: &mut Vec<&mut dyn Agent<G>>, rng: &mut R)

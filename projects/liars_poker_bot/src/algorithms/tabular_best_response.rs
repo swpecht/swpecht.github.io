@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
 use log::trace;
-use memoize::memoize;
 
 use crate::{
     actions,
     cfragent::cfrnode::ActionVec,
+    database::node_tree::Tree,
     game::{Action, GameState, Player},
     istate::IStateKey,
     policy::Policy,
@@ -22,6 +22,8 @@ pub struct TabularBestResponse<'a, G: GameState, P: Policy<G>> {
     info_sets: HashMap<IStateKey, Vec<(G, f64)>>,
     cut_threshold: f64,
     policy: &'a mut P,
+    value_cache: Tree<f64>,
+    best_response_cache: Tree<Action>,
 }
 
 impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
@@ -33,6 +35,8 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
             info_sets: HashMap::new(),
             cut_threshold,
             policy,
+            value_cache: Tree::new(),
+            best_response_cache: Tree::new(),
         };
 
         br.info_sets = br.info_sets(root_state);
@@ -110,16 +114,26 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
 
     /// Returns the value of the specified state to the best-responder.
     pub fn value(&mut self, gs: &G) -> f64 {
+        let key = gs.key();
+        if self.value_cache.contains_key(&key) {
+            return self.value_cache.get(&key).unwrap();
+        }
+
         if gs.is_terminal() {
             let v = gs.evaluate(self.player);
             trace!("found terminal node: {:?} with value: {}", gs, v);
+
+            self.value_cache.insert(key, v);
             return v;
         } else if gs.cur_player() == self.player && !gs.is_chance_node() {
             let action = self.best_response_action(&gs.istate_key(self.player));
             trace!("found best response action of {:?} for {:?}", action, gs);
             let mut ngs = gs.clone();
             ngs.apply_action(action);
-            return self.value(&ngs);
+
+            let v = self.value(&ngs);
+            self.value_cache.insert(key, v);
+            return v;
         } else {
             let mut v = 0.0;
             trace!("evaluating childre for {:?}", gs);
@@ -131,12 +145,17 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
                 }
             }
 
+            self.value_cache.insert(key, v);
             return v;
         }
     }
 
     /// Returns the best response for this information state.
     pub fn best_response_action(&mut self, infostate: &IStateKey) -> Action {
+        if self.best_response_cache.contains_key(infostate) {
+            return self.best_response_cache.get(infostate).unwrap();
+        }
+
         let infoset = self.info_sets.get(&infostate);
         if infoset.is_none() {
             panic!("couldn't find key");
@@ -164,6 +183,7 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
             }
         }
 
+        self.best_response_cache.insert(*infostate, max_action);
         return max_action;
     }
 }

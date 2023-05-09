@@ -618,6 +618,10 @@ impl GameState for EuchreGameState {
     fn cur_player(&self) -> Player {
         self.cur_player
     }
+
+    fn key(&self) -> IStateKey {
+        todo!()
+    }
 }
 
 #[cfg(test)]

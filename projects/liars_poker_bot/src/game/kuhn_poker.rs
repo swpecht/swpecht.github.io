@@ -53,6 +53,7 @@ pub struct KPGameState {
     phase: KPPhase,
     cur_player: usize,
     history: Vec<KPAction>,
+    key: IStateKey,
 }
 
 impl Display for KPGameState {
@@ -110,6 +111,7 @@ impl KuhnPoker {
             is_chance_node: true,
             history: Vec::new(),
             is_terminal: false,
+            key: IStateKey::new(),
         }
     }
 
@@ -215,6 +217,8 @@ impl GameState for KPGameState {
     }
 
     fn apply_action(&mut self, a: Action) {
+        self.key.push(a);
+
         match self.phase {
             KPPhase::Dealing => self.apply_action_dealing(a),
             KPPhase::Playing => self.apply_action_playing(a),
@@ -308,6 +312,10 @@ impl GameState for KPGameState {
         }
 
         return result;
+    }
+
+    fn key(&self) -> IStateKey {
+        return self.key;
     }
 }
 

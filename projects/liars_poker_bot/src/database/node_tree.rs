@@ -13,6 +13,7 @@ pub struct Tree<T> {
     /// a cursor for each root of the tree
     cursors: HashMap<Action, Cursor>,
     stats: TreeStats,
+    root_value: Option<T>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -66,11 +67,17 @@ impl<T: Clone> Tree<T> {
             roots: HashMap::default(),
             cursors: HashMap::default(),
             stats: TreeStats::new(),
+            root_value: None,
         }
     }
 
     pub fn insert(&mut self, k: IStateKey, v: T) {
         let ka = k.get_actions();
+
+        if ka.len() == 0 {
+            self.root_value = Some(v);
+            return;
+        }
 
         let id = self.find_node(ka);
         let n = &mut self.nodes[id];
@@ -176,6 +183,10 @@ impl<T: Clone> Tree<T> {
     /// Gets a clone of the value from the tree.
     pub fn get(&mut self, k: &IStateKey) -> Option<T> {
         self.stats.get_calls += 1;
+
+        if k.len() == 0 {
+            return self.root_value.clone();
+        }
 
         let root = self.roots.get(&k[0]);
         if root.is_none() {
@@ -285,6 +296,18 @@ mod tests {
         let mut k1 = IStateKey::new();
         k1.push(Action(0));
         k1.push(Action(1));
+
+        t.insert(k1.clone(), 1);
+
+        assert_eq!(t.get(&k1), Some(1));
+    }
+
+    #[test]
+    fn test_node_tree_empty_key() {
+        let mut t = Tree::new();
+        let k1 = IStateKey::new();
+
+        assert!(!t.contains_key(&k1));
 
         t.insert(k1.clone(), 1);
 

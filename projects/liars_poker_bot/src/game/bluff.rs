@@ -209,6 +209,7 @@ impl Bluff {
             last_bid: STARTING_BID, // lowest possible bid
             num_dice: [dice0, dice1],
             is_terminal: false,
+            key: IStateKey::new(),
         }
     }
 
@@ -237,6 +238,7 @@ pub struct BluffGameState {
     cur_player: Player,
     num_players: usize,
     keys: [IStateKey; 2],
+    key: IStateKey,
     is_terminal: bool,
 }
 
@@ -325,6 +327,9 @@ impl BluffGameState {
     }
 
     fn update_keys(&mut self, a: Action) {
+        // game key gets everything
+        self.key.push(a);
+
         // private actions for rolling, and we don't push the dice until we have all of them sorted
         if self.push_player_dice(a, 0) || self.push_player_dice(a, 1) {
             return;
@@ -430,6 +435,10 @@ impl GameState for BluffGameState {
 
     fn cur_player(&self) -> Player {
         self.cur_player
+    }
+
+    fn key(&self) -> IStateKey {
+        return self.key;
     }
 }
 
