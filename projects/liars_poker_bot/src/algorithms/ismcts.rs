@@ -6,7 +6,6 @@ use rustc_hash::FxHashMap;
 use crate::{
     actions,
     agents::Agent,
-    alloc::Pool,
     cfragent::cfrnode::ActionVec,
     game::{Action, Game, GameState, Player},
     istate::IStateKey,
@@ -91,39 +90,36 @@ pub trait ResampleFromInfoState {
 ///
 /// Adapted from: https://github.com/deepmind/open_spiel/blob/master/open_spiel/python/algorithms/ismcts.py
 pub struct ISMCTSBot<G: GameState, E> {
-    game: Game<G>,
     uct_c: f64,
     max_simulations: i32,
     child_selection_policy: ChildSelectionPolicy,
     final_policy_type: ISMCTSFinalPolicyType,
     max_world_samples: i32,
     evaluator: E,
-    node_pool: Pool<ISMCTSNode>,
     nodes: HashMap<IStateKey, ISMCTSNode>,
     rng: StdRng,
+    root_samples: Vec<G>,
 }
 
 impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> ISMCTSBot<G, E> {
-    pub fn new(game: Game<G>, uct_c: f64, max_simulations: i32, evaluator: E) -> Self {
+    pub fn new(_game: Game<G>, uct_c: f64, max_simulations: i32, evaluator: E) -> Self {
         Self {
-            game,
             uct_c,
             max_simulations,
             child_selection_policy: ChildSelectionPolicy::Puct, // open speil default
             final_policy_type: ISMCTSFinalPolicyType::MaxVisitCount, // open speil default
             max_world_samples: UNLIMITED_NUM_WORLD_SAMPLES,
             evaluator,
-            node_pool: Pool::new(ISMCTSNode::default), // open speil default
             nodes: HashMap::default(),
             rng: StdRng::seed_from_u64(42),
+            root_samples: Vec::new(),
         }
     }
 
-    fn run_search(&mut self, gs: &G) -> ActionVec<f64> {
+    fn run_search(&mut self, root_node: &G) -> ActionVec<f64> {
         self.reset();
-        //   def run_search(self, state):
 
-        let actions = actions!(gs);
+        let actions = actions!(root_node);
         if actions.len() == 1 {
             let mut policy = ActionVec::new(&actions);
             policy[actions[0]] = 1.0;
@@ -131,53 +127,57 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> ISMCTSBot<G, E> {
         }
 
         // root node
-        self.create_new_node(gs);
-        let root_infostate_key = self.get_state_key(gs);
+        self.create_new_node(root_node);
+        let root_infostate_key = self.get_state_key(root_node);
         for _ in 0..self.max_simulations {
-            let sampled_root_state = self.sample_root_state(gs);
-            let p = gs.cur_player();
+            let sampled_root_state = self.sample_root_state(root_node);
+            let p = root_node.cur_player();
             assert_eq!(sampled_root_state.istate_key(p), root_infostate_key);
 
             self.run_simulation(&sampled_root_state);
         }
 
         // Don't need to handle inconsistent action sets since have perfect recall
-        self.get_final_policy(gs)
+        self.get_final_policy(root_node)
     }
 
-    fn get_final_policy(&mut self, gs: &G) -> ActionVec<f64> {
-        //   def get_final_policy(self, state, node):
-        //     assert node
-        //     if self._final_policy_type == ISMCTSFinalPolicyType.NORMALIZED_VISITED_COUNT:
-        //       assert node.total_visits > 0
-        //       total_visits = node.total_visits
-        //       policy = [(action, child.visits / total_visits)
-        //                 for action, child in node.child_info.items()]
-        //     elif self._final_policy_type == ISMCTSFinalPolicyType.MAX_VISIT_COUNT:
-        //       assert node.total_visits > 0
-        //       max_visits = -float('inf')
-        //       count = 0
-        //       for action, child in node.child_info.items():
-        //         if child.visits == max_visits:
-        //           count += 1
-        //         elif child.visits > max_visits:
-        //           max_visits = child.visits
-        //           count = 1
-        //       policy = [(action, 1. / count if child.visits == max_visits else 0.0)
-        //                 for action, child in node.child_info.items()]
-        //     elif self._final_policy_type == ISMCTSFinalPolicyType.MAX_VALUE:
-        //       assert node.total_visits > 0
-        //       max_value = -float('inf')
-        //       count = 0
-        //       for action, child in node.child_info.items():
-        //         if child.value() == max_value:
-        //           count += 1
-        //         elif child.value() > max_value:
-        //           max_value = child.value()
-        //           count = 1
-        //       policy = [(action, 1. / count if child.value() == max_value else 0.0)
-        //                 for action, child in node.child_info.items()]
-        todo!()
+    fn get_final_policy(&mut self, root_node: &G) -> ActionVec<f64> {
+        let node = self
+            .nodes
+            .get(&root_node.istate_key(root_node.cur_player()))
+            .unwrap();
+
+        // see open speil for other policy type implementations
+        match self.final_policy_type {
+            ISMCTSFinalPolicyType::_NormalizedVisitedCount => todo!(),
+            ISMCTSFinalPolicyType::MaxVisitCount => {
+                assert!(node.total_visits > 0);
+                let mut max_visits = i32::MIN;
+                let mut count = 0;
+                for child in node.child_info.values() {
+                    match (child.visits as i32).cmp(&max_visits) {
+                        std::cmp::Ordering::Less => {}
+                        std::cmp::Ordering::Equal => count += 1,
+                        std::cmp::Ordering::Greater => {
+                            max_visits = child.visits as i32;
+                            count = 1;
+                        }
+                    }
+                }
+
+                let actions = actions!(root_node);
+                let mut policy = ActionVec::new(&actions);
+                for (action, child) in &node.child_info {
+                    policy[*action] = if child.visits as i32 == max_visits {
+                        1.0 / count as f64
+                    } else {
+                        0.0
+                    }
+                }
+                policy
+            }
+            ISMCTSFinalPolicyType::_MaxValue => todo!(),
+        }
     }
 
     fn sample_root_state(&mut self, gs: &G) -> G {
@@ -198,21 +198,20 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> ISMCTSBot<G, E> {
     }
 
     fn reset(&mut self) {
-        //   def reset(self):
-        //     self._nodes = {}
-        //     self._node_pool = []
-        //     self._root_samples = []
-        todo!()
+        self.nodes.clear();
+        self.root_samples.clear();
     }
 
-    fn get_policy(&mut self, gs: &G) -> ActionVec<f64> {
+    pub fn get_policy(&mut self, gs: &G) -> ActionVec<f64> {
         self.run_search(gs)
     }
 
     fn create_new_node(&mut self, gs: &G) -> &mut ISMCTSNode {
         let key = self.get_state_key(gs);
-        let mut node = self.node_pool.detach();
-        node.total_visits = UNEXPANDED_VISIT_COUNT;
+        let node = ISMCTSNode {
+            total_visits: UNEXPANDED_VISIT_COUNT,
+            ..Default::default()
+        };
         self.nodes.insert(key, node);
         self.nodes.get_mut(&key).unwrap()
     }
@@ -352,9 +351,40 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Agent<G> for ISMCTSB
 
 #[cfg(test)]
 mod tests {
+    use rand::{seq::SliceRandom, thread_rng};
+
+    use crate::{
+        actions,
+        agents::{Agent, RandomAgent},
+        algorithms::ismcts::{ISMCTSBot, RandomRolloutEvaluator},
+        game::{kuhn_poker::KuhnPoker, GameState},
+    };
 
     #[test]
     fn test_ismcts() {
+        let mut gs = KuhnPoker::new_state();
+        while gs.is_chance_node() {
+            let a = *actions!(gs).choose(&mut thread_rng()).unwrap();
+            gs.apply_action(a)
+        }
+
+        let mut ismcts = ISMCTSBot::new(
+            KuhnPoker::game(),
+            1.5,
+            100,
+            RandomRolloutEvaluator::default(),
+        );
+        let mut opponent = RandomAgent::default();
+
+        while !gs.is_terminal() {
+            let a = match gs.cur_player() {
+                0 => ismcts.step(&gs),
+                1 => opponent.step(&gs),
+                _ => panic!("invalid player"),
+            };
+            gs.apply_action(a);
+        }
+
         todo!()
     }
 }

@@ -1,6 +1,7 @@
 use std::fmt::{Debug, Display};
 
 use crate::{
+    algorithms::ismcts::ResampleFromInfoState,
     game::{Action, Game, GameState, Player},
     istate::IStateKey,
 };
@@ -315,6 +316,12 @@ impl GameState for KPGameState {
 
     fn key(&self) -> IStateKey {
         self.key
+    }
+}
+
+impl ResampleFromInfoState for KPGameState {
+    fn resample_from_istate<T: rand::Rng>(&self, player: Player, rng: &mut T) -> Self {
+        todo!()
     }
 }
 
