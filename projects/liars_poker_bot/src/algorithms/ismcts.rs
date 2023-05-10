@@ -48,11 +48,20 @@ impl ChildInfo {
 }
 
 /// Node data structure for the search tree.
-#[derive(Default)]
 struct ISMCTSNode {
     child_info: HashMap<Action, ChildInfo>,
     total_visits: i32,
     prior_map: FxHashMap<Action, f64>,
+}
+
+impl Default for ISMCTSNode {
+    fn default() -> Self {
+        Self {
+            child_info: Default::default(),
+            total_visits: UNEXPANDED_VISIT_COUNT,
+            prior_map: Default::default(),
+        }
+    }
 }
 
 /// Abstract class representing an evaluation function for a game.
@@ -64,20 +73,64 @@ struct ISMCTSNode {
 /// https://github.com/deepmind/open_spiel/blob/master/open_spiel/python/algorithms/mcts.py
 pub trait Evaluator<G> {
     /// Returns evaluation on given state.
-    fn evaluate(&self, gs: &G) -> Vec<f64>;
+    fn evaluate(&mut self, gs: &G) -> Vec<f64>;
     /// Returns a probability for each legal action in the given state.
     fn prior(&self, gs: &G) -> ActionVec<f64>;
 }
 
-#[derive(Default)]
-struct RandomRolloutEvaluator {}
-impl<G> Evaluator<G> for RandomRolloutEvaluator {
-    fn evaluate(&self, gs: &G) -> Vec<f64> {
-        todo!()
+/// A simple evaluator doing random rollouts.
+///
+/// This evaluator returns the average outcome of playing random actions from the
+/// given state until the end of the game.  n_rollouts is the number of random
+/// outcomes to be considered.
+struct RandomRolloutEvaluator {
+    n_rollouts: usize,
+    rng: StdRng,
+}
+
+impl RandomRolloutEvaluator {
+    pub fn new(n_rollouts: usize, rng: StdRng) -> Self {
+        Self { n_rollouts, rng }
+    }
+}
+
+impl<G: GameState> Evaluator<G> for RandomRolloutEvaluator {
+    fn evaluate(&mut self, gs: &G) -> Vec<f64> {
+        let mut result = vec![0.0; gs.num_players()];
+        let mut working_state = gs.clone();
+        let mut actions = Vec::new();
+
+        for _ in 0..self.n_rollouts {
+            working_state.clone_from(gs);
+            actions.clear();
+
+            while !working_state.is_terminal() {
+                working_state.legal_actions(&mut actions);
+                let a = *actions.choose(&mut self.rng).unwrap();
+                working_state.apply_action(a);
+            }
+
+            for (i, r) in result.iter_mut().enumerate() {
+                *r += working_state.evaluate(i);
+            }
+        }
+
+        for r in result.iter_mut() {
+            *r /= self.n_rollouts as f64;
+        }
+        result
     }
 
+    /// Returns equal probability for all actions
     fn prior(&self, gs: &G) -> ActionVec<f64> {
-        todo!()
+        let actions = actions!(gs);
+        let prob = 1.0 / actions.len() as f64;
+
+        let mut r = ActionVec::new(&actions);
+        for a in actions {
+            r[a] = prob;
+        }
+        r
     }
 }
 
@@ -117,6 +170,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> ISMCTSBot<G, E> {
     }
 
     fn run_search(&mut self, root_node: &G) -> ActionVec<f64> {
+        assert!(!root_node.is_chance_node());
         self.reset();
 
         let actions = actions!(root_node);
@@ -246,6 +300,8 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> ISMCTSBot<G, E> {
             return self.evaluator.evaluate(gs);
         }
 
+        assert_eq!(node.prior_map.len(), actions!(gs).len());
+
         let mut chosen_action = self.check_expand(&key, &actions);
         if let Some(inner_action) = chosen_action {
             self.expand_if_necessary(&key, inner_action)
@@ -288,7 +344,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> ISMCTSBot<G, E> {
     }
 
     fn expand_if_necessary(&mut self, node_key: &IStateKey, action: Action) {
-        let node = self.nodes.entry(*node_key).or_default();
+        let node = self.nodes.get_mut(node_key).unwrap();
         if let Entry::Vacant(e) = node.child_info.entry(action) {
             e.insert(ChildInfo::new(
                 0,
@@ -351,7 +407,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Agent<G> for ISMCTSB
 
 #[cfg(test)]
 mod tests {
-    use rand::{seq::SliceRandom, thread_rng};
+    use rand::{seq::SliceRandom, thread_rng, SeedableRng};
 
     use crate::{
         actions,
@@ -372,7 +428,7 @@ mod tests {
             KuhnPoker::game(),
             1.5,
             100,
-            RandomRolloutEvaluator::default(),
+            RandomRolloutEvaluator::new(100, SeedableRng::seed_from_u64(42)),
         );
         let mut opponent = RandomAgent::default();
 
