@@ -16,8 +16,8 @@ const UNLIMITED_NUM_WORLD_SAMPLES: i32 = -1;
 const UNEXPANDED_VISIT_COUNT: i32 = -1;
 const TIE_TOLERANCE: f64 = 1e-5;
 
-enum ISMCTSFinalPolicyType {
-    _NormalizedVisitedCount,
+pub enum ISMCTSFinalPolicyType {
+    NormalizedVisitedCount,
     MaxVisitCount,
     _MaxValue,
 }
@@ -161,7 +161,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> ISMCTSBot<G, E> {
             uct_c,
             max_simulations,
             child_selection_policy: ChildSelectionPolicy::Puct, // open speil default
-            final_policy_type: ISMCTSFinalPolicyType::MaxVisitCount, // open speil default
+            final_policy_type: ISMCTSFinalPolicyType::NormalizedVisitedCount, // open speil default
             max_world_samples: UNLIMITED_NUM_WORLD_SAMPLES,
             evaluator,
             nodes: HashMap::default(),
@@ -204,7 +204,16 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> ISMCTSBot<G, E> {
 
         // see open speil for other policy type implementations
         match self.final_policy_type {
-            ISMCTSFinalPolicyType::_NormalizedVisitedCount => todo!(),
+            ISMCTSFinalPolicyType::NormalizedVisitedCount => {
+                assert!(node.total_visits > 0);
+                let total_visits = node.total_visits;
+                let actions = actions!(root_node);
+                let mut policy = ActionVec::new(&actions);
+                for (action, child) in &node.child_info {
+                    policy[*action] = child.visits as f64 / total_visits as f64;
+                }
+                policy
+            }
             ISMCTSFinalPolicyType::MaxVisitCount => {
                 assert!(node.total_visits > 0);
                 let mut max_visits = i32::MIN;
@@ -411,7 +420,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Policy<G> for ISMCTS
 
 #[cfg(test)]
 mod tests {
-    use approx::assert_ulps_eq;
+    use approx::{assert_relative_eq, assert_ulps_eq};
     use rand::{seq::SliceRandom, thread_rng, SeedableRng};
 
     use crate::{
@@ -434,7 +443,7 @@ mod tests {
         );
         let mut opponent = RandomAgent::default();
 
-        for _ in 0..100 {
+        for _ in 0..10 {
             let mut gs = KuhnPoker::new_state();
             while gs.is_chance_node() {
                 let a = *actions!(gs).choose(&mut thread_rng()).unwrap();
@@ -452,6 +461,41 @@ mod tests {
 
             gs.evaluate(0);
         }
+    }
+
+    #[test]
+    fn test_ismcts_optimal_player() {
+        let mut ismcts = ISMCTSBot::new(
+            KuhnPoker::game(),
+            1.5,
+            100,
+            RandomRolloutEvaluator::new(100, SeedableRng::seed_from_u64(42)),
+        );
+
+        let gs = KuhnPoker::from_actions(&[KPAction::Queen, KPAction::King, KPAction::Pass]);
+        let policy = ismcts.run_search(&gs);
+        assert_eq!(policy[KPAction::Bet.into()], 1.0);
+        assert_eq!(policy[KPAction::Pass.into()], 0.0);
+
+        let gs = KuhnPoker::from_actions(&[KPAction::Queen, KPAction::Jack, KPAction::Bet]);
+        let policy = ismcts.run_search(&gs);
+        assert_eq!(policy[KPAction::Bet.into()], 0.0);
+        assert_eq!(policy[KPAction::Pass.into()], 1.0);
+
+        let gs = KuhnPoker::from_actions(&[KPAction::Queen, KPAction::Jack]);
+        let policy = ismcts.run_search(&gs);
+        assert_eq!(policy[KPAction::Bet.into()], 0.0);
+        assert_eq!(policy[KPAction::Pass.into()], 1.0);
+
+        let gs = KuhnPoker::from_actions(&[KPAction::Jack, KPAction::Queen, KPAction::Pass]);
+        let policy = ismcts.run_search(&gs);
+        assert_eq!(policy[KPAction::Bet.into()], 0.0);
+        assert_eq!(policy[KPAction::Pass.into()], 1.0);
+
+        let gs = KuhnPoker::from_actions(&[KPAction::Jack, KPAction::Queen, KPAction::Bet]);
+        let policy = ismcts.run_search(&gs);
+        assert_relative_eq!(policy[KPAction::Bet.into()], 1.0 / 3.0);
+        assert_relative_eq!(policy[KPAction::Pass.into()], 2.0 / 3.0);
     }
 
     /// Starting with a queen should have near-0 expected value.

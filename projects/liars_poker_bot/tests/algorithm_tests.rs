@@ -15,7 +15,7 @@ fn test_ismcts_exploitability() {
     let mut ismcts = ISMCTSBot::new(
         KuhnPoker::game(),
         1.5,
-        100,
+        10000,
         RandomRolloutEvaluator::new(100, SeedableRng::seed_from_u64(42)),
     );
 
