@@ -35,12 +35,12 @@ impl<T: Serialize + DeserializeOwned> DiskBackedVec<T> {
 
         Self {
             pages: FxHashMap::default(),
-            page_size: page_size,
-            max_mem_pages: max_mem_pages,
+            page_size,
+            max_mem_pages,
             len: 0,
             page_queue: VecDeque::new(),
-            dir: dir,
-            _temp: _temp,
+            dir,
+            _temp,
         }
     }
 
@@ -90,12 +90,29 @@ impl<T: Serialize + DeserializeOwned> DiskBackedVec<T> {
     /// Gets the vec corresponding to the given index
     fn get_mem_vec(&mut self, idx: usize) -> &mut Vec<T> {
         let page_index = idx / self.page_size;
-        let vec = self.pages.get_mut(&page_index);
-        if vec.is_some() {
-            return vec.unwrap();
+        self.ensure_page_loaded(page_index);
+        return self.pages.get_mut(&page_index).unwrap();
+    }
+
+    fn ensure_page_loaded(&mut self, page_index: usize) {
+        if !self.pages.contains_key(&page_index) {
+            self.load_from_disk(page_index);
+        }
+    }
+
+    fn load_from_disk(&mut self, page_index: usize) {
+        if self.pages.len() >= self.max_mem_pages {
+            self.save_to_disk();
         }
 
-        todo!("loading from disk not yet implemented")
+        let path = self.get_page_path(page_index);
+        let f = &mut File::open(&path);
+
+        let f = f.as_mut().unwrap();
+        let page = rmp_serde::from_read(f).unwrap();
+
+        self.page_queue.push_back(page_index);
+        self.pages.insert(page_index, page);
     }
 
     /// Saves a single page to disk

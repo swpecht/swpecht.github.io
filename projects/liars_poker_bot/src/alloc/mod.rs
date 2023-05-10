@@ -7,7 +7,7 @@ impl<T> Pool<T> {
     pub fn new(generator: fn() -> T) -> Self {
         Self {
             pool: Vec::new(),
-            generator: generator,
+            generator,
         }
     }
 

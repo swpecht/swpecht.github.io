@@ -44,7 +44,7 @@ impl<T: GameState, N: NodeStore<CFRNode> + Policy<T>> CFRAgent<T, N> {
             game: game.clone(),
             rng: SeedableRng::seed_from_u64(seed),
             // store: FileNodeStore::new(FileBackend::new(storage)),
-            ns: ns,
+            ns,
             _phantom: PhantomData,
         };
 

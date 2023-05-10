@@ -22,7 +22,7 @@ impl Euchre {
 
         EuchreGameState {
             num_players: 4,
-            hands: hands,
+            hands,
             is_chance_node: true,
             is_terminal: false,
             phase: EPhase::DealHands,

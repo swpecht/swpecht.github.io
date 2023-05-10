@@ -55,7 +55,7 @@ impl<T> Node<T> {
             parent: p,
             children: [0; MAX_CHILDREN],
             action: a,
-            v: v,
+            v,
         }
     }
 }
