@@ -195,12 +195,7 @@ fn run(args: Args) {
             ));
         }
         GameType::Euchre => {
-            train_cfr_agent(CFRAgent::new(
-                Euchre::game(),
-                1,
-                MemoryNodeStore::new(),
-                args.alg,
-            ));
+            CFRAgent::new(Euchre::game(), 1, MemoryNodeStore::new(), args.alg).train(10);
         }
         GameType::Bluff11 => {
             train_cfr_agent(CFRAgent::new(
