@@ -27,7 +27,7 @@ fn test_ismcts_exploitability() {
 fn test_cfr_exploitability() {
     let ns = MemoryNodeStore::new();
     let mut agent = CFRAgent::new(KuhnPoker::game(), 1, ns, CFRAlgorithm::CFRCS);
-    agent.train(100_001);
+    agent.train(1_000_000);
 
     let exploitability = exploitability(KuhnPoker::game(), &mut agent.ns).nash_conv;
     assert_relative_eq!(exploitability, 0.0, epsilon = 0.001);

@@ -3,7 +3,7 @@ pub mod cfrcs;
 pub mod cfrnode;
 
 use clap::clap_derive::ArgEnum;
-use log::{debug, info, trace};
+use log::{debug, trace};
 use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
 
 use crate::{
