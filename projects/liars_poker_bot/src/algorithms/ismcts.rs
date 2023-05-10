@@ -1,13 +1,14 @@
-use std::collections::HashMap;
+use std::collections::{hash_map::Entry, HashMap};
 
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
+use rustc_hash::FxHashMap;
 
 use crate::{
     actions,
     agents::Agent,
     alloc::Pool,
     cfragent::cfrnode::ActionVec,
-    game::{Game, GameState, Player},
+    game::{Action, Game, GameState, Player},
     istate::IStateKey,
 };
 
@@ -16,25 +17,25 @@ const UNEXPANDED_VISIT_COUNT: i32 = -1;
 const TIE_TOLERANCE: f64 = 1e-5;
 
 enum ISMCTSFinalPolicyType {
-    NORMALIZED_VISITED_COUNT,
-    MAX_VISIT_COUNT,
-    MAX_VALUE,
+    _NormalizedVisitedCount,
+    MaxVisitCount,
+    _MaxValue,
 }
 
 enum ChildSelectionPolicy {
-    UCT,
-    PUCT,
+    _Uct,
+    Puct,
 }
 
 /// Child node information for the search tree.
 struct ChildInfo {
     visits: usize,
     return_sum: f64,
-    prior: usize,
+    prior: f64,
 }
 
 impl ChildInfo {
-    fn new(visits: usize, return_sum: f64, prior: usize) -> Self {
+    fn new(visits: usize, return_sum: f64, prior: f64) -> Self {
         Self {
             visits,
             return_sum,
@@ -50,16 +51,36 @@ impl ChildInfo {
 /// Node data structure for the search tree.
 #[derive(Default)]
 struct ISMCTSNode {
-    child_info: HashMap<usize, usize>,
+    child_info: HashMap<Action, ChildInfo>,
     total_visits: i32,
-    prior_map: HashMap<usize, usize>,
+    prior_map: FxHashMap<Action, f64>,
 }
 
-pub trait Evaluator {}
+/// Abstract class representing an evaluation function for a game.
+///
+/// The evaluation function takes in an intermediate state in the game and returns
+/// an evaluation of that state, which should correlate with chances of winning
+/// the game. It returns the evaluation from all player's perspectives.
+///
+/// https://github.com/deepmind/open_spiel/blob/master/open_spiel/python/algorithms/mcts.py
+pub trait Evaluator<G> {
+    /// Returns evaluation on given state.
+    fn evaluate(&self, gs: &G) -> Vec<f64>;
+    /// Returns a probability for each legal action in the given state.
+    fn prior(&self, gs: &G) -> ActionVec<f64>;
+}
 
 #[derive(Default)]
 struct RandomRolloutEvaluator {}
-impl Evaluator for RandomRolloutEvaluator {}
+impl<G> Evaluator<G> for RandomRolloutEvaluator {
+    fn evaluate(&self, gs: &G) -> Vec<f64> {
+        todo!()
+    }
+
+    fn prior(&self, gs: &G) -> ActionVec<f64> {
+        todo!()
+    }
+}
 
 /// Resample the chance nodes to other versions of the gamestate that result in the same istate for a given player
 pub trait ResampleFromInfoState {
@@ -82,14 +103,14 @@ pub struct ISMCTSBot<G: GameState, E> {
     rng: StdRng,
 }
 
-impl<G: GameState + ResampleFromInfoState, E: Evaluator> ISMCTSBot<G, E> {
+impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> ISMCTSBot<G, E> {
     pub fn new(game: Game<G>, uct_c: f64, max_simulations: i32, evaluator: E) -> Self {
         Self {
             game,
             uct_c,
             max_simulations,
-            child_selection_policy: ChildSelectionPolicy::PUCT, // open speil default
-            final_policy_type: ISMCTSFinalPolicyType::MAX_VISIT_COUNT, // open speil default
+            child_selection_policy: ChildSelectionPolicy::Puct, // open speil default
+            final_policy_type: ISMCTSFinalPolicyType::MaxVisitCount, // open speil default
             max_world_samples: UNLIMITED_NUM_WORLD_SAMPLES,
             evaluator,
             node_pool: Pool::new(ISMCTSNode::default), // open speil default
@@ -163,27 +184,13 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator> ISMCTSBot<G, E> {
         if self.max_world_samples == UNLIMITED_NUM_WORLD_SAMPLES {
             self.resample_from_infostate(gs)
         } else {
+            // see open speil if want to implement
             panic!("not yet implemented")
         }
-        //     if self._max_world_samples == UNLIMITED_NUM_WORLD_SAMPLES:
-        //       return self.resample_from_infostate(state)
-        //     elif len(self._root_samples) < self._max_world_samples:
-        //       self._root_samples.append(self.resample_from_infostate(state))
-        //       return self._root_samples[-1].clone()
-        //     elif len(self._root_samples) == self._max_world_samples:
-        //       idx = self._random_state.randint(len(self._root_samples))
-        //       return self._root_samples[idx].clone()
-        //     else:
-        //       raise pyspiel.SpielError(
-        //           'Case not handled (badly set max_world_samples..?)')
     }
 
     fn resample_from_infostate(&mut self, gs: &G) -> G {
         gs.resample_from_istate(gs.cur_player(), &mut self.rng)
-    }
-
-    fn random_number(&mut self) -> f64 {
-        self.rng.gen()
     }
 
     fn get_state_key(&self, gs: &G) -> IStateKey {
@@ -210,133 +217,144 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator> ISMCTSBot<G, E> {
         self.nodes.get_mut(&key).unwrap()
     }
 
-    fn run_simulation(&mut self, gs: &G) {
-        //   def run_simulation(self, state):
-        //     if state.is_terminal():
-        //       return state.returns()
-        //     elif state.is_chance_node():
-        //       action_list, prob_list = zip(*state.chance_outcomes())
-        //       chance_action = self._random_state.choice(action_list, p=prob_list)
-        //       state.apply_action(chance_action)
-        //       return self.run_simulation(state)
-        //     legal_actions = state.legal_actions()
-        //     cur_player = state.current_player()
-        //     node = self.lookup_or_create_node(state)
+    fn run_simulation(&mut self, gs: &G) -> Vec<f64> {
+        if gs.is_terminal() {
+            let mut returns = Vec::new();
+            for p in 0..gs.num_players() {
+                returns.push(gs.evaluate(p));
+            }
+            return returns;
+        } else if gs.is_chance_node() {
+            let actions = actions!(gs);
+            let chance_action = *actions.choose(&mut self.rng).unwrap();
+            let mut ngs = gs.clone();
+            ngs.apply_action(chance_action);
+            return self.run_simulation(&ngs);
+        }
 
-        //     assert node
+        let actions = actions!(gs);
+        let cur_player = gs.cur_player();
+        let key = self.get_state_key(gs);
 
-        //     if node.total_visits == UNEXPANDED_VISIT_COUNT:
-        //       node.total_visits = 0
-        //       for action, prob in self._evaluator.prior(state):
-        //         node.prior_map[action] = prob
-        //       return self._evaluator.evaluate(state)
-        //     else:
-        //       chosen_action = self.check_expand(
-        //           node, legal_actions)  # add one children at a time?
-        //       if chosen_action != pyspiel.INVALID_ACTION:
-        //         # check if all actions have been expanded, if not, select one?
-        //         # if yes, ucb?
-        //         self.expand_if_necessary(node, chosen_action)
-        //       else:
-        //         chosen_action = self.select_action_tree_policy(node, legal_actions)
+        let node = self.nodes.entry(key).or_default();
 
-        //       assert chosen_action != pyspiel.INVALID_ACTION
+        if node.total_visits == UNEXPANDED_VISIT_COUNT {
+            node.total_visits = 0;
+            let priors = self.evaluator.prior(gs);
+            for (action, prob) in priors.to_vec() {
+                node.prior_map.insert(action, prob);
+            }
+            return self.evaluator.evaluate(gs);
+        }
 
-        //       node.total_visits += 1
-        //       node.child_info[chosen_action].visits += 1
-        //       state.apply_action(chosen_action)
-        //       returns = self.run_simulation(state)
-        //       node.child_info[chosen_action].return_sum += returns[cur_player]
-        //       return returns
-        todo!()
+        let mut chosen_action = self.check_expand(&key, &actions);
+        if let Some(inner_action) = chosen_action {
+            self.expand_if_necessary(&key, inner_action)
+        } else {
+            chosen_action = Some(self.select_action_tree_policy(&key, &actions));
+        }
+
+        let chosen_action = chosen_action.unwrap();
+
+        let node = self.nodes.entry(key).or_default();
+        node.total_visits += 1;
+        node.child_info
+            .entry(chosen_action)
+            .and_modify(|x| x.visits += 1);
+
+        let mut ngs = gs.clone();
+        ngs.apply_action(chosen_action);
+        let returns = self.run_simulation(&ngs);
+
+        let node = self.nodes.entry(key).or_default();
+        node.child_info
+            .entry(chosen_action)
+            .and_modify(|x| x.return_sum += returns[cur_player]);
+
+        returns
+    }
+
+    fn check_expand(&mut self, node_key: &IStateKey, actions: &Vec<Action>) -> Option<Action> {
+        let node = self.nodes.entry(*node_key).or_default();
+        if actions.len() == node.child_info.len() {
+            return None;
+        }
+
+        let mut shuffled_actions = actions.clone();
+        shuffled_actions.shuffle(&mut self.rng);
+
+        shuffled_actions
+            .into_iter()
+            .find(|&a| !node.child_info.contains_key(&a))
+    }
+
+    fn expand_if_necessary(&mut self, node_key: &IStateKey, action: Action) {
+        let node = self.nodes.entry(*node_key).or_default();
+        if let Entry::Vacant(e) = node.child_info.entry(action) {
+            e.insert(ChildInfo::new(
+                0,
+                0.0,
+                *node.prior_map.get(&action).unwrap(),
+            ));
+        }
+    }
+
+    fn select_action_tree_policy(&mut self, node_key: &IStateKey, _actions: &[Action]) -> Action {
+        self.select_action(node_key)
+    }
+
+    fn select_action(&mut self, node_key: &IStateKey) -> Action {
+        let node = self.nodes.entry(*node_key).or_default();
+        let mut candidates = Vec::new();
+        let mut max_value = f64::NEG_INFINITY;
+
+        for (action, child) in &node.child_info {
+            assert!(child.visits > 0);
+            let mut action_value = child.value();
+            action_value += match self.child_selection_policy {
+                ChildSelectionPolicy::_Uct => {
+                    self.uct_c
+                        * f64::sqrt(f64::log10(node.total_visits as f64) / child.visits as f64)
+                }
+                ChildSelectionPolicy::Puct => {
+                    self.uct_c * child.prior * f64::sqrt(node.total_visits as f64)
+                        / (1.0 + child.visits as f64)
+                }
+            };
+            if action_value > max_value + TIE_TOLERANCE {
+                candidates.clear();
+                candidates.push(action);
+                max_value = action_value;
+            } else if (action_value > max_value - TIE_TOLERANCE)
+                && (action_value < max_value + TIE_TOLERANCE)
+            {
+                candidates.push(action);
+                max_value = action_value;
+            }
+        }
+
+        **candidates.choose(&mut self.rng).unwrap()
     }
 }
 
-//   def step_with_policy(self, state):
-//     policy = self.get_policy(state)
-//     action_list, prob_list = zip(*policy)
-//     sampled_action = self._random_state.choice(action_list, p=prob_list)
-//     return policy, sampled_action
-
-//     policy_size = len(policy)
-//     legal_actions = state.legal_actions()
-//     if policy_size < len(legal_actions):  # do we really need this step?
-//       for action in legal_actions:
-//         if action not in node.child_info:
-//           policy.append((action, 0.0))
-//     return policy
-
-//   def set_resampler(self, cb):
-//     self._resampler_cb = cb
-
-//   def filter_illegals(self, node, legal_actions):
-//     new_node = copy.deepcopy(node)
-//     for action, child in node.child_info.items():
-//       if action not in legal_actions:
-//         new_node.total_visits -= child.visits
-//         del new_node.child_info[action]
-//     return new_node
-
-//   def expand_if_necessary(self, node, action):
-//     if action not in node.child_info:
-//       node.child_info[action] = ChildInfo(0.0, 0.0, node.prior_map[action])
-
-//   def select_action_tree_policy(self, node, legal_actions):
-//     if self._allow_inconsistent_action_sets:
-//       temp_node = self.filter_illegals(node, legal_actions)
-//       if temp_node.total_visits == 0:
-//         action = legal_actions[self._random_state.randint(
-//             len(legal_actions))]  # prior?
-//         self.expand_if_necessary(node, action)
-//         return action
-//       else:
-//         return self.select_action(temp_node)
-//     else:
-//       return self.select_action(node)
-
-//   def select_action(self, node):
-//     candidates = []
-//     max_value = -float('inf')
-//     for action, child in node.child_info.items():
-//       assert child.visits > 0
-
-//       action_value = child.value()
-//       if self._child_selection_policy == ChildSelectionPolicy.UCT:
-//         action_value += (self._uct_c *
-//                          np.sqrt(np.log(node.total_visits)/child.visits))
-//       elif self._child_selection_policy == ChildSelectionPolicy.PUCT:
-//         action_value += (self._uct_c * child.prior *
-//                          np.sqrt(node.total_visits)/(1 + child.visits))
-//       else:
-//         raise pyspiel.SpielError('Child selection policy unrecognized.')
-//       if action_value > max_value + TIE_TOLERANCE:
-//         candidates = [action]
-//         max_value = action_value
-//       elif (action_value > max_value - TIE_TOLERANCE and
-//             action_value < max_value + TIE_TOLERANCE):
-//         candidates.append(action)
-//         max_value = action_value
-
-//     assert len(candidates) >= 1
-//     return candidates[self._random_state.randint(len(candidates))]
-
-//   def check_expand(self, node, legal_actions):
-//     if not self._allow_inconsistent_action_sets and len(
-//         node.child_info) == len(legal_actions):
-//       return pyspiel.INVALID_ACTION
-//     legal_actions_copy = copy.deepcopy(legal_actions)
-//     self._random_state.shuffle(legal_actions_copy)
-//     for action in legal_actions_copy:
-//       if action not in node.child_info:
-//         return action
-//     return pyspiel.INVALID_ACTION
-
-impl<G: GameState + ResampleFromInfoState, E: Evaluator> Agent<G> for ISMCTSBot<G, E> {
+impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Agent<G> for ISMCTSBot<G, E> {
     fn step(&mut self, s: &G) -> crate::game::Action {
         //   def step(self, state):
         //     action_list, prob_list = zip(*self.run_search(state))
         //     return self._random_state.choice(action_list, p=prob_list)
-        self.run_search(s);
+        let action_weights = self.run_search(s).to_vec();
+        action_weights
+            .choose_weighted(&mut self.rng, |item| item.1)
+            .unwrap()
+            .0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    fn test_ismcts() {
         todo!()
     }
 }
