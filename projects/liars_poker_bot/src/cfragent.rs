@@ -34,7 +34,7 @@ pub struct CFRAgent<T: GameState, N: NodeStore<CFRNode>> {
     game: Game<T>,
     rng: StdRng,
     // store: FileNodeStore<FileBackend>,
-    ns: N,
+    pub ns: N,
     _phantom: PhantomData<T>,
 }
 

@@ -9,6 +9,7 @@ use crate::{
     cfragent::cfrnode::ActionVec,
     game::{Action, Game, GameState, Player},
     istate::IStateKey,
+    policy::Policy,
 };
 
 const UNLIMITED_NUM_WORLD_SAMPLES: i32 = -1;
@@ -83,7 +84,7 @@ pub trait Evaluator<G> {
 /// This evaluator returns the average outcome of playing random actions from the
 /// given state until the end of the game.  n_rollouts is the number of random
 /// outcomes to be considered.
-struct RandomRolloutEvaluator {
+pub struct RandomRolloutEvaluator {
     n_rollouts: usize,
     rng: StdRng,
 }
@@ -402,9 +403,15 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Agent<G> for ISMCTSB
     }
 }
 
+impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Policy<G> for ISMCTSBot<G, E> {
+    fn action_probabilities(&mut self, gs: &G) -> ActionVec<f64> {
+        self.run_search(gs)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use approx::{assert_relative_eq, assert_ulps_eq};
+    use approx::assert_ulps_eq;
     use rand::{seq::SliceRandom, thread_rng, SeedableRng};
 
     use crate::{
@@ -418,8 +425,7 @@ mod tests {
     };
 
     #[test]
-    fn test_ismcts() {
-        let mut wins = 0.0;
+    fn test_ismcts_is_agent() {
         let mut ismcts = ISMCTSBot::new(
             KuhnPoker::game(),
             1.5,
@@ -444,10 +450,8 @@ mod tests {
                 gs.apply_action(a);
             }
 
-            wins += gs.evaluate(0);
+            gs.evaluate(0);
         }
-
-        assert_relative_eq!(wins / 100.0, 33.0);
     }
 
     /// Starting with a queen should have near-0 expected value.

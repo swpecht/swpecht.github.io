@@ -5,7 +5,7 @@ use crate::{
 };
 
 /// Wrapper for game policies, usually backed by a node store for CFR
-pub trait Policy<G: GameState> {
+pub trait Policy<G> {
     /// Returns an ActionVec of legal moves and their associated probability for the current player
     fn action_probabilities(&mut self, gs: &G) -> ActionVec<f64>;
 }

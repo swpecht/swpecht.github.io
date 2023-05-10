@@ -157,6 +157,8 @@ impl KPGameState {
         ]
         .contains(&card));
 
+        assert!(!self.hands.contains(&card));
+
         self.hands.push(card);
         self.cur_player += 1;
 
@@ -333,8 +335,15 @@ impl ResampleFromInfoState for KPGameState {
                 ngs.apply_action(player_chance);
             } else if ngs.is_chance_node() {
                 // other player chance node
-                let actions = actions!(ngs);
-                ngs.apply_action(*actions.choose(rng).unwrap());
+                let mut actions = actions!(ngs);
+                actions.shuffle(rng);
+                for a in actions {
+                    if a != player_chance {
+                        // can't deal same card
+                        ngs.apply_action(a);
+                        break;
+                    }
+                }
             } else {
                 // public history gets repeated
                 ngs.apply_action(self.key[i]);
