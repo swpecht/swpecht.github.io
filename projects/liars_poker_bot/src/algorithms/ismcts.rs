@@ -394,9 +394,6 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> ISMCTSBot<G, E> {
 
 impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Agent<G> for ISMCTSBot<G, E> {
     fn step(&mut self, s: &G) -> crate::game::Action {
-        //   def step(self, state):
-        //     action_list, prob_list = zip(*self.run_search(state))
-        //     return self._random_state.choice(action_list, p=prob_list)
         let action_weights = self.run_search(s).to_vec();
         action_weights
             .choose_weighted(&mut self.rng, |item| item.1)
@@ -407,23 +404,22 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Agent<G> for ISMCTSB
 
 #[cfg(test)]
 mod tests {
+    use approx::{assert_relative_eq, assert_ulps_eq};
     use rand::{seq::SliceRandom, thread_rng, SeedableRng};
 
     use crate::{
         actions,
         agents::{Agent, RandomAgent},
-        algorithms::ismcts::{ISMCTSBot, RandomRolloutEvaluator},
-        game::{kuhn_poker::KuhnPoker, GameState},
+        algorithms::ismcts::{Evaluator, ISMCTSBot, RandomRolloutEvaluator},
+        game::{
+            kuhn_poker::{KPAction, KuhnPoker},
+            GameState,
+        },
     };
 
     #[test]
     fn test_ismcts() {
-        let mut gs = KuhnPoker::new_state();
-        while gs.is_chance_node() {
-            let a = *actions!(gs).choose(&mut thread_rng()).unwrap();
-            gs.apply_action(a)
-        }
-
+        let mut wins = 0.0;
         let mut ismcts = ISMCTSBot::new(
             KuhnPoker::game(),
             1.5,
@@ -432,15 +428,45 @@ mod tests {
         );
         let mut opponent = RandomAgent::default();
 
-        while !gs.is_terminal() {
-            let a = match gs.cur_player() {
-                0 => ismcts.step(&gs),
-                1 => opponent.step(&gs),
-                _ => panic!("invalid player"),
-            };
-            gs.apply_action(a);
+        for _ in 0..100 {
+            let mut gs = KuhnPoker::new_state();
+            while gs.is_chance_node() {
+                let a = *actions!(gs).choose(&mut thread_rng()).unwrap();
+                gs.apply_action(a)
+            }
+
+            while !gs.is_terminal() {
+                let a = match gs.cur_player() {
+                    0 => ismcts.step(&gs),
+                    1 => opponent.step(&gs),
+                    _ => panic!("invalid player"),
+                };
+                gs.apply_action(a);
+            }
+
+            wins += gs.evaluate(0);
         }
 
-        todo!()
+        assert_relative_eq!(wins / 100.0, 33.0);
+    }
+
+    /// Starting with a queen should have near-0 expected value.
+    /// Root:
+    /// |-P0: Pass (50%)
+    ///     |-P1: Pass (25%) -- 0.0 (even odds for win or lose)
+    ///     |-P1: Bet (25%)
+    ///         |-P0: Pass (12.5%) -- -.125
+    ///         |-P0: Bet (12.5%) -- 0.0 (even odds for win or lose)
+    /// |-P0: Bet (50%)
+    ///     |-P1: Pass (25%) -- +0.25
+    ///     |-P1: Bet (25%) -- even odes
+    ///
+    /// Should be +0.125 expected value for player 0
+    #[test]
+    fn test_random_rollout() {
+        let mut e = RandomRolloutEvaluator::new(10000, SeedableRng::seed_from_u64(42));
+
+        let gs = KuhnPoker::from_actions(&[KPAction::Queen]);
+        assert_ulps_eq!(e.evaluate(&gs)[0], 0.125, epsilon = 0.01);
     }
 }

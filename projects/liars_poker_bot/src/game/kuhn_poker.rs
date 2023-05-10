@@ -1,11 +1,13 @@
 use std::fmt::{Debug, Display};
 
 use crate::{
+    actions,
     algorithms::ismcts::ResampleFromInfoState,
     game::{Action, Game, GameState, Player},
     istate::IStateKey,
 };
 use log::trace;
+use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy, Serialize, Deserialize)]
@@ -321,7 +323,24 @@ impl GameState for KPGameState {
 
 impl ResampleFromInfoState for KPGameState {
     fn resample_from_istate<T: rand::Rng>(&self, player: Player, rng: &mut T) -> Self {
-        todo!()
+        let player_chance = self.key[player];
+
+        let mut ngs = KuhnPoker::new_state();
+
+        for i in 0..self.key.len() {
+            if i == player {
+                // the player chance node
+                ngs.apply_action(player_chance);
+            } else if ngs.is_chance_node() {
+                // other player chance node
+                let actions = actions!(ngs);
+                ngs.apply_action(*actions.choose(rng).unwrap());
+            } else {
+                // public history gets repeated
+                ngs.apply_action(self.key[i]);
+            }
+        }
+        ngs
     }
 }
 
