@@ -13,11 +13,11 @@ use liars_poker_bot::database::Storage;
 use liars_poker_bot::game::bluff::{Bluff, BluffGameState};
 use liars_poker_bot::game::euchre::{Euchre, EuchreGameState};
 use liars_poker_bot::game::kuhn_poker::{KPGameState, KuhnPoker};
-use liars_poker_bot::game::{run_game, Action, GameState};
+use liars_poker_bot::game::{Action, GameState};
 
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
-use rand::{thread_rng, SeedableRng};
+use rand::SeedableRng;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ArgEnum, Debug)]
 enum GameType {
@@ -111,7 +111,7 @@ fn run_analyze(args: Args) {
             } else {
                 let legal_move_count = actions!(gs).len();
                 end_states *= legal_move_count;
-                total_states = total_states + end_states;
+                total_states += end_states;
                 children[round] += legal_move_count as f64;
                 round += 1;
                 let a = agent.step(&gs);
@@ -126,14 +126,14 @@ fn run_analyze(args: Args) {
     println!("average post deal states: {}", total_states / runs);
     println!("rounds: {}", total_rounds / runs);
     let mut sum = 1.0;
-    for i in 0..children.len() {
+    for (i, c) in children.iter().enumerate() {
         println!(
             "round {} has {} children, {} peers",
             i,
-            children[i] / runs as f64,
+            c / runs as f64,
             sum
         );
-        sum *= (children[i] / runs as f64).max(1.0);
+        sum *= (c / runs as f64).max(1.0);
     }
 
     // traverse gametress
@@ -172,7 +172,7 @@ fn traverse_game_tree<T: GameState>(gs: T, depth: usize) -> usize {
         count += traverse_game_tree(new_s, depth + 1);
     }
 
-    return count;
+    count
 }
 
 fn run(args: Args) {
@@ -225,50 +225,8 @@ fn run(args: Args) {
     };
 }
 
-fn run_benchmark(args: Args) {
-    let g = match args.game {
-        GameType::Euchre => Box::new(|| -> EuchreGameState { Euchre::new_state() }),
-        _ => todo!(),
-    };
-
-    // let cfr = CFRAgent::new(Euchre::game(), 0, 2, Storage::Temp);
-    let mut agents: Vec<Box<dyn Fn() -> Box<dyn Agent<EuchreGameState>>>> = Vec::new();
-    agents.push(Box::new(|| -> Box<dyn Agent<EuchreGameState>> {
-        Box::new(RandomAgent::new())
-    }));
-
-    // agents.push(Box::new(|| -> Box<dyn Agent<EuchreGameState>> {
-    //     Box::new(cfr.clone())
-    // }));
-
-    let mut rng = thread_rng();
-    for p0 in 0..agents.len() {
-        for p1 in 0..agents.len() {
-            let mut score = [0.0; 2];
-            for _ in 0..args.num_games {
-                let mut s = g();
-                run_game(
-                    &mut s,
-                    &mut vec![
-                        agents[p0]().as_mut(),
-                        agents[p1]().as_mut(),
-                        agents[p0]().as_mut(),
-                        agents[p1]().as_mut(),
-                    ],
-                    &mut rng,
-                );
-                score[0] += s.evaluate(0);
-                score[1] += s.evaluate(1);
-            }
-            println!(
-                "{} vs {}: {} to {}",
-                agents[p0]().get_name(),
-                agents[p1]().get_name(),
-                score[0],
-                score[1]
-            )
-        }
-    }
+fn run_benchmark(_args: Args) {
+    todo!()
 }
 
 fn run_play(_args: Args) {
@@ -286,12 +244,11 @@ fn run_play(_args: Args) {
             continue;
         }
 
-        let a;
-        if gs.cur_player() == user {
-            a = handle_player_turn(&mut gs);
+        let a = if gs.cur_player() == user {
+            handle_player_turn(&mut gs)
         } else {
-            a = agent.step(&gs);
-        }
+            agent.step(&gs)
+        };
 
         let cur_player = gs.cur_player();
         gs.apply_action(a);

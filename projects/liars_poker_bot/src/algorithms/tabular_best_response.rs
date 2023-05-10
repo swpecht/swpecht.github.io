@@ -41,7 +41,7 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
         };
         br.info_sets = br.info_sets(root_state);
 
-        return br;
+        br
     }
 
     /// Returns a dict of infostatekey to list of (state, cf_probability).
@@ -55,15 +55,13 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
         for (s, p) in decision_nodes {
             let k = s.istate_key(self.player);
 
-            if !infosets.contains_key(&k) {
-                infosets.insert(k.clone(), Vec::new());
-            }
+            infosets.entry(k).or_insert(Vec::new());
             let list = infosets.get_mut(&k).unwrap();
             list.push((s, p));
         }
 
         debug!("{} infosets found", infosets.len());
-        return infosets;
+        infosets
     }
 
     /// Yields a (state, cf_prob) pair for each descendant decision node.
@@ -78,7 +76,7 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
             descendants.push((parent_state.clone(), 1.0));
         }
 
-        for (action, p_action) in self.transitions(&parent_state) {
+        for (action, p_action) in self.transitions(parent_state) {
             let mut child_state = parent_state.clone();
             child_state.apply_action(action);
             let child_nodes = self._decision_nodes(&child_state);
@@ -87,7 +85,7 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
             }
         }
 
-        return descendants;
+        descendants
     }
 
     /// Optmized version of OpenSpiel decision nodes algorithm
@@ -105,7 +103,7 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
             nodes.push((parent_state.clone(), p_state));
         }
 
-        for (action, p_action) in self.transitions(&parent_state) {
+        for (action, p_action) in self.transitions(parent_state) {
             let mut child_state = parent_state.clone();
             child_state.apply_action(action);
             self.decision_nodes(&child_state, nodes, p_state * p_action);
@@ -131,13 +129,13 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
                 list.push((a, 1.0));
             }
         } else {
-            let probs = self.policy.action_probabilities(&gs);
+            let probs = self.policy.action_probabilities(gs);
             for a in actions!(gs) {
                 list.push((a, probs[a]));
             }
         }
 
-        return list;
+        list
     }
 
     /// Returns the value of the specified state to the best-responder.
@@ -152,7 +150,7 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
             trace!("found terminal node: {:?} with value: {}", gs, v);
 
             self.value_cache.insert(key, v);
-            return v;
+            v
         } else if gs.cur_player() == self.player && !gs.is_chance_node() {
             let action = self.best_response_action(&gs.istate_key(self.player));
             trace!("found best response action of {:?} for {:?}", action, gs);
@@ -184,7 +182,7 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
             return self.best_response_cache.get(infostate).unwrap();
         }
 
-        let infoset = self.info_sets.get(&infostate);
+        let infoset = self.info_sets.get(infostate);
         if infoset.is_none() {
             panic!("couldn't find key");
         }
@@ -212,7 +210,7 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
         }
 
         self.best_response_cache.insert(*infostate, max_action);
-        return max_action;
+        max_action
     }
 }
 
@@ -224,7 +222,7 @@ impl<'a, G: GameState, P: Policy<G>> Policy<G> for TabularBestResponse<'a, G, P>
         let br = self.best_response_action(&gs.istate_key(gs.cur_player()));
         probs[br] = 1.0; // always do the best actions
 
-        return probs;
+        probs
     }
 }
 
@@ -294,8 +292,12 @@ mod tests {
 
         assert_eq!(unrolled_decision_nodes.len(), first_decision_nodes.len());
 
-        for i in 0..unrolled_decision_nodes.len() {
-            assert_eq!(*unrolled_decision_nodes.get(i), first_decision_nodes[i]);
+        for (i, fd) in first_decision_nodes
+            .iter()
+            .enumerate()
+            .take(unrolled_decision_nodes.len())
+        {
+            assert_eq!(*unrolled_decision_nodes.get(i), *fd);
         }
     }
 
@@ -312,9 +314,13 @@ mod tests {
 
         assert_eq!(unrolled_decision_nodes.len(), first_decision_nodes.len());
 
-        for i in 0..unrolled_decision_nodes.len() {
-            assert_eq!(unrolled_decision_nodes.get(i).0, first_decision_nodes[i].0);
-            assert_relative_eq!(unrolled_decision_nodes.get(i).1, first_decision_nodes[i].1)
+        for (i, fd) in first_decision_nodes
+            .iter()
+            .enumerate()
+            .take(unrolled_decision_nodes.len())
+        {
+            assert_eq!(unrolled_decision_nodes.get(i).0, fd.0);
+            assert_relative_eq!(unrolled_decision_nodes.get(i).1, fd.1)
         }
     }
 }

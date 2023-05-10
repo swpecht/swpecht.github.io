@@ -46,9 +46,9 @@ impl Display for Dice {
     }
 }
 
-impl Into<u8> for Dice {
-    fn into(self) -> u8 {
-        match self {
+impl From<Dice> for u8 {
+    fn from(val: Dice) -> Self {
+        match val {
             Dice::One => 1,
             Dice::Two => 2,
             Dice::Three => 3,
@@ -127,29 +127,17 @@ impl PartialOrd for BluffActions {
 
         // if same dice, go on number of bid
         if sd == od {
-            if sn < on {
-                return Some(std::cmp::Ordering::Less);
-            } else if sn > on {
-                return Some(std::cmp::Ordering::Greater);
-            } else {
-                return Some(std::cmp::Ordering::Equal);
-            }
+            return Some(sn.cmp(on));
         }
 
         // If different dice, go on the face value
-        if sd < od {
-            return Some(std::cmp::Ordering::Less);
-        } else if sd > od {
-            return Some(std::cmp::Ordering::Greater);
-        } else {
-            return Some(std::cmp::Ordering::Equal);
-        }
+        Some(sd.cmp(&od))
     }
 }
 
-impl Into<Action> for BluffActions {
-    fn into(self) -> Action {
-        match self {
+impl From<BluffActions> for Action {
+    fn from(val: BluffActions) -> Self {
+        match val {
             BluffActions::Call => Action(0),
             BluffActions::Roll(d) => Action(d.into()), // 1-6
             BluffActions::Bid(n, d) => {
@@ -164,7 +152,7 @@ impl From<Action> for BluffActions {
     fn from(value: Action) -> Self {
         match value.0 {
             0 => BluffActions::Call,
-            x if x >= 1 && x <= 6 => BluffActions::Roll(Dice::from(x)),
+            x if (1..=6).contains(&x) => BluffActions::Roll(Dice::from(x)),
             x if x <= 30 => {
                 let n = (x as usize - 6) % (STARTING_DICE * 2);
                 let n = if n == 0 { 4 } else { n };
@@ -251,7 +239,7 @@ impl BluffGameState {
             g.apply_action(a.into());
         }
 
-        return g;
+        g
     }
 
     fn apply_action_rolling(&mut self, a: Action) {
@@ -367,7 +355,7 @@ impl BluffGameState {
             return true;
         }
 
-        return false;
+        false
     }
 }
 
@@ -392,11 +380,11 @@ impl GameState for BluffGameState {
     fn evaluate(&self, p: Player) -> f64 {
         assert_eq!(self.num_players, 2);
 
-        return calculate_payoff(&self.dice, self.last_bid, &self.cur_player, p);
+        calculate_payoff(&self.dice, self.last_bid, &self.cur_player, p)
     }
 
     fn istate_key(&self, player: Player) -> crate::istate::IStateKey {
-        return self.keys[player];
+        self.keys[player]
     }
 
     fn istate_string(&self, player: super::Player) -> String {
@@ -420,19 +408,19 @@ impl GameState for BluffGameState {
             }
         }
 
-        return istate;
+        istate
     }
 
     fn is_terminal(&self) -> bool {
-        return self.is_terminal;
+        self.is_terminal
     }
 
     fn is_chance_node(&self) -> bool {
-        return self.phase == Phase::RollingDice;
+        self.phase == Phase::RollingDice
     }
 
     fn num_players(&self) -> usize {
-        return self.num_players;
+        self.num_players
     }
 
     fn cur_player(&self) -> Player {
@@ -440,7 +428,7 @@ impl GameState for BluffGameState {
     }
 
     fn key(&self) -> IStateKey {
-        return self.key;
+        self.key
     }
 }
 
@@ -454,9 +442,9 @@ fn calculate_payoff(
 
     let mut n = 0;
 
-    for p in 0..2 {
-        for d in 0..dice[p].len() {
-            if dice[p][d] == f.into() || dice[p][d] == Dice::Wild.into() {
+    for p_dice in dice {
+        for d in 0..p_dice.len() {
+            if p_dice[d] == f || p_dice[d] == Dice::Wild {
                 n += 1;
             }
         }
@@ -465,12 +453,12 @@ fn calculate_payoff(
     let actual = BluffActions::Bid(n, f);
     let caller_right = actual < last_bid;
 
-    return match (*calling_player == player, caller_right) {
+    match (*calling_player == player, caller_right) {
         (true, true) => 1.0,
         (true, false) => -1.0,
         (false, true) => -1.0,
         (false, false) => 1.0,
-    };
+    }
 }
 
 impl Display for BluffGameState {

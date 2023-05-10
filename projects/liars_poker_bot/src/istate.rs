@@ -13,6 +13,12 @@ pub struct IStateKey {
     actions: ArrayVec<64>,
 }
 
+impl Default for IStateKey {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl IStateKey {
     pub fn new() -> Self {
         Self {
@@ -30,16 +36,20 @@ impl IStateKey {
     /// Upper bits are set to 0.
     pub fn trim(&self, n: usize) -> IStateKey {
         if n >= self.len() {
-            return self.clone();
+            return *self;
         }
 
-        return Self {
+        Self {
             actions: self.actions.clone().trim(n),
-        };
+        }
     }
 
     pub fn len(&self) -> usize {
-        return self.actions.len();
+        self.actions.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub fn append(&mut self, actions: &[Action]) {
@@ -49,7 +59,7 @@ impl IStateKey {
     }
 
     pub fn get_actions(&self) -> ArrayVec<64> {
-        return self.actions;
+        self.actions
     }
 }
 
@@ -70,13 +80,13 @@ impl Index<usize> for IStateKey {
 
     fn index(&self, index: usize) -> &Self::Output {
         debug_assert!(index <= self.actions.len());
-        return &self.actions[index];
+        &self.actions[index]
     }
 }
 
 impl IndexMut<usize> for IStateKey {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        return &mut self.actions[index];
+        &mut self.actions[index]
     }
 }
 

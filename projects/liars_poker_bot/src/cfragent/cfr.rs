@@ -44,17 +44,24 @@ impl Algorithm for VanillaCFR {
     }
 
     fn nodes_touched(&self) -> usize {
-        return self.nodes_touched;
+        self.nodes_touched
+    }
+}
+
+impl Default for VanillaCFR {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 impl VanillaCFR {
+    #[allow(clippy::too_many_arguments)]
     fn vcfr<T: GameState, N: NodeStore<CFRNode>>(
         &mut self,
         ns: &mut N,
         gs: &T,
         update_player: Player,
-        depth: usize,
+        _depth: usize,
         reach0: f64,
         reach1: f64,
         chance_reach: f64,
@@ -79,7 +86,7 @@ impl VanillaCFR {
                 ns,
                 &ngs,
                 update_player,
-                depth + 1,
+                _depth + 1,
                 reach0,
                 reach1,
                 chance_reach,
@@ -102,7 +109,7 @@ impl VanillaCFR {
                         ns,
                         &ngs,
                         update_player,
-                        depth + 1,
+                        _depth + 1,
                         reach0,
                         reach1,
                         new_chance_reach,
@@ -174,7 +181,7 @@ impl VanillaCFR {
                 ns,
                 &ngs,
                 update_player,
-                depth + 1,
+                _depth + 1,
                 newreach0,
                 newreach1,
                 chance_reach,
@@ -209,7 +216,7 @@ impl VanillaCFR {
             ns.insert_node(is, node);
         }
 
-        return strat_ev;
+        strat_ev
     }
 
     pub fn new() -> Self {
@@ -221,7 +228,7 @@ impl VanillaCFR {
 fn _get_policy<T: NodeStore<CFRNode>>(ns: &mut T, istate: &IStateKey) -> ActionVec<f64> {
     let n = ns.get(istate).unwrap();
     let p = n.borrow().get_average_strategy();
-    return p;
+    p
 }
 
 fn _check_floats(x: f64, y: f64, i: i32) {
@@ -235,7 +242,7 @@ fn _check_floats(x: f64, y: f64, i: i32) {
 /// Gets a key for player 0 of a new gamestate after applying the passed actions
 fn _get_key(actions: &[KPAction]) -> IStateKey {
     let g = KuhnPoker::from_actions(actions);
-    return g.istate_key(0);
+    g.istate_key(0)
 }
 
 pub(super) fn _test_kp_nash<T: Algorithm>(mut alg: T, iterations: usize) {

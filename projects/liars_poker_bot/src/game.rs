@@ -13,9 +13,10 @@ use crate::{agents::Agent, istate::IStateKey};
 // pub type Action = usize;
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord, Default)]
 pub struct Action(pub u8);
-impl Into<u8> for Action {
-    fn into(self) -> u8 {
-        return self.0;
+
+impl From<Action> for u8 {
+    fn from(value: Action) -> Self {
+        value.0
     }
 }
 

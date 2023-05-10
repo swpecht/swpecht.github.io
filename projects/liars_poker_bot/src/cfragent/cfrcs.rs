@@ -36,7 +36,7 @@ impl Algorithm for CFRCS {
     }
 
     fn nodes_touched(&self) -> usize {
-        return self.nodes_touched;
+        self.nodes_touched
     }
 }
 
@@ -49,12 +49,13 @@ impl CFRCS {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn cfrcs<T: GameState, N: NodeStore<CFRNode>>(
         &mut self,
         ns: &mut N,
         gs: &T,
         update_player: Player,
-        depth: usize,
+        _depth: usize,
         reach0: f64,
         reach1: f64,
         mut phase: CFRPhase,
@@ -75,14 +76,14 @@ impl CFRCS {
             // avoid processing nodes with no choices
             let mut ngs = gs.clone();
             ngs.apply_action(actions[0]);
-            return self.cfrcs(ns, &ngs, update_player, depth + 1, reach0, reach1, phase);
+            return self.cfrcs(ns, &ngs, update_player, _depth + 1, reach0, reach1, phase);
         }
 
         if gs.is_chance_node() {
             let a = *actions.choose(&mut self.rng).unwrap();
             let mut ngs = gs.clone();
             ngs.apply_action(a);
-            return self.cfrcs(ns, &ngs, update_player, depth + 1, reach0, reach1, phase);
+            return self.cfrcs(ns, &ngs, update_player, _depth + 1, reach0, reach1, phase);
         }
 
         // check for cuts  (pruning optimization from Section 2.2.2) of Marc's thesis
@@ -151,7 +152,7 @@ impl CFRCS {
                 ns,
                 &ngs,
                 update_player,
-                depth + 1,
+                _depth + 1,
                 newreach0,
                 newreach1,
                 phase,
@@ -185,7 +186,7 @@ impl CFRCS {
             ns.insert_node(is, node);
         }
 
-        return strat_ev;
+        strat_ev
     }
 }
 

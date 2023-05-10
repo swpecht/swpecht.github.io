@@ -12,11 +12,11 @@ impl<T> Pool<T> {
     }
 
     pub fn detach(&mut self) -> T {
-        if self.pool.len() == 0 {
+        if self.pool.is_empty() {
             return (self.generator)();
         }
 
-        return self.pool.pop().unwrap();
+        self.pool.pop().unwrap()
     }
 
     pub fn attach(&mut self, obj: T) {

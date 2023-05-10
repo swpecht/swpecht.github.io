@@ -48,12 +48,12 @@ impl<T> Page<T> {
             false => IStateKey::new(),
         };
 
-        return (page_istate, max_length);
+        (page_istate, max_length)
     }
 
     pub fn get_page_key(istate: &IStateKey, depth: &[usize]) -> IStateKey {
         let (pgi, _) = Page::<T>::get_key_and_max_depth(istate, depth);
-        return pgi;
+        pgi
     }
 
     pub fn contains(&self, istate: &IStateKey) -> bool {
@@ -68,7 +68,7 @@ impl<T> Page<T> {
             return false;
         }
 
-        return true;
+        true
     }
 }
 

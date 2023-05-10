@@ -60,6 +60,12 @@ impl<T> Node<T> {
     }
 }
 
+impl<T: Clone> Default for Tree<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T: Clone> Tree<T> {
     pub fn new() -> Self {
         Self {
@@ -74,7 +80,7 @@ impl<T: Clone> Tree<T> {
     pub fn insert(&mut self, k: IStateKey, v: T) {
         let ka = k.get_actions();
 
-        if ka.len() == 0 {
+        if ka.is_empty() {
             self.root_value = Some(v);
             return;
         }
@@ -86,7 +92,7 @@ impl<T: Clone> Tree<T> {
 
     fn get_or_create_root(&mut self, action: Action) -> usize {
         let root = self.roots.get(&action);
-        if root.is_some() {
+        if let Some(..) = root {
             return *root.unwrap();
         }
 
@@ -95,7 +101,7 @@ impl<T: Clone> Tree<T> {
         self.nodes.push(n);
         self.roots.insert(action, id);
 
-        return id;
+        id
     }
 
     /// Return the index of the child node for a given actions, creating one if needed
@@ -116,7 +122,7 @@ impl<T: Clone> Tree<T> {
         let p = &mut self.nodes[parent];
         p.children[v as usize] = c;
 
-        return c;
+        c
     }
 
     /// Return the index of the node for a given ka. Creates nodes along the way as needed
@@ -158,9 +164,7 @@ impl<T: Clone> Tree<T> {
     /// Because nodes are read "near" each other, this should be much faster than always traversing the tree
     fn find_cursor_ancestor(&self, ka: ArrayVec<64>) -> Option<(usize, usize)> {
         let cursor = self.cursors.get(&ka[0]);
-        if cursor.is_none() {
-            return None;
-        }
+        cursor?;
         let cursor = cursor.unwrap();
         let ca = cursor.path;
         let last_same = find_last_same(&ka, &ca);
@@ -177,21 +181,19 @@ impl<T: Clone> Tree<T> {
             cur_node = p;
         }
 
-        return Some((cur_node, last_same));
+        Some((cur_node, last_same))
     }
 
     /// Gets a clone of the value from the tree.
     pub fn get(&mut self, k: &IStateKey) -> Option<T> {
         self.stats.get_calls += 1;
 
-        if k.len() == 0 {
+        if k.is_empty() {
             return self.root_value.clone();
         }
 
         let root = self.roots.get(&k[0]);
-        if root.is_none() {
-            return None;
-        }
+        root?;
         let actions = k.get_actions();
         self.stats.naive_nodes_touched += actions.len();
         let idx = self.find_node(actions);
@@ -200,22 +202,22 @@ impl<T: Clone> Tree<T> {
             debug!("nodestore stats: {:?}", self.stats);
         }
 
-        return self.nodes[idx].v.clone();
+        self.nodes[idx].v.clone()
     }
 
     pub fn contains_key(&mut self, k: &IStateKey) -> bool {
-        return self.get(k).is_some();
+        self.get(k).is_some()
     }
 
     pub fn get_stats(&self) -> TreeStats {
-        return self.stats;
+        self.stats
     }
 }
 
 /// finds the index of the last action in the same path
 fn find_last_same<const N: usize>(ka: &ArrayVec<N>, ca: &ArrayVec<N>) -> Option<usize> {
-    assert!(ka.len() != 0);
-    assert!(ca.len() != 0);
+    assert!(!ka.is_empty());
+    assert!(!ca.is_empty());
 
     if ka[0] != ca[0] {
         return None;
@@ -228,7 +230,7 @@ fn find_last_same<const N: usize>(ka: &ArrayVec<N>, ca: &ArrayVec<N>) -> Option<
         }
     }
 
-    return Some(len - 1);
+    Some(len - 1)
 }
 
 #[cfg(test)]
@@ -258,13 +260,13 @@ mod tests {
 
         gs.apply_action(actions!(gs)[0]);
         let k1 = gs.istate_key(0);
-        t.insert(k1.clone(), 1);
+        t.insert(k1, 1);
         let v = t.get(&k1);
         assert_eq!(v, Some(1));
         t.insert(k1, v.unwrap());
 
         gs.apply_action(actions!(gs)[0]);
-        let mut ogs = gs.clone();
+        let mut ogs = gs;
         gs.apply_action(actions!(gs)[0]);
         let k2 = gs.istate_key(0);
         t.insert(k2, 2);
@@ -283,10 +285,10 @@ mod tests {
         let k4 = gs.istate_key(1); // differnt player
         assert_eq!(t.get(&k4), None);
 
-        t.insert(k1.clone(), 11);
+        t.insert(k1, 11);
         assert_eq!(t.get(&k1), Some(11));
 
-        t.insert(k2.clone(), 12);
+        t.insert(k2, 12);
         assert_eq!(t.get(&k2), Some(12));
     }
 
@@ -297,7 +299,7 @@ mod tests {
         k1.push(Action(0));
         k1.push(Action(1));
 
-        t.insert(k1.clone(), 1);
+        t.insert(k1, 1);
 
         assert_eq!(t.get(&k1), Some(1));
     }
@@ -309,7 +311,7 @@ mod tests {
 
         assert!(!t.contains_key(&k1));
 
-        t.insert(k1.clone(), 1);
+        t.insert(k1, 1);
 
         assert_eq!(t.get(&k1), Some(1));
     }
@@ -348,7 +350,7 @@ mod tests {
         a.push(Action(0));
         a.push(Action(1));
         a.push(Action(2));
-        let b = a.clone();
+        let b = a;
         a.push(Action(3));
         let fd = find_last_same(&a, &b);
         assert_eq!(fd.unwrap(), 2);

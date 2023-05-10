@@ -53,14 +53,14 @@ impl<T: GameState, N: NodeStore<CFRNode> + Policy<T>> CFRAgent<T, N> {
             CFRAlgorithm::CFRCS => train(&mut agent, game, iterations, &mut CFRCS::new(seed)),
         }
 
-        return agent;
+        agent
     }
 
     fn get_policy(&mut self, istate: &IStateKey) -> ActionVec<f64> {
         let n = self.ns.get(istate).unwrap();
         let p = n.borrow().get_average_strategy();
         self.ns.insert_node(*istate, n); // return the node
-        return p;
+        p
     }
 }
 

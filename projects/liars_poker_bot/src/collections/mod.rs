@@ -79,7 +79,11 @@ impl<
     }
 
     pub fn len(&self) -> usize {
-        return self.len;
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub fn to_vec(&self) -> Vec<T> {
@@ -88,7 +92,7 @@ impl<
             v.push(self.data[i]);
         }
 
-        return v;
+        v
     }
 
     pub fn contains(&self, c: &T) -> bool {
@@ -100,7 +104,7 @@ impl<
             }
         }
 
-        return contains;
+        contains
     }
 }
 
@@ -121,7 +125,7 @@ impl<T: Copy + Clone + Default + Serialize + DeserializeOwned, const N: usize> I
 
     fn index(&self, index: usize) -> &Self::Output {
         assert!(index < self.len);
-        return &self.data[index];
+        &self.data[index]
     }
 }
 
@@ -130,6 +134,12 @@ pub struct ArrayVec<const N: usize> {
     len: usize,
     #[serde(with = "BigArray")]
     data: [Action; N],
+}
+
+impl<const N: usize> Default for ArrayVec<N> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<const N: usize> ArrayVec<N> {
@@ -150,16 +160,20 @@ impl<const N: usize> ArrayVec<N> {
     pub fn trim(&mut self, n: usize) -> Self {
         assert!(N >= n);
 
-        let mut new = self.clone();
+        let mut new = *self;
         if n >= self.len {
             return new;
         }
         new.len = n;
-        return new;
+        new
     }
 
     pub fn len(&self) -> usize {
-        return self.len;
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }
 
@@ -176,14 +190,14 @@ where
     type Output = Idx::Output;
 
     fn index(&self, index: Idx) -> &Self::Output {
-        return &self.data[index];
+        &self.data[index]
     }
 }
 
 impl<const N: usize> IndexMut<usize> for ArrayVec<N> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         debug_assert!(index < self.len);
-        return &mut self.data[index];
+        &mut self.data[index]
     }
 }
 

@@ -54,9 +54,9 @@ fn traverse_game_tree(n: usize) {
 fn new_gs(g: &EuchreGameState, pool: &mut Vec<EuchreGameState>) -> EuchreGameState {
     if let Some(mut new_s) = pool.pop() {
         new_s = *g;
-        return new_s;
+        new_s
     } else {
-        return *g;
+        *g
     }
 }
 
@@ -65,7 +65,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         b.iter(|| traverse_game_tree(black_box(10000)))
     });
 
-    c.bench_function("cfr kuhn poker 100", |b| b.iter(|| train_cfr_kp()));
+    c.bench_function("cfr kuhn poker 100", |b| b.iter(train_cfr_kp));
 }
 
 criterion_group!(benches, criterion_benchmark);

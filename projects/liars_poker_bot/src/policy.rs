@@ -12,6 +12,12 @@ pub trait Policy<G: GameState> {
 
 pub struct UniformRandomPolicy {}
 
+impl Default for UniformRandomPolicy {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UniformRandomPolicy {
     pub fn new() -> Self {
         Self {}
@@ -29,7 +35,7 @@ impl<G: GameState> Policy<G> for UniformRandomPolicy {
             probs[a] = prob;
         }
 
-        return probs;
+        probs
     }
 }
 
@@ -54,6 +60,6 @@ impl<G: GameState> Policy<G> for AlwaysPolicy {
         let mut probs = ActionVec::new(&actions);
         probs[self.action] = 1.0;
 
-        return probs;
+        probs
     }
 }

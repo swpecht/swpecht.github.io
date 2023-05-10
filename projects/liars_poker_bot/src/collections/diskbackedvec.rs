@@ -20,6 +20,12 @@ pub struct DiskBackedVec<T> {
     _temp: Option<TempDir>,
 }
 
+impl<T: Serialize + DeserializeOwned> Default for DiskBackedVec<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T: Serialize + DeserializeOwned> DiskBackedVec<T> {
     pub fn new() -> Self {
         // defualt to 10M items in memory
@@ -45,7 +51,11 @@ impl<T: Serialize + DeserializeOwned> DiskBackedVec<T> {
     }
 
     pub fn len(&self) -> usize {
-        return self.len;
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
     }
 
     /// Gets the item at the specified index, loading from disk if needed
@@ -56,7 +66,7 @@ impl<T: Serialize + DeserializeOwned> DiskBackedVec<T> {
 
         let in_page_idx = idx % self.page_size;
         let page = self.get_mem_vec(idx);
-        return &page[in_page_idx];
+        &page[in_page_idx]
     }
 
     pub fn push(&mut self, v: T) {
@@ -106,7 +116,7 @@ impl<T: Serialize + DeserializeOwned> DiskBackedVec<T> {
         }
 
         let path = self.get_page_path(page_index);
-        let f = &mut File::open(&path);
+        let f = &mut File::open(path);
 
         let f = f.as_mut().unwrap();
         let page = rmp_serde::from_read(f).unwrap();
@@ -128,7 +138,7 @@ impl<T: Serialize + DeserializeOwned> DiskBackedVec<T> {
     }
 
     fn get_page_path(&self, page_idx: usize) -> PathBuf {
-        return self.dir.join(page_idx.to_string());
+        self.dir.join(page_idx.to_string())
     }
 }
 
@@ -136,7 +146,7 @@ fn get_cache_directory() -> (PathBuf, Option<TempDir>) {
     let dir = tempdir().unwrap();
     let path = dir.path().to_owned();
     let temp_dir = Some(dir);
-    return (path, temp_dir);
+    (path, temp_dir)
 }
 
 impl<T: Serialize + DeserializeOwned + Clone> IntoIterator for DiskBackedVec<T> {
@@ -157,7 +167,7 @@ pub struct DiskBackedVecInterator<T> {
     index: usize,
 }
 
-impl<'a, T: Serialize + DeserializeOwned + Clone> Iterator for DiskBackedVecInterator<T> {
+impl<T: Serialize + DeserializeOwned + Clone> Iterator for DiskBackedVecInterator<T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -167,7 +177,7 @@ impl<'a, T: Serialize + DeserializeOwned + Clone> Iterator for DiskBackedVecInte
 
         let v = self.vector.get(self.index);
         self.index += 1;
-        return Some(v.clone());
+        Some(v.clone())
     }
 }
 

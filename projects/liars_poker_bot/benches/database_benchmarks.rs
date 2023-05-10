@@ -25,7 +25,7 @@ fn generate_page(istate: &IStateKey, n: usize) -> Page<Vec<char>> {
         p.cache.insert(k, v);
     }
 
-    return p;
+    p
 }
 
 fn benchmark_write<T: Measurement, B>(group: &mut BenchmarkGroup<T>, name: &str, mut backend: B)

@@ -24,13 +24,13 @@ impl EAction {
             _ => panic!("can only get the suit of a card action"),
         };
 
-        return match card_index / CARD_PER_SUIT {
+        match card_index / CARD_PER_SUIT {
             0 => Suit::Clubs,
             1 => Suit::Spades,
             2 => Suit::Hearts,
             3 => Suit::Diamonds,
             _ => panic!("invalid card"),
-        };
+        }
     }
 
     pub(super) fn get_face(&self) -> Face {
@@ -39,7 +39,7 @@ impl EAction {
             _ => panic!("can only get the suit of a card action"),
         };
 
-        return match card_index % CARD_PER_SUIT {
+        match card_index % CARD_PER_SUIT {
             0 => Face::N,
             1 => Face::T,
             2 => Face::J,
@@ -47,22 +47,22 @@ impl EAction {
             4 => Face::K,
             5 => Face::A,
             _ => panic!("invalid card index: {}", card_index),
-        };
+        }
     }
 }
 
-impl Into<Action> for EAction {
-    fn into(self) -> Action {
-        let v: u8 = match self {
+impl From<EAction> for Action {
+    fn from(val: EAction) -> Self {
+        let v: u8 = match val {
             EAction::Pickup => 0,
             EAction::Pass => 1,
             EAction::Clubs => 2,
             EAction::Spades => 3,
             EAction::Hearts => 4,
             EAction::Diamonds => 5,
-            EAction::Card { a: x } => 6 + x as u8,
+            EAction::Card { a: x } => 6 + x,
         };
-        return Action(v);
+        Action(v)
     }
 }
 
@@ -75,7 +75,7 @@ impl From<Action> for EAction {
             3 => EAction::Spades,
             4 => EAction::Hearts,
             5 => EAction::Diamonds,
-            x if x >= 6 && x <= 24 + 6 => EAction::Card { a: x - 6 },
+            x if (6..=24 + 6).contains(&x) => EAction::Card { a: x - 6 },
             _ => panic!("invalud action to cast: {}", value),
         }
     }
@@ -130,7 +130,7 @@ impl Display for Suit {
 fn format_card(c: u8) -> String {
     let mut out = "XX".to_string();
     put_card(c, &mut out);
-    return out.to_string();
+    out.to_string()
 }
 
 fn put_card(c: u8, out: &mut str) {

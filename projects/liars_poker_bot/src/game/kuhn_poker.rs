@@ -16,9 +16,9 @@ pub enum KPAction {
     King,
 }
 
-impl Into<Action> for KPAction {
-    fn into(self) -> Action {
-        return Action(self as u8);
+impl From<KPAction> for Action {
+    fn from(value: KPAction) -> Self {
+        Action(value as u8)
     }
 }
 
@@ -60,11 +60,11 @@ pub struct KPGameState {
 impl Display for KPGameState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut result = String::new();
-        result.push_str("[");
+        result.push('[');
         for c in &self.hands {
             result.push_str(&format!("{:?}", KPAction::from(*c)));
         }
-        result.push_str("]");
+        result.push(']');
 
         for &h in &self.history {
             let char = match h {
@@ -82,11 +82,11 @@ impl Display for KPGameState {
 impl Debug for KPGameState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut result = String::new();
-        result.push_str("[");
+        result.push('[');
         for c in &self.hands {
             result.push_str(&format!("{:?}", KPAction::from(*c)));
         }
-        result.push_str("]");
+        result.push(']');
 
         for &h in &self.history {
             let char = match h {
@@ -130,7 +130,7 @@ impl KuhnPoker {
             g.apply_action(a.into());
         }
 
-        return g;
+        g
     }
 
     pub fn istate_key(actions: &[KPAction], p: Player) -> IStateKey {
@@ -139,7 +139,7 @@ impl KuhnPoker {
             g.apply_action(a.into());
         }
 
-        return g.istate_key(p);
+        g.istate_key(p)
     }
 }
 
@@ -182,7 +182,7 @@ impl KPGameState {
         }
 
         self.cur_player += 1;
-        self.cur_player = self.cur_player % self.num_players;
+        self.cur_player %= self.num_players;
     }
 
     fn get_dealing_actions(&self, actions: &mut Vec<Action>) {
@@ -213,8 +213,6 @@ impl GameState for KPGameState {
             KPPhase::Dealing => self.get_dealing_actions(actions),
             KPPhase::Playing => self.get_betting_actions(actions),
         }
-
-        return;
     }
 
     fn apply_action(&mut self, a: Action) {
@@ -261,7 +259,7 @@ impl GameState for KPGameState {
             _ => panic!("invalid history"),
         };
 
-        return payoffs[p];
+        payoffs[p]
     }
 
     /// Returns an information state with the following data at each index:
@@ -278,7 +276,7 @@ impl GameState for KPGameState {
         for &h in &self.history {
             i_state.push(h.into());
         }
-        return i_state;
+        i_state
     }
 
     fn is_terminal(&self) -> bool {
@@ -312,11 +310,11 @@ impl GameState for KPGameState {
             result.push(char);
         }
 
-        return result;
+        result
     }
 
     fn key(&self) -> IStateKey {
-        return self.key;
+        self.key
     }
 }
 

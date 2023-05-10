@@ -189,7 +189,7 @@ impl EuchreGameState {
             return true;
         }
 
-        return (self.istate_keys[0].len() - self.first_played.unwrap()) % 4 == 0;
+        (self.istate_keys[0].len() - self.first_played.unwrap()) % 4 == 0
     }
 
     /// Gets the `n` last trick
@@ -214,7 +214,7 @@ impl EuchreGameState {
             trick[i] = key[sidx + i];
         }
 
-        return trick;
+        trick
     }
 
     /// Get the card that started the current trick
@@ -227,9 +227,8 @@ impl EuchreGameState {
         let cards_played = self.hands.iter().filter(|&x| x.len() == min_hand).count();
 
         let key = self.istate_keys[0];
-        let first_card = key[key.len() - cards_played];
 
-        return first_card;
+        key[key.len() - cards_played]
     }
 
     fn legal_actions_dealing(&self, actions: &mut Vec<Action>) {
@@ -289,7 +288,7 @@ impl EuchreGameState {
             }
         }
 
-        if actions.len() == 0 {
+        if actions.is_empty() {
             // no suit, can play any card
             actions.append(&mut self.hands[self.cur_player].to_vec());
         }
@@ -302,8 +301,8 @@ impl EuchreGameState {
         let mut winner = 0;
         let mut winning_card = cards[0];
         let mut winning_suit = self.get_suit(cards[0]);
-        for i in 1..4 {
-            let suit = self.get_suit(cards[i]);
+        for (i, &c) in cards.iter().enumerate() {
+            let suit = self.get_suit(c);
             // Player can't win if not following suit or playing trump
             // The winning suit can only ever be trump or the lead suit
             if suit != winning_suit && suit != self.trump {
@@ -311,9 +310,9 @@ impl EuchreGameState {
             }
 
             // Simple case where we don't need to worry about weird trump scoring
-            if suit == winning_suit && suit != self.trump && cards[i] > winning_card {
+            if suit == winning_suit && suit != self.trump && c > winning_card {
                 winner = i;
-                winning_card = cards[i];
+                winning_card = c;
                 winning_suit = suit;
                 continue;
             }
@@ -321,7 +320,7 @@ impl EuchreGameState {
             // Play trump over lead suit
             if suit == self.trump && winning_suit != self.trump {
                 winner = i;
-                winning_card = cards[i];
+                winning_card = c;
                 winning_suit = suit;
                 continue;
             }
@@ -329,17 +328,17 @@ impl EuchreGameState {
             // Handle trump scoring. Need to differentiate the left and right
             if suit == self.trump && winning_suit == self.trump {
                 let winning_card_value = self.get_card_value(winning_card);
-                let cur_card_value = self.get_card_value(cards[i]);
+                let cur_card_value = self.get_card_value(c);
                 if cur_card_value > winning_card_value {
                     winner = i;
-                    winning_card = cards[i];
+                    winning_card = c;
                     winning_suit = suit;
                     continue;
                 }
             }
         }
 
-        return (trick_starter + winner) % self.num_players;
+        (trick_starter + winner) % self.num_players
     }
 
     /// Gets the suit of a given card. Accounts for the weird scoring of the trump suit
@@ -359,7 +358,7 @@ impl EuchreGameState {
                 _ => suit,
             }
         }
-        return suit;
+        suit
     }
 
     /// Returns a relative value for cards. The absolute values are meaningyless
@@ -375,10 +374,10 @@ impl EuchreGameState {
         let pure_suit = EAction::from(c).get_suit();
         let is_right = pure_suit == self.trump;
 
-        return match is_right {
+        match is_right {
             true => (CARD_PER_SUIT + 2) as usize,  // right
             false => (CARD_PER_SUIT + 1) as usize, // left
-        };
+        }
     }
 
     fn update_keys(&mut self, a: Action) {
@@ -480,7 +479,7 @@ impl GameState for EuchreGameState {
             (false, true, _) => vec![0.0, 2.0, 0.0, 2.0],
         };
 
-        return v[p];
+        v[p]
     }
 
     /// Returns an information state with the following format:
@@ -491,7 +490,7 @@ impl GameState for EuchreGameState {
     /// * 15: trump
     /// * 16+: play history
     fn istate_key(&self, player: Player) -> IStateKey {
-        return self.istate_keys[player];
+        self.istate_keys[player]
     }
 
     fn istate_string(&self, player: Player) -> String {
@@ -602,7 +601,7 @@ impl GameState for EuchreGameState {
             i += 1;
         }
 
-        return r;
+        r
     }
 
     fn is_terminal(&self) -> bool {
@@ -794,7 +793,7 @@ mod tests {
         assert_eq!(gs.istate_string(2), "JC9SKSJH9D|JD|");
         assert_eq!(gs.istate_string(3), "QCTSASQHTD|JD|");
 
-        let mut new_s = gs.clone(); // for alternative pickup parsing
+        let mut new_s = gs; // for alternative pickup parsing
 
         gs.apply_action(EAction::Pickup.into());
         assert_eq!(gs.istate_string(0), "9CKCJS9HKH|JD|T|0D");

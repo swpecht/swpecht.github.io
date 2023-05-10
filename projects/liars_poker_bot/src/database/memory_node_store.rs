@@ -14,6 +14,12 @@ pub struct MemoryNodeStore<T> {
     store: Tree<Rc<RefCell<T>>>,
 }
 
+impl<T> Default for MemoryNodeStore<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> MemoryNodeStore<T> {
     pub fn new() -> Self {
         Self { store: Tree::new() }
@@ -22,15 +28,15 @@ impl<T> MemoryNodeStore<T> {
 
 impl<T> NodeStore<T> for MemoryNodeStore<T> {
     fn get(&mut self, istate: &IStateKey) -> Option<Rc<RefCell<T>>> {
-        return self.store.get(istate);
+        self.store.get(istate)
     }
 
     fn insert_node(&mut self, istate: IStateKey, n: Rc<RefCell<T>>) {
-        return self.store.insert(istate, n);
+        self.store.insert(istate, n)
     }
 
     fn contains_node(&mut self, istate: &IStateKey) -> bool {
-        return self.store.contains_key(istate);
+        self.store.contains_key(istate)
     }
 }
 
@@ -54,6 +60,6 @@ impl<G: GameState> Policy<G> for MemoryNodeStore<CFRNode> {
             probs[a] = prob;
         }
 
-        return probs;
+        probs
     }
 }

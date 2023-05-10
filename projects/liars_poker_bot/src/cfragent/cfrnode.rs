@@ -35,20 +35,20 @@ impl CFRNode {
 
         for &a in actions {
             if normalizing_sum > 0.0 {
-                self.move_prob[a] = self.move_prob[a] / normalizing_sum;
+                self.move_prob[a] /= normalizing_sum;
             } else {
                 self.move_prob[a] = 1.0 / num_actions as f64;
             }
             self.total_move_prob[a] += realization_weight * self.move_prob[a];
         }
 
-        return self.move_prob.clone();
+        self.move_prob.clone()
     }
 
     pub fn get_average_strategy(&self) -> ActionVec<f64> {
         let actions = &self.regret_sum.actions;
 
-        let mut avg_strat = ActionVec::new(&actions);
+        let mut avg_strat = ActionVec::new(actions);
         let mut normalizing_sum = 0.0;
         for &a in actions {
             normalizing_sum += self.total_move_prob[a];
@@ -62,7 +62,7 @@ impl CFRNode {
             }
         }
 
-        return avg_strat;
+        avg_strat
     }
 }
 
@@ -84,10 +84,10 @@ impl<T: Default + Clone> ActionVec<T> {
             data.push(T::default())
         }
 
-        return Self {
+        Self {
             data,
             actions: actions.clone(),
-        };
+        }
     }
 
     fn get_index(&self, a: Action) -> usize {
@@ -103,7 +103,11 @@ impl<T: Default + Clone> ActionVec<T> {
     }
 
     pub fn len(&self) -> usize {
-        return self.data.len();
+        self.data.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub fn to_vec(&self) -> Vec<(Action, T)> {
@@ -113,7 +117,7 @@ impl<T: Default + Clone> ActionVec<T> {
             output.push((self.actions[i], self.data[i].clone()))
         }
 
-        return output;
+        output
     }
 }
 
@@ -122,13 +126,13 @@ impl<T: Default + Clone> Index<Action> for ActionVec<T> {
 
     fn index(&self, a: Action) -> &Self::Output {
         let idx = self.get_index(a);
-        return &self.data[idx];
+        &self.data[idx]
     }
 }
 
 impl<T: Default + Clone> IndexMut<Action> for ActionVec<T> {
     fn index_mut(&mut self, a: Action) -> &mut Self::Output {
         let idx = self.get_index(a);
-        return &mut self.data[idx];
+        &mut self.data[idx]
     }
 }

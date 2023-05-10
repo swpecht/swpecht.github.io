@@ -46,7 +46,7 @@ impl<T: Serialize + DeserializeOwned> DiskBackend<T> for FileBackend {
 
     fn read(&self, mut p: super::page::Page<T>) -> super::page::Page<T> {
         let path = get_path(&p, &self.dir);
-        let f = &mut File::open(&path);
+        let f = &mut File::open(path);
 
         if f.is_err() && f.as_ref().err().unwrap().kind() == ErrorKind::NotFound {
             return p;
@@ -54,7 +54,7 @@ impl<T: Serialize + DeserializeOwned> DiskBackend<T> for FileBackend {
 
         let f = f.as_mut().unwrap();
         p.cache = rmp_serde::from_read(f).unwrap();
-        return p;
+        p
     }
 
     fn write_sync(&mut self, p: super::page::Page<T>) -> Result<(), &'static str> {
