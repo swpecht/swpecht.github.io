@@ -1,6 +1,6 @@
 use std::{collections::VecDeque, fs::File, io::BufWriter, path::PathBuf};
 
-use log::{debug, info};
+use log::{debug, warn};
 use rmp_serde::Serializer;
 use rustc_hash::FxHashMap;
 use serde::{de::DeserializeOwned, Serialize};
@@ -16,7 +16,7 @@ pub struct DiskBackedVec<T> {
     len: usize,
     // A queue for pages, used to determine which page to evict if LIFO
     page_queue: VecDeque<usize>,
-    dir: PathBuf,
+    dir: Option<PathBuf>,
     /// Hold a reference so the directory isn't deleted until this is dropped
     _temp: Option<TempDir>,
 }
@@ -38,17 +38,14 @@ impl<T: Serialize + DeserializeOwned> DiskBackedVec<T> {
             panic!("page_size must be >= 2");
         }
 
-        let (dir, _temp) = get_cache_directory();
-        info!("creating disk backed vector at: {:?}", dir);
-
         Self {
             pages: FxHashMap::default(),
             page_size,
             max_mem_pages,
             len: 0,
             page_queue: VecDeque::new(),
-            dir,
-            _temp,
+            dir: None,
+            _temp: None,
         }
     }
 
@@ -148,8 +145,15 @@ impl<T: Serialize + DeserializeOwned> DiskBackedVec<T> {
         page.serialize(&mut Serializer::new(f)).unwrap();
     }
 
-    fn get_page_path(&self, page_idx: usize) -> PathBuf {
-        self.dir.join(page_idx.to_string())
+    fn get_page_path(&mut self, page_idx: usize) -> PathBuf {
+        if self.dir.is_none() {
+            let (dir, _temp) = get_cache_directory();
+            warn!("creating disk backed vector at: {:?}", dir);
+            self.dir = Some(dir);
+            self._temp = _temp;
+        }
+
+        self.dir.as_ref().unwrap().join(page_idx.to_string())
     }
 }
 
