@@ -1,5 +1,6 @@
 use std::{collections::VecDeque, fs::File, io::BufWriter, path::PathBuf};
 
+use log::{debug, info};
 use rmp_serde::Serializer;
 use rustc_hash::FxHashMap;
 use serde::{de::DeserializeOwned, Serialize};
@@ -28,8 +29,8 @@ impl<T: Serialize + DeserializeOwned> Default for DiskBackedVec<T> {
 
 impl<T: Serialize + DeserializeOwned> DiskBackedVec<T> {
     pub fn new() -> Self {
-        // defualt to 10M items in memory
-        Self::with_sizes(10_000, 1000)
+        // defualt to 20M items in memory
+        Self::with_sizes(2_000_000, 10)
     }
 
     pub fn with_sizes(page_size: usize, max_mem_pages: usize) -> Self {
@@ -38,6 +39,7 @@ impl<T: Serialize + DeserializeOwned> DiskBackedVec<T> {
         }
 
         let (dir, _temp) = get_cache_directory();
+        info!("creating disk backed vector at: {:?}", dir);
 
         Self {
             pages: FxHashMap::default(),
@@ -115,11 +117,13 @@ impl<T: Serialize + DeserializeOwned> DiskBackedVec<T> {
             self.save_to_disk();
         }
 
+        debug!("loading page{} from disk", page_index);
         let path = self.get_page_path(page_index);
         let f = &mut File::open(path);
 
         let f = f.as_mut().unwrap();
-        let page = rmp_serde::from_read(f).unwrap();
+        let page: Vec<T> = rmp_serde::from_read(f).unwrap();
+        debug!("page {}  loaded with {} items", page_index, page.len());
 
         self.page_queue.push_back(page_index);
         self.pages.insert(page_index, page);
@@ -129,6 +133,13 @@ impl<T: Serialize + DeserializeOwned> DiskBackedVec<T> {
     fn save_to_disk(&mut self) {
         let page_idx = self.page_queue.pop_front().unwrap();
         let page = self.pages.remove(&page_idx).unwrap();
+
+        debug!(
+            "saving page {} to disk with {} items, total items: {}",
+            page_idx,
+            page.len(),
+            self.len
+        );
 
         let path = self.get_page_path(page_idx);
         let f = File::create(path).unwrap();
