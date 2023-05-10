@@ -16,7 +16,7 @@ use crate::{
 ///
 /// Adaption from openspeil's best response algorithm:
 ///     https://github.com/deepmind/open_spiel/blob/master/open_spiel/python/algorithms/best_response.py
-pub struct TabularBestResponse<'a, G: GameState, P: Policy<G>> {
+pub(super) struct TabularBestResponse<'a, G: GameState, P: Policy<G>> {
     _root_state: G,
     _num_players: usize,
     player: Player,
