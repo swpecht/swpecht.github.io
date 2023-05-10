@@ -319,6 +319,22 @@ impl BluffGameState {
     fn update_keys(&mut self, a: Action) {
         // game key gets everything
         self.key.push(a);
+        // re-order p0's keys
+        if self.key.len() == self.num_dice[0] && self.num_dice[0] == 2 {
+            if self.key[0] > self.key[1] {
+                let v = self.key[0];
+                self.key[0] = self.key[1];
+                self.key[1] = v;
+            }
+        } else if self.key.len() == self.num_dice[0] + self.num_dice[1] && self.num_dice[1] == 2 {
+            // re-order p1's keys
+            let o = self.num_dice[0];
+            if self.key[o] > self.key[o + 1] {
+                let v = self.key[o];
+                self.key[o] = self.key[o + 1];
+                self.key[o + 1] = v;
+            }
+        }
 
         // private actions for rolling, and we don't push the dice until we have all of them sorted
         if self.push_player_dice(a, 0) || self.push_player_dice(a, 1) {
