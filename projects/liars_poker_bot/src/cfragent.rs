@@ -114,7 +114,7 @@ fn train<T: GameState, N: NodeStore<CFRNode> + Policy<T>, A: Algorithm>(
                 alg.nodes_touched(),
                 exploitability
             );
-            print_freq *= 2;
+            print_freq *= 10;
         }
 
         // info!("Finished iteration {} for CFR", i);
