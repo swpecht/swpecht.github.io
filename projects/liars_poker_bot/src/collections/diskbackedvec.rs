@@ -1,5 +1,9 @@
+use std::{collections::VecDeque, fs::File, io::BufWriter, path::PathBuf};
+
+use rmp_serde::Serializer;
 use rustc_hash::FxHashMap;
 use serde::{de::DeserializeOwned, Serialize};
+use tempfile::{tempdir, TempDir};
 
 /// A vector like object that pages to disk after a certain number of elements have been loaded
 pub struct DiskBackedVec<T> {
@@ -9,6 +13,11 @@ pub struct DiskBackedVec<T> {
     /// Maximum pages to keep in memory
     max_mem_pages: usize,
     len: usize,
+    // A queue for pages, used to determine which page to evict if LIFO
+    page_queue: VecDeque<usize>,
+    dir: PathBuf,
+    /// Hold a reference so the directory isn't deleted until this is dropped
+    _temp: Option<TempDir>,
 }
 
 impl<T: Serialize + DeserializeOwned> DiskBackedVec<T> {
@@ -22,11 +31,16 @@ impl<T: Serialize + DeserializeOwned> DiskBackedVec<T> {
             panic!("page_size must be >= 2");
         }
 
+        let (dir, _temp) = get_cache_directory();
+
         Self {
             pages: FxHashMap::default(),
             page_size: page_size,
             max_mem_pages: max_mem_pages,
             len: 0,
+            page_queue: VecDeque::new(),
+            dir: dir,
+            _temp: _temp,
         }
     }
 
@@ -70,6 +84,7 @@ impl<T: Serialize + DeserializeOwned> DiskBackedVec<T> {
         let page_idx = self.len / self.page_size;
         let page = Vec::new();
         self.pages.insert(page_idx, page);
+        self.page_queue.push_back(page_idx);
     }
 
     /// Gets the vec corresponding to the given index
@@ -83,8 +98,59 @@ impl<T: Serialize + DeserializeOwned> DiskBackedVec<T> {
         todo!("loading from disk not yet implemented")
     }
 
+    /// Saves a single page to disk
     fn save_to_disk(&mut self) {
-        todo!("saving to disk not yet implemented");
+        let page_idx = self.page_queue.pop_front().unwrap();
+        let page = self.pages.remove(&page_idx).unwrap();
+
+        let path = self.get_page_path(page_idx);
+        let f = File::create(path).unwrap();
+        let f = BufWriter::new(f);
+
+        page.serialize(&mut Serializer::new(f)).unwrap();
+    }
+
+    fn get_page_path(&self, page_idx: usize) -> PathBuf {
+        return self.dir.join(page_idx.to_string());
+    }
+}
+
+fn get_cache_directory() -> (PathBuf, Option<TempDir>) {
+    let dir = tempdir().unwrap();
+    let path = dir.path().to_owned();
+    let temp_dir = Some(dir);
+    return (path, temp_dir);
+}
+
+impl<T: Serialize + DeserializeOwned + Clone> IntoIterator for DiskBackedVec<T> {
+    type Item = T;
+
+    type IntoIter = DiskBackedVecInterator<T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        DiskBackedVecInterator {
+            vector: self,
+            index: 0,
+        }
+    }
+}
+
+pub struct DiskBackedVecInterator<T> {
+    vector: DiskBackedVec<T>,
+    index: usize,
+}
+
+impl<'a, T: Serialize + DeserializeOwned + Clone> Iterator for DiskBackedVecInterator<T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index >= self.vector.len() {
+            return None;
+        }
+
+        let v = self.vector.get(self.index);
+        self.index += 1;
+        return Some(v.clone());
     }
 }
 
@@ -117,38 +183,14 @@ mod tests {
 
     #[test]
     fn test_disk_backed_vector_caching() {
-        todo!()
-    }
-}
-
-impl<T: Serialize + DeserializeOwned + Clone> IntoIterator for DiskBackedVec<T> {
-    type Item = T;
-
-    type IntoIter = DiskBackedVecInterator<T>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        DiskBackedVecInterator {
-            vector: self,
-            index: 0,
-        }
-    }
-}
-
-pub struct DiskBackedVecInterator<T> {
-    vector: DiskBackedVec<T>,
-    index: usize,
-}
-
-impl<'a, T: Serialize + DeserializeOwned + Clone> Iterator for DiskBackedVecInterator<T> {
-    type Item = T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.index >= self.vector.len() {
-            return None;
+        let mut v = DiskBackedVec::with_sizes(2, 10);
+        for i in 0..100 {
+            v.push(i);
         }
 
-        let v = self.vector.get(self.index);
-        self.index += 1;
-        return Some(v.clone());
+        assert_eq!(v.len(), 100);
+        for i in 0..100 {
+            assert_eq!(*v.get(i), i);
+        }
     }
 }
