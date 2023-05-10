@@ -60,7 +60,7 @@ impl CFRCS {
         reach1: f64,
         mut phase: CFRPhase,
     ) -> f64 {
-        if self.nodes_touched % 1000000 == 0 {
+        if self.nodes_touched % 10_000_000 == 0 {
             debug!("cfr touched {} nodes", self.nodes_touched);
         }
         self.nodes_touched += 1;
