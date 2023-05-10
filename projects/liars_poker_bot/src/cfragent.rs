@@ -2,16 +2,13 @@ pub mod cfr;
 pub mod cfrcs;
 pub mod cfrnode;
 
-use std::marker::PhantomData;
-
 use clap::clap_derive::ArgEnum;
 use log::{debug, info, trace};
-use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
+use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
 
 use crate::{
     actions,
     agents::Agent,
-    algorithms::exploitability,
     cfragent::{
         cfr::{Algorithm, VanillaCFR},
         cfrcs::CFRCS,
@@ -31,29 +28,24 @@ pub enum CFRAlgorithm {
 }
 
 pub struct CFRAgent<T: GameState, N: NodeStore<CFRNode>> {
-    game: Game<T>,
+    pub game: Game<T>,
     rng: StdRng,
+    alg: CFRAlgorithm,
+    nodes_touched: usize,
     // store: FileNodeStore<FileBackend>,
     pub ns: N,
-    _phantom: PhantomData<T>,
 }
 
 impl<T: GameState, N: NodeStore<CFRNode> + Policy<T>> CFRAgent<T, N> {
-    pub fn new(game: Game<T>, seed: u64, iterations: usize, ns: N, alg: CFRAlgorithm) -> Self {
-        let mut agent = Self {
-            game: game.clone(),
+    pub fn new(game: Game<T>, seed: u64, ns: N, alg: CFRAlgorithm) -> Self {
+        Self {
+            game,
             rng: SeedableRng::seed_from_u64(seed),
             // store: FileNodeStore::new(FileBackend::new(storage)),
             ns,
-            _phantom: PhantomData,
-        };
-
-        match alg {
-            CFRAlgorithm::CFR => train(&mut agent, game, iterations, &mut VanillaCFR::new()),
-            CFRAlgorithm::CFRCS => train(&mut agent, game, iterations, &mut CFRCS::new(seed)),
+            alg,
+            nodes_touched: 0,
         }
-
-        agent
     }
 
     fn get_policy(&mut self, istate: &IStateKey) -> ActionVec<f64> {
@@ -61,6 +53,20 @@ impl<T: GameState, N: NodeStore<CFRNode> + Policy<T>> CFRAgent<T, N> {
         let p = n.borrow().get_average_strategy();
         self.ns.insert_node(*istate, n); // return the node
         p
+    }
+
+    pub fn train(&mut self, iterations: usize) {
+        let seed = self.rng.gen();
+        let nodes_touched = match self.alg {
+            CFRAlgorithm::CFR => train(self, iterations, &mut VanillaCFR::new()),
+            CFRAlgorithm::CFRCS => train(self, iterations, &mut CFRCS::new(seed)),
+        };
+
+        self.nodes_touched += nodes_touched;
+    }
+
+    pub fn nodes_touched(&self) -> usize {
+        self.nodes_touched
     }
 }
 
@@ -87,41 +93,20 @@ impl<T: GameState, N: NodeStore<CFRNode> + Policy<T>> Agent<T> for CFRAgent<T, N
 
 fn train<T: GameState, N: NodeStore<CFRNode> + Policy<T>, A: Algorithm>(
     agent: &mut CFRAgent<T, N>,
-    game: Game<T>,
     iterations: usize,
     alg: &mut A,
-) {
-    info!("Starting self play for CFR");
-    let mut print_freq = 1;
-
-    for iteration in 0..iterations {
+) -> usize {
+    debug!("starting {} training iterations for CFR", iterations);
+    for _ in 0..iterations {
         let gs = (agent.game.new)();
 
         for p in 0..agent.game.max_players {
             alg.run(&mut agent.ns, &gs, p);
         }
-
-        if iteration % print_freq == 0 {
-            debug!(
-                "finished iteration: {}, starting best response calculation",
-                iteration
-            );
-            let exploitability =
-                exploitability::exploitability(game.clone(), &mut agent.ns).nash_conv;
-            info!(
-                "exploitability:\t{}\t{}\t{}",
-                iteration,
-                alg.nodes_touched(),
-                exploitability
-            );
-            print_freq *= 10;
-        }
-
-        // info!("Finished iteration {} for CFR", i);
     }
-
     // Save the trained policy
-    debug!("finished training policy");
+    debug!("finished training for CFR");
+    alg.nodes_touched()
 }
 
 #[cfg(test)]
@@ -143,10 +128,10 @@ mod tests {
         let mut qa = CFRAgent::new(
             KuhnPoker::game(),
             42,
-            50000,
             MemoryNodeStore::new(),
             CFRAlgorithm::CFRCS,
         );
+        qa.train(50000);
         let mut s = KuhnPoker::new_state();
         s.apply_action(KPAction::Queen.into());
         s.apply_action(KPAction::Jack.into());

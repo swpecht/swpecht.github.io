@@ -1,7 +1,7 @@
 use approx::assert_relative_eq;
 use liars_poker_bot::{
     algorithms::{
-        exploitability::{self, exploitability},
+        exploitability::exploitability,
         ismcts::{ISMCTSBot, RandomRolloutEvaluator},
     },
     cfragent::{CFRAgent, CFRAlgorithm},
@@ -26,7 +26,8 @@ fn test_ismcts_exploitability() {
 #[test]
 fn test_cfr_exploitability() {
     let ns = MemoryNodeStore::new();
-    let mut agent = CFRAgent::new(KuhnPoker::game(), 1, 100_001, ns, CFRAlgorithm::CFRCS);
+    let mut agent = CFRAgent::new(KuhnPoker::game(), 1, ns, CFRAlgorithm::CFRCS);
+    agent.train(100_001);
 
     let exploitability = exploitability(KuhnPoker::game(), &mut agent.ns).nash_conv;
     assert_relative_eq!(exploitability, 0.0, epsilon = 0.001);

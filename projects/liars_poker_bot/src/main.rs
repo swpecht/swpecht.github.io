@@ -7,6 +7,8 @@ use clap::clap_derive::ArgEnum;
 use liars_poker_bot::actions;
 use liars_poker_bot::agents::{Agent, RandomAgent};
 
+use liars_poker_bot::algorithms::exploitability::{self};
+use liars_poker_bot::cfragent::cfrnode::CFRNode;
 use liars_poker_bot::cfragent::{CFRAgent, CFRAlgorithm};
 use liars_poker_bot::database::memory_node_store::MemoryNodeStore;
 use liars_poker_bot::database::Storage;
@@ -15,6 +17,7 @@ use liars_poker_bot::game::euchre::{Euchre, EuchreGameState};
 use liars_poker_bot::game::kuhn_poker::{KPGameState, KuhnPoker};
 use liars_poker_bot::game::{Action, GameState};
 
+use log::{debug, info};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
@@ -184,45 +187,67 @@ fn run(args: Args) {
     println!("running for: {:?} with {:?}", args.game, args.alg);
     match args.game {
         GameType::KuhnPoker => {
-            CFRAgent::new(
+            train_cfr_agent(CFRAgent::new(
                 KuhnPoker::game(),
                 1,
-                100_001,
                 MemoryNodeStore::new(),
                 args.alg,
-            );
+            ));
         }
         GameType::Euchre => {
-            CFRAgent::new(Euchre::game(), 1, 5000, MemoryNodeStore::new(), args.alg);
+            train_cfr_agent(CFRAgent::new(
+                Euchre::game(),
+                1,
+                MemoryNodeStore::new(),
+                args.alg,
+            ));
         }
         GameType::Bluff11 => {
-            CFRAgent::new(
+            train_cfr_agent(CFRAgent::new(
                 Bluff::game(1, 1),
                 1,
-                100_000_001,
                 MemoryNodeStore::new(),
                 args.alg,
-            );
+            ));
         }
         GameType::Bluff21 => {
-            CFRAgent::new(
+            train_cfr_agent(CFRAgent::new(
                 Bluff::game(2, 1),
                 1,
-                100_000_001,
                 MemoryNodeStore::new(),
                 args.alg,
-            );
+            ));
         }
         GameType::Bluff22 => {
-            CFRAgent::new(
+            train_cfr_agent(CFRAgent::new(
                 Bluff::game(2, 2),
                 1,
-                100_000_001,
                 MemoryNodeStore::new(),
                 args.alg,
-            );
+            ));
         }
     };
+}
+
+fn train_cfr_agent<G: GameState>(mut agent: CFRAgent<G, MemoryNodeStore<CFRNode>>) {
+    let mut iteration = 1;
+
+    while iteration < 100_001 {
+        agent.train(iteration);
+        debug!(
+            "finished iteration: {}, starting best response calculation",
+            iteration
+        );
+        let exploitability =
+            exploitability::exploitability(agent.game.clone(), &mut agent.ns).nash_conv;
+        info!(
+            "exploitability:\t{}\t{}\t{}",
+            iteration,
+            agent.nodes_touched(),
+            exploitability
+        );
+        iteration *= 10;
+    }
 }
 
 fn run_benchmark(_args: Args) {
