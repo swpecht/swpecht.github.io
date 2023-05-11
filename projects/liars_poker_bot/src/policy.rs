@@ -10,6 +10,7 @@ pub trait Policy<G> {
     fn action_probabilities(&mut self, gs: &G) -> ActionVec<f64>;
 }
 
+#[derive(Clone, Copy)]
 pub struct UniformRandomPolicy {}
 
 impl Default for UniformRandomPolicy {
@@ -40,6 +41,7 @@ impl<G: GameState> Policy<G> for UniformRandomPolicy {
 }
 
 /// Policy always takes a given action. If the action isn't available, it panics.
+#[derive(Clone, Copy)]
 pub struct AlwaysPolicy {
     action: Action,
 }

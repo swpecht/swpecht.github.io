@@ -16,18 +16,21 @@ const UNLIMITED_NUM_WORLD_SAMPLES: i32 = -1;
 const UNEXPANDED_VISIT_COUNT: i32 = -1;
 const TIE_TOLERANCE: f64 = 1e-5;
 
+#[derive(Clone)]
 pub enum ISMCTSFinalPolicyType {
     NormalizedVisitedCount,
     MaxVisitCount,
     _MaxValue,
 }
 
+#[derive(Clone)]
 enum ChildSelectionPolicy {
     _Uct,
     Puct,
 }
 
 /// Child node information for the search tree.
+#[derive(Clone)]
 struct ChildInfo {
     visits: usize,
     return_sum: f64,
@@ -49,6 +52,7 @@ impl ChildInfo {
 }
 
 /// Node data structure for the search tree.
+#[derive(Clone)]
 struct ISMCTSNode {
     child_info: HashMap<Action, ChildInfo>,
     total_visits: i32,
@@ -84,6 +88,7 @@ pub trait Evaluator<G> {
 /// This evaluator returns the average outcome of playing random actions from the
 /// given state until the end of the game.  n_rollouts is the number of random
 /// outcomes to be considered.
+#[derive(Clone)]
 pub struct RandomRolloutEvaluator {
     n_rollouts: usize,
     rng: StdRng,
@@ -143,6 +148,7 @@ pub trait ResampleFromInfoState {
 /// Implementation of Information Set Monte Carlo Tree Search (IS-MCTS).
 ///
 /// Adapted from: https://github.com/deepmind/open_spiel/blob/master/open_spiel/python/algorithms/ismcts.py
+#[derive(Clone)]
 pub struct ISMCTSBot<G: GameState, E> {
     uct_c: f64,
     max_simulations: i32,
