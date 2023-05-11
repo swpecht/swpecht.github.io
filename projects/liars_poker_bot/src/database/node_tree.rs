@@ -6,7 +6,8 @@ use crate::{collections::ArrayVec, game::Action, istate::IStateKey};
 const MAX_CHILDREN: usize = 32;
 
 /// A performant datastructure for storing nodes in memory
-pub struct Tree<T> {
+#[derive(Clone)]
+pub struct Tree<T: Clone> {
     nodes: Vec<Node<T>>,
     /// the starting roots of the tree
     roots: HashMap<Action, usize>,
@@ -33,6 +34,7 @@ impl TreeStats {
     }
 }
 
+#[derive(Clone)]
 struct Cursor {
     id: usize,
     path: ArrayVec<64>,
@@ -42,6 +44,7 @@ struct Cursor {
 ///
 /// Exploring imlementing storing the private information state data at the end of the node, this would enable us to have the policy looksups for
 /// best response be close together. But this would make it difficult to use for cfr -- since we might need intermediate nodes
+#[derive(Clone)]
 struct Node<T> {
     parent: usize,
     children: [usize; MAX_CHILDREN],

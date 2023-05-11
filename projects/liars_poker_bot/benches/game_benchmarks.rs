@@ -13,7 +13,7 @@ use liars_poker_bot::{cfragent::CFRAgent, game::kuhn_poker::KuhnPoker};
 fn train_cfr_kp() {
     let game = KuhnPoker::game();
     // Verify the nash equilibrium is reached. From https://en.wikipedia.org/wiki/Kuhn_poker
-    let mut agent = CFRAgent::new(game, 42, MemoryNodeStore::new(), CFRAlgorithm::CFRCS);
+    let mut agent = CFRAgent::new(game, 42, MemoryNodeStore::default(), CFRAlgorithm::CFRCS);
     agent.train(100);
 }
 

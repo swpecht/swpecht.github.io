@@ -128,7 +128,7 @@ mod tests {
         let mut qa = CFRAgent::new(
             KuhnPoker::game(),
             42,
-            MemoryNodeStore::new(),
+            MemoryNodeStore::default(),
             CFRAlgorithm::CFRCS,
         );
         qa.train(50000);

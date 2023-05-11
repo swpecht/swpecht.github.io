@@ -1,4 +1,8 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::mpsc::{Receiver, SyncSender},
+};
 
 use crate::{
     actions,
@@ -10,19 +14,31 @@ use crate::{
 
 use super::{node_tree::Tree, NodeStore};
 
+pub struct NodeStoreConnection<T> {
+    sender: SyncSender<IStateKey>,
+    receiver: Receiver<Option<Rc<RefCell<T>>>>,
+}
+
+/// A memory backed nodestore that runs in it's own thread.
+///
+/// Connections can be gotten, each connection has an id to figure out where to route messages.
+#[derive(Clone)]
 pub struct MemoryNodeStore<T> {
     store: Tree<Rc<RefCell<T>>>,
 }
 
-impl<T> Default for MemoryNodeStore<T> {
-    fn default() -> Self {
-        Self::new()
+impl<T> MemoryNodeStore<T> {
+    /// Gets a new connection to the nodestore
+    pub fn get_connection(&mut self) {
+        // let (tx, rx) = mpsc::sync_channel(0);
     }
 }
 
-impl<T> MemoryNodeStore<T> {
-    pub fn new() -> Self {
-        Self { store: Tree::new() }
+impl<T> Default for MemoryNodeStore<T> {
+    fn default() -> Self {
+        Self {
+            store: Tree::default(),
+        }
     }
 }
 

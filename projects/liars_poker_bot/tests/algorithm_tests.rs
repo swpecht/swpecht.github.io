@@ -25,7 +25,7 @@ fn test_ismcts_exploitability() {
 
 #[test]
 fn test_cfr_exploitability() {
-    let ns = MemoryNodeStore::new();
+    let ns = MemoryNodeStore::default();
     let mut agent = CFRAgent::new(KuhnPoker::game(), 1, ns, CFRAlgorithm::CFRCS);
     agent.train(1_000_000);
 

@@ -248,7 +248,7 @@ fn _get_key(actions: &[KPAction]) -> IStateKey {
 pub(super) fn _test_kp_nash<T: Algorithm>(mut alg: T, iterations: usize) {
     let game = KuhnPoker::game();
     // Verify the nash equilibrium is reached. From https://en.wikipedia.org/wiki/Kuhn_poker
-    let mut ns = MemoryNodeStore::new();
+    let mut ns = MemoryNodeStore::default();
     let gs = (game.new)();
 
     for _ in 0..iterations {

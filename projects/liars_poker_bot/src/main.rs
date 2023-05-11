@@ -190,18 +190,18 @@ fn run(args: Args) {
             train_cfr_agent(CFRAgent::new(
                 KuhnPoker::game(),
                 1,
-                MemoryNodeStore::new(),
+                MemoryNodeStore::default(),
                 args.alg,
             ));
         }
         GameType::Euchre => {
-            CFRAgent::new(Euchre::game(), 1, MemoryNodeStore::new(), args.alg).train(10);
+            CFRAgent::new(Euchre::game(), 1, MemoryNodeStore::default(), args.alg).train(10);
         }
         GameType::Bluff11 => {
             train_cfr_agent(CFRAgent::new(
                 Bluff::game(1, 1),
                 1,
-                MemoryNodeStore::new(),
+                MemoryNodeStore::default(),
                 args.alg,
             ));
         }
@@ -209,7 +209,7 @@ fn run(args: Args) {
             train_cfr_agent(CFRAgent::new(
                 Bluff::game(2, 1),
                 1,
-                MemoryNodeStore::new(),
+                MemoryNodeStore::default(),
                 args.alg,
             ));
         }
@@ -217,7 +217,7 @@ fn run(args: Args) {
             train_cfr_agent(CFRAgent::new(
                 Bluff::game(2, 2),
                 1,
-                MemoryNodeStore::new(),
+                MemoryNodeStore::default(),
                 args.alg,
             ));
         }
