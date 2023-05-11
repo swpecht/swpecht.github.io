@@ -52,8 +52,7 @@ impl<'a, G: GameState, P: Policy<G> + Clone> TabularBestResponse<'a, G, P> {
         for (s, p) in DecisionNodeIterator::new(state.clone(), self.policy.clone(), self.player) {
             let k = s.istate_key(self.player);
 
-            infosets.entry(k).or_insert(Vec::new());
-            let list = infosets.get_mut(&k).unwrap();
+            let list = infosets.entry(k).or_insert(Vec::new());
             list.push((s, p));
         }
 

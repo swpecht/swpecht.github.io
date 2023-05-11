@@ -215,6 +215,14 @@ impl<T: Clone> Tree<T> {
     pub fn get_stats(&self) -> TreeStats {
         self.stats
     }
+
+    pub fn len(&self) -> usize {
+        self.nodes.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.nodes.len() == 0
+    }
 }
 
 /// finds the index of the last action in the same path
