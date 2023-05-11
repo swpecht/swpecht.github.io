@@ -2,7 +2,7 @@ use approx::assert_relative_eq;
 use liars_poker_bot::{
     algorithms::{
         exploitability::exploitability,
-        ismcts::{ISMCTSBot, RandomRolloutEvaluator},
+        ismcts::{ISMCTBotConfig, ISMCTSBot, ISMCTSFinalPolicyType, RandomRolloutEvaluator},
     },
     cfragent::{CFRAgent, CFRAlgorithm},
     database::memory_node_store::MemoryNodeStore,
@@ -12,11 +12,17 @@ use rand::SeedableRng;
 
 #[test]
 fn test_ismcts_exploitability() {
+    let config = ISMCTBotConfig {
+        final_policy_type: ISMCTSFinalPolicyType::NormalizedVisitedCount,
+        ..Default::default()
+    };
+
     let mut ismcts = ISMCTSBot::new(
         KuhnPoker::game(),
         1.5,
         10000,
         RandomRolloutEvaluator::new(100, SeedableRng::seed_from_u64(42)),
+        config,
     );
 
     let e = exploitability(KuhnPoker::game(), &mut ismcts).nash_conv;

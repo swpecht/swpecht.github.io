@@ -20,12 +20,12 @@ const TIE_TOLERANCE: f64 = 1e-5;
 pub enum ISMCTSFinalPolicyType {
     NormalizedVisitedCount,
     MaxVisitCount,
-    _MaxValue,
+    MaxValue,
 }
 
 #[derive(Clone)]
-enum ChildSelectionPolicy {
-    _Uct,
+pub enum ChildSelectionPolicy {
+    Uct,
     Puct,
 }
 
@@ -145,6 +145,22 @@ pub trait ResampleFromInfoState {
     fn resample_from_istate<T: Rng>(&self, player: Player, rng: &mut T) -> Self;
 }
 
+pub struct ISMCTBotConfig {
+    pub child_selection_policy: ChildSelectionPolicy,
+    pub final_policy_type: ISMCTSFinalPolicyType,
+    pub max_world_samples: i32,
+}
+
+impl Default for ISMCTBotConfig {
+    fn default() -> Self {
+        Self {
+            child_selection_policy: ChildSelectionPolicy::Puct,
+            final_policy_type: ISMCTSFinalPolicyType::MaxVisitCount,
+            max_world_samples: UNLIMITED_NUM_WORLD_SAMPLES,
+        }
+    }
+}
+
 /// Implementation of Information Set Monte Carlo Tree Search (IS-MCTS).
 ///
 /// Adapted from: https://github.com/deepmind/open_spiel/blob/master/open_spiel/python/algorithms/ismcts.py
@@ -162,13 +178,19 @@ pub struct ISMCTSBot<G: GameState, E> {
 }
 
 impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> ISMCTSBot<G, E> {
-    pub fn new(_game: Game<G>, uct_c: f64, max_simulations: i32, evaluator: E) -> Self {
+    pub fn new(
+        _game: Game<G>,
+        uct_c: f64,
+        max_simulations: i32,
+        evaluator: E,
+        config: ISMCTBotConfig,
+    ) -> Self {
         Self {
             uct_c,
             max_simulations,
-            child_selection_policy: ChildSelectionPolicy::Puct, // open speil default
-            final_policy_type: ISMCTSFinalPolicyType::NormalizedVisitedCount, // open speil default
-            max_world_samples: UNLIMITED_NUM_WORLD_SAMPLES,
+            child_selection_policy: config.child_selection_policy,
+            final_policy_type: config.final_policy_type,
+            max_world_samples: config.max_world_samples,
             evaluator,
             nodes: HashMap::default(),
             rng: StdRng::seed_from_u64(42),
@@ -246,7 +268,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> ISMCTSBot<G, E> {
                 }
                 policy
             }
-            ISMCTSFinalPolicyType::_MaxValue => todo!(),
+            ISMCTSFinalPolicyType::MaxValue => todo!(),
         }
     }
 
@@ -383,7 +405,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> ISMCTSBot<G, E> {
             assert!(child.visits > 0);
             let mut action_value = child.value();
             action_value += match self.child_selection_policy {
-                ChildSelectionPolicy::_Uct => {
+                ChildSelectionPolicy::Uct => {
                     self.uct_c
                         * f64::sqrt(f64::log10(node.total_visits as f64) / child.visits as f64)
                 }
@@ -426,7 +448,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Policy<G> for ISMCTS
 
 #[cfg(test)]
 mod tests {
-    use approx::{assert_relative_eq, assert_ulps_eq};
+    use approx::assert_ulps_eq;
     use rand::{seq::SliceRandom, thread_rng, SeedableRng};
 
     use crate::{
@@ -439,6 +461,8 @@ mod tests {
         },
     };
 
+    use super::ISMCTBotConfig;
+
     #[test]
     fn test_ismcts_is_agent() {
         let mut ismcts = ISMCTSBot::new(
@@ -446,6 +470,7 @@ mod tests {
             1.5,
             100,
             RandomRolloutEvaluator::new(100, SeedableRng::seed_from_u64(42)),
+            ISMCTBotConfig::default(),
         );
         let mut opponent = RandomAgent::default();
 
@@ -476,6 +501,7 @@ mod tests {
             1.5,
             100,
             RandomRolloutEvaluator::new(100, SeedableRng::seed_from_u64(42)),
+            ISMCTBotConfig::default(),
         );
 
         let gs = KuhnPoker::from_actions(&[KPAction::Queen, KPAction::King, KPAction::Pass]);
@@ -497,11 +523,6 @@ mod tests {
         let policy = ismcts.run_search(&gs);
         assert_eq!(policy[KPAction::Bet.into()], 0.0);
         assert_eq!(policy[KPAction::Pass.into()], 1.0);
-
-        let gs = KuhnPoker::from_actions(&[KPAction::Jack, KPAction::Queen, KPAction::Bet]);
-        let policy = ismcts.run_search(&gs);
-        assert_relative_eq!(policy[KPAction::Bet.into()], 1.0 / 3.0);
-        assert_relative_eq!(policy[KPAction::Pass.into()], 2.0 / 3.0);
     }
 
     /// Starting with a queen should have near-0 expected value.
