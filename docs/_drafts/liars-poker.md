@@ -13,114 +13,36 @@ Supposedly you can't do that with imperfect information games.
 
 Going to use Liar's poker bots to illustrate why.
 
+## Next email for Marc
+* Interesting challenge on applying the search algorithms to euchre -- because there are hidden actions, resampling is non-trivial. What's the right policy to use for the hidden actions? -- somewhat made easier by only 1 player in euchre can take a hidden action
+
 ## TODOs
 
-[*] Swtich from strings to integers for keys, can still use strings for debugging -- can use special hashmap for this
-[*] Re-tune database to work dynamically, when larger than a certain size, split key in half? and go from there?
-    *Probably easier to buidl a tool to try a bunch of different cutoffs and see which ones work reasonably well
-    * Then can manually tune
-    *ADQSTSJSAS|9C|PPPPPPPS|3S|TSTC9SJC|ACQCKCJS|THKHQS9H|QHAHASJH|KDTDAD9D
-    * 011011101001001110100001011000001111001001001011
-    *01100100010101100000010111000000111100100100101100111
-[*] Implement lookup improvement for pages -- use hash table for pages. Store keys in a vector so can use that still to manage when to write things to disk
-[*] have database return references to nodes rather than clones?
-    * And fix the need to reinsert after getting something from nodestore -- have a get always return a node, and then can manipulate in place
-[*] Use IStateKey until the final step when converting to a string for storage
-    * And use bit shift to cut to the right
-    * Move the conversion of istate key to string to be deeper in code -- make pages work with istate key and avoid the need to create strings all together (except on page faults). Can just bitshift the key to get the proper page name.
-[*] pruning optimization from Section 2.2.2 from Marc's thesis -- should reduce some computation
-[ ] Move IO to a separate thread
-    *Probably want to do with raw threads and maybe use rayon for computation?
-    *<https://doc.rust-lang.org/book/ch16-02-message-passing.html>
-[*] Implement metric to track performance -- see how close to converging
-    * Use this to compare the vanilla CFR and chance samples CFR algorithms for a simple game -- first blog post?
-    * Could also do this for a single deal of Euchre to see how things are converging
-[*] Imlement other CFR algorithms, see Marc's phd and website for implementations
-    * May already be using chance sampling -- need to fix my algorithm
-    * Probably should implement vanilla cfr as well to ensure working as expected
-[*] Use an object pool for gamestates
-    * doesn't seem to speed anything up
-    * Didn't help, but swapping to a copyable arrayvec, that's always sorted did
-[*] Optimize IstateKey Read -- probaby just switch to using an array vec of the actions for the key? -- makes indexing near instant
-[*] Improve the Tree
-    * Have get functions make the node and cache the id for later use
-    * use https://crates.io/crates/rustc-hash for hashmap for children
-    * save the last place and navigate to the right node from there, e.g. step back then forward
-[*] IMPORTANT: Make sure Istate keys are sorted for dealt cards
-[*] Fix how CFR node tracks how many valid actions there are
-[*] Need to change how chance outcomes are tracked -- probably want to just have a vec of arrays for the number of chance outcomes
-    * Should then work for bluff which can have up to 2 chance outcomes -- maybe use ArrayVec for this?
-
-[ ] Best response doesn't follow same access pattern as CFR -- nodes actuall aren't that close to each other
-    * Slowdown happens when doing the loop for the CO state calls
-    * Arrays didn't meaningfully improve things -- why not? should future calls of the same starting node be close together?
-        * Might be a bug in cursor code
-    * Alternative, more drastic approach is to store the policy at each node for every possible private state that could be part of it
-        * Would make the reads close together -- but might impact CFR?
-[*] IMPORTANT: Switch to f64 for nodestore -- avoid any issues with percision
-[*] IMPORTANT: Implement Bluff(1,1) and Bluff(2,1) to compare to marc's thesis results
-    * Bluff(1,1) not converging, likely something wrong in the implementation
-    * Maybe try running with the other person as the fixed player?
-    * Maybe switch to action being a concrete type to avoid an indexing bugs
-        * https://doc.rust-lang.org/stable/book/ch19-04-advanced-types.html?highlight=newtype#using-the-newtype-pattern-for-type-safety-and-abstraction
-        * https://doc.rust-lang.org/stable/book/ch19-03-advanced-traits.html#using-the-newtype-pattern-to-implement-external-traits-on-external-types
-        * Should be as performant
-        * Probably make Action a trait, and then have game actions implement it
-[ ] Implement pruning for CFR to match CFRCS
-[ ] Change Gamestate::evaluate to just return a float and not a vector to save some allocations
-
-Need to decide what to include in the first blog post.
-
-Should probably implement some other games for comparison, e.g. liars pokers / bluff? Any others from marks thesis?
+Improving exploitability and CFR
+[ ] Do we actually need to pre-compute everything for tabular exploitability? Instead can we 'search' and compute on the fly?
+[ ] Look at alternative sampling algorithms for CFR -- might change the read-write characteristics -- external sampling?
+    * Marc mentioned this dominates chance sampling across all dimensions
+[ ] What people are doing these days for approximate best response is running "DQN-BR" (use reinforcement learning as an exploiter). See, for example, the MMD paper: https://arxiv.org/pdf/2206.05825.pdf. There's an example of this in OpenSpiel:  https://github.com/deepmind/open_spiel/blob/master/open_spiel/python/examples/rl_response.py. This idea is the basis of PSRO, btw, which is a paper which may interest you: https://arxiv.org/abs/1711.00832. Anyway, there are even more sophisticated methods that add MCTS search on top of it (see our ABR paper: https://arxiv.org/abs/2004.09677) but it is a bit heavy and compute-hungry so I'd recommend starting with DQN-BR.
 
 
+Evaluating other algorithms and games
+[ ] Implement strategy for up the river down the river -- could constrain to the lower number of cards in hand to see what is optimal
+    * https://plentifun.com/rules-to-play-up-down-river-card-game
+    * re-read marc's email (from my google?) on if cfr worksw ith multiple players -- e.g. could it work for up the river down the river? with 4 players?
+    * Does the exploitanility function work in that instance? -- good test bet for agents
+[ ] Implement double dummy solver (open hand solver)
+[ ] Extend alphamu to scoring and not just win vs loss metrics -- could see if this improve performance of the agent
 
-## Design
 
-* score leaf node
-* propogate score
+Misc ideas
+[ ] Multithread for rollout?
+[ ] Implement other rollout methods
+[ ] For benchmarking -- create a policy agent. Takes policy as an input -- might be an easier way to have all the agents play
 
-| Algorithm     | score_leaf_node        | propogate_score |
-| ------------- | ---------------------- | --------------- |
-| Random        | random                 | minimax         |
-| Minimax       | rollout expected value | minimax         |
-| CFR           | CFR / regret matching  | ???? Minimax?   |
-| Owndice agent |
 
-## Results
+## Tricky things about euchre
 
-Results as of July 19 for 1k games:
-Random wins: 475,  Random wins: 525
-Random wins: 154,  MinimaxAgent wins: 846
-Random wins: 166,  MetaMiniMaxAgent wins: 834
-Random wins: 426,  OwnDiceAgent wins: 574
-Random wins: 171,  IncorporateBetAgent wins: 829
-MinimaxAgent wins: 852,  Random wins: 148
-MinimaxAgent wins: 491,  MinimaxAgent wins: 509
-MinimaxAgent wins: 502,  MetaMiniMaxAgent wins: 498
-MinimaxAgent wins: 741,  OwnDiceAgent wins: 259
-MinimaxAgent wins: 529,  IncorporateBetAgent wins: 471
-MetaMiniMaxAgent wins: 806,  Random wins: 194
-MetaMiniMaxAgent wins: 507,  MinimaxAgent wins: 493
-MetaMiniMaxAgent wins: 513,  MetaMiniMaxAgent wins: 487
-MetaMiniMaxAgent wins: 754,  OwnDiceAgent wins: 246
-MetaMiniMaxAgent wins: 511,  IncorporateBetAgent wins: 489
-OwnDiceAgent wins: 630,  Random wins: 370
-OwnDiceAgent wins: 256,  MinimaxAgent wins: 744
-OwnDiceAgent wins: 263,  MetaMiniMaxAgent wins: 737
-OwnDiceAgent wins: 396,  OwnDiceAgent wins: 604
-OwnDiceAgent wins: 0,  IncorporateBetAgent wins: 1000
-IncorporateBetAgent wins: 844,  Random wins: 156
-IncorporateBetAgent wins: 511,  MinimaxAgent wins: 489
-IncorporateBetAgent wins: 513,  MetaMiniMaxAgent wins: 487
-IncorporateBetAgent wins: 1000,  OwnDiceAgent wins: 0
-IncorporateBetAgent wins: 558,  IncorporateBetAgent wins: 442
-
-Seems like a key difference between Minimax and CFR -- minimax assumes that each hidden state is equally likely. This works well for things like dice, but doesn't work as well when the hidden state is influenced by the player -- what's hidden depends on their strategy.
-
-Random agent: Baseline
-Always first agent: Dominates the always random agent
-CFR agent (at equilibrium): has an expected value of 0 against the other agents
+* Resampling isn't trivial -- what's the right way to handle discards -- what policy should be used?
 
 ## Estimating Euchre game tree
 
@@ -230,3 +152,6 @@ liars_poker_bot::cfragent: 2023-04-06T14:55:55+02:00 - DEBUG - cfr called 600000
 
 liars_poker_bot::cfragent: 2023-04-06T15:07:18+02:00 - INFO - Starting self play for CFR
 liars_poker_bot::cfragent: 2023-04-06T15:07:41+02:00 - DEBUG - cfr called 60000000 times (0:00:23)
+
+
+

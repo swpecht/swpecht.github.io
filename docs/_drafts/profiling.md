@@ -13,13 +13,16 @@ Need the 65528 to have a large enough stack size
 
 
 Then hotspot for viewing perf report
-
+hotspot perf.data --debugPaths /usr/lib/debug
 
  perf report --no-inline
 
  perf script | stackcollapse-perf.pl | stackcollapse-recursive.pl | c++filt | flamegraph.pl > flame.svg
 
 sudo sysctl -w kernel.perf_event_paranoid=-1
+
+
+sudo sh -c " echo 0 > /proc/sys/kernel/kptr_restrict"
 
 
  https://gist.github.com/dlaehnemann/df31787c41bd50c0fe223df07cf6eb89
