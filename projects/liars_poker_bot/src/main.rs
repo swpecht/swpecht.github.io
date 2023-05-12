@@ -127,17 +127,17 @@ fn run_analyze(args: Args) {
 
     println!("average post deal end states: {}", total_end_states / runs);
     println!("average post deal states: {}", total_states / runs);
-    println!("rounds: {}", total_rounds / runs);
-    let mut sum = 1.0;
-    for (i, c) in children.iter().enumerate() {
-        println!(
-            "round {} has {} children, {} peers",
-            i,
-            c / runs as f64,
-            sum
-        );
-        sum *= (c / runs as f64).max(1.0);
-    }
+    // println!("rounds: {}", total_rounds / runs);
+    // let mut sum = 1.0;
+    // for (i, c) in children.iter().enumerate() {
+    //     println!(
+    //         "round {} has {} children, {} peers",
+    //         i,
+    //         c / runs as f64,
+    //         sum
+    //     );
+    //     sum *= (c / runs as f64).max(1.0);
+    // }
 
     // traverse gametress
     let mut gs = Euchre::new_state();
