@@ -7,7 +7,9 @@ use clap::clap_derive::ArgEnum;
 use liars_poker_bot::actions;
 use liars_poker_bot::agents::{Agent, RandomAgent};
 
+use liars_poker_bot::algorithms::alphamu::AlphaMuBot;
 use liars_poker_bot::algorithms::exploitability::{self};
+use liars_poker_bot::algorithms::ismcts::RandomRolloutEvaluator;
 use liars_poker_bot::cfragent::cfrnode::CFRNode;
 use liars_poker_bot::cfragent::{CFRAgent, CFRAlgorithm};
 use liars_poker_bot::database::memory_node_store::MemoryNodeStore;
@@ -20,7 +22,7 @@ use liars_poker_bot::game::{Action, GameState};
 use log::{debug, info};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
-use rand::SeedableRng;
+use rand::{thread_rng, SeedableRng};
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ArgEnum, Debug)]
 enum GameType {
@@ -91,6 +93,30 @@ fn run_scratch(_args: Args) {
     println!("bluff size: {}", mem::size_of::<BluffGameState>());
     println!("kuhn poker size: {}", mem::size_of::<KPGameState>());
     println!("euchre size: {}", mem::size_of::<EuchreGameState>());
+
+    let rng = SeedableRng::seed_from_u64(42);
+    let mut alphamu = AlphaMuBot::new(RandomRolloutEvaluator::new(100, rng), 3, 10);
+    let mut opponent = RandomAgent::default();
+
+    let mut rng: StdRng = SeedableRng::seed_from_u64(42);
+    for _ in 0..10 {
+        let mut gs = KuhnPoker::new_state();
+        while gs.is_chance_node() {
+            let a = *actions!(gs).choose(&mut rng).unwrap();
+            gs.apply_action(a)
+        }
+
+        while !gs.is_terminal() {
+            let a = match gs.cur_player() {
+                0 => alphamu.step(&gs),
+                1 => opponent.step(&gs),
+                _ => panic!("invalid player"),
+            };
+            gs.apply_action(a);
+        }
+
+        gs.evaluate(0);
+    }
 }
 
 fn run_analyze(args: Args) {

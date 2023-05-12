@@ -6,6 +6,7 @@ use std::{
     ops::{Index, IndexMut},
 };
 
+use log::trace;
 use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
 use rustc_hash::FxHashMap;
 
@@ -90,6 +91,13 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
     }
 
     fn alphamu(&mut self, gs: &G, m: usize, worlds: Vec<Option<G>>) -> AMFront {
+        trace!(
+            "alpha mu call\n\tgs: {:?}\n\tm: {}\n\tworlds: {:?}",
+            gs,
+            m,
+            worlds
+        );
+
         assert!(!gs.is_chance_node());
 
         let mut result = AMFront::default();
@@ -119,6 +127,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             }
         }
 
+        assert!(!front.is_empty());
         front
     }
 
@@ -354,6 +363,10 @@ struct AMFront {
 
 impl AMFront {
     fn min(self, other: Self) -> Self {
+        if self.is_empty() {
+            return other;
+        }
+
         let mut result = AMFront::default();
         for s in &self.vectors {
             for o in &other.vectors {
@@ -433,6 +446,14 @@ impl AMFront {
             .sum();
 
         total as f64 / self.vectors.len() as f64
+    }
+
+    pub fn len(&self) -> usize {
+        self.vectors.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }
 
@@ -537,6 +558,12 @@ mod tests {
         let v = AMVector::new(10);
         f.push(v);
         assert_eq!(f.vectors.len(), 1);
+
+        // test min of an empty vec
+        let f1 = AMFront::default();
+        let f2 = front!(amvec![1, 1, 1]);
+        let f3 = f1.min(f2);
+        assert_eq!(f3, front!(amvec![1, 1, 1]));
     }
 
     #[test]
