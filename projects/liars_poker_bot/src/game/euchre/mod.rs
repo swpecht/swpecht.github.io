@@ -1,8 +1,10 @@
 use std::fmt::Display;
 
+use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    actions,
     algorithms::ismcts::ResampleFromInfoState,
     collections::SortedArrayVec,
     game::{Action, Game, GameState, Player},
@@ -34,6 +36,7 @@ impl Euchre {
             istate_keys: keys,
             first_played: None,
             trick_winners: [0; 5],
+            key: IStateKey::new(),
         }
     }
 
@@ -66,6 +69,7 @@ pub struct EuchreGameState {
     first_played: Option<usize>,
     /// keep track of who has won tricks to avoid re-computing
     trick_winners: [Player; 5],
+    key: IStateKey,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy, Serialize, Deserialize)]
@@ -382,6 +386,8 @@ impl EuchreGameState {
     }
 
     fn update_keys(&mut self, a: Action) {
+        self.key.push(a);
+
         // haven't pushed the cards yet, do it now if we've dealt all but the last card
         if (self.hands[3].len() == 4) && (self.hands[2].len() == 5) {
             for p in 0..self.num_players {
@@ -627,8 +633,66 @@ impl GameState for EuchreGameState {
 }
 
 impl ResampleFromInfoState for EuchreGameState {
-    fn resample_from_istate<T: rand::Rng>(&self, _player: Player, _rng: &mut T) -> Self {
-        todo!()
+    fn resample_from_istate<T: rand::Rng>(&self, player: Player, rng: &mut T) -> Self {
+        let deal_end = 5 * 4; // dealt cards
+
+        let mut player_chance = [Action(99); 5];
+
+        for (i, c) in player_chance.iter_mut().enumerate() {
+            *c = self.key[self.num_players * i + player];
+        }
+
+        let mut played_cards: [Vec<Action>; 4] = Default::default();
+        if self.first_played.is_some() {
+            // first played is based on the 0 player
+            let first_played = self.first_played.unwrap();
+            let play_history = self.istate_key(0);
+            for i in first_played..play_history.len() {
+                let p = (i - first_played) % self.num_players;
+                played_cards[p].push(play_history[i]);
+            }
+        }
+
+        let mut ngs = Euchre::new_state();
+        let mut chance_iter = player_chance.iter();
+        let face_up_chance = self.key[20]; // 21st card dealt
+
+        for i in 0..self.key.len() {
+            if i % self.num_players == player && i < deal_end {
+                // the player chance node
+                ngs.apply_action(*chance_iter.next().unwrap());
+            } else if i == 20 {
+                // the faceup chance node
+                ngs.apply_action(face_up_chance);
+            } else if ngs.is_chance_node() {
+                assert!(ngs.cur_player() != player);
+
+                // deal out played cards first
+                if let Some(c) = played_cards[ngs.cur_player()].pop() {
+                    ngs.apply_action(c);
+                    continue;
+                }
+
+                // other player chance node
+                let mut actions = actions!(ngs);
+                actions.shuffle(rng);
+                for a in actions {
+                    if !player_chance.contains(&a) && a != face_up_chance {
+                        // can't deal same card
+                        ngs.apply_action(a);
+                        break;
+                    }
+                }
+            } else if true {
+                // handle the discard case, need a strategy for how dealer will discard here
+                // and what the proper way for determing the discard is
+                todo!("need to properly implement discard handling")
+            } else {
+                // public history gets repeated
+                ngs.apply_action(self.key[i]);
+            }
+        }
+        ngs
     }
 }
 
@@ -637,10 +701,12 @@ mod tests {
     use std::{collections::HashSet, vec};
 
     use itertools::Itertools;
+    use rand::thread_rng;
 
     use crate::{
         actions,
         agents::{Agent, RandomAgent},
+        algorithms::ismcts::ResampleFromInfoState,
         game::euchre::{EAction, EPhase, Euchre, Suit},
     };
 
@@ -856,6 +922,35 @@ mod tests {
                 let istate = s.istate_string(s.cur_player);
                 assert!(!istates.contains(&istate));
                 istates.insert(istate);
+            }
+        }
+    }
+
+    #[test]
+    fn euchre_test_resample_from_istate() {
+        let mut ra = RandomAgent::new();
+        let mut rng = thread_rng();
+
+        for _ in 0..1000 {
+            let mut s = Euchre::new_state();
+
+            while s.is_chance_node() {
+                let a = ra.step(&s);
+                s.apply_action(a);
+            }
+
+            while !s.is_terminal() {
+                for p in 0..s.num_players() {
+                    let original_istate = s.istate_key(p);
+                    for _ in 0..100 {
+                        let sampled_state = s.resample_from_istate(p, &mut rng);
+                        let sampled_key = sampled_state.istate_key(p);
+                        assert_eq!(sampled_key, original_istate)
+                    }
+                }
+
+                let a = ra.step(&s);
+                s.apply_action(a);
             }
         }
     }
