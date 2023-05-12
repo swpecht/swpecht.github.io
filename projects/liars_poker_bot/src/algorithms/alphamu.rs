@@ -83,6 +83,10 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         let actions = actions!(root_node);
         let mut policy = ActionVec::new(&actions);
 
+        if v_sum == 0.0 {
+            return policy;
+        }
+
         for (a, v) in &node.win_sum {
             policy[*a] = v / v_sum;
         }
@@ -101,7 +105,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         assert!(!gs.is_chance_node());
 
         let mut result = AMFront::default();
-        result.push(AMVector::new(worlds.len()));
+        result.push(AMVector::from_worlds(&worlds));
         if self.stop(gs, m, &worlds, &mut result) {
             return result;
         }
@@ -179,20 +183,26 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
     }
 
     fn stop(&mut self, gs: &G, m: usize, worlds: &[Option<G>], result: &mut AMFront) -> bool {
-        if gs.is_terminal() {
-            let value = gs.evaluate(self.team.into());
-            if value > 0.0 {
-                // we won
-                for (i, _) in worlds.iter().enumerate().filter(|(_, w)| w.is_some()) {
-                    result.set(i, true);
-                }
-            } else {
-                // we lost
-                for (i, w) in worlds.iter().enumerate().filter(|(_, w)| w.is_some()) {
-                    result.set(i, false);
-                }
+        let mut all_states_terminal = true;
+        for (i, w) in worlds.iter().enumerate() {
+            if w.is_none() {
+                continue;
+            }
+            let w = w.as_ref().unwrap();
+
+            if !w.is_terminal() {
+                all_states_terminal = false;
+                continue;
             }
 
+            let v = w.evaluate(self.team.into());
+            if v > 0.0 {
+                result.set(i, true);
+            } else {
+                result.set(i, false);
+            }
+        }
+        if all_states_terminal {
             return true;
         }
 
@@ -248,10 +258,39 @@ struct AMVector {
 
 impl AMVector {
     fn new(size: usize) -> Self {
+        let mut is_valid = [false; 32];
+        for i in 0..size {
+            is_valid[i] = true;
+        }
+
         Self {
             is_win: [false; 32],
-            is_valid: [false; 32],
+            is_valid,
             len: size,
+        }
+    }
+
+    fn from_worlds<T>(worlds: &Vec<Option<T>>) -> Self {
+        let mut is_valid = [false; 32];
+        for (i, w) in worlds.iter().enumerate() {
+            if w.is_some() {
+                is_valid[i] = true;
+            }
+        }
+
+        Self {
+            is_win: [false; 32],
+            is_valid,
+            len: worlds.len(),
+        }
+    }
+
+    /// Return an AMVector with the same valid worlds
+    fn from_other(other: &Self) -> Self {
+        Self {
+            is_win: [false; 32],
+            is_valid: other.is_valid,
+            len: other.len,
         }
     }
 
@@ -340,7 +379,7 @@ impl Index<usize> for AMVector {
 
     fn index(&self, index: usize) -> &Self::Output {
         if !self.is_valid[index] {
-            panic!("accessing data for invalid world")
+            panic!("accessing data for invalid world");
         }
         &self.is_win[index]
     }
@@ -349,8 +388,8 @@ impl Index<usize> for AMVector {
 impl IndexMut<usize> for AMVector {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         self.len = self.len.max(index + 1);
-        for valid in self.is_valid.iter_mut().take(self.len) {
-            *valid = true;
+        if !self.is_valid[index] {
+            panic!("setting invalid world value");
         }
         &mut self.is_win[index]
     }
@@ -370,7 +409,7 @@ impl AMFront {
         let mut result = AMFront::default();
         for s in &self.vectors {
             for o in &other.vectors {
-                let mut r = AMVector::default();
+                let mut r = AMVector::from_other(s);
                 for w in 0..s.len() {
                     // Leave the bool comparison here to match the paper
                     #[allow(clippy::bool_comparison)]
