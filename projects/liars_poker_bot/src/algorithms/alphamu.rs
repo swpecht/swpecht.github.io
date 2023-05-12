@@ -304,7 +304,7 @@ impl AMVector {
             .enumerate()
             .filter(|(i, _)| self.is_valid[*i])
         {
-            is_greater_or_equal &= *is_win >= other.is_win[i];
+            is_greater_or_equal &= other.is_win[i] >= *is_win;
         }
 
         is_greater_or_equal
@@ -339,7 +339,10 @@ impl Index<usize> for AMVector {
 
 impl IndexMut<usize> for AMVector {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        self.is_valid[index] = true;
+        self.len = self.len.max(index + 1);
+        for valid in self.is_valid.iter_mut().take(self.len) {
+            *valid = true;
+        }
         &mut self.is_win[index]
     }
 }
@@ -351,10 +354,6 @@ struct AMFront {
 
 impl AMFront {
     fn min(self, other: Self) -> Self {
-        // A Pareto front is greater or
-        // equal to another Pareto front if for each element of the second Pareto
-        // front there is an element in the first Pareto front which is greater or
-        // equal to the element of the second Pareto front.
         let mut result = AMFront::default();
         for s in &self.vectors {
             for o in &other.vectors {
@@ -483,15 +482,15 @@ mod tests {
         let v1 = amvec!(0, 1, 1);
         let v2 = amvec!(0, 0, 1);
 
-        assert!(v1 != v1);
+        assert!(v1 != v2);
         assert!(v2.is_dominated(&v1));
         assert!(!v1.is_dominated(&v2));
 
-        let v1 = amvec![0, 1, 1];
-        let v2 = amvec![1, 1, 0];
-        assert!(!v1.is_dominated(&v2));
-        assert!(!v2.is_dominated(&v1));
-        assert!(!v1.is_dominated(&v1));
+        let v3 = amvec![0, 1, 1];
+        let v4 = amvec![1, 1, 0];
+        assert!(!v3.is_dominated(&v4));
+        assert!(!v4.is_dominated(&v3));
+        assert!(!v3.is_dominated(&v3));
     }
 
     #[test]
