@@ -1,5 +1,4 @@
 use std::{
-    cmp::Ordering,
     collections::{HashMap, HashSet},
     fmt::Debug,
     marker::PhantomData,
@@ -84,6 +83,11 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         let mut policy = ActionVec::new(&actions);
 
         if v_sum == 0.0 {
+            // no wins to play randomly
+            let prob = 1.0 / actions.len() as f64;
+            for a in actions {
+                policy[a] = prob;
+            }
             return policy;
         }
 
@@ -96,7 +100,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
 
     fn alphamu(&mut self, gs: &G, m: usize, worlds: Vec<Option<G>>) -> AMFront {
         trace!(
-            "alpha mu call\n\tgs: {:?}\n\tm: {}\n\tworlds: {:?}",
+            "alpha mu call: gs: {:?}\tm: {}\tworlds: {:?}",
             gs,
             m,
             worlds
@@ -107,6 +111,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         let mut result = AMFront::default();
         result.push(AMVector::from_worlds(&worlds));
         if self.stop(gs, m, &worlds, &mut result) {
+            trace!("stopping alpha mu for {:?}, found front: {:?}", gs, result);
             return result;
         }
 
@@ -184,25 +189,28 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
 
     fn stop(&mut self, gs: &G, m: usize, worlds: &[Option<G>], result: &mut AMFront) -> bool {
         let mut all_states_terminal = true;
-        for (i, w) in worlds.iter().enumerate() {
-            if w.is_none() {
-                continue;
-            }
-            let w = w.as_ref().unwrap();
-
-            if !w.is_terminal() {
-                all_states_terminal = false;
-                continue;
-            }
-
-            let v = w.evaluate(self.team.into());
-            if v > 0.0 {
-                result.set(i, true);
-            } else {
-                result.set(i, false);
-            }
+        for w in worlds.iter().flatten() {
+            all_states_terminal &= w.is_terminal();
         }
-        if all_states_terminal {
+        if gs.is_terminal() & !all_states_terminal {
+            panic!("gs is terminal but other states are not")
+        }
+
+        if gs.is_terminal() {
+            // Unlike in bridge, we can't determin who won only from the public information at the gamestate
+            // instead we need to evaluate each world individually
+            for (i, w) in worlds.iter().enumerate() {
+                if w.is_none() {
+                    continue;
+                }
+                let w = w.as_ref().unwrap();
+                let v = w.evaluate(self.team.into());
+                if v > 0.0 {
+                    result.set(i, true);
+                } else {
+                    result.set(i, false);
+                }
+            }
             return true;
         }
 
@@ -259,8 +267,8 @@ struct AMVector {
 impl AMVector {
     fn new(size: usize) -> Self {
         let mut is_valid = [false; 32];
-        for i in 0..size {
-            is_valid[i] = true;
+        for v in is_valid.iter_mut() {
+            *v = true;
         }
 
         Self {

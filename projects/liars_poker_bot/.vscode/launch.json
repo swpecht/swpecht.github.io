@@ -34,7 +34,9 @@
             },
             "args": [
                 "-v",
-                "3",
+                "4",
+                "--mode",
+                "scratch"
             ],
             "cwd": "${workspaceFolder}",
             "env": {
