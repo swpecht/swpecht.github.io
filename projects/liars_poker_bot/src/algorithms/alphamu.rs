@@ -265,7 +265,7 @@ struct AMVector {
 }
 
 impl AMVector {
-    fn new(size: usize) -> Self {
+    fn _new(size: usize) -> Self {
         let mut is_valid = [false; 32];
         for v in is_valid.iter_mut() {
             *v = true;
@@ -302,13 +302,13 @@ impl AMVector {
         }
     }
 
-    fn push(&mut self, is_win: bool) {
+    fn _push(&mut self, is_win: bool) {
         self.is_valid[self.len] = true;
         self.is_win[self.len] = is_win;
         self.len += 1;
     }
 
-    fn min(mut self, other: Self) -> Self {
+    fn _min(mut self, other: Self) -> Self {
         assert_eq!(self.len, other.len);
 
         for (i, w) in self.is_win.iter_mut().enumerate() {
@@ -318,7 +318,7 @@ impl AMVector {
         self
     }
 
-    fn max(mut self, other: Self) -> Self {
+    fn _max(mut self, other: Self) -> Self {
         assert_eq!(self.len, other.len);
 
         for (i, w) in self.is_win.iter_mut().enumerate() {
@@ -332,7 +332,7 @@ impl AMVector {
         self.len
     }
 
-    fn is_empty(&self) -> bool {
+    fn _is_empty(&self) -> bool {
         self.len == 0
     }
 
@@ -566,8 +566,8 @@ mod tests {
         let v1 = amvec!(1, 0, 1);
         let v2 = amvec!(1, 1, 0);
 
-        assert_eq!(v1.min(v2), amvec!(1, 0, 0));
-        assert_eq!(v1.max(v2), amvec!(1, 1, 1));
+        assert_eq!(v1._min(v2), amvec!(1, 0, 0));
+        assert_eq!(v1._max(v2), amvec!(1, 1, 1));
     }
 
     /// Test based on Fig 2 in alphamu paper
@@ -602,7 +602,7 @@ mod tests {
         assert_eq!(x, front!(amvec![0, 1, 1], amvec![1, 1, 0]));
 
         let mut f = AMFront::default();
-        let v = AMVector::new(10);
+        let v = AMVector::_new(10);
         f.push(v);
         assert_eq!(f.vectors.len(), 1);
 
@@ -647,8 +647,8 @@ macro_rules! amvec {
             let mut temp_vec = AMVector::default();
             $(
                 match $x {
-                    0 => temp_vec.push(false),
-                    1 => temp_vec.push(true),
+                    0 => temp_vec._push(false),
+                    1 => temp_vec._push(true),
                     _ => panic!("invalid input"),
                 };
             )*

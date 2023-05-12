@@ -22,7 +22,7 @@ use liars_poker_bot::game::{Action, GameState};
 use log::{debug, info};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
-use rand::{thread_rng, SeedableRng};
+use rand::SeedableRng;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ArgEnum, Debug)]
 enum GameType {
@@ -124,7 +124,7 @@ fn run_analyze(args: Args) {
 
     let mut total_end_states = 0;
     let mut total_states = 0;
-    let mut total_rounds = 0;
+    let mut _total_rounds = 0;
     let mut children = [0.0; 28];
     let runs = 10000;
     let mut agent = RandomAgent::new();
@@ -148,7 +148,7 @@ fn run_analyze(args: Args) {
             }
         }
         total_end_states += end_states;
-        total_rounds += round;
+        _total_rounds += round;
     }
 
     println!("average post deal end states: {}", total_end_states / runs);
