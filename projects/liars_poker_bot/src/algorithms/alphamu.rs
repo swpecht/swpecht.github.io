@@ -2,26 +2,55 @@ use std::{
     cmp::Ordering,
     collections::HashSet,
     fmt::Debug,
+    marker::PhantomData,
     ops::{Index, IndexMut},
 };
 
-use crate::game::{Action, GameState, Player};
+use rand::{thread_rng, SeedableRng};
+
+use crate::{
+    agents::Agent,
+    cfragent::cfrnode::ActionVec,
+    game::{Action, GameState, Player},
+};
+
+use super::ismcts::{Evaluator, ResampleFromInfoState};
 
 /// Implementation for AlphaMu from "The αµ Search Algorithm for the Game of Bridge"
 ///
 /// https://arxiv.org/pdf/1911.07960.pdf
-pub struct AlphaMuBot<G> {
-    worlds: Vec<G>,
+pub struct AlphaMuBot<G, E> {
+    evaluator: E,
     team: Team,
+    num_worlds: usize,
+    m: usize,
+    _phantom_data: PhantomData<G>,
 }
 
-impl<G: GameState> AlphaMuBot<G> {
-    pub fn run_search(&mut self, root_node: &G, m: usize, num_worlds: usize) {
+impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
+    pub fn new(evaluator: E, num_worlds: usize, m: usize) -> Self {
+        Self {
+            evaluator,
+            team: Team::Team1,
+            _phantom_data: PhantomData,
+            num_worlds,
+            m,
+        }
+    }
+
+    pub fn run_search(&mut self, root_node: &G) -> ActionVec<f64> {
         self.reset();
 
+        let mut rng = thread_rng();
         self.team = self.get_team(root_node);
+        let player = root_node.cur_player();
+        let mut worlds = Vec::new();
+        for _ in 0..self.num_worlds {
+            worlds.push(Some(root_node.resample_from_istate(player, &mut rng)))
+        }
 
-        self.alphamu(root_node, m, Vec::new());
+        let front = self.alphamu(root_node, self.m, worlds);
+        todo!()
     }
 
     fn alphamu(&mut self, gs: &G, m: usize, worlds: Vec<Option<G>>) -> AMFront {
@@ -96,12 +125,12 @@ impl<G: GameState> AlphaMuBot<G> {
             let value = gs.evaluate(self.team.into());
             if value > 0.0 {
                 // we won
-                for (i, _) in worlds.iter().enumerate() {
+                for (i, _) in worlds.iter().enumerate().filter(|(_, w)| w.is_some()) {
                     result.set(i, true);
                 }
             } else {
                 // we lost
-                for (i, _) in worlds.iter().enumerate() {
+                for (i, w) in worlds.iter().enumerate().filter(|(_, w)| w.is_some()) {
                     result.set(i, false);
                 }
             }
@@ -110,14 +139,23 @@ impl<G: GameState> AlphaMuBot<G> {
         }
 
         if m == 0 {
-            todo!()
+            for (i, w) in worlds.iter().enumerate().filter(|(_, w)| w.is_some()) {
+                let w = w.as_ref().unwrap();
+                let r = self.evaluator.evaluate(w);
+                if r[self.team as usize] > 0.0 {
+                    // win most times
+                    result.set(i, true);
+                } else {
+                    result.set(i, false);
+                }
+            }
+            return true;
         }
 
         false
     }
 
     fn reset(&mut self) {
-        self.worlds.clear();
         todo!()
     }
 
@@ -127,6 +165,12 @@ impl<G: GameState> AlphaMuBot<G> {
             1 | 3 => Team::Team2,
             _ => panic!("invalid player"),
         }
+    }
+}
+
+impl<G: GameState, E> Agent<G> for AlphaMuBot<G, E> {
+    fn step(&mut self, s: &G) -> Action {
+        todo!()
     }
 }
 
@@ -356,10 +400,20 @@ impl From<Team> for Player {
 
 #[cfg(test)]
 mod tests {
+    use rand::{seq::SliceRandom, thread_rng, SeedableRng};
+
     use crate::{
-        algorithms::alphamu::{AMFront, AMVector},
+        actions,
+        agents::{Agent, RandomAgent},
+        algorithms::{
+            alphamu::{AMFront, AMVector},
+            ismcts::RandomRolloutEvaluator,
+        },
         amvec, front,
+        game::{kuhn_poker::KuhnPoker, GameState},
     };
+
+    use super::AlphaMuBot;
 
     #[test]
     fn test_am_vector_ordering() {
@@ -405,6 +459,38 @@ mod tests {
 
         let a = b.min(c);
         assert_eq!(a, front!(amvec![0, 0, 1], amvec![1, 1, 0]));
+
+        let mut x = front!(amvec![1, 0, 0], amvec![0, 1, 1]);
+        x.push(amvec!(0, 0, 1));
+        assert_eq!(x, front!(amvec![1, 0, 0], amvec![0, 1, 1])); //no change
+        x.push(amvec!(1, 1, 0));
+        assert_eq!(x, front!(amvec![0, 1, 1], amvec![1, 1, 0]));
+    }
+
+    #[test]
+    fn test_alpha_mu_is_agent() {
+        let rng = SeedableRng::seed_from_u64(42);
+        let mut alphamu = AlphaMuBot::new(RandomRolloutEvaluator::new(100, rng), 20, 10);
+        let mut opponent = RandomAgent::default();
+
+        for _ in 0..10 {
+            let mut gs = KuhnPoker::new_state();
+            while gs.is_chance_node() {
+                let a = *actions!(gs).choose(&mut thread_rng()).unwrap();
+                gs.apply_action(a)
+            }
+
+            while !gs.is_terminal() {
+                let a = match gs.cur_player() {
+                    0 => alphamu.step(&gs),
+                    1 => opponent.step(&gs),
+                    _ => panic!("invalid player"),
+                };
+                gs.apply_action(a);
+            }
+
+            gs.evaluate(0);
+        }
     }
 }
 
