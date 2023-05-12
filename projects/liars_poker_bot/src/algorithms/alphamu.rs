@@ -1,4 +1,9 @@
-use std::{cmp::Ordering, collections::HashSet, fmt::Debug, ops::Index};
+use std::{
+    cmp::Ordering,
+    collections::HashSet,
+    fmt::Debug,
+    ops::{Index, IndexMut},
+};
 
 use crate::game::{Action, GameState, Player};
 
@@ -128,7 +133,7 @@ impl<G: GameState> AlphaMuBot<G> {
 /// An alphamu vector
 ///
 /// True means the game is won, false means it is lost
-#[derive(PartialEq, Eq, Clone, Copy)]
+#[derive(PartialEq, Eq, Clone, Copy, Default)]
 struct AMVector {
     is_win: [bool; 32],
     is_valid: [bool; 32],
@@ -144,13 +149,10 @@ impl AMVector {
         }
     }
 
-    fn _from_slice(wins: &[bool]) -> Self {
-        let mut v = Self::new(wins.len());
-        for (i, w) in wins.iter().enumerate() {
-            v.is_win[i] = *w;
-            v.is_valid[i] = true;
-        }
-        v
+    fn push(&mut self, is_win: bool) {
+        self.is_valid[self.len] = true;
+        self.is_win[self.len] = is_win;
+        self.len += 1;
     }
 
     fn min(mut self, other: Self) -> Self {
@@ -171,6 +173,14 @@ impl AMVector {
         }
 
         self
+    }
+
+    fn len(&self) -> usize {
+        self.len
+    }
+
+    fn is_empty(&self) -> bool {
+        self.len == 0
     }
 }
 
@@ -223,22 +233,112 @@ impl PartialOrd for AMVector {
     }
 }
 
-#[derive(Default)]
+impl Index<usize> for AMVector {
+    type Output = bool;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        if !self.is_valid[index] {
+            panic!("accessing data for invalid world")
+        }
+        &self.is_win[index]
+    }
+}
+
+impl IndexMut<usize> for AMVector {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        self.is_valid[index] = true;
+        &mut self.is_win[index]
+    }
+}
+
+#[derive(Default, PartialEq)]
 struct AMFront {
-    front: Vec<AMVector>,
+    vectors: Vec<AMVector>,
 }
 
 impl AMFront {
     fn min(self, other: Self) -> Self {
-        todo!()
+        // A Pareto front is greater or
+        // equal to another Pareto front if for each element of the second Pareto
+        // front there is an element in the first Pareto front which is greater or
+        // equal to the element of the second Pareto front.
+        let mut result = AMFront::default();
+        for s in &self.vectors {
+            for o in &other.vectors {
+                let mut r = AMVector::default();
+                for w in 0..s.len() {
+                    // Leave the bool comparison here to match the paper
+                    #[allow(clippy::bool_comparison)]
+                    if s[w] < o[w] {
+                        r[w] = s[w];
+                    } else {
+                        r[w] = o[w];
+                    }
+                }
+                result.push(r);
+            }
+        }
+
+        result
     }
 
-    fn max(self, other: Self) -> Self {
-        todo!()
+    fn max(mut self, other: Self) -> Self {
+        for v in other.vectors {
+            if !self.vectors.contains(&v) {
+                self.push(v);
+            }
+        }
+        self
     }
 
     fn set(&mut self, idx: usize, is_win: bool) {
-        todo!()
+        for v in self.vectors.iter_mut() {
+            v.is_win[idx] = is_win;
+            v.is_valid[idx] = true;
+        }
+    }
+
+    /// Adds a new vector to the front.
+    ///
+    /// This method does nothing if the vector is dominated by an existing vector.
+    /// And it removes any vectors that are dominated by the new one
+    fn push(&mut self, v: AMVector) {
+        let mut is_dominated = true;
+        for sv in &self.vectors {
+            if v > *sv {
+                is_dominated = false;
+            }
+        }
+
+        if !is_dominated {
+            let domainted = self.get_dominated_vectors(v);
+            for d in domainted {
+                self.vectors.remove(d);
+            }
+            self.vectors.push(v);
+        }
+    }
+
+    fn get_dominated_vectors(&self, v: AMVector) -> Vec<usize> {
+        let mut dominated = Vec::new();
+        for (i, s) in self.vectors.iter().enumerate() {
+            if v >= *s {
+                dominated.push(i);
+            }
+        }
+        dominated
+    }
+}
+
+impl Debug for AMFront {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{").unwrap();
+
+        for v in &self.vectors {
+            write!(f, "{:?}", v).unwrap();
+        }
+
+        write!(f, "}}")
     }
 }
 
@@ -256,12 +356,15 @@ impl From<Team> for Player {
 
 #[cfg(test)]
 mod tests {
-    use crate::algorithms::alphamu::AMVector;
+    use crate::{
+        algorithms::alphamu::{AMFront, AMVector},
+        amvec, front,
+    };
 
     #[test]
     fn test_am_vector_ordering() {
-        let mut v1 = AMVector::_from_slice(&[false, true, true]);
-        let v2 = AMVector::_from_slice(&[false, false, true]);
+        let mut v1 = amvec!(0, 1, 1);
+        let v2 = amvec!(0, 0, 1);
 
         assert!(v1 == v1);
         assert!(v1 >= v2);
@@ -276,20 +379,61 @@ mod tests {
 
     #[test]
     fn test_am_vector_min_max() {
-        let v1 = AMVector::_from_slice(&[true, false, true]);
-        let v2 = AMVector::_from_slice(&[true, true, false]);
+        let v1 = amvec!(1, 0, 1);
+        let v2 = amvec!(1, 1, 0);
 
-        assert_eq!(v1.min(v2), AMVector::_from_slice(&[true, false, false]));
-        assert_eq!(v1.max(v2), AMVector::_from_slice(&[true, true, true]));
+        assert_eq!(v1.min(v2), amvec!(1, 0, 0));
+        assert_eq!(v1.max(v2), amvec!(1, 1, 1));
     }
 
+    /// Test based on Fig 2 in alphamu paper
+    /// https://arxiv.org/pdf/1911.07960.pdf
     #[test]
-    fn test_am_front_min() {
-        todo!()
-    }
+    fn test_am_front() {
+        // define the root nodes
+        let f1 = front!(amvec![0, 1, 1]);
+        let f2 = front!(amvec![1, 1, 0]);
+        let f3 = front!(amvec![1, 1, 0]);
+        let f4 = front!(amvec![1, 0, 1]);
+        let f5 = front!(amvec![1, 0, 0]);
 
-    #[test]
-    fn test_am_front_max() {
-        todo!()
+        let b = f1.max(f2);
+        assert_eq!(b, front!(amvec![0, 1, 1], amvec![1, 1, 0]));
+
+        let c = f3.max(f4).max(f5);
+        assert_eq!(c, front!(amvec![1, 1, 0], amvec![1, 0, 1]));
+
+        let a = b.min(c);
+        assert_eq!(a, front!(amvec![0, 0, 1], amvec![1, 1, 0]));
     }
+}
+
+#[macro_export]
+macro_rules! amvec {
+    ( $( $x:expr ),* ) => {
+        {
+            let mut temp_vec = AMVector::default();
+            $(
+                match $x {
+                    0 => temp_vec.push(false),
+                    1 => temp_vec.push(true),
+                    _ => panic!("invalid input"),
+                };
+            )*
+            temp_vec
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! front {
+    ( $( $x:expr ),* ) => {
+        {
+            let mut temp_front = AMFront::default();
+            $(
+                temp_front.push($x);
+            )*
+            temp_front
+        }
+    };
 }
