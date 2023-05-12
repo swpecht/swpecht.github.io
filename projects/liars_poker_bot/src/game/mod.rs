@@ -3,8 +3,9 @@ use std::fmt::{Debug, Display};
 pub mod bluff;
 pub mod euchre;
 pub mod kuhn_poker;
+pub mod updownriver;
 
-use log::{info, trace};
+use log::trace;
 use rand::{seq::SliceRandom, Rng};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
