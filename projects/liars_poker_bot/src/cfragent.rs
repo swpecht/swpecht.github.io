@@ -89,6 +89,10 @@ impl<T: GameState, N: NodeStore<CFRNode> + Policy<T>> Agent<T> for CFRAgent<T, N
             .unwrap()
             .0;
     }
+
+    fn get_name(&self) -> String {
+        format!("CFR, nodes touched: {}", self.nodes_touched)
+    }
 }
 
 fn train<T: GameState, N: NodeStore<CFRNode> + Policy<T>, A: Algorithm>(

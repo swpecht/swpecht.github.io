@@ -252,6 +252,13 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Agent<G> for AlphaMu
             .unwrap()
             .0
     }
+
+    fn get_name(&self) -> String {
+        format!(
+            "AlphaMu, worlds: {}, m: {}, evaluator: todo",
+            self.num_worlds, self.m
+        )
+    }
 }
 
 /// An alphamu vector

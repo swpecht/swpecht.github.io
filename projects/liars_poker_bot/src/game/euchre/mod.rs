@@ -3,6 +3,7 @@ use std::fmt::Display;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    algorithms::ismcts::ResampleFromInfoState,
     collections::SortedArrayVec,
     game::{Action, Game, GameState, Player},
     istate::IStateKey,
@@ -621,6 +622,12 @@ impl GameState for EuchreGameState {
     }
 
     fn key(&self) -> IStateKey {
+        todo!()
+    }
+}
+
+impl ResampleFromInfoState for EuchreGameState {
+    fn resample_from_istate<T: rand::Rng>(&self, _player: Player, _rng: &mut T) -> Self {
         todo!()
     }
 }

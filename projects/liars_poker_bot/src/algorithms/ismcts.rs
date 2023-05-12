@@ -16,14 +16,14 @@ const UNLIMITED_NUM_WORLD_SAMPLES: i32 = -1;
 const UNEXPANDED_VISIT_COUNT: i32 = -1;
 const TIE_TOLERANCE: f64 = 1e-5;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum ISMCTSFinalPolicyType {
     NormalizedVisitedCount,
     MaxVisitCount,
     MaxValue,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum ChildSelectionPolicy {
     Uct,
     Puct,
@@ -437,6 +437,10 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Agent<G> for ISMCTSB
             .choose_weighted(&mut self.rng, |item| item.1)
             .unwrap()
             .0
+    }
+
+    fn get_name(&self) -> String {
+        format!("ISMCTS, sims: {}, child policy: {:?}, final policy: {:?}, worlds: {}, evalutator: todo", self.max_simulations, self.child_selection_policy, self.final_policy_type, self.max_world_samples)
     }
 }
 

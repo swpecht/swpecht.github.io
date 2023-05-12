@@ -4,7 +4,7 @@ pub mod bluff;
 pub mod euchre;
 pub mod kuhn_poker;
 
-use log::info;
+use log::{info, trace};
 use rand::{seq::SliceRandom, Rng};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
@@ -59,38 +59,51 @@ pub trait GameState: Display + Clone + Debug + Serialize + DeserializeOwned {
     fn key(&self) -> IStateKey;
 }
 
-pub fn run_game<G, R>(s: &mut G, agents: &mut Vec<&mut dyn Agent<G>>, rng: &mut R)
+/// Runs an iteration of the game. If Team 0 is none, the agent plays against itself
+pub fn run_game<G, R>(
+    s: &mut G,
+    team0: &mut dyn Agent<G>,
+    team1: &mut Option<&mut dyn Agent<G>>,
+    rng: &mut R,
+) -> Vec<f64>
 where
     R: Rng + ?Sized,
     G: GameState,
 {
-    if s.num_players() != agents.len() {
-        panic!(
-            "Number of players doesn't equal the number of agents, {} players and {} agents",
-            s.num_players(),
-            agents.len()
-        );
-    }
     let mut actions = Vec::new();
 
     while !s.is_terminal() {
-        info!("game state: {}", s);
+        trace!("game state: {}", s);
 
         if s.is_chance_node() {
             s.legal_actions(&mut actions);
             let a = *actions.choose(rng).unwrap();
-            info!("chance action: {}", a);
+            trace!("chance action: {}", a);
             s.apply_action(a);
         } else {
-            let agent = &mut agents[s.cur_player()];
-            let a = agent.step(s);
-            info!("player {} taking action {}", s.cur_player(), a);
+            let a = if team1.is_none() {
+                team0.step(s)
+            } else {
+                match s.cur_player() % 2 {
+                    0 => team0.step(s),
+                    1 => team1.as_mut().unwrap().step(s),
+                    _ => todo!(),
+                }
+            };
+
+            trace!("player {} taking action {}", s.cur_player(), a);
             s.apply_action(a);
         }
     }
 
-    info!("game state: {}", s);
-    info!("game over, rewards: {}, {}", s.evaluate(0), s.evaluate(1));
+    let mut returns = Vec::new();
+    for p in 0..s.num_players() {
+        returns.push(s.evaluate(p));
+    }
+
+    trace!("game state: {}", s);
+    trace!("game over, rewards: {}, {}", s.evaluate(0), s.evaluate(1));
+    returns
 }
 
 #[macro_export]

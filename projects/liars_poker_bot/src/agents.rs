@@ -31,6 +31,10 @@ impl<T: GameState> Agent<T> for RandomAgent {
         s.legal_actions(&mut actions);
         return *actions.choose(&mut self.rng).unwrap();
     }
+
+    fn get_name(&self) -> String {
+        "RandomAgent".to_string()
+    }
 }
 
 pub struct AlwaysFirstAgent {}

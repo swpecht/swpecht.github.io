@@ -371,7 +371,7 @@ mod tests {
         let mut a1 = RecordedAgent::new(vec![KPAction::Bet.into(); 1]);
         let mut a2 = RecordedAgent::new(vec![KPAction::Bet.into(); 1]);
 
-        run_game(&mut g, &mut vec![&mut a1, &mut a2], &mut rng);
+        run_game(&mut g, &mut a1, &mut Some(&mut a2), &mut rng);
 
         assert_eq!(format!("{}", g), "[KingQueen]bb");
         assert_eq!(g.evaluate(0), 2.0);
@@ -385,7 +385,7 @@ mod tests {
         let mut a1 = RecordedAgent::new(vec![KPAction::Pass.into(); 2]);
         let mut a2 = RecordedAgent::new(vec![KPAction::Bet.into(); 1]);
 
-        run_game(&mut g, &mut vec![&mut a1, &mut a2], &mut rng);
+        run_game(&mut g, &mut a1, &mut Some(&mut a2), &mut rng);
 
         assert_eq!(format!("{}", g), "[KingQueen]pbp");
         assert_eq!(g.evaluate(0), -1.0);
