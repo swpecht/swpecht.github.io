@@ -28,7 +28,20 @@ impl OpenHandSolver {
 
 impl<G: GameState + ResampleFromInfoState> Evaluator<G> for OpenHandSolver {
     fn evaluate(&mut self, gs: &G) -> Vec<f64> {
-        todo!()
+        let mut result = vec![0.0; gs.num_players()];
+        for _ in 0..self.n_rollouts {
+            let world = gs.resample_from_istate(gs.cur_player(), &mut self.rng);
+
+            for (i, r) in result.iter_mut().enumerate() {
+                let (v, _) = alpha_beta_search(world.clone(), i);
+                *r += v;
+            }
+        }
+
+        for r in result.iter_mut() {
+            *r /= self.n_rollouts as f64;
+        }
+        result
     }
 
     fn prior(&mut self, gs: &G) -> ActionVec<f64> {
@@ -111,10 +124,15 @@ fn alpha_beta<G: GameState>(
 }
 #[cfg(test)]
 mod tests {
-    use crate::game::{
-        bluff::{Bluff, BluffActions, Dice},
-        kuhn_poker::{KPAction, KuhnPoker},
-        GameState,
+    use rand::SeedableRng;
+
+    use crate::{
+        algorithms::{ismcts::Evaluator, open_hand_solver::OpenHandSolver},
+        game::{
+            bluff::{Bluff, BluffActions, Dice},
+            kuhn_poker::{KPAction, KuhnPoker},
+            GameState,
+        },
     };
 
     use super::alpha_beta_search;
@@ -170,5 +188,20 @@ mod tests {
             BluffActions::from(a.unwrap()),
             BluffActions::Bid(3, Dice::Three)
         );
+    }
+
+    #[test]
+    fn test_open_hand_solver_kuhn() {
+        let mut evaluator = OpenHandSolver::new(100, SeedableRng::seed_from_u64(109));
+        let gs = KuhnPoker::from_actions(&[KPAction::Jack, KPAction::Queen]);
+        assert_eq!(evaluator.evaluate(&gs), vec![-1.0, 1.0]);
+
+        let mut evaluator = OpenHandSolver::new(100, SeedableRng::seed_from_u64(109));
+        let gs = KuhnPoker::from_actions(&[KPAction::Queen, KPAction::Jack]);
+        assert_eq!(evaluator.evaluate(&gs), vec![0.0, 0.0]);
+
+        let mut evaluator = OpenHandSolver::new(100, SeedableRng::seed_from_u64(109));
+        let gs = KuhnPoker::from_actions(&[KPAction::King, KPAction::Jack]);
+        assert_eq!(evaluator.evaluate(&gs), vec![1.0, -1.0]);
     }
 }
