@@ -719,27 +719,14 @@ impl GameState for EuchreGameState {
 /// It's not yet clear what impact this has on the results of downstream algorithms
 impl ResampleFromInfoState for EuchreGameState {
     fn resample_from_istate<T: rand::Rng>(&self, player: Player, rng: &mut T) -> Self {
-        let deal_end = 5 * 4; // dealt cards
-
         let mut player_chance = [Action(99); 5];
 
         for (i, c) in player_chance.iter_mut().enumerate() {
-            *c = self.key[self.num_players * i + player];
+            *c = self.key[player * CARDS_PER_HAND + i];
         }
 
-        // This vecotr holds the cards that were dealt to players. For most players
-        // this is the same as the cards they have player. But for the dealer, we need to deal
-        // them a card that is never seen so it can be discarded.
-        //
-        // Unless we are resampling for the dealer istate, inwhich case we need to give the dealer the card they discarded
-        // Check how openspeil does this
-        let mut dealt_cards: [Vec<Action>; 4] = Default::default();
-        if let Some(fp) = self.first_played {
-            // first played is based the game key
-            for i in fp..self.key.len() {
-                let p = (i - fp) % self.num_players;
-                dealt_cards[p].push(self.key[i]);
-            }
+        if self.phase == EPhase::Play {
+            todo!("implement resampling for play phases")
         }
 
         let mut ngs = Euchre::new_state();
@@ -747,7 +734,7 @@ impl ResampleFromInfoState for EuchreGameState {
         let face_up_chance = self.key[20]; // 21st card dealt
 
         for i in 0..self.key.len() {
-            if i % self.num_players == player && i < deal_end {
+            if i >= player * CARDS_PER_HAND && i < player * CARDS_PER_HAND + CARDS_PER_HAND {
                 // the player chance node
                 ngs.apply_action(*chance_iter.next().unwrap());
             } else if i == 20 {
@@ -755,12 +742,6 @@ impl ResampleFromInfoState for EuchreGameState {
                 ngs.apply_action(face_up_chance);
             } else if ngs.is_chance_node() {
                 assert!(ngs.cur_player() != player);
-
-                // deal out played cards first
-                if let Some(c) = dealt_cards[ngs.cur_player()].pop() {
-                    ngs.apply_action(c);
-                    continue;
-                }
 
                 // other player chance node
                 let mut actions = actions!(ngs);
