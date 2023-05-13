@@ -15,6 +15,7 @@ use self::actions::{EAction, Face, Suit, CARD_PER_SUIT};
 
 const NUM_CARDS: usize = 24;
 const DEALER_ID: Player = 3;
+const CARDS_PER_HAND: usize = 5;
 
 pub mod actions;
 
@@ -91,7 +92,9 @@ impl EuchreGameState {
     fn apply_action_deal_hands(&mut self, a: Action) {
         self.hands[self.cur_player].push(a);
 
-        self.cur_player = (self.cur_player + 1) % self.num_players;
+        if self.hands[self.cur_player].len() == CARDS_PER_HAND {
+            self.cur_player = (self.cur_player + 1) % self.num_players
+        }
 
         if self.hands.len() == self.num_players && self.hands[self.num_players - 1].len() == 5 {
             self.phase = EPhase::DealFaceUp;
@@ -942,35 +945,35 @@ mod tests {
             gs.apply_action(EAction::Card { a: i }.into());
         }
 
-        assert_eq!(gs.istate_string(0), "9CKCJS9HKH");
-        assert_eq!(gs.istate_string(1), "TCACQSTHAH");
-        assert_eq!(gs.istate_string(2), "JC9SKSJH9D");
-        assert_eq!(gs.istate_string(3), "QCTSASQHTD");
+        assert_eq!(gs.istate_string(0), "9CTCJCQCKC");
+        assert_eq!(gs.istate_string(1), "AC9STSJSQS");
+        assert_eq!(gs.istate_string(2), "KSAS9HTHJH");
+        assert_eq!(gs.istate_string(3), "QHKHAH9DTD");
 
         gs.apply_action(EAction::Card { a: 20 }.into());
-        assert_eq!(gs.istate_string(0), "9CKCJS9HKH|JD|");
-        assert_eq!(gs.istate_string(1), "TCACQSTHAH|JD|");
-        assert_eq!(gs.istate_string(2), "JC9SKSJH9D|JD|");
-        assert_eq!(gs.istate_string(3), "QCTSASQHTD|JD|");
+        assert_eq!(gs.istate_string(0), "9CTCJCQCKC|JD|");
+        assert_eq!(gs.istate_string(1), "AC9STSJSQS|JD|");
+        assert_eq!(gs.istate_string(2), "KSAS9HTHJH|JD|");
+        assert_eq!(gs.istate_string(3), "QHKHAH9DTD|JD|");
 
         let mut new_s = gs; // for alternative pickup parsing
 
         gs.apply_action(EAction::Pickup.into());
-        assert_eq!(gs.istate_string(0), "9CKCJS9HKH|JD|T|0D");
+        assert_eq!(gs.istate_string(0), "9CTCJCQCKC|JD|T|0D");
 
         // Dealer discards the QC
-        assert_eq!(gs.istate_string(3), "QCTSASQHTD|JD|T|0D");
-        gs.apply_action(EAction::Card { a: 3 }.into());
-        assert_eq!(gs.istate_string(3), "QCTSASQHTD|JD|T|0D|QC");
+        assert_eq!(gs.istate_string(3), "QHKHAH9DTD|JD|T|0D");
+        gs.apply_action(EAction::from("QH").into());
+        assert_eq!(gs.istate_string(3), "QHKHAH9DTD|JD|T|0D|QH");
 
         for _ in 0..4 {
             let a = actions!(gs)[0];
             gs.apply_action(a);
         }
-        assert_eq!(gs.istate_string(0), "9CKCJS9HKH|JD|T|0D|9CTCJCTS");
-        assert_eq!(gs.istate_string(1), "TCACQSTHAH|JD|T|0D|9CTCJCTS");
-        assert_eq!(gs.istate_string(2), "JC9SKSJH9D|JD|T|0D|9CTCJCTS");
-        assert_eq!(gs.istate_string(3), "QCTSASQHTD|JD|T|0D|QC|9CTCJCTS");
+        assert_eq!(gs.istate_string(0), "9CTCJCQCKC|JD|T|0D|9CACKSKH");
+        assert_eq!(gs.istate_string(1), "AC9STSJSQS|JD|T|0D|9CACKSKH");
+        assert_eq!(gs.istate_string(2), "KSAS9HTHJH|JD|T|0D|9CACKSKH");
+        assert_eq!(gs.istate_string(3), "QHKHAH9DTD|JD|T|0D|QH|9CACKSKH");
 
         while !gs.is_terminal() {
             let a = actions!(gs)[0];
@@ -987,7 +990,7 @@ mod tests {
             new_s.apply_action(EAction::Pass.into());
         }
         new_s.apply_action(EAction::Hearts.into());
-        assert_eq!(new_s.istate_string(0), "9CKCJS9HKH|JD|PPPPPH|1H");
+        assert_eq!(new_s.istate_string(0), "9CTCJCQCKC|JD|PPPPPH|1H");
     }
 
     #[test]
