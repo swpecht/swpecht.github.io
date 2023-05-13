@@ -110,7 +110,7 @@ fn parse_card(value: &str) -> EAction {
     };
 
     let face_value = match face {
-        'N' => 0,
+        '9' => 0,
         'T' => 1,
         'J' => 2,
         'Q' => 3,

@@ -850,7 +850,7 @@ mod tests {
         s.apply_action(EAction::Pickup.into());
 
         assert_eq!(s.phase, EPhase::Discard);
-        s.apply_action(EAction::Card { a: 3 }.into());
+        s.apply_action(EAction::Card { a: 19 }.into());
 
         assert_eq!(s.phase, EPhase::Play);
         assert_eq!(s.cur_player, 0);
@@ -883,33 +883,33 @@ mod tests {
         gs.apply_action(EAction::Pickup.into());
         // Cards in dealers hand
         assert_eq!(
-            actions!(gs),
-            vec![3, 7, 11, 15, 19]
+            actions!(gs)
                 .iter()
-                .map(|&x| EAction::Card { a: x }.into())
-                .collect_vec()
+                .map(|x| EAction::from(*x).to_string())
+                .collect_vec(),
+            vec!["QH", "KH", "AH", "9D", "TD"]
         );
         assert_eq!(gs.phase, EPhase::Discard);
-        gs.apply_action(EAction::Card { a: 3 }.into());
+        gs.apply_action(EAction::from("QH").into());
 
         // Cards player 0s hand
         assert_eq!(gs.phase, EPhase::Play);
         assert_eq!(
-            actions!(gs),
-            vec![0, 4, 8, 12, 16]
+            actions!(gs)
                 .iter()
-                .map(|&x| EAction::Card { a: x }.into())
-                .collect_vec()
+                .map(|x| EAction::from(*x).to_string())
+                .collect_vec(),
+            vec!["9C", "TC", "JC", "QC", "KC"]
         );
 
-        gs.apply_action(EAction::Card { a: 0 }.into());
+        gs.apply_action(EAction::from("9C").into());
         // Player 1 must follow suit
         assert_eq!(
-            actions!(gs),
-            vec![1, 5]
+            actions!(gs)
                 .iter()
-                .map(|&x| EAction::Card { a: x }.into())
-                .collect_vec()
+                .map(|x| EAction::from(*x).to_string())
+                .collect_vec(),
+            vec!["AC"]
         );
     }
 
@@ -917,24 +917,24 @@ mod tests {
     fn euchre_test_suit() {
         let mut s = Euchre::new_state();
 
-        assert_eq!(s.get_suit(EAction::Card { a: 0 }.into()), Suit::Clubs);
+        assert_eq!(s.get_suit(EAction::from("9C").into()), Suit::Clubs);
         // Jack of spades is still a spade
-        assert_eq!(s.get_suit(EAction::Card { a: 8 }.into()), Suit::Spades);
-        assert_eq!(s.get_suit(EAction::Card { a: 7 }.into()), Suit::Spades);
+        assert_eq!(s.get_suit(EAction::from("JS").into()), Suit::Spades);
+        assert_eq!(s.get_suit(EAction::from("TS").into()), Suit::Spades);
 
         // Deal the cards
         for i in 1..21 {
             s.apply_action(EAction::Card { a: i }.into());
         }
 
-        s.apply_action(EAction::Card { a: 0 }.into()); // Deal the 9 face up
+        s.apply_action(EAction::from("9C").into()); // Deal the 9 face up
         s.apply_action(EAction::Pickup.into());
-        s.apply_action(EAction::Card { a: 4 }.into());
+        s.apply_action(EAction::Card { a: 20 }.into());
         assert_eq!(s.trump, Suit::Clubs);
         assert_eq!(s.phase, EPhase::Play);
         // Jack of spades is now a club since it's trump
-        assert_eq!(s.get_suit(EAction::Card { a: 8 }.into()), Suit::Clubs);
-        assert_eq!(s.get_suit(EAction::Card { a: 7 }.into()), Suit::Spades);
+        assert_eq!(s.get_suit(EAction::from("JS").into()), Suit::Clubs);
+        assert_eq!(s.get_suit(EAction::from("TS").into()), Suit::Spades);
     }
 
     #[test]
