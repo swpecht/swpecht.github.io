@@ -15,4 +15,6 @@
 // At the end of one round, the scores are tallied and written on the score sheet.
 // After all the 19 rounds end, the highest scorer wins the game.
 
-pub struct UDRiverGameState {}
+pub struct UDRiverGameState {
+    // Challenge is this is not a 2 team game, unclear how that impacts algorithms
+}

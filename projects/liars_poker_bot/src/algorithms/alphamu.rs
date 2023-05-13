@@ -524,7 +524,7 @@ impl Debug for AMFront {
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
-enum Team {
+pub enum Team {
     Team1,
     Team2,
 }
@@ -532,6 +532,16 @@ enum Team {
 impl From<Team> for Player {
     fn from(val: Team) -> Self {
         val as usize
+    }
+}
+
+impl From<Player> for Team {
+    fn from(val: Player) -> Self {
+        if val % 2 == 0 {
+            Team::Team1
+        } else {
+            Team::Team2
+        }
     }
 }
 

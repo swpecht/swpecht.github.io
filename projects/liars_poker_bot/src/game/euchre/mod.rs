@@ -14,6 +14,7 @@ use crate::{
 use self::actions::{EAction, Face, Suit, CARD_PER_SUIT};
 
 const NUM_CARDS: usize = 24;
+const DEALER_ID: Player = 3;
 
 pub mod actions;
 
@@ -35,6 +36,7 @@ impl Euchre {
             trump_caller: 0,
             istate_keys: keys,
             first_played: None,
+            discard: None,
             trick_winners: [0; 5],
             key: IStateKey::new(),
         }
@@ -64,9 +66,11 @@ pub struct EuchreGameState {
     phase: EPhase,
     cur_player: usize,
     istate_keys: [IStateKey; 4],
-    /// the index of the 0 player istate where the first played card is
+    /// index of the game key where the first played card is
     /// used to make looking up tricks easier
     first_played: Option<usize>,
+    /// index of the discard action in the game key if one occured
+    discard: Option<usize>,
     /// keep track of who has won tricks to avoid re-computing
     trick_winners: [Player; 5],
     key: IStateKey,
@@ -142,6 +146,8 @@ impl EuchreGameState {
 
     /// Can only be done by the dealer (player 3)
     fn apply_action_discard(&mut self, a: Action) {
+        self.discard = Some(self.key.len() - 1);
+
         if !self.hands[3].contains(&a) {
             panic!("attempted to discard a card not in hand")
         }
@@ -154,7 +160,7 @@ impl EuchreGameState {
 
     fn apply_action_play(&mut self, a: Action) {
         if self.first_played.is_none() {
-            self.first_played = Some(self.istate_keys[0].len() - 1);
+            self.first_played = Some(self.key.len() - 1);
         }
 
         for i in 0..self.hands[self.cur_player].len() {
@@ -175,7 +181,7 @@ impl EuchreGameState {
             self.cur_player = winner;
 
             // save the trick winner for later
-            let trick = ((self.istate_keys[0].len() - self.first_played.unwrap()) / 4) - 1;
+            let trick = ((self.key.len() - self.first_played.unwrap()) / 4) - 1;
             self.trick_winners[trick] = winner;
         } else {
             self.cur_player = (self.cur_player + 1) % self.num_players;
@@ -194,7 +200,7 @@ impl EuchreGameState {
             return true;
         }
 
-        (self.istate_keys[0].len() - self.first_played.unwrap()) % 4 == 0
+        (self.key.len() - self.first_played.unwrap()) % 4 == 0
     }
 
     /// Gets the `n` last trick
@@ -632,6 +638,10 @@ impl GameState for EuchreGameState {
     }
 }
 
+/// Resample from info state method for euchre
+///
+/// This method discards a RANDOM card for the dealer if a discard is required.
+/// It's not yet clear what impact this has on the results of downstream algorithms
 impl ResampleFromInfoState for EuchreGameState {
     fn resample_from_istate<T: rand::Rng>(&self, player: Player, rng: &mut T) -> Self {
         let deal_end = 5 * 4; // dealt cards
@@ -642,14 +652,18 @@ impl ResampleFromInfoState for EuchreGameState {
             *c = self.key[self.num_players * i + player];
         }
 
-        let mut played_cards: [Vec<Action>; 4] = Default::default();
-        if self.first_played.is_some() {
-            // first played is based on the 0 player
-            let first_played = self.first_played.unwrap();
-            let play_history = self.istate_key(0);
-            for i in first_played..play_history.len() {
-                let p = (i - first_played) % self.num_players;
-                played_cards[p].push(play_history[i]);
+        // This vecotr holds the cards that were dealt to players. For most players
+        // this is the same as the cards they have player. But for the dealer, we need to deal
+        // them a card that is never seen so it can be discarded.
+        //
+        // Unless we are resampling for the dealer istate, inwhich case we need to give the dealer the card they discarded
+        // Check how openspeil does this
+        let mut dealt_cards: [Vec<Action>; 4] = Default::default();
+        if let Some(fp) = self.first_played {
+            // first played is based the game key
+            for i in fp..self.key.len() {
+                let p = (i - fp) % self.num_players;
+                dealt_cards[p].push(self.key[i]);
             }
         }
 
@@ -668,7 +682,7 @@ impl ResampleFromInfoState for EuchreGameState {
                 assert!(ngs.cur_player() != player);
 
                 // deal out played cards first
-                if let Some(c) = played_cards[ngs.cur_player()].pop() {
+                if let Some(c) = dealt_cards[ngs.cur_player()].pop() {
                     ngs.apply_action(c);
                     continue;
                 }
@@ -683,9 +697,10 @@ impl ResampleFromInfoState for EuchreGameState {
                         break;
                     }
                 }
-            } else if true {
+            } else if self.discard.is_some() && i == self.discard.unwrap() {
                 // handle the discard case, need a strategy for how dealer will discard here
                 // and what the proper way for determing the discard is
+                // If there is discard, need to have a card get dealt to the dealer that isn't played
                 todo!("need to properly implement discard handling")
             } else {
                 // public history gets repeated

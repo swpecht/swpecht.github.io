@@ -80,7 +80,7 @@ pub trait Evaluator<G> {
     /// Returns evaluation on given state.
     fn evaluate(&mut self, gs: &G) -> Vec<f64>;
     /// Returns a probability for each legal action in the given state.
-    fn prior(&self, gs: &G) -> ActionVec<f64>;
+    fn prior(&mut self, gs: &G) -> ActionVec<f64>;
 }
 
 /// A simple evaluator doing random rollouts.
@@ -128,7 +128,7 @@ impl<G: GameState> Evaluator<G> for RandomRolloutEvaluator {
     }
 
     /// Returns equal probability for all actions
-    fn prior(&self, gs: &G) -> ActionVec<f64> {
+    fn prior(&mut self, gs: &G) -> ActionVec<f64> {
         let actions = actions!(gs);
         let prob = 1.0 / actions.len() as f64;
 
