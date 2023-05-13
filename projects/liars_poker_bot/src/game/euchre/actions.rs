@@ -1,4 +1,4 @@
-use std::fmt::{Display, Write};
+use std::fmt::{Debug, Display, Write};
 
 use serde::{Deserialize, Serialize};
 
@@ -6,8 +6,8 @@ use crate::game::Action;
 
 pub(super) const CARD_PER_SUIT: u8 = 6;
 
-#[derive(PartialEq, Clone, Copy, Debug, Serialize, Deserialize)]
-pub(super) enum EAction {
+#[derive(PartialEq, Clone, Copy, Serialize, Deserialize)]
+pub enum EAction {
     Pickup,
     Pass,
     Clubs,
@@ -81,7 +81,64 @@ impl From<Action> for EAction {
     }
 }
 
+impl From<&str> for EAction {
+    fn from(value: &str) -> Self {
+        match value {
+            "P" => EAction::Pass,
+            "T" => EAction::Pickup,
+            "C" => EAction::Clubs,
+            "D" => EAction::Diamonds,
+            "S" => EAction::Spades,
+            "H" => EAction::Hearts,
+            _ => parse_card(value),
+        }
+    }
+}
+
+fn parse_card(value: &str) -> EAction {
+    assert_eq!(value.len(), 2);
+
+    let face = value.chars().next().unwrap();
+    let suit = value.chars().nth(1).unwrap();
+
+    let suit_value = match suit {
+        'C' => 0,
+        'S' => 1,
+        'H' => 2,
+        'D' => 3,
+        _ => panic!("invalid suit character: {}", suit),
+    };
+
+    let face_value = match face {
+        'N' => 0,
+        'T' => 1,
+        'J' => 2,
+        'Q' => 3,
+        'K' => 4,
+        'A' => 5,
+        _ => panic!("invalid face character: {}", face),
+    };
+
+    EAction::Card {
+        a: face_value + suit_value * CARD_PER_SUIT,
+    }
+}
+
 impl Display for EAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EAction::Clubs => f.write_char('C'),
+            EAction::Spades => f.write_char('S'),
+            EAction::Hearts => f.write_char('H'),
+            EAction::Diamonds => f.write_char('D'),
+            EAction::Pickup => f.write_char('T'),
+            EAction::Pass => f.write_char('P'),
+            EAction::Card { a: c } => f.write_str(&format_card(*c)),
+        }
+    }
+}
+
+impl Debug for EAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             EAction::Clubs => f.write_char('C'),

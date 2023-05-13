@@ -14,11 +14,13 @@ use liars_poker_bot::algorithms::exploitability::{self};
 use liars_poker_bot::algorithms::ismcts::{
     ISMCTBotConfig, ISMCTSBot, RandomRolloutEvaluator, ResampleFromInfoState,
 };
+use liars_poker_bot::algorithms::open_hand_solver::alpha_beta_search;
 use liars_poker_bot::cfragent::cfrnode::CFRNode;
 use liars_poker_bot::cfragent::{CFRAgent, CFRAlgorithm};
 use liars_poker_bot::database::memory_node_store::MemoryNodeStore;
 use liars_poker_bot::database::Storage;
 use liars_poker_bot::game::bluff::{Bluff, BluffGameState};
+use liars_poker_bot::game::euchre::actions::EAction;
 use liars_poker_bot::game::euchre::{Euchre, EuchreGameState};
 use liars_poker_bot::game::kuhn_poker::{KPGameState, KuhnPoker};
 use liars_poker_bot::game::{run_game, Action, Game, GameState};
@@ -98,28 +100,29 @@ fn run_scratch(_args: Args) {
     println!("kuhn poker size: {}", mem::size_of::<KPGameState>());
     println!("euchre size: {}", mem::size_of::<EuchreGameState>());
 
-    let rng = SeedableRng::seed_from_u64(42);
-    let mut alphamu = AlphaMuBot::new(RandomRolloutEvaluator::new(100, rng), 3, 10);
-    let mut opponent = RandomAgent::default();
-
     let mut rng: StdRng = SeedableRng::seed_from_u64(42);
+
     for _ in 0..10 {
-        let mut gs = KuhnPoker::new_state();
+        let mut gs = Euchre::new_state();
         while gs.is_chance_node() {
             let a = *actions!(gs).choose(&mut rng).unwrap();
             gs.apply_action(a)
         }
 
         while !gs.is_terminal() {
-            let a = match gs.cur_player() {
-                0 => alphamu.step(&gs),
-                1 => opponent.step(&gs),
-                _ => panic!("invalid player"),
-            };
-            gs.apply_action(a);
+            let cur_player = gs.cur_player();
+            let (v, a) = alpha_beta_search(gs, cur_player);
+            info!(
+                "{}: {}: value: {}, action: {}",
+                gs,
+                cur_player,
+                v,
+                EAction::from(a.unwrap())
+            );
+            gs.apply_action(a.unwrap());
         }
 
-        gs.evaluate(0);
+        info!("p0 value: {}", gs.evaluate(0));
     }
 }
 

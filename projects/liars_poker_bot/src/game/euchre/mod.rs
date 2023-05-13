@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::fmt::{write, Display};
 
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
@@ -425,20 +425,92 @@ impl EuchreGameState {
 
 impl Display for EuchreGameState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.phase {
-            EPhase::DealHands | EPhase::DealFaceUp => {
-                write!(f, "{:?}: {:?}", self.phase, self.hands,)
-            }
-            _ => write!(
-                f,
-                "{:?}: {:?} {:?} {:?}",
-                self.phase,
-                self.hands,
-                self.face_up,
-                self.istate_string(0)
-            ),
+        let key = &self.key;
+        let mut n = write_phase_deal_hands(f, key, 0);
+
+        if n < key.len() {
+            n = write_phase_pickup_call(f, key, n);
+        }
+        if n < key.len() {
+            write!(f, "|").unwrap();
+            write_phase_play(f, key, n);
+        }
+        write!(f, "")
+    }
+}
+
+/// Returns the index after the last written index
+fn write_phase_deal_hands(f: &mut std::fmt::Formatter<'_>, key: &IStateKey, start: usize) -> usize {
+    for i in start..20 {
+        if i == key.len() {
+            return i;
+        }
+
+        if i != start && (i - start) % 5 == 0 {
+            write!(f, "|").unwrap()
+        }
+        write!(f, "{}", EAction::from(key[i])).unwrap();
+    }
+
+    let face_up_index = start + 20;
+    if key.len() >= face_up_index {
+        write!(f, "|").unwrap();
+        write!(f, "{}", EAction::from(key[face_up_index])).unwrap();
+    }
+
+    write!(f, "|").unwrap();
+    start + 21
+}
+
+fn write_phase_pickup_call(
+    f: &mut std::fmt::Formatter<'_>,
+    key: &IStateKey,
+    start: usize,
+) -> usize {
+    for i in start..start + 4 {
+        if i == key.len() {
+            return i;
+        }
+
+        let a = EAction::from(key[i]);
+        write!(f, "{}", a).unwrap();
+        if a == EAction::Pickup {
+            // handle discard
+            write!(f, "|").unwrap();
+            write!(f, "{}", EAction::from(key[i + 1])).unwrap();
+            return i + 2;
         }
     }
+
+    write!(f, "|").unwrap();
+    for i in start + 4..start + 8 {
+        if i == key.len() {
+            return i;
+        }
+
+        let a = EAction::from(key[i]);
+        write!(f, "{}", a).unwrap();
+        if a == EAction::Clubs
+            || a == EAction::Diamonds
+            || a == EAction::Spades
+            || a == EAction::Hearts
+        {
+            return i + 1;
+        }
+    }
+
+    panic!("invalid pickup and call phase")
+}
+
+fn write_phase_play(f: &mut std::fmt::Formatter<'_>, key: &IStateKey, start: usize) -> usize {
+    for i in start..key.len() {
+        if i != start && (i - start) % 4 == 0 {
+            write!(f, "|").unwrap()
+        }
+        write!(f, "{}", EAction::from(key[i])).unwrap();
+    }
+
+    key.len()
 }
 
 impl GameState for EuchreGameState {

@@ -111,7 +111,11 @@ fn alpha_beta<G: GameState>(
 }
 #[cfg(test)]
 mod tests {
-    use crate::game::kuhn_poker::{KPAction, KuhnPoker};
+    use crate::game::{
+        bluff::{Bluff, BluffActions, Dice},
+        kuhn_poker::{KPAction, KuhnPoker},
+        GameState,
+    };
 
     use super::alpha_beta_search;
 
@@ -136,5 +140,18 @@ mod tests {
         let (v, a) = alpha_beta_search(gs, 0);
         assert_eq!(v, 2.0);
         assert_eq!(a.unwrap(), KPAction::Bet.into());
+    }
+
+    #[test]
+    fn test_min_max_bluff_2_2() {
+        let mut gs = Bluff::new_state(2, 2);
+        gs.apply_action(BluffActions::Roll(Dice::Two).into());
+        gs.apply_action(BluffActions::Roll(Dice::Wild).into());
+        gs.apply_action(BluffActions::Roll(Dice::Three).into());
+        gs.apply_action(BluffActions::Roll(Dice::Three).into());
+
+        let (v, a) = alpha_beta_search(gs, 0);
+        assert_eq!(v, 1.0);
+        assert_eq!(a.unwrap(), BluffActions::Bid(3, Dice::Three).into());
     }
 }
