@@ -146,12 +146,29 @@ mod tests {
     fn test_min_max_bluff_2_2() {
         let mut gs = Bluff::new_state(2, 2);
         gs.apply_action(BluffActions::Roll(Dice::Two).into());
+        gs.apply_action(BluffActions::Roll(Dice::Three).into());
+        gs.apply_action(BluffActions::Roll(Dice::Two).into());
+        gs.apply_action(BluffActions::Roll(Dice::Three).into());
+
+        let (v, a) = alpha_beta_search(gs, 0);
+        assert_eq!(v, 1.0);
+        assert_eq!(
+            BluffActions::from(a.unwrap()),
+            BluffActions::Bid(2, Dice::Three)
+        );
+
+        let mut gs = Bluff::new_state(2, 2);
+        gs.apply_action(BluffActions::Roll(Dice::Two).into());
         gs.apply_action(BluffActions::Roll(Dice::Wild).into());
         gs.apply_action(BluffActions::Roll(Dice::Three).into());
         gs.apply_action(BluffActions::Roll(Dice::Three).into());
 
         let (v, a) = alpha_beta_search(gs, 0);
         assert_eq!(v, 1.0);
-        assert_eq!(a.unwrap(), BluffActions::Bid(3, Dice::Three).into());
+
+        assert_eq!(
+            BluffActions::from(a.unwrap()),
+            BluffActions::Bid(3, Dice::Three)
+        );
     }
 }

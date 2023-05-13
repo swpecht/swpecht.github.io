@@ -125,13 +125,13 @@ impl PartialOrd for BluffActions {
             _ => {}
         }
 
-        // if same dice, go on number of bid
-        if sd == od {
-            return Some(sn.cmp(on));
+        // if same number, go on face of dice
+        if sn == on {
+            return Some(sd.cmp(&od));
         }
 
         // If different dice, go on the face value
-        Some(sd.cmp(&od))
+        Some(sn.cmp(&on))
     }
 }
 
@@ -503,6 +503,12 @@ mod tests {
 
     use super::{BluffActions, Dice, STARTING_DICE};
 
+    #[test]
+    fn test_bluff_bid_compare() {
+        assert!(BluffActions::Bid(2, Dice::Three) > BluffActions::Bid(1, Dice::Five));
+        assert!(BluffActions::Bid(1, Dice::Three) < BluffActions::Bid(1, Dice::Five));
+        assert!(BluffActions::Bid(3, Dice::Three) < BluffActions::Bid(4, Dice::Three));
+    }
     /// Ensure the actions are all unique
     #[test]
     fn test_bluff_actions_to_action() {
@@ -568,17 +574,20 @@ mod tests {
         gs.apply_action(BluffActions::Bid(2, Dice::Three).into());
         let mut legal_actions: Vec<Action> = vec![BluffActions::Call.into()];
         let max_bets = STARTING_DICE * 2;
-        for n in 3..max_bets + 1 {
-            legal_actions.push(BluffActions::Bid(n, Dice::Three).into());
+
+        // can bet 2 dice for four or higher
+        for &f in &FACES[3..FACES.len() - 1] {
+            legal_actions.push(BluffActions::Bid(2, f).into())
         }
 
-        for &f in &FACES[3..FACES.len() - 1] {
-            // don't include the wild
-            for n in 1..max_bets + 1 {
-                legal_actions.push(BluffActions::Bid(n, f).into())
+        // can bet any face 3 or higher
+        for n in 3..max_bets + 1 {
+            for &f in &FACES[0..FACES.len() - 1] {
+                legal_actions.push(BluffActions::Bid(n, f).into());
             }
         }
 
+        legal_actions.sort();
         assert_eq!(actions!(gs), legal_actions);
 
         // player 1 calls, they are right
@@ -597,25 +606,25 @@ mod tests {
             BluffActions::Roll(Dice::Two),
             BluffActions::Roll(Dice::Three),
             BluffActions::Roll(Dice::Four),
-            BluffActions::Bid(4, Dice::One),
+            BluffActions::Bid(1, Dice::One),
         ]);
 
         let istate = gs.istate_string(0);
-        assert_eq!(istate, "12|41");
+        assert_eq!(istate, "12|11");
         let istate = gs.istate_string(1);
-        assert_eq!(istate, "34|41");
+        assert_eq!(istate, "34|11");
 
         gs.apply_action(BluffActions::Bid(2, Dice::Three).into());
         let istate = gs.istate_string(0);
-        assert_eq!(istate, "12|41|23");
+        assert_eq!(istate, "12|11|23");
         let istate = gs.istate_string(1);
-        assert_eq!(istate, "34|41|23");
+        assert_eq!(istate, "34|11|23");
 
         gs.apply_action(BluffActions::Call.into());
         let istate = gs.istate_string(0);
-        assert_eq!(istate, "12|41|23|C");
+        assert_eq!(istate, "12|11|23|C");
         let istate = gs.istate_string(1);
-        assert_eq!(istate, "34|41|23|C");
+        assert_eq!(istate, "34|11|23|C");
     }
 
     #[test]

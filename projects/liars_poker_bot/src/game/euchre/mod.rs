@@ -1,4 +1,4 @@
-use std::fmt::{write, Display};
+use std::fmt::Display;
 
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
