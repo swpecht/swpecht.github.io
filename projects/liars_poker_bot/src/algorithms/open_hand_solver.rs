@@ -1,4 +1,5 @@
 use rand::rngs::StdRng;
+use rayon::prelude::*;
 
 use crate::{
     cfragent::cfrnode::ActionVec,
@@ -50,7 +51,7 @@ impl<G: GameState + ResampleFromInfoState> Evaluator<G> for OpenHandSolver {
 }
 
 impl<G: GameState> Policy<G> for OpenHandSolver {
-    fn action_probabilities(&mut self, gs: &G) -> ActionVec<f64> {
+    fn action_probabilities(&mut self, _gs: &G) -> ActionVec<f64> {
         todo!()
     }
 }
@@ -102,6 +103,7 @@ fn alpha_beta<G: GameState>(
                 break; // Beta cut-off
             }
         }
+
         (value, best_action)
     } else {
         let mut value = f64::INFINITY;
@@ -119,6 +121,7 @@ fn alpha_beta<G: GameState>(
                 break;
             }
         }
+
         (value, best_action)
     }
 }

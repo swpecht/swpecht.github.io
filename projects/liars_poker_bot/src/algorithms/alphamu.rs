@@ -523,7 +523,7 @@ impl Debug for AMFront {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Copy)]
+#[derive(PartialEq, Eq, Clone, Copy, Hash)]
 pub enum Team {
     Team1,
     Team2,

@@ -131,7 +131,7 @@ impl PartialOrd for BluffActions {
         }
 
         // If different dice, go on the face value
-        Some(sn.cmp(&on))
+        Some(sn.cmp(on))
     }
 }
 

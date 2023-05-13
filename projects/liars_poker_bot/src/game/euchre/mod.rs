@@ -14,7 +14,6 @@ use crate::{
 use self::actions::{EAction, Face, Suit, CARD_PER_SUIT};
 
 const NUM_CARDS: usize = 24;
-const DEALER_ID: Player = 3;
 const CARDS_PER_HAND: usize = 5;
 
 pub mod actions;
@@ -709,7 +708,7 @@ impl GameState for EuchreGameState {
     }
 
     fn key(&self) -> IStateKey {
-        todo!()
+        self.key
     }
 }
 
