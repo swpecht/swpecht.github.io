@@ -2,6 +2,7 @@ use rand::rngs::StdRng;
 use rayon::prelude::*;
 
 use crate::{
+    alloc::Pool,
     cfragent::cfrnode::ActionVec,
     game::{Action, GameState, Player},
     policy::Policy,
@@ -27,12 +28,16 @@ impl OpenHandSolver {
     }
 }
 
-impl<G: GameState + ResampleFromInfoState> Evaluator<G> for OpenHandSolver {
+impl<G: GameState + ResampleFromInfoState + Sized> Evaluator<G> for OpenHandSolver {
     fn evaluate(&mut self, gs: &G) -> Vec<f64> {
         let mut result = vec![0.0; gs.num_players()];
-        for _ in 0..self.n_rollouts {
-            let world = gs.resample_from_istate(gs.cur_player(), &mut self.rng);
 
+        let mut worlds = Vec::with_capacity(self.n_rollouts);
+        for _ in 0..self.n_rollouts {
+            worlds.push(gs.resample_from_istate(gs.cur_player(), &mut self.rng));
+        }
+
+        worlds.iter().for_each(|world| {
             for (i, r) in result.iter_mut().enumerate().take(2) {
                 let (v, _) = alpha_beta_search(world.clone(), i);
                 *r += v;
@@ -42,7 +47,7 @@ impl<G: GameState + ResampleFromInfoState> Evaluator<G> for OpenHandSolver {
             for i in 2..result.len() {
                 result[i] = result[i % 2];
             }
-        }
+        });
 
         for r in result.iter_mut() {
             *r /= self.n_rollouts as f64;
@@ -63,7 +68,26 @@ impl<G: GameState> Policy<G> for OpenHandSolver {
 
 pub fn alpha_beta_search<G: GameState>(gs: G, maximizing_player: Player) -> (f64, Option<Action>) {
     let maximizing_team = Team::from(maximizing_player);
-    alpha_beta(gs, maximizing_team, f64::NEG_INFINITY, f64::INFINITY)
+    alpha_beta(
+        gs,
+        maximizing_team,
+        f64::NEG_INFINITY,
+        f64::INFINITY,
+        &mut AlphaBetaCache::default(),
+    )
+}
+
+/// Helper struct to speeding up alpha_beta search
+struct AlphaBetaCache {
+    vec_pool: Pool<Vec<Action>>,
+}
+
+impl Default for AlphaBetaCache {
+    fn default() -> Self {
+        Self {
+            vec_pool: Pool::new(Vec::new),
+        }
+    }
 }
 
 /// An alpha-beta algorithm.
@@ -77,13 +101,14 @@ fn alpha_beta<G: GameState>(
     maximizing_team: Team,
     mut alpha: f64,
     mut beta: f64,
+    cache: &mut AlphaBetaCache,
 ) -> (f64, Option<Action>) {
     if gs.is_terminal() {
         let v = gs.evaluate(maximizing_team as usize);
         return (v, None);
     }
 
-    let mut actions = Vec::new();
+    let mut actions = cache.vec_pool.detach();
     if gs.is_chance_node() {
         todo!("add support for chance nodes")
     }
@@ -98,7 +123,7 @@ fn alpha_beta<G: GameState>(
         for a in &actions {
             let mut child_state = gs.clone();
             child_state.apply_action(*a);
-            let (child_value, _) = alpha_beta(child_state, maximizing_team, alpha, beta);
+            let (child_value, _) = alpha_beta(child_state, maximizing_team, alpha, beta, cache);
             if child_value > value {
                 value = child_value;
                 best_action = Some(*a);
@@ -109,6 +134,8 @@ fn alpha_beta<G: GameState>(
             }
         }
 
+        actions.clear();
+        cache.vec_pool.attach(actions);
         (value, best_action)
     } else {
         let mut value = f64::INFINITY;
@@ -116,7 +143,7 @@ fn alpha_beta<G: GameState>(
         for a in &actions {
             let mut child_state = gs.clone();
             child_state.apply_action(*a);
-            let (child_value, _) = alpha_beta(child_state, maximizing_team, alpha, beta);
+            let (child_value, _) = alpha_beta(child_state, maximizing_team, alpha, beta, cache);
             if child_value < value {
                 value = child_value;
                 best_action = Some(*a);
@@ -127,6 +154,8 @@ fn alpha_beta<G: GameState>(
             }
         }
 
+        actions.clear();
+        cache.vec_pool.attach(actions);
         (value, best_action)
     }
 }

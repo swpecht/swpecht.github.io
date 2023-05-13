@@ -287,7 +287,9 @@ impl EuchreGameState {
     fn legal_actions_play(&self, actions: &mut Vec<Action>) {
         // If they are the first to act on a trick then can play any card in hand
         if self.is_trick_over() {
-            actions.append(&mut self.hands[self.cur_player].to_vec());
+            for i in 0..self.hands[self.cur_player].len() {
+                actions.push(self.hands[self.cur_player][i]);
+            }
             return;
         }
 
