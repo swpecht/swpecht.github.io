@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     actions,
-    algorithms::ismcts::ResampleFromInfoState,
+    algorithms::{alphamu::Team, ismcts::ResampleFromInfoState},
     collections::SortedArrayVec,
     game::{Action, Game, GameState, Player},
     istate::IStateKey,
@@ -558,19 +558,19 @@ impl GameState for EuchreGameState {
             won_tricks[winner] += 1;
         }
 
-        let team_0_win = won_tricks[0] > won_tricks[1];
-        let team_0_call = self.trump_caller % 2 == 0;
+        let team = p % 2;
 
-        let v = match (team_0_win, team_0_call, won_tricks[0]) {
-            (true, true, 5) => vec![2.0, 0.0, 2.0, 0.0],
-            (true, true, _) => vec![1.0, 0.0, 1.0, 0.0],
-            (true, false, _) => vec![2.0, 0.0, 2.0, 0.0],
-            (false, false, 0) => vec![0.0, 2.0, 0.0, 2.0],
-            (false, false, _) => vec![0.0, 1.0, 0.0, 1.0],
-            (false, true, _) => vec![0.0, 2.0, 0.0, 2.0],
-        };
-
-        v[p]
+        // no points, didn't win most tricks
+        if won_tricks[team] < won_tricks[(team + 1) % 2] {
+            0.0
+        } else if won_tricks[team] == 5 {
+            2.0
+        } else if self.trump_caller % 2 == team {
+            1.0
+        } else {
+            //euchred them
+            2.0
+        }
     }
 
     /// Returns an information state with the following format:
