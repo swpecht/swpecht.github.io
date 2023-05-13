@@ -26,6 +26,10 @@ impl OpenHandSolver {
     pub fn new(n_rollouts: usize, rng: StdRng) -> Self {
         Self { rng, n_rollouts }
     }
+
+    pub fn set_rollout(&mut self, n_rollouts: usize) {
+        self.n_rollouts = n_rollouts;
+    }
 }
 
 impl<G: GameState + ResampleFromInfoState + Sized> Evaluator<G> for OpenHandSolver {

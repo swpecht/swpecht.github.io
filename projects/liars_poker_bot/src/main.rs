@@ -103,7 +103,7 @@ fn run_scratch(_args: Args) {
     let mut rng: StdRng = SeedableRng::seed_from_u64(42);
     let mut evaluator = OpenHandSolver::new(100, rng.clone());
 
-    for _ in 0..10 {
+    for _ in 0..1 {
         let mut gs = Euchre::new_state();
         while gs.is_chance_node() {
             let a = *actions!(gs).choose(&mut rng).unwrap();
@@ -129,6 +129,21 @@ fn run_scratch(_args: Args) {
         }
 
         info!("p0, p1 value: {}, {}", gs.evaluate(0), gs.evaluate(1));
+    }
+
+    info!("calculating evaluator converge");
+    for i in 0..50 {
+        let mut gs = Euchre::new_state();
+        while gs.is_chance_node() {
+            let a = *actions!(gs).choose(&mut rng).unwrap();
+            gs.apply_action(a)
+        }
+
+        for rollouts in [1, 10, 100, 1_000, 10_000] {
+            evaluator.set_rollout(rollouts);
+            let v = evaluator.evaluate(&gs);
+            info!("{}\t{}\t{}\t{}\t{}", i, rollouts, gs, v[0], v[1]);
+        }
     }
 }
 
