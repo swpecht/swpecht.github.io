@@ -12,9 +12,9 @@ use liars_poker_bot::agents::{Agent, RandomAgent};
 use liars_poker_bot::algorithms::alphamu::AlphaMuBot;
 use liars_poker_bot::algorithms::exploitability::{self};
 use liars_poker_bot::algorithms::ismcts::{
-    ISMCTBotConfig, ISMCTSBot, RandomRolloutEvaluator, ResampleFromInfoState,
+    Evaluator, ISMCTBotConfig, ISMCTSBot, RandomRolloutEvaluator, ResampleFromInfoState,
 };
-use liars_poker_bot::algorithms::open_hand_solver::alpha_beta_search;
+use liars_poker_bot::algorithms::open_hand_solver::{alpha_beta_search, OpenHandSolver};
 use liars_poker_bot::cfragent::cfrnode::CFRNode;
 use liars_poker_bot::cfragent::{CFRAgent, CFRAlgorithm};
 use liars_poker_bot::database::memory_node_store::MemoryNodeStore;
@@ -101,6 +101,7 @@ fn run_scratch(_args: Args) {
     println!("euchre size: {}", mem::size_of::<EuchreGameState>());
 
     let mut rng: StdRng = SeedableRng::seed_from_u64(42);
+    let mut evaluator = OpenHandSolver::new(100, rng.clone());
 
     for _ in 0..10 {
         let mut gs = Euchre::new_state();
@@ -109,6 +110,11 @@ fn run_scratch(_args: Args) {
             gs.apply_action(a)
         }
 
+        info!(
+            "Evaluator for {}: {:?}",
+            gs.istate_string(gs.cur_player()),
+            evaluator.evaluate(&gs)
+        );
         while !gs.is_terminal() {
             let cur_player = gs.cur_player();
             let (v, a) = alpha_beta_search(gs, cur_player);
