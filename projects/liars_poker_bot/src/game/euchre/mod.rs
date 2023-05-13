@@ -305,7 +305,9 @@ impl EuchreGameState {
 
         if actions.is_empty() {
             // no suit, can play any card
-            actions.append(&mut self.hands[self.cur_player].to_vec());
+            for i in 0..self.hands[self.cur_player].len() {
+                actions.push(self.hands[self.cur_player][i]);
+            }
         }
     }
 
