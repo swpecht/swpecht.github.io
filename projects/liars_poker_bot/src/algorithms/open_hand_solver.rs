@@ -33,9 +33,14 @@ impl<G: GameState + ResampleFromInfoState> Evaluator<G> for OpenHandSolver {
         for _ in 0..self.n_rollouts {
             let world = gs.resample_from_istate(gs.cur_player(), &mut self.rng);
 
-            for (i, r) in result.iter_mut().enumerate() {
+            for (i, r) in result.iter_mut().enumerate().take(2) {
                 let (v, _) = alpha_beta_search(world.clone(), i);
                 *r += v;
+            }
+
+            // Only support evaluating for 2 teams, so we can copy over the results
+            for i in 2..result.len() {
+                result[i] = result[i % 2];
             }
         }
 
