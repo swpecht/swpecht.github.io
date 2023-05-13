@@ -128,7 +128,7 @@ fn run_scratch(_args: Args) {
             gs.apply_action(a.unwrap());
         }
 
-        info!("p0 value: {}", gs.evaluate(0));
+        info!("p0, p1 value: {}, {}", gs.evaluate(0), gs.evaluate(1));
     }
 }
 
