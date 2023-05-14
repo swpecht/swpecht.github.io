@@ -38,6 +38,7 @@ impl Euchre {
             trick_winners: [0; 5],
             key: IStateKey::default(),
             parser: EuchreParser::default(),
+            play_order: Vec::new(),
         }
     }
 
@@ -70,6 +71,7 @@ pub struct EuchreGameState {
     trick_winners: [Player; 5],
     key: IStateKey,
     parser: EuchreParser,
+    play_order: Vec<Player>, // tracker of who went in what order. Last item is the current player
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy, Serialize, Deserialize)]
@@ -86,6 +88,7 @@ enum EPhase {
 impl EuchreGameState {
     fn apply_action_deal_hands(&mut self, a: Action) {
         self.hands[self.cur_player].push(a);
+        assert!(self.hands[self.cur_player].len() <= 5);
 
         if self.hands[self.cur_player].len() == CARDS_PER_HAND {
             self.cur_player = (self.cur_player + 1) % self.num_players
@@ -479,6 +482,7 @@ fn write_phase_play(f: &mut std::fmt::Formatter<'_>, key: &IStateKey, start: usi
 
 impl GameState for EuchreGameState {
     fn apply_action(&mut self, a: Action) {
+        self.play_order.push(self.cur_player);
         match self.phase() {
             EPhase::DealHands => self.apply_action_deal_hands(a),
             EPhase::DealFaceUp => self.apply_action_deal_face_up(a),
@@ -487,7 +491,6 @@ impl GameState for EuchreGameState {
             EPhase::Discard => self.apply_action_discard(a),
             EPhase::Play => self.apply_action_play(a),
         }
-
         self.update_keys(a);
     }
 
@@ -687,8 +690,21 @@ impl GameState for EuchreGameState {
     }
 
     fn undo(&mut self) {
-        self.parser.undo();
-        self.key.pop();
+        self.cur_player = self.play_order.pop().unwrap();
+        let applied_state = self.parser.undo();
+        let _applied_action = self.key.pop();
+
+        match applied_state {
+            parser::EuchreParserState::DealPlayers(_) => {
+                self.hands[self.cur_player].pop();
+            }
+            parser::EuchreParserState::DealFaceUp => {}
+            parser::EuchreParserState::Discard => {}
+            parser::EuchreParserState::PickupChoice(_) => {}
+            parser::EuchreParserState::CallChoice(_) => {}
+            parser::EuchreParserState::Play(_) => {}
+            parser::EuchreParserState::Terminal => todo!(),
+        };
     }
 }
 

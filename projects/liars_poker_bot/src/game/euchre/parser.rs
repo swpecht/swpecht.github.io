@@ -109,8 +109,8 @@ impl EuchreParser {
     }
 
     // undo the last action
-    pub fn undo(&mut self) {
-        self.history.pop().unwrap();
+    pub fn undo(&mut self) -> EuchreParserState {
+        self.history.pop().unwrap()
     }
 }
 
