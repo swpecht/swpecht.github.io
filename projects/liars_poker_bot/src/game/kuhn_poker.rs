@@ -48,14 +48,9 @@ pub enum KPPhase {
 /// Adapted from: https://github.com/deepmind/open_spiel/blob/master/open_spiel/games/kuhn_poker.cc
 /// All of the randomness occurs outside of the gamestate. Instead some game states are change nodes. And the
 /// "Game runner" will choose of of the random, valid actions
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub struct KPGameState {
     num_players: usize,
-    /// Holds the cards for each player in the game
-    hands: Vec<Action>,
-    is_terminal: bool,
-    phase: KPPhase,
-    cur_player: usize,
     key: IStateKey,
 }
 
@@ -63,30 +58,8 @@ impl Display for KPGameState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut result = String::new();
         result.push('[');
-        for c in &self.hands {
-            result.push_str(&format!("{:?}", KPAction::from(*c)));
-        }
-        result.push(']');
-
-        for h in self.key.into_iter().skip(2) {
-            let char = match KPAction::from(h) {
-                KPAction::Bet => 'b',
-                KPAction::Pass => 'p',
-                _ => panic!("invalid action for history"),
-            };
-            result.push(char)
-        }
-
-        write!(f, "{}", result)
-    }
-}
-
-impl Debug for KPGameState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut result = String::new();
-        result.push('[');
-        for c in &self.hands {
-            result.push_str(&format!("{:?}", KPAction::from(*c)));
+        for c in self.key.into_iter().take(2) {
+            result.push_str(&format!("{:?}", KPAction::from(c)));
         }
         result.push(']');
 
@@ -107,11 +80,7 @@ pub struct KuhnPoker {}
 impl KuhnPoker {
     pub fn new_state() -> KPGameState {
         KPGameState {
-            hands: Vec::new(),
-            phase: KPPhase::Dealing,
-            cur_player: 0,
             num_players: 2,
-            is_terminal: false,
             key: IStateKey::default(),
         }
     }
@@ -145,8 +114,6 @@ impl KuhnPoker {
 
 impl KPGameState {
     fn apply_action_dealing(&mut self, card: Action) {
-        trace!("player {} dealt card {}", self.cur_player, card);
-
         assert!(vec![
             KPAction::Jack.into(),
             KPAction::Queen.into(),
@@ -154,35 +121,16 @@ impl KPGameState {
         ]
         .contains(&card));
 
-        assert!(!self.hands.contains(&card));
-
-        self.hands.push(card);
-        self.cur_player += 1;
-
-        if self.cur_player >= self.num_players {
-            trace!("moving to playing phase");
-            self.phase = KPPhase::Playing;
-            self.cur_player = 0;
+        if self.key.len() > 1 {
+            assert!(self.key[0] != card);
         }
     }
 
-    fn apply_action_playing(&mut self, a: Action) {
-        if (self.key.len() == self.num_players + 2 && self.key[2] == KPAction::Bet.into())
-            || (self.key.len() == self.num_players + 2
-                && self.key[2] == KPAction::Pass.into()
-                && self.key[3] == KPAction::Pass.into())
-            || self.key.len() == 5
-        {
-            self.is_terminal = true;
-        }
-
-        self.cur_player += 1;
-        self.cur_player %= self.num_players;
-    }
+    fn apply_action_playing(&mut self, _: Action) {}
 
     fn get_dealing_actions(&self, actions: &mut Vec<Action>) {
         for card in [KPAction::Jack, KPAction::Queen, KPAction::King] {
-            if self.hands.contains(&card.into()) {
+            if !self.key.is_empty() && self.key[0] == card.into() {
                 // Don't return cards already dealt
                 continue;
             }
@@ -194,35 +142,42 @@ impl KPGameState {
         actions.push(KPAction::Bet.into());
         actions.push(KPAction::Pass.into());
     }
+
+    fn phase(&self) -> KPPhase {
+        if self.key.len() < 2 {
+            KPPhase::Dealing
+        } else {
+            KPPhase::Playing
+        }
+    }
 }
 
 impl GameState for KPGameState {
     fn legal_actions(&self, actions: &mut Vec<Action>) {
         actions.clear();
 
-        if self.is_terminal {
+        if self.is_terminal() {
             return;
         }
 
-        match self.phase {
+        match self.phase() {
             KPPhase::Dealing => self.get_dealing_actions(actions),
             KPPhase::Playing => self.get_betting_actions(actions),
         }
     }
 
     fn apply_action(&mut self, a: Action) {
-        self.key.push(a);
-
-        match self.phase {
+        match self.phase() {
             KPPhase::Dealing => self.apply_action_dealing(a),
             KPPhase::Playing => self.apply_action_playing(a),
         }
+        self.key.push(a);
     }
 
     /// Returns a vector of the score for each player
     /// at the end of the game
     fn evaluate(&self, p: Player) -> f64 {
-        if !self.is_terminal {
+        if !self.is_terminal() {
             panic!("evaluate called on non-terminal gamestate");
         }
 
@@ -230,7 +185,7 @@ impl GameState for KPGameState {
             panic!("game logic only implemented for 2 players")
         }
 
-        if self.hands[0] == self.hands[1] {
+        if self.key[0] == self.key[1] {
             panic!("invalid deal, players have same cards")
         }
 
@@ -240,14 +195,14 @@ impl GameState for KPGameState {
             .collect_vec()[..]
         {
             [KPAction::Pass, KPAction::Pass] => {
-                if self.hands[0] > self.hands[1] {
+                if self.key[0] > self.key[1] {
                     [1.0, -1.0]
                 } else {
                     [-1.0, 1.0]
                 }
             }
             [KPAction::Bet, KPAction::Bet] | [KPAction::Pass, KPAction::Bet, KPAction::Bet] => {
-                if self.hands[0] > self.hands[1] {
+                if self.key[0] > self.key[1] {
                     [2.0, -2.0]
                 } else {
                     [-2.0, 2.0]
@@ -268,8 +223,8 @@ impl GameState for KPGameState {
         let mut i_state = IStateKey::default();
 
         // check if we've dealt cards
-        if self.hands.len() > player {
-            i_state.push(self.hands[player]);
+        if self.key.len() > player {
+            i_state.push(self.key[player]);
         }
 
         if self.key.len() > 2 {
@@ -281,7 +236,11 @@ impl GameState for KPGameState {
     }
 
     fn is_terminal(&self) -> bool {
-        self.is_terminal
+        (self.key.len() == self.num_players + 2 && self.key[2] == self.key[3])
+            || (self.key.len() == self.num_players + 2
+                && self.key[2] == KPAction::Bet.into()
+                && self.key[3] == KPAction::Pass.into())
+            || self.key.len() == 5
     }
 
     fn is_chance_node(&self) -> bool {
@@ -293,7 +252,7 @@ impl GameState for KPGameState {
     }
 
     fn cur_player(&self) -> usize {
-        self.cur_player
+        self.key.len() % 2
     }
 
     fn istate_string(&self, player: Player) -> String {
@@ -319,7 +278,7 @@ impl GameState for KPGameState {
     }
 
     fn undo(&mut self) {
-        todo!()
+        self.key.pop();
     }
 }
 
@@ -358,11 +317,12 @@ mod tests {
     use std::vec;
 
     use crate::{
+        actions,
         agents::RecordedAgent,
         game::kuhn_poker::{KPAction, KuhnPoker},
         game::{run_game, GameState},
     };
-    use rand::{rngs::StdRng, SeedableRng};
+    use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
     #[test]
     fn kuhn_poker_test_bb() {
@@ -390,5 +350,23 @@ mod tests {
         assert_eq!(format!("{}", g), "[KingQueen]pbp");
         assert_eq!(g.evaluate(0), -1.0);
         assert_eq!(g.evaluate(1), 1.0);
+    }
+
+    #[test]
+    fn kuhn_poker_test_undo() {
+        let mut rng: StdRng = SeedableRng::seed_from_u64(0);
+        for _ in 0..1000 {
+            let mut gs = KuhnPoker::new_state();
+
+            while !gs.is_terminal() {
+                let actions = actions!(gs);
+                let a = actions.choose(&mut rng).unwrap();
+                let mut ngs = gs.clone();
+                ngs.apply_action(*a);
+                ngs.undo();
+                assert_eq!(ngs, gs);
+                gs.apply_action(*a);
+            }
+        }
     }
 }

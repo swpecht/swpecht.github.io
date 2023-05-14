@@ -5,7 +5,7 @@ use std::{fmt::Debug, hash::Hash, ops::Deref, usize};
 
 use crate::game::Action;
 
-#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Serialize, Deserialize, PartialOrd, Ord)]
 pub struct IStateKey {
     len: usize,
     #[serde(with = "BigArray")]
@@ -51,6 +51,12 @@ impl IStateKey {
         assert!(start + n <= self.len());
         self.actions[start..start + n].sort()
     }
+
+    pub fn pop(&mut self) -> Action {
+        let last = self.actions[self.len() - 1];
+        self.len -= 1;
+        last
+    }
 }
 
 impl ToString for IStateKey {
@@ -62,6 +68,21 @@ impl ToString for IStateKey {
 impl Debug for IStateKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", &self.actions[..self.len])
+    }
+}
+
+impl PartialEq for IStateKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.len == other.len && self.actions[..self.len] == other.actions[..other.len]
+    }
+}
+
+impl Eq for IStateKey {}
+
+impl Hash for IStateKey {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.len.hash(state);
+        self.actions[..self.len].hash(state);
     }
 }
 
