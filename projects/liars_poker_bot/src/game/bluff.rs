@@ -191,14 +191,9 @@ pub struct Bluff {}
 impl Bluff {
     pub fn new_state(dice0: usize, dice1: usize) -> BluffGameState {
         BluffGameState {
-            phase: Phase::RollingDice,
             dice: Default::default(),
-            cur_player: 0,
             num_players: 2,
-            keys: [IStateKey::default(); 2],
-            last_bid: STARTING_BID, // lowest possible bid
             num_dice: [dice0, dice1],
-            is_terminal: false,
             key: IStateKey::default(),
         }
     }
@@ -221,15 +216,10 @@ impl Bluff {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BluffGameState {
-    phase: Phase,
     dice: [Vec<Dice>; 2],
     num_dice: [usize; 2],
-    last_bid: BluffActions,
-    cur_player: Player,
     num_players: usize,
-    keys: [IStateKey; 2],
     key: IStateKey,
-    is_terminal: bool,
 }
 
 impl BluffGameState {
@@ -243,46 +233,25 @@ impl BluffGameState {
     }
 
     fn apply_action_rolling(&mut self, a: Action) {
-        self.dice[self.cur_player].push(BluffActions::from(a).get_dice());
-
-        // Roll for each player in series
-        if self.dice[self.cur_player].len() == self.num_dice[self.cur_player] {
-            self.cur_player = (self.cur_player + 1) % 2;
-        }
-
-        // check if done rolling
-        if self.dice[1].len() == self.num_dice[1] && self.dice[0].len() == self.num_dice[0] {
-            self.phase = Phase::Betting;
-        }
+        self.dice[self.cur_player()].push(BluffActions::from(a).get_dice());
     }
 
     fn apply_action_bids(&mut self, a: Action) {
         // Can't bid without any other bids or after a call
-        if a == BluffActions::Call.into() && self.last_bid == STARTING_BID {
+        if a == BluffActions::Call.into() && self.last_bid() == STARTING_BID {
             panic!("invalid action");
         }
-
-        assert!(BluffActions::from(a) > self.last_bid);
-
-        // only change the player if not over, and if not a call
-        if a != BluffActions::Call.into() {
-            self.cur_player = (self.cur_player + 1) % 2;
-            self.last_bid = BluffActions::from(a);
-        } else {
-            self.is_terminal = true;
-        }
+        assert!(BluffActions::from(a) > self.last_bid());
     }
 
     fn legal_actions_rolling(&self, actions: &mut Vec<Action>) {
         // Actions are independent
-        actions.append(&mut vec![
-            BluffActions::Roll(Dice::One).into(),
-            BluffActions::Roll(Dice::Two).into(),
-            BluffActions::Roll(Dice::Three).into(),
-            BluffActions::Roll(Dice::Four).into(),
-            BluffActions::Roll(Dice::Five).into(),
-            BluffActions::Roll(Dice::Wild).into(),
-        ]);
+        actions.push(BluffActions::Roll(Dice::One).into());
+        actions.push(BluffActions::Roll(Dice::Two).into());
+        actions.push(BluffActions::Roll(Dice::Three).into());
+        actions.push(BluffActions::Roll(Dice::Four).into());
+        actions.push(BluffActions::Roll(Dice::Five).into());
+        actions.push(BluffActions::Roll(Dice::Wild).into());
     }
 
     fn legal_actions_bids(&self, actions: &mut Vec<Action>) {
@@ -290,12 +259,12 @@ impl BluffGameState {
             return;
         }
 
-        if self.last_bid != BluffActions::Call && self.last_bid != STARTING_BID {
+        if self.last_bid() != BluffActions::Call && self.last_bid() != STARTING_BID {
             actions.push(BluffActions::Call.into());
         }
 
         let max_bets = self.num_dice[0] + self.num_dice[1];
-        if self.last_bid == STARTING_BID {
+        if self.last_bid() == STARTING_BID {
             for &f in &FACES[0..FACES.len() - 1] {
                 // don't include the wild
                 for n in 1..max_bets + 1 {
@@ -309,7 +278,7 @@ impl BluffGameState {
             // don't include the wild
             for n in 1..max_bets + 1 {
                 let b = BluffActions::Bid(n, f);
-                if b > self.last_bid {
+                if b > self.last_bid() {
                     actions.push(b.into())
                 }
             }
@@ -319,38 +288,39 @@ impl BluffGameState {
     fn update_keys(&mut self, a: Action) {
         // game key gets everything
         self.key.push(a);
+    }
 
-        // private info
-        if self.phase == Phase::RollingDice {
-            let p = self.cur_player;
-            let sort_keys = self.dice[p].len() == self.num_dice[p] - 1;
-            // If we just rolled the last dice, sort the keys
-            self.keys[p].push(a);
-            if sort_keys {
-                self.keys[p].sort_range(0, self.num_dice[p]);
-            }
-            return;
+    fn phase(&self) -> Phase {
+        if self.key.len() < self.num_dice[0] + self.num_dice[1] {
+            Phase::RollingDice
+        } else {
+            Phase::Betting
         }
+    }
 
-        for i in 0..self.num_players {
-            self.keys[i].push(a);
+    fn last_bid(&self) -> BluffActions {
+        // at least one action other than the dice rolling
+        if self.key.len() <= self.num_dice[0] + self.num_dice[1] {
+            STARTING_BID
+        } else {
+            BluffActions::from(self.key[self.key.len() - 1])
         }
     }
 }
 
 impl GameState for BluffGameState {
     fn apply_action(&mut self, a: Action) {
-        self.update_keys(a);
-
-        match self.phase {
+        match self.phase() {
             Phase::RollingDice => self.apply_action_rolling(a),
             Phase::Betting => self.apply_action_bids(a),
         }
+
+        self.update_keys(a);
     }
 
     fn legal_actions(&self, actions: &mut Vec<Action>) {
         actions.clear();
-        match self.phase {
+        match self.phase() {
             Phase::RollingDice => self.legal_actions_rolling(actions),
             Phase::Betting => self.legal_actions_bids(actions),
         }
@@ -358,12 +328,31 @@ impl GameState for BluffGameState {
 
     fn evaluate(&self, p: Player) -> f64 {
         assert_eq!(self.num_players, 2);
+        assert!(self.is_terminal());
 
-        calculate_payoff(&self.dice, self.last_bid, &self.cur_player, p)
+        calculate_payoff(
+            &self.dice,
+            self.key[self.key.len() - 2].into(),
+            &self.cur_player(),
+            p,
+        )
     }
 
     fn istate_key(&self, player: Player) -> crate::istate::IStateKey {
-        self.keys[player]
+        let public_start = self.num_dice[0] + self.num_dice[1];
+        let dice_start = if player == 0 { 0 } else { self.num_dice[0] };
+        let dice_end = dice_start + self.num_dice[player];
+
+        let mut key = IStateKey::default();
+
+        for a in self.key[dice_start..dice_end]
+            .iter()
+            .chain(self.key[public_start..].iter())
+        {
+            key.push(*a);
+        }
+
+        key
     }
 
     fn istate_string(&self, player: super::Player) -> String {
@@ -391,11 +380,11 @@ impl GameState for BluffGameState {
     }
 
     fn is_terminal(&self) -> bool {
-        self.is_terminal
+        !self.key.is_empty() && self.key[self.key.len() - 1] == BluffActions::Call.into()
     }
 
     fn is_chance_node(&self) -> bool {
-        self.phase == Phase::RollingDice
+        self.phase() == Phase::RollingDice
     }
 
     fn num_players(&self) -> usize {
@@ -403,7 +392,16 @@ impl GameState for BluffGameState {
     }
 
     fn cur_player(&self) -> Player {
-        self.cur_player
+        if self.key.len() < self.num_dice[0] {
+            0
+        } else if self.key.len() < self.num_dice[0] + self.num_dice[1] {
+            1
+        } else if self.key[self.key.len() - 1] == BluffActions::Call.into() {
+            (self.key.len() - self.num_dice[0] + self.num_dice[1] - 1) % 2
+        // don't change player at end
+        } else {
+            (self.key.len() - self.num_dice[0] + self.num_dice[1]) % 2
+        }
     }
 
     fn key(&self) -> IStateKey {
@@ -411,7 +409,14 @@ impl GameState for BluffGameState {
     }
 
     fn undo(&mut self) {
-        todo!()
+        // see if we're undoing a dice roll
+        if self.key.len() <= self.num_dice[0] {
+            self.dice[0].pop();
+        } else if self.key.len() <= self.num_dice[0] + self.num_dice[1] {
+            self.dice[1].pop();
+        }
+
+        self.key.pop();
     }
 }
 
@@ -460,6 +465,8 @@ impl PartialEq for BluffGameState {
 mod tests {
     use std::{collections::HashSet, vec};
 
+    use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
+
     use crate::{
         actions,
         game::{
@@ -506,7 +513,7 @@ mod tests {
         let mut gs = Bluff::new_state(2, 2);
 
         assert!(gs.is_chance_node());
-        assert_eq!(gs.phase, Phase::RollingDice);
+        assert_eq!(gs.phase(), Phase::RollingDice);
 
         assert_eq!(
             actions!(gs),
@@ -525,7 +532,7 @@ mod tests {
         }
 
         assert!(!gs.is_chance_node());
-        assert_eq!(gs.phase, Phase::Betting);
+        assert_eq!(gs.phase(), Phase::Betting);
 
         let mut legal_actions = Vec::new();
         let max_bets = STARTING_DICE * 2;
@@ -753,5 +760,41 @@ mod tests {
         assert_eq!(istate, "11|11|31|C");
         let istate = gs.istate_string(1);
         assert_eq!(istate, "*|11|31|C");
+    }
+
+    #[test]
+    fn test_undo_bluff11() {
+        let mut rng: StdRng = SeedableRng::seed_from_u64(0);
+        for _ in 0..1000 {
+            let mut gs = Bluff::new_state(1, 1);
+
+            while !gs.is_terminal() {
+                let actions = actions!(gs);
+                let a = actions.choose(&mut rng).unwrap();
+                let mut ngs = gs.clone();
+                ngs.apply_action(*a);
+                ngs.undo();
+                assert_eq!(ngs, gs);
+                gs.apply_action(*a);
+            }
+        }
+    }
+
+    #[test]
+    fn test_undo_bluff21() {
+        let mut rng: StdRng = SeedableRng::seed_from_u64(0);
+        for _ in 0..1000 {
+            let mut gs = Bluff::new_state(2, 1);
+
+            while !gs.is_terminal() {
+                let actions = actions!(gs);
+                let a = actions.choose(&mut rng).unwrap();
+                let mut ngs = gs.clone();
+                ngs.apply_action(*a);
+                ngs.undo();
+                assert_eq!(ngs, gs);
+                gs.apply_action(*a);
+            }
+        }
     }
 }
