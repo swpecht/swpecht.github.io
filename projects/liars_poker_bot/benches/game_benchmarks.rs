@@ -54,10 +54,10 @@ fn traverse_game_tree(n: usize) {
 
 fn new_gs(g: &EuchreGameState, pool: &mut Vec<EuchreGameState>) -> EuchreGameState {
     if let Some(mut new_s) = pool.pop() {
-        new_s = *g;
+        new_s.clone_from(g);
         new_s
     } else {
-        *g
+        g.clone()
     }
 }
 

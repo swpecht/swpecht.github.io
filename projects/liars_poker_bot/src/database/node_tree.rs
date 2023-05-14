@@ -37,7 +37,7 @@ impl TreeStats {
 #[derive(Clone)]
 struct Cursor {
     id: usize,
-    path: ArrayVec<64>,
+    path: IStateKey,
 }
 
 /// Tree structure for looking up values by information state.
@@ -81,14 +81,12 @@ impl<T: Clone> Tree<T> {
     }
 
     pub fn insert(&mut self, k: IStateKey, v: T) {
-        let ka = k.get_actions();
-
-        if ka.is_empty() {
+        if k.is_empty() {
             self.root_value = Some(v);
             return;
         }
 
-        let id = self.find_node(ka);
+        let id = self.find_node(&k);
         let n = &mut self.nodes[id];
         n.v = Some(v);
     }
@@ -129,31 +127,31 @@ impl<T: Clone> Tree<T> {
     }
 
     /// Return the index of the node for a given ka. Creates nodes along the way as needed
-    fn find_node(&mut self, ka: ArrayVec<64>) -> usize {
-        let (mut cur_node, mut depth) = match self.find_cursor_ancestor(ka) {
-            None => (self.get_or_create_root(ka[0]), 0),
+    fn find_node(&mut self, k: &IStateKey) -> usize {
+        let (mut cur_node, mut depth) = match self.find_cursor_ancestor(k) {
+            None => (self.get_or_create_root(k[0]), 0),
             Some(x) => x,
         };
 
         // check if it's the cursor
-        if depth == ka.len() - 1 {
-            assert_eq!(ka[ka.len() - 1], self.nodes[cur_node].action);
+        if depth == k.len() - 1 {
+            assert_eq!(k[k.len() - 1], self.nodes[cur_node].action);
             return cur_node;
         }
 
         loop {
-            if depth + 1 > ka.len() - 1 {
+            if depth + 1 > k.len() - 1 {
                 self.cursors.insert(
-                    ka[0],
+                    k[0],
                     Cursor {
                         id: cur_node,
-                        path: ka,
+                        path: *k,
                     },
                 );
                 return cur_node;
             }
 
-            let next_action = ka[depth + 1];
+            let next_action = k[depth + 1];
             let child = self.get_or_create_child(cur_node, next_action);
 
             self.stats.nodes_touched += 1;
@@ -165,19 +163,19 @@ impl<T: Clone> Tree<T> {
     /// Returns the (id, depth) of the nearest common ancestor to a node
     ///
     /// Because nodes are read "near" each other, this should be much faster than always traversing the tree
-    fn find_cursor_ancestor(&self, ka: ArrayVec<64>) -> Option<(usize, usize)> {
-        let cursor = self.cursors.get(&ka[0]);
+    fn find_cursor_ancestor(&self, k: &IStateKey) -> Option<(usize, usize)> {
+        let cursor = self.cursors.get(&k[0]);
         cursor?;
         let cursor = cursor.unwrap();
-        let ca = cursor.path;
-        let last_same = find_last_same(&ka, &ca);
+        let c = cursor.path;
+        let last_same = find_last_same(&k, &c);
         if last_same.is_none() {
-            return Some((cursor.id, ca.len() - 1));
+            return Some((cursor.id, c.len() - 1));
         }
         let last_same = last_same.unwrap();
 
         let mut cur_node = cursor.id;
-        for _ in 0..(ca.len() - last_same - 1) {
+        for _ in 0..(c.len() - last_same - 1) {
             // want to go one above the diff
             let n = &self.nodes[cur_node];
             let p = n.parent;
@@ -197,9 +195,8 @@ impl<T: Clone> Tree<T> {
 
         let root = self.roots.get(&k[0]);
         root?;
-        let actions = k.get_actions();
-        self.stats.naive_nodes_touched += actions.len();
-        let idx = self.find_node(actions);
+        self.stats.naive_nodes_touched += k.len();
+        let idx = self.find_node(k);
 
         if self.stats.get_calls % 10_000_000 == 0 {
             debug!("nodestore stats: {:?}", self.stats);
@@ -226,17 +223,17 @@ impl<T: Clone> Tree<T> {
 }
 
 /// finds the index of the last action in the same path
-fn find_last_same<const N: usize>(ka: &ArrayVec<N>, ca: &ArrayVec<N>) -> Option<usize> {
-    assert!(!ka.is_empty());
-    assert!(!ca.is_empty());
+fn find_last_same(k: &IStateKey, c: &IStateKey) -> Option<usize> {
+    assert!(!k.is_empty());
+    assert!(!c.is_empty());
 
-    if ka[0] != ca[0] {
+    if k[0] != c[0] {
         return None;
     }
 
-    let len = ka.len().min(ca.len());
+    let len = k.len().min(c.len());
     for i in 1..len {
-        if ka[i] != ca[i] {
+        if k[i] != c[i] {
             return Some(i - 1);
         }
     }
@@ -277,7 +274,7 @@ mod tests {
         t.insert(k1, v.unwrap());
 
         gs.apply_action(actions!(gs)[0]);
-        let mut ogs = gs;
+        let mut ogs = gs.clone();
         gs.apply_action(actions!(gs)[0]);
         let k2 = gs.istate_key(0);
         t.insert(k2, 2);
@@ -306,7 +303,7 @@ mod tests {
     #[test]
     fn test_node_tree_simple() {
         let mut t = Tree::new();
-        let mut k1 = IStateKey::new();
+        let mut k1 = IStateKey::default();
         k1.push(Action(0));
         k1.push(Action(1));
 
@@ -318,7 +315,7 @@ mod tests {
     #[test]
     fn test_node_tree_empty_key() {
         let mut t = Tree::new();
-        let k1 = IStateKey::new();
+        let k1 = IStateKey::default();
 
         assert!(!t.contains_key(&k1));
 
@@ -329,16 +326,16 @@ mod tests {
 
     #[test]
     fn test_find_last_same() {
-        let mut a = ArrayVec::<10>::new();
+        let mut a = IStateKey::default();
         a.push(Action(1));
 
-        let mut b = ArrayVec::new();
+        let mut b = IStateKey::default();
         b.push(Action(1));
 
         let fd = find_last_same(&a, &b);
         assert_eq!(fd, Some(0));
 
-        let mut c = ArrayVec::new();
+        let mut c = IStateKey::default();
         c.push(Action(42));
         let fd = find_last_same(&a, &c);
         assert_eq!(fd, None);
@@ -357,7 +354,7 @@ mod tests {
         let fd = find_last_same(&a, &b);
         assert_eq!(fd.unwrap(), 0);
 
-        let mut a = ArrayVec::<10>::new();
+        let mut a = IStateKey::default();
         a.push(Action(0));
         a.push(Action(1));
         a.push(Action(2));

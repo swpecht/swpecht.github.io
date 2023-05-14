@@ -333,7 +333,7 @@ mod tests {
         let mut br = TabularBestResponse::new(&mut policy, &root_state, 0, 0.0);
 
         let first_decision_nodes =
-            DecisionNodeIterator::new(root_state, UniformRandomPolicy::new(), 0);
+            DecisionNodeIterator::new(root_state.clone(), UniformRandomPolicy::new(), 0);
 
         let mut unrolled_decision_nodes = DiskBackedVec::new();
         br._decision_nodes(&root_state, &mut unrolled_decision_nodes, 1.0);

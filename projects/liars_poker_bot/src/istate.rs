@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_big_array::BigArray;
 
 use std::{
     fmt::Debug,
@@ -6,72 +7,55 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use crate::{collections::ArrayVec, game::Action};
+use crate::game::Action;
 
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash, PartialOrd, Ord)]
 pub struct IStateKey {
-    actions: ArrayVec<64>,
+    len: usize,
+    #[serde(with = "BigArray")]
+    actions: [Action; 64],
 }
 
 impl Default for IStateKey {
     fn default() -> Self {
-        Self::new()
+        Self {
+            actions: [Action::default(); 64],
+            len: 0,
+        }
     }
 }
 
 impl IStateKey {
-    pub fn new() -> Self {
-        Self {
-            actions: ArrayVec::new(),
-        }
-    }
-
     /// Push a new action to the key
     pub fn push(&mut self, a: Action) {
-        self.actions.push(a);
-    }
-
-    /// Returns a version of the IStateKey trimmed to a certain number of actions
-    ///
-    /// Upper bits are set to 0.
-    pub fn trim(&self, n: usize) -> IStateKey {
-        if n >= self.len() {
-            return *self;
-        }
-
-        Self {
-            actions: self.actions.clone().trim(n),
-        }
+        self.actions[self.len] = a;
+        self.len += 1;
     }
 
     pub fn len(&self) -> usize {
-        self.actions.len()
+        self.len
     }
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    pub fn append(&mut self, actions: &[Action]) {
-        for &a in actions {
-            self.push(a);
-        }
-    }
-
-    pub fn get_actions(&self) -> ArrayVec<64> {
-        self.actions
+    /// Sorts the keys in the sepcified range
+    pub fn sort_range(&mut self, start: usize, n: usize) {
+        assert!(start + n <= self.len());
+        self.actions[start..start + n].sort()
     }
 }
 
 impl ToString for IStateKey {
     fn to_string(&self) -> String {
-        format!("{:?}", self.actions)
+        format!("{:?}", &self.actions[..self.len])
     }
 }
 
 impl Debug for IStateKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.actions)
+        write!(f, "{:?}", &self.actions[..self.len])
     }
 }
 
@@ -79,13 +63,14 @@ impl Index<usize> for IStateKey {
     type Output = Action;
 
     fn index(&self, index: usize) -> &Self::Output {
-        debug_assert!(index <= self.actions.len());
+        assert!(index < self.len());
         &self.actions[index]
     }
 }
 
 impl IndexMut<usize> for IStateKey {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        assert!(index < self.len());
         &mut self.actions[index]
     }
 }

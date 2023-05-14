@@ -117,7 +117,7 @@ fn run_scratch(_args: Args) {
         );
         while !gs.is_terminal() {
             let cur_player = gs.cur_player();
-            let (v, a) = alpha_beta_search(gs, cur_player);
+            let (v, a) = alpha_beta_search(gs.clone(), cur_player);
             info!(
                 "{}: {}: value: {}, action: {}",
                 gs,

@@ -115,7 +115,7 @@ impl KuhnPoker {
             is_chance_node: true,
             history: Vec::new(),
             is_terminal: false,
-            key: IStateKey::new(),
+            key: IStateKey::default(),
         }
     }
 
@@ -271,7 +271,7 @@ impl GameState for KPGameState {
     /// 0: Card dealt
     /// 1+: History of play
     fn istate_key(&self, player: Player) -> IStateKey {
-        let mut i_state = IStateKey::new();
+        let mut i_state = IStateKey::default();
 
         // check if we've dealt cards
         if self.hands.len() > player {

@@ -2,7 +2,7 @@ use std::fmt::{Display, Write};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{collections::SortedArrayVec, istate::IStateKey};
+use crate::istate::IStateKey;
 
 use super::{Action, Game, GameState, Player};
 
@@ -192,14 +192,14 @@ impl Bluff {
     pub fn new_state(dice0: usize, dice1: usize) -> BluffGameState {
         BluffGameState {
             phase: Phase::RollingDice,
-            dice: [SortedArrayVec::new(); 2],
+            dice: Default::default(),
             cur_player: 0,
             num_players: 2,
-            keys: [IStateKey::new(); 2],
+            keys: [IStateKey::default(); 2],
             last_bid: STARTING_BID, // lowest possible bid
             num_dice: [dice0, dice1],
             is_terminal: false,
-            key: IStateKey::new(),
+            key: IStateKey::default(),
         }
     }
 
@@ -219,10 +219,10 @@ impl Bluff {
     }
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BluffGameState {
     phase: Phase,
-    dice: [SortedArrayVec<Dice, STARTING_DICE>; 2],
+    dice: [Vec<Dice>; 2],
     num_dice: [usize; 2],
     last_bid: BluffActions,
     cur_player: Player,
@@ -319,29 +319,16 @@ impl BluffGameState {
     fn update_keys(&mut self, a: Action) {
         // game key gets everything
         self.key.push(a);
-        // re-order p0's keys
-        if self.key.len() == self.num_dice[0] && self.num_dice[0] == 2 {
-            if self.key[0] > self.key[1] {
-                let v = self.key[0];
-                self.key[0] = self.key[1];
-                self.key[1] = v;
-            }
-        } else if self.key.len() == self.num_dice[0] + self.num_dice[1] && self.num_dice[1] == 2 {
-            // re-order p1's keys
-            let o = self.num_dice[0];
-            if self.key[o] > self.key[o + 1] {
-                let v = self.key[o];
-                self.key[o] = self.key[o + 1];
-                self.key[o + 1] = v;
-            }
-        }
 
-        // private actions for rolling, and we don't push the dice until we have all of them sorted
-        if self.push_player_dice(a, 0) || self.push_player_dice(a, 1) {
-            return;
-        }
-
+        // private info
         if self.phase == Phase::RollingDice {
+            let p = self.cur_player;
+            let sort_keys = self.dice[p].len() == self.num_dice[p] - 1;
+            // If we just rolled the last dice, sort the keys
+            self.keys[p].push(a);
+            if sort_keys {
+                self.keys[p].sort_range(0, self.num_dice[p]);
+            }
             return;
         }
 
@@ -449,7 +436,7 @@ impl GameState for BluffGameState {
 }
 
 fn calculate_payoff(
-    dice: &[SortedArrayVec<Dice, 2>; 2],
+    dice: &[Vec<Dice>; 2],
     last_bid: BluffActions,
     calling_player: &Player,
     player: Player,

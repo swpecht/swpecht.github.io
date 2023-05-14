@@ -5,8 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     actions,
-    algorithms::{alphamu::Team, ismcts::ResampleFromInfoState},
-    collections::SortedArrayVec,
+    algorithms::ismcts::ResampleFromInfoState,
     game::{Action, Game, GameState, Player},
     istate::IStateKey,
 };
@@ -21,8 +20,8 @@ pub mod actions;
 pub struct Euchre {}
 impl Euchre {
     pub fn new_state() -> EuchreGameState {
-        let keys = [IStateKey::new(); 4];
-        let hands = [SortedArrayVec::<Action, 5>::new(); 4];
+        let keys = [IStateKey::default(); 4];
+        let hands: [Vec<Action>; 4] = Default::default();
 
         EuchreGameState {
             num_players: 4,
@@ -38,7 +37,7 @@ impl Euchre {
             first_played: None,
             discard: None,
             trick_winners: [0; 5],
-            key: IStateKey::new(),
+            key: IStateKey::default(),
         }
     }
 
@@ -53,11 +52,11 @@ impl Euchre {
 
 /// We use Rc for the starting hand information since these values rarely change
 /// and are consistent across all children of the given state
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EuchreGameState {
     num_players: usize,
     /// Holds the cards for each player in the game
-    hands: [SortedArrayVec<Action, 5>; 4],
+    hands: [Vec<Action>; 4],
     trump: Suit,
     trump_caller: usize,
     face_up: EAction,
@@ -153,7 +152,12 @@ impl EuchreGameState {
         if !self.hands[3].contains(&a) {
             panic!("attempted to discard a card not in hand")
         }
-        self.hands[3].remove(a);
+        for i in 0..self.hands[3].len() {
+            if self.hands[3][i] == a {
+                self.hands[3].remove(i);
+                break;
+            }
+        }
         self.hands[3].push(self.face_up.into());
 
         self.cur_player = 0;
@@ -167,7 +171,13 @@ impl EuchreGameState {
 
         for i in 0..self.hands[self.cur_player].len() {
             if self.hands[self.cur_player][i] == a {
-                self.hands[self.cur_player].remove(a);
+                let cp = self.cur_player;
+                for j in 0..self.hands[cp].len() {
+                    if self.hands[cp][j] == a {
+                        self.hands[cp].remove(j);
+                        break;
+                    }
+                }
                 break;
             }
         }
@@ -400,26 +410,15 @@ impl EuchreGameState {
     fn update_keys(&mut self, a: Action) {
         self.key.push(a);
 
-        // haven't pushed the cards yet, do it now if we've dealt all but the last card
-        if (self.hands[3].len() == 4) && (self.hands[2].len() == 5) {
-            for p in 0..self.num_players {
-                for i in 0..self.hands[p].len() {
-                    let c = self.hands[p][i];
-                    self.istate_keys[p].push(c);
-                }
-            }
-
-            self.istate_keys[3].push(a);
-        }
-
-        if self.phase == EPhase::DealHands {
-            // don't do anything until hands are dealt so we can put the cards in order
-            return;
-        }
-
         // Private actions
         if self.phase == EPhase::DealHands || self.phase == EPhase::Discard {
-            self.istate_keys[self.cur_player].push(a);
+            let p = self.cur_player;
+            let sort_keys = self.hands[p].len() == CARDS_PER_HAND - 1;
+            // If we just dealt the last card, sort the keys
+            self.istate_keys[p].push(a);
+            if sort_keys {
+                self.istate_keys[p].sort_range(0, CARDS_PER_HAND);
+            }
             return;
         }
 
@@ -573,13 +572,6 @@ impl GameState for EuchreGameState {
         }
     }
 
-    /// Returns an information state with the following format:
-    /// * 0-4: hand
-    /// * 5: face up card
-    /// * 6-13: calling and passing for trump call
-    /// * 14: Calling player
-    /// * 15: trump
-    /// * 16+: play history
     fn istate_key(&self, player: Player) -> IStateKey {
         self.istate_keys[player]
     }
@@ -940,7 +932,7 @@ mod tests {
         assert_eq!(gs.istate_string(2), "KSAS9HTHJH|JD|");
         assert_eq!(gs.istate_string(3), "QHKHAH9DTD|JD|");
 
-        let mut new_s = gs; // for alternative pickup parsing
+        let mut new_s = gs.clone(); // for alternative pickup parsing
 
         gs.apply_action(EAction::Pickup.into());
         assert_eq!(gs.istate_string(0), "9CTCJCQCKC|JD|T|0D");
