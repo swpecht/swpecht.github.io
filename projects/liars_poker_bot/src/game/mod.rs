@@ -56,8 +56,10 @@ pub trait GameState: Display + Clone + Debug + Serialize + DeserializeOwned {
     fn is_chance_node(&self) -> bool;
     fn num_players(&self) -> usize;
     fn cur_player(&self) -> Player;
-    // A key representing the entire game state, likely a history of all actions
+    /// A key representing the entire game state, likely a history of all actions
     fn key(&self) -> IStateKey;
+    /// Undo the last played actions
+    fn undo(&mut self);
 }
 
 /// Runs an iteration of the game. If Team 0 is none, the agent plays against itself

@@ -409,6 +409,10 @@ impl GameState for BluffGameState {
     fn key(&self) -> IStateKey {
         self.key
     }
+
+    fn undo(&mut self) {
+        todo!()
+    }
 }
 
 fn calculate_payoff(

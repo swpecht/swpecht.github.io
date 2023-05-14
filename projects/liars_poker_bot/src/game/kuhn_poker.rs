@@ -6,6 +6,7 @@ use crate::{
     game::{Action, Game, GameState, Player},
     istate::IStateKey,
 };
+use itertools::Itertools;
 use log::trace;
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
@@ -52,11 +53,9 @@ pub struct KPGameState {
     num_players: usize,
     /// Holds the cards for each player in the game
     hands: Vec<Action>,
-    is_chance_node: bool,
     is_terminal: bool,
     phase: KPPhase,
     cur_player: usize,
-    history: Vec<KPAction>,
     key: IStateKey,
 }
 
@@ -69,8 +68,8 @@ impl Display for KPGameState {
         }
         result.push(']');
 
-        for &h in &self.history {
-            let char = match h {
+        for h in self.key.into_iter().skip(2) {
+            let char = match KPAction::from(h) {
                 KPAction::Bet => 'b',
                 KPAction::Pass => 'p',
                 _ => panic!("invalid action for history"),
@@ -91,8 +90,8 @@ impl Debug for KPGameState {
         }
         result.push(']');
 
-        for &h in &self.history {
-            let char = match h {
+        for h in self.key.into_iter().skip(2) {
+            let char = match KPAction::from(h) {
                 KPAction::Bet => 'b',
                 KPAction::Pass => 'p',
                 _ => panic!("invalid action for history"),
@@ -112,8 +111,6 @@ impl KuhnPoker {
             phase: KPPhase::Dealing,
             cur_player: 0,
             num_players: 2,
-            is_chance_node: true,
-            history: Vec::new(),
             is_terminal: false,
             key: IStateKey::default(),
         }
@@ -166,22 +163,15 @@ impl KPGameState {
             trace!("moving to playing phase");
             self.phase = KPPhase::Playing;
             self.cur_player = 0;
-            self.is_chance_node = false;
         }
     }
 
     fn apply_action_playing(&mut self, a: Action) {
-        match KPAction::from(a) {
-            KPAction::Bet => self.history.push(KPAction::Bet),
-            KPAction::Pass => self.history.push(KPAction::Pass),
-            _ => panic!("attempted invalid action"),
-        }
-
-        if (self.history.len() == self.num_players && self.history[0] == KPAction::Bet)
-            || (self.history.len() == self.num_players
-                && self.history[0] == KPAction::Pass
-                && self.history[1] == KPAction::Pass)
-            || self.history.len() == 3
+        if (self.key.len() == self.num_players + 2 && self.key[2] == KPAction::Bet.into())
+            || (self.key.len() == self.num_players + 2
+                && self.key[2] == KPAction::Pass.into()
+                && self.key[3] == KPAction::Pass.into())
+            || self.key.len() == 5
         {
             self.is_terminal = true;
         }
@@ -244,7 +234,11 @@ impl GameState for KPGameState {
             panic!("invalid deal, players have same cards")
         }
 
-        let payoffs = match self.history[..] {
+        let payoffs = match self.key[2..]
+            .into_iter()
+            .map(|x| KPAction::from(*x))
+            .collect_vec()[..]
+        {
             [KPAction::Pass, KPAction::Pass] => {
                 if self.hands[0] > self.hands[1] {
                     [1.0, -1.0]
@@ -278,8 +272,10 @@ impl GameState for KPGameState {
             i_state.push(self.hands[player]);
         }
 
-        for &h in &self.history {
-            i_state.push(h.into());
+        if self.key.len() > 2 {
+            for &h in &self.key[2..] {
+                i_state.push(h);
+            }
         }
         i_state
     }
@@ -289,7 +285,7 @@ impl GameState for KPGameState {
     }
 
     fn is_chance_node(&self) -> bool {
-        self.is_chance_node
+        self.key.len() < 2
     }
 
     fn num_players(&self) -> usize {
@@ -320,6 +316,10 @@ impl GameState for KPGameState {
 
     fn key(&self) -> IStateKey {
         self.key
+    }
+
+    fn undo(&mut self) {
+        todo!()
     }
 }
 

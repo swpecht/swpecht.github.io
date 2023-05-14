@@ -1,11 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;
 
-use std::{
-    fmt::Debug,
-    hash::Hash,
-    ops::{Index, IndexMut},
-};
+use std::{fmt::Debug, hash::Hash, ops::Deref, usize};
 
 use crate::game::Action;
 
@@ -22,6 +18,16 @@ impl Default for IStateKey {
             actions: [Action::default(); 64],
             len: 0,
         }
+    }
+}
+
+/// We deref to a slice for full indexing, this is the same approach
+/// that ArrayVec uses
+impl Deref for IStateKey {
+    type Target = [Action];
+
+    fn deref(&self) -> &Self::Target {
+        &self.actions[..self.len]
     }
 }
 
@@ -59,19 +65,34 @@ impl Debug for IStateKey {
     }
 }
 
-impl Index<usize> for IStateKey {
-    type Output = Action;
+impl IntoIterator for IStateKey {
+    type Item = Action;
 
-    fn index(&self, index: usize) -> &Self::Output {
-        assert!(index < self.len());
-        &self.actions[index]
+    type IntoIter = IStateKeyIterator;
+
+    fn into_iter(self) -> Self::IntoIter {
+        IStateKeyIterator {
+            key: self,
+            index: 0,
+        }
     }
 }
 
-impl IndexMut<usize> for IStateKey {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        assert!(index < self.len());
-        &mut self.actions[index]
+pub struct IStateKeyIterator {
+    key: IStateKey,
+    index: usize,
+}
+
+impl Iterator for IStateKeyIterator {
+    type Item = Action;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index < self.key.len() {
+            let v = Some(self.key[self.index]);
+            self.index += 1;
+            return v;
+        }
+        None
     }
 }
 

@@ -706,6 +706,10 @@ impl GameState for EuchreGameState {
     fn key(&self) -> IStateKey {
         self.key
     }
+
+    fn undo(&mut self) {
+        todo!()
+    }
 }
 
 /// Resample from info state method for euchre
