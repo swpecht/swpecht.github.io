@@ -7,7 +7,7 @@ use crate::{
     istate::IStateKey,
 };
 use itertools::Itertools;
-use log::trace;
+
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 
@@ -190,7 +190,7 @@ impl GameState for KPGameState {
         }
 
         let payoffs = match self.key[2..]
-            .into_iter()
+            .iter()
             .map(|x| KPAction::from(*x))
             .collect_vec()[..]
         {

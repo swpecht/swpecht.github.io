@@ -426,8 +426,8 @@ fn calculate_payoff(
     let mut n = 0;
 
     for p_dice in dice {
-        for d in 0..p_dice.len() {
-            if p_dice[d] == f || p_dice[d] == Dice::Wild {
+        for &d in p_dice {
+            if d == f || d == Dice::Wild {
                 n += 1;
             }
         }
