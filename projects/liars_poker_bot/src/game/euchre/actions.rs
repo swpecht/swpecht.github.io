@@ -6,7 +6,7 @@ use crate::game::Action;
 
 pub(super) const CARD_PER_SUIT: u8 = 6;
 
-#[derive(PartialEq, Clone, Copy, Serialize, Deserialize)]
+#[derive(PartialEq, Clone, Copy, Serialize, Deserialize, Eq)]
 pub enum EAction {
     Pickup,
     Pass,

@@ -26,8 +26,6 @@ impl Euchre {
         EuchreGameState {
             num_players: 4,
             hands,
-            is_chance_node: true,
-            is_terminal: false,
             phase: EPhase::DealHands,
             cur_player: 0,
             trump: Suit::Clubs,     // Default to one for now
@@ -52,7 +50,7 @@ impl Euchre {
 
 /// We use Rc for the starting hand information since these values rarely change
 /// and are consistent across all children of the given state
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EuchreGameState {
     num_players: usize,
     /// Holds the cards for each player in the game
@@ -60,8 +58,6 @@ pub struct EuchreGameState {
     trump: Suit,
     trump_caller: usize,
     face_up: EAction,
-    is_chance_node: bool,
-    is_terminal: bool,
     phase: EPhase,
     cur_player: usize,
     istate_keys: [IStateKey; 4],
@@ -103,7 +99,6 @@ impl EuchreGameState {
         self.face_up = EAction::from(a);
         self.phase = EPhase::Pickup;
         self.cur_player = 0;
-        self.is_chance_node = false;
     }
 
     fn apply_action_pickup(&mut self, a: Action) {
@@ -197,10 +192,6 @@ impl EuchreGameState {
             self.trick_winners[trick] = winner;
         } else {
             self.cur_player = (self.cur_player + 1) % self.num_players;
-        }
-
-        if trick_over && num_cards == 0 {
-            self.is_terminal = true;
         }
     }
 
@@ -547,7 +538,7 @@ impl GameState for EuchreGameState {
     }
 
     fn evaluate(&self, p: Player) -> f64 {
-        if !self.is_terminal {
+        if !self.is_terminal() {
             panic!("evaluate called on non-terminal gamestate");
         }
 
@@ -688,11 +679,14 @@ impl GameState for EuchreGameState {
     }
 
     fn is_terminal(&self) -> bool {
-        self.is_terminal
+        if let Some(first_play) = self.first_played {
+            return self.key.len() - first_play == 20;
+        }
+        false
     }
 
     fn is_chance_node(&self) -> bool {
-        self.is_chance_node
+        self.key.len() < self.num_players * CARDS_PER_HAND + 1 // deals + face up card
     }
 
     fn num_players(&self) -> usize {
@@ -771,7 +765,7 @@ mod tests {
     use std::{collections::HashSet, vec};
 
     use itertools::Itertools;
-    use rand::thread_rng;
+    use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
 
     use crate::{
         actions,
@@ -795,7 +789,7 @@ mod tests {
         s.apply_action(EAction::Card { a: 20 }.into());
 
         assert_eq!(s.phase, EPhase::Pickup);
-        assert!(!s.is_chance_node);
+        assert!(!s.is_chance_node());
         for i in 0..4 {
             assert_eq!(s.cur_player, i);
             s.apply_action(EAction::Pass.into());
@@ -823,7 +817,7 @@ mod tests {
         s.apply_action(EAction::Card { a: 20 }.into());
 
         assert_eq!(s.phase, EPhase::Pickup);
-        assert!(!s.is_chance_node);
+        assert!(!s.is_chance_node());
         for _ in 0..3 {
             s.apply_action(EAction::Pass.into());
         }
@@ -1021,6 +1015,24 @@ mod tests {
 
                 let a = ra.step(&s);
                 s.apply_action(a);
+            }
+        }
+    }
+
+    #[test]
+    fn test_undo_euchre() {
+        let mut rng: StdRng = SeedableRng::seed_from_u64(0);
+        for _ in 0..1000 {
+            let mut gs = Euchre::new_state();
+
+            while !gs.is_terminal() {
+                let actions = actions!(gs);
+                let a = actions.choose(&mut rng).unwrap();
+                let mut ngs = gs.clone();
+                ngs.apply_action(*a);
+                ngs.undo();
+                assert_eq!(ngs, gs);
+                gs.apply_action(*a);
             }
         }
     }
