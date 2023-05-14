@@ -336,30 +336,6 @@ impl BluffGameState {
             self.keys[i].push(a);
         }
     }
-
-    fn push_player_dice(&mut self, a: Action, p: Player) -> bool {
-        assert!(self.num_dice[p] <= 2);
-
-        let is_last_dice = self.dice[p].len() + 1 == self.num_dice[p];
-        if self.cur_player == p && is_last_dice {
-            if self.num_dice[p] == 1 {
-                self.keys[p].push(a);
-                return true;
-            }
-
-            if self.dice[p][0] < BluffActions::from(a).get_dice() {
-                self.keys[p].push(BluffActions::from(self.dice[p][0]).into());
-                self.keys[p].push(a);
-            } else {
-                self.keys[p].push(a);
-                self.keys[p].push(BluffActions::from(self.dice[p][0]).into());
-            }
-
-            return true;
-        }
-
-        false
-    }
 }
 
 impl GameState for BluffGameState {

@@ -1,7 +1,7 @@
 use log::debug;
 use rustc_hash::FxHashMap as HashMap;
 
-use crate::{collections::ArrayVec, game::Action, istate::IStateKey};
+use crate::{game::Action, istate::IStateKey};
 
 const MAX_CHILDREN: usize = 32;
 
@@ -93,8 +93,8 @@ impl<T: Clone> Tree<T> {
 
     fn get_or_create_root(&mut self, action: Action) -> usize {
         let root = self.roots.get(&action);
-        if let Some(..) = root {
-            return *root.unwrap();
+        if let Some(r) = root {
+            return *r;
         }
 
         let n = Node::new(0, action, None); // root node has itself as a parent
@@ -168,7 +168,7 @@ impl<T: Clone> Tree<T> {
         cursor?;
         let cursor = cursor.unwrap();
         let c = cursor.path;
-        let last_same = find_last_same(&k, &c);
+        let last_same = find_last_same(k, &c);
         if last_same.is_none() {
             return Some((cursor.id, c.len() - 1));
         }
@@ -246,7 +246,6 @@ mod tests {
 
     use crate::{
         actions,
-        collections::ArrayVec,
         database::node_tree::find_last_same,
         game::euchre::Euchre,
         game::{Action, GameState},
