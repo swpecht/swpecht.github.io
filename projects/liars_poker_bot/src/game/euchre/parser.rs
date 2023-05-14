@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use serde::{Deserialize, Serialize};
 
 use crate::game::{Action, Player};
@@ -38,7 +40,7 @@ impl EuchreParserState {
             EuchreParserState::PickupChoice(_) => true,
             EuchreParserState::CallChoice(_) => true,
             EuchreParserState::Play(_) => true,
-            EuchreParserState::Terminal => panic!("invalid visiblity check"),
+            EuchreParserState::Terminal => false, // no one sees this
         }
     }
 
@@ -97,27 +99,33 @@ impl EuchreParserState {
 /// Consumes a series of actions to track the state of a euchre game
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub(super) struct EuchreParser {
-    state: EuchreParserState,
-    state_history: Vec<EuchreParserState>,
+    pub history: Vec<EuchreParserState>,
 }
 
 impl EuchreParser {
     pub fn consume(&mut self, a: Action) {
-        self.state_history.push(self.state);
-        self.state = self.state.next(a);
+        let last = self.history[self.history.len() - 1];
+        self.history.push(last.next(a));
     }
 
     // undo the last action
     pub fn undo(&mut self) {
-        self.state = self.state_history.pop().unwrap();
+        self.history.pop().unwrap();
     }
 }
 
 impl Default for EuchreParser {
     fn default() -> Self {
         Self {
-            state: EuchreParserState::DealPlayers(0),
-            state_history: Default::default(),
+            history: vec![EuchreParserState::DealPlayers(0)],
         }
+    }
+}
+
+impl Deref for EuchreParser {
+    type Target = Vec<EuchreParserState>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.history
     }
 }
