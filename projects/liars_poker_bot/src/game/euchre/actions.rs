@@ -49,6 +49,10 @@ impl EAction {
             _ => panic!("invalid card index: {}", card_index),
         }
     }
+
+    pub fn is_card(&self) -> bool {
+        matches!(self, EAction::Card { a })
+    }
 }
 
 impl From<EAction> for Action {

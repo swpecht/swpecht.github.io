@@ -10,12 +10,16 @@ use crate::{
     istate::IStateKey,
 };
 
-use self::actions::{EAction, Face, Suit, CARD_PER_SUIT};
+use self::{
+    actions::{EAction, Face, Suit, CARD_PER_SUIT},
+    parser::EuchreParser,
+};
 
 const NUM_CARDS: usize = 24;
-const CARDS_PER_HAND: usize = 5;
+pub(super) const CARDS_PER_HAND: usize = 5;
 
 pub mod actions;
+mod parser;
 
 pub struct Euchre {}
 impl Euchre {
@@ -36,6 +40,7 @@ impl Euchre {
             discard: None,
             trick_winners: [0; 5],
             key: IStateKey::default(),
+            parser: EuchreParser::default(),
         }
     }
 
@@ -69,6 +74,7 @@ pub struct EuchreGameState {
     /// keep track of who has won tricks to avoid re-computing
     trick_winners: [Player; 5],
     key: IStateKey,
+    parser: EuchreParser,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy, Serialize, Deserialize)]
@@ -400,6 +406,7 @@ impl EuchreGameState {
 
     fn update_keys(&mut self, a: Action) {
         self.key.push(a);
+        self.parser.consume(a);
 
         // Private actions
         if self.phase == EPhase::DealHands || self.phase == EPhase::Discard {
@@ -698,7 +705,16 @@ impl GameState for EuchreGameState {
     }
 
     fn key(&self) -> IStateKey {
-        self.key
+        let mut sorted_key = self.key;
+        for p in 0..self.num_players {
+            let end_sort = sorted_key.len().min((p + 1) * CARDS_PER_HAND);
+            sorted_key.sort_range(p * CARDS_PER_HAND, end_sort);
+            if (p + 1) * CARDS_PER_HAND + 1 > sorted_key.len() {
+                break;
+            }
+        }
+
+        sorted_key
     }
 
     fn undo(&mut self) {
