@@ -45,7 +45,7 @@ impl EuchreParserState {
     }
 
     fn next_deal(&self, a: Action, c: usize) -> Self {
-        assert!(EAction::from(a).is_card());
+        matches!(a.into(), EAction::DealPlayer { c });
         if c == 19 {
             Self::DealFaceUp
         } else {
@@ -54,12 +54,12 @@ impl EuchreParserState {
     }
 
     fn next_deal_face_up(&self, a: Action) -> Self {
-        assert!(EAction::from(a).is_card());
+        matches!(a.into(), EAction::DealFaceUp { c });
         Self::PickupChoice(0)
     }
 
     fn next_discard(&self, a: Action) -> Self {
-        assert!(EAction::from(a).is_card());
+        matches!(a.into(), EAction::Discard { c });
         Self::Play(0)
     }
 

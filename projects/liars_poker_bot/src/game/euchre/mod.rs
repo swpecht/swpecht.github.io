@@ -11,7 +11,8 @@ use crate::{
 };
 
 use self::{
-    actions::{EAction, Face, Suit, CARD_PER_SUIT},
+    actions::{Card, EAction, Face, Suit, CARD_PER_SUIT},
+    deck::{CardLocation, Deck},
     parser::EuchreParser,
 };
 
@@ -19,6 +20,7 @@ const NUM_CARDS: usize = 24;
 pub(super) const CARDS_PER_HAND: usize = 5;
 
 pub mod actions;
+mod deck;
 mod parser;
 
 pub struct Euchre {}
@@ -30,8 +32,7 @@ impl Euchre {
             num_players: 4,
             hands,
             cur_player: 0,
-            trump: Suit::Clubs,     // Default to one for now
-            face_up: EAction::Pass, // Default for now
+            trump: Suit::Clubs, // Default to one for now
             trump_caller: 0,
             first_played: None,
             discard: None,
@@ -39,6 +40,7 @@ impl Euchre {
             key: IStateKey::default(),
             parser: EuchreParser::default(),
             play_order: Vec::new(),
+            deck: Deck::default(),
         }
     }
 
@@ -60,7 +62,6 @@ pub struct EuchreGameState {
     hands: [HashSet<Action>; 4],
     trump: Suit,
     trump_caller: usize,
-    face_up: EAction,
     cur_player: usize,
     /// index of the game key where the first played card is
     /// used to make looking up tricks easier
@@ -72,6 +73,7 @@ pub struct EuchreGameState {
     key: IStateKey,
     parser: EuchreParser,
     play_order: Vec<Player>, // tracker of who went in what order. Last item is the current player
+    deck: Deck,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy, Serialize, Deserialize)]
@@ -96,7 +98,8 @@ impl EuchreGameState {
     }
 
     fn apply_action_deal_face_up(&mut self, a: Action) {
-        self.face_up = EAction::from(a);
+        let card = EAction::from(a).card();
+        self.deck[card] = CardLocation::FaceUp;
         self.cur_player = 0;
     }
 
@@ -107,7 +110,7 @@ impl EuchreGameState {
             }
             EAction::Pickup => {
                 self.trump_caller = self.cur_player;
-                self.trump = self.get_suit(self.face_up.into());
+                self.trump = self.face_up().unwrap().suit();
                 self.cur_player = 3; // dealers turn
             }
             _ => panic!("invalid action"),
@@ -135,13 +138,12 @@ impl EuchreGameState {
 
     /// Can only be done by the dealer (player 3)
     fn apply_action_discard(&mut self, a: Action) {
-        self.discard = Some(self.key.len());
+        let discard = EAction::from(a).card();
+        assert!(self.deck[discard] == CardLocation::Player3);
+        self.deck[discard] = CardLocation::None; // dealer
 
-        if !self.hands[3].contains(&a) {
-            panic!("attempted to discard a card not in hand")
-        }
-        self.hands[3].remove(&a);
-        self.hands[3].insert(self.face_up.into());
+        let pickup = self.face_up().unwrap();
+        self.deck[pickup] = CardLocation::Player3;
 
         self.cur_player = 0;
     }
@@ -210,16 +212,9 @@ impl EuchreGameState {
     }
 
     fn legal_actions_dealing(&self, actions: &mut Vec<Action>) {
-        for i in 0..NUM_CARDS {
-            let mut is_dealt = false;
-            for h in 0..self.num_players {
-                if self.hands[h].contains(&EAction::Card { a: i as u8 }.into()) {
-                    is_dealt = true;
-                    break;
-                }
-            }
-            if !is_dealt {
-                actions.push(EAction::Card { a: i as u8 }.into());
+        for (c, &loc) in &self.deck {
+            if loc == CardLocation::None {
+                actions.push(EAction::DealPlayer { c }.into());
             }
         }
     }
@@ -232,7 +227,7 @@ impl EuchreGameState {
             actions.push(EAction::Pass.into())
         }
 
-        let face_up = self.get_suit(self.face_up.into());
+        let face_up = self.face_up().unwrap().suit();
         if face_up != Suit::Clubs {
             actions.push(EAction::Clubs.into());
         }
@@ -325,17 +320,16 @@ impl EuchreGameState {
     /// Gets the suit of a given card. Accounts for the weird scoring of the trump suit
     /// if in the playing phase of the game
     fn get_suit(&self, c: Action) -> Suit {
-        let c = EAction::from(c);
-        let mut suit = c.get_suit();
-        let face = c.get_face();
+        let c = EAction::from(c).card();
+        let mut suit = c.suit();
 
         // Correct the jack if in play phase
-        if self.phase() == EPhase::Play && face == Face::J {
-            suit = match (suit, self.trump) {
-                (Suit::Clubs, Suit::Spades) => Suit::Spades,
-                (Suit::Spades, Suit::Clubs) => Suit::Clubs,
-                (Suit::Hearts, Suit::Diamonds) => Suit::Diamonds,
-                (Suit::Diamonds, Suit::Hearts) => Suit::Hearts,
+        if self.phase() == EPhase::Play {
+            suit = match (c, self.trump) {
+                (Card::JC, Suit::Spades) => Suit::Spades,
+                (Card::JS, Suit::Clubs) => Suit::Clubs,
+                (Card::JH, Suit::Diamonds) => Suit::Diamonds,
+                (Card::JD, Suit::Hearts) => Suit::Hearts,
                 _ => suit,
             }
         }
@@ -346,18 +340,23 @@ impl EuchreGameState {
     /// but can be used to compare card values of the same suit. It accounts for
     /// left and right jack.
     fn get_card_value(&self, c: Action) -> usize {
-        let face = EAction::from(c).get_face();
-        if self.get_suit(c) != self.trump || self.phase() != EPhase::Play || face != Face::J {
-            return face as usize;
+        let card = EAction::from(c).card();
+        let rank = card.rank();
+
+        if self.phase() != EPhase::Play {
+            return rank as usize;
         }
 
-        // Get the suit "on the card" determine if left or right
-        let pure_suit = EAction::from(c).get_suit();
-        let is_right = pure_suit == self.trump;
-
-        match is_right {
-            true => (CARD_PER_SUIT + 2) as usize,  // right
-            false => (CARD_PER_SUIT + 1) as usize, // left
+        match (self.trump, card) {
+            (Suit::Clubs, Card::JC) => 100,
+            (Suit::Clubs, Card::JS) => 99,
+            (Suit::Spades, Card::JS) => 100,
+            (Suit::Spades, Card::JC) => 99,
+            (Suit::Hearts, Card::JH) => 100,
+            (Suit::Hearts, Card::JD) => 99,
+            (Suit::Diamonds, Card::JD) => 100,
+            (Suit::Diamonds, Card::JH) => 99,
+            _ => rank as usize,
         }
     }
 
@@ -376,6 +375,13 @@ impl EuchreGameState {
             parser::EuchreParserState::Play(_) => EPhase::Play,
             parser::EuchreParserState::Terminal => EPhase::Play,
         }
+    }
+
+    fn face_up(&self) -> Card {
+        // read the value from the deck
+        // if it's not there, we're probably calling this to rewind, look through the
+        // action history to find it
+        todo!()
     }
 }
 
@@ -693,12 +699,10 @@ impl GameState for EuchreGameState {
             (parser::EuchreParserState::DealPlayers(_), _) => {
                 self.hands[self.cur_player].remove(&applied_action.into());
             }
-            (parser::EuchreParserState::DealFaceUp, _) => {
-                self.face_up = EAction::Pass; // default value
-            }
+            (parser::EuchreParserState::DealFaceUp, _) => {}
             (parser::EuchreParserState::Discard, _) => {
                 self.discard = None;
-                self.hands[3].remove(&self.face_up.into());
+                self.hands[3].remove(&self.face_up().into());
                 self.hands[3].insert(applied_action.into());
             }
             (parser::EuchreParserState::PickupChoice(_), EAction::Pickup) => {
@@ -795,7 +799,7 @@ mod tests {
         actions,
         agents::{Agent, RandomAgent},
         algorithms::ismcts::ResampleFromInfoState,
-        game::euchre::{EAction, EPhase, Euchre, Suit},
+        game::euchre::{actions::Card, EAction, EPhase, Euchre, Suit},
     };
 
     use super::GameState;
@@ -806,11 +810,11 @@ mod tests {
 
         assert_eq!(s.phase(), EPhase::DealHands);
         for i in 0..20 {
-            s.apply_action(EAction::Card { a: i }.into());
+            s.apply_action(EAction::DealPlayer { c: Card::from(i) }.into());
         }
 
         assert_eq!(s.phase(), EPhase::DealFaceUp);
-        s.apply_action(EAction::Card { a: 20 }.into());
+        s.apply_action(EAction::DealFaceUp { c: Card::from(20) }.into());
 
         assert_eq!(s.phase(), EPhase::Pickup);
         assert!(!s.is_chance_node());
@@ -834,11 +838,11 @@ mod tests {
 
         assert_eq!(s.phase(), EPhase::DealHands);
         for i in 0..20 {
-            s.apply_action(EAction::Card { a: i }.into());
+            s.apply_action(EAction::DealPlayer { c: i.into() }.into());
         }
 
         assert_eq!(s.phase(), EPhase::DealFaceUp);
-        s.apply_action(EAction::Card { a: 20 }.into());
+        s.apply_action(EAction::DealFaceUp { c: 20.into() }.into());
 
         assert_eq!(s.phase(), EPhase::Pickup);
         assert!(!s.is_chance_node());
@@ -848,7 +852,7 @@ mod tests {
         s.apply_action(EAction::Pickup.into());
 
         assert_eq!(s.phase(), EPhase::Discard);
-        s.apply_action(EAction::Card { a: 19 }.into());
+        s.apply_action(EAction::Discard { c: Card::from(19) }.into());
 
         assert_eq!(s.phase(), EPhase::Play);
         assert_eq!(s.cur_player, 0);
@@ -859,18 +863,15 @@ mod tests {
         let mut gs = Euchre::new_state();
 
         for i in 0..20 {
-            gs.apply_action(EAction::Card { a: i }.into());
+            gs.apply_action(EAction::DealPlayer { c: i.into() }.into());
             let legal = actions!(gs);
             for j in 0..i + 1 {
-                let index = legal
-                    .iter()
-                    .position(|&x| x == EAction::Card { a: j }.into());
-                assert_eq!(index, None);
+                assert!(!legal.contains(&EAction::DealPlayer { c: j.into() }.into()));
             }
         }
 
         // Deal the face up card
-        gs.apply_action(EAction::Card { a: 21 }.into());
+        gs.apply_action(EAction::DealFaceUp { c: 21.into() }.into());
         assert_eq!(gs.face_up, EAction::Card { a: 21 });
 
         assert_eq!(

@@ -14,44 +14,156 @@ pub enum EAction {
     Spades,
     Hearts,
     Diamonds,
-    Card { a: u8 },
+    DealPlayer { c: Card },
+    DealFaceUp { c: Card },
+    Discard { c: Card },
+    Play { c: Card },
 }
 
 impl EAction {
-    pub(super) fn get_suit(&self) -> Suit {
-        let card_index = match self {
-            EAction::Card { a: x } => *x,
-            _ => panic!("can only get the suit of a card action"),
-        };
+    pub fn card(&self) -> Card {
+        match self {
+            EAction::Discard { c } | EAction::DealPlayer { c } | EAction::Play { c } => *c,
+            _ => panic!("can't get card on: {:?}", self),
+        }
+    }
+}
 
-        match card_index / CARD_PER_SUIT {
-            0 => Suit::Clubs,
-            1 => Suit::Spades,
-            2 => Suit::Hearts,
-            3 => Suit::Diamonds,
-            _ => panic!("invalid card"),
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Debug)]
+pub enum Card {
+    NS,
+    TS,
+    JS,
+    QS,
+    KS,
+    AS,
+    NC,
+    TC,
+    JC,
+    QC,
+    KC,
+    AC,
+    NH,
+    TH,
+    JH,
+    QH,
+    KH,
+    AH,
+    ND,
+    TD,
+    JD,
+    QD,
+    KD,
+    AD,
+}
+
+impl Card {
+    pub(super) fn suit(&self) -> Suit {
+        match self {
+            Card::NS | Card::TS | Card::JS | Card::QS | Card::KS | Card::AS => Suit::Spades,
+            Card::NC | Card::TC | Card::JC | Card::QC | Card::KC | Card::AC => Suit::Clubs,
+            Card::NH | Card::TH | Card::JH | Card::QH | Card::KH | Card::AH => Suit::Hearts,
+            Card::ND | Card::TD | Card::JD | Card::QD | Card::KD | Card::AD => Suit::Diamonds,
         }
     }
 
-    pub(super) fn get_face(&self) -> Face {
-        let card_index = match self {
-            EAction::Card { a: x } => *x,
-            _ => panic!("can only get the suit of a card action"),
-        };
+    pub(super) fn rank(&self) -> u8 {
+        *self as u8 % CARD_PER_SUIT
+    }
+}
 
-        match card_index % CARD_PER_SUIT {
-            0 => Face::N,
-            1 => Face::T,
-            2 => Face::J,
-            3 => Face::Q,
-            4 => Face::K,
-            5 => Face::A,
-            _ => panic!("invalid card index: {}", card_index),
+impl From<u8> for Card {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => Self::NS,
+            1 => Self::TS,
+            2 => Self::JS,
+            3 => Self::QS,
+            4 => Self::KS,
+            5 => Self::AS,
+            6 => Self::NC,
+            7 => Self::TC,
+            8 => Self::JC,
+            9 => Self::QC,
+            10 => Self::KC,
+            11 => Self::AC,
+            12 => Self::NH,
+            13 => Self::TH,
+            14 => Self::JH,
+            15 => Self::QH,
+            16 => Self::KH,
+            17 => Self::AH,
+            18 => Self::ND,
+            19 => Self::TD,
+            20 => Self::JD,
+            21 => Self::QD,
+            22 => Self::KD,
+            23 => Self::AD,
+            _ => panic!("invalid value to conver to card: {}", value),
         }
     }
+}
 
-    pub fn is_card(&self) -> bool {
-        matches!(self, EAction::Card { a })
+impl From<&str> for Card {
+    fn from(value: &str) -> Self {
+        match value {
+            "9S" => Self::NS,
+            "TS" => Self::TS,
+            "JS" => Self::JS,
+            "QS" => Self::QS,
+            "KS" => Self::KS,
+            "AS" => Self::AS,
+            "9C" => Self::NC,
+            "TC" => Self::TC,
+            "JC" => Self::JC,
+            "QC" => Self::QC,
+            "KC" => Self::KC,
+            "AC" => Self::AC,
+            "9H" => Self::NH,
+            "TH" => Self::TH,
+            "JH" => Self::JH,
+            "QH" => Self::QH,
+            "KH" => Self::KH,
+            "AH" => Self::AH,
+            "9D" => Self::ND,
+            "TD" => Self::TD,
+            "JD" => Self::JD,
+            "QD" => Self::QD,
+            "KD" => Self::KD,
+            "AD" => Self::AD,
+            _ => panic!("invalud card string: {}", value),
+        }
+    }
+}
+
+impl Display for Card {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Card::NS => write!(f, "9S"),
+            Card::TS => write!(f, "TS"),
+            Card::JS => write!(f, "JS"),
+            Card::QS => write!(f, "QS"),
+            Card::KS => write!(f, "KS"),
+            Card::AS => write!(f, "AS"),
+            Card::NC => write!(f, "9C"),
+            Card::TC => write!(f, "TC"),
+            Card::JC => write!(f, "JC"),
+            Card::QC => write!(f, "QC"),
+            Card::KC => write!(f, "KC"),
+            Card::AC => write!(f, "AC"),
+            Card::NH => write!(f, "9H"),
+            Card::TH => write!(f, "TH"),
+            Card::JH => write!(f, "JH"),
+            Card::QH => write!(f, "QH"),
+            Card::KH => write!(f, "KH"),
+            Card::AH => write!(f, "AH"),
+            Card::ND => write!(f, "9D"),
+            Card::TD => write!(f, "TD"),
+            Card::JD => write!(f, "JD"),
+            Card::QD => write!(f, "QD"),
+            Card::KD => write!(f, "KD"),
+            Card::AD => write!(f, "AD"),
+        }
     }
 }
 
@@ -64,7 +176,10 @@ impl From<EAction> for Action {
             EAction::Spades => 3,
             EAction::Hearts => 4,
             EAction::Diamonds => 5,
-            EAction::Card { a: x } => 6 + x,
+            EAction::DealPlayer { c: x } => 50 + x as u8,
+            EAction::Play { c: x } => 100 + x as u8,
+            EAction::Discard { c: x } => 150 + x as u8,
+            EAction::DealFaceUp { c: x } => 200 + x as u8,
         };
         Action(v)
     }
@@ -79,80 +194,47 @@ impl From<Action> for EAction {
             3 => EAction::Spades,
             4 => EAction::Hearts,
             5 => EAction::Diamonds,
-            x if (6..=24 + 6).contains(&x) => EAction::Card { a: x - 6 },
-            _ => panic!("invalud action to cast: {}", value),
+            x if x >= 200 => EAction::DealFaceUp {
+                c: Card::from(x - 50),
+            },
+            x if x >= 150 => EAction::Discard {
+                c: Card::from(x - 50),
+            },
+            x if x >= 100 => EAction::Play {
+                c: Card::from(x - 50),
+            },
+            x if x >= 50 => EAction::DealPlayer {
+                c: Card::from(x - 50),
+            },
+            _ => panic!("invalid action to cast: {}", value),
         }
-    }
-}
-
-impl From<&str> for EAction {
-    fn from(value: &str) -> Self {
-        match value {
-            "P" => EAction::Pass,
-            "T" => EAction::Pickup,
-            "C" => EAction::Clubs,
-            "D" => EAction::Diamonds,
-            "S" => EAction::Spades,
-            "H" => EAction::Hearts,
-            _ => parse_card(value),
-        }
-    }
-}
-
-fn parse_card(value: &str) -> EAction {
-    assert_eq!(value.len(), 2);
-
-    let face = value.chars().next().unwrap();
-    let suit = value.chars().nth(1).unwrap();
-
-    let suit_value = match suit {
-        'C' => 0,
-        'S' => 1,
-        'H' => 2,
-        'D' => 3,
-        _ => panic!("invalid suit character: {}", suit),
-    };
-
-    let face_value = match face {
-        '9' => 0,
-        'T' => 1,
-        'J' => 2,
-        'Q' => 3,
-        'K' => 4,
-        'A' => 5,
-        _ => panic!("invalid face character: {}", face),
-    };
-
-    EAction::Card {
-        a: face_value + suit_value * CARD_PER_SUIT,
     }
 }
 
 impl Display for EAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            EAction::Clubs => f.write_char('C'),
-            EAction::Spades => f.write_char('S'),
-            EAction::Hearts => f.write_char('H'),
-            EAction::Diamonds => f.write_char('D'),
-            EAction::Pickup => f.write_char('T'),
-            EAction::Pass => f.write_char('P'),
-            EAction::Card { a: c } => f.write_str(&format_card(*c)),
-        }
+        EAction_fmt(self, f)
     }
 }
 
 impl Debug for EAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            EAction::Clubs => f.write_char('C'),
-            EAction::Spades => f.write_char('S'),
-            EAction::Hearts => f.write_char('H'),
-            EAction::Diamonds => f.write_char('D'),
-            EAction::Pickup => f.write_char('T'),
-            EAction::Pass => f.write_char('P'),
-            EAction::Card { a: c } => f.write_str(&format_card(*c)),
-        }
+        EAction_fmt(self, f)
+    }
+}
+
+fn EAction_fmt(v: &EAction, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match v {
+        EAction::Clubs => f.write_char('C'),
+        EAction::Spades => f.write_char('S'),
+        EAction::Hearts => f.write_char('H'),
+        EAction::Diamonds => f.write_char('D'),
+        EAction::Pickup => f.write_char('T'),
+        EAction::Pass => f.write_char('P'),
+        EAction::Play { c: x } => f.write_str(&x.to_string()),
+        EAction::DealPlayer { c: x } => f.write_str(&x.to_string()),
+        EAction::Discard { c: x } => f.write_str(&x.to_string()),
+        EAction::DealFaceUp { c: x } => f.write_str(&x.to_string()),
     }
 }
 
