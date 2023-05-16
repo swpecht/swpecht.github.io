@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{collections::HashSet, fmt::Display};
 
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
@@ -24,7 +24,7 @@ mod parser;
 pub struct Euchre {}
 impl Euchre {
     pub fn new_state() -> EuchreGameState {
-        let hands: [Vec<Action>; 4] = Default::default();
+        let hands: [HashSet<Action>; 4] = Default::default();
 
         EuchreGameState {
             num_players: 4,
@@ -57,7 +57,7 @@ impl Euchre {
 pub struct EuchreGameState {
     num_players: usize,
     /// Holds the cards for each player in the game
-    hands: [Vec<Action>; 4],
+    hands: [HashSet<Action>; 4],
     trump: Suit,
     trump_caller: usize,
     face_up: EAction,
@@ -87,7 +87,7 @@ enum EPhase {
 
 impl EuchreGameState {
     fn apply_action_deal_hands(&mut self, a: Action) {
-        self.hands[self.cur_player].push(a);
+        self.hands[self.cur_player].insert(a);
         assert!(self.hands[self.cur_player].len() <= 5);
 
         if self.hands[self.cur_player].len() == CARDS_PER_HAND {
@@ -140,13 +140,8 @@ impl EuchreGameState {
         if !self.hands[3].contains(&a) {
             panic!("attempted to discard a card not in hand")
         }
-        for i in 0..self.hands[3].len() {
-            if self.hands[3][i] == a {
-                self.hands[3].remove(i);
-                break;
-            }
-        }
-        self.hands[3].push(self.face_up.into());
+        self.hands[3].remove(&a);
+        self.hands[3].insert(self.face_up.into());
 
         self.cur_player = 0;
     }
@@ -156,12 +151,7 @@ impl EuchreGameState {
             self.first_played = Some(self.key.len());
         }
 
-        for i in 0..self.hands[self.cur_player].len() {
-            if self.hands[self.cur_player][i] == a {
-                self.hands[self.cur_player].remove(i);
-                break;
-            }
-        }
+        self.hands[self.cur_player].remove(&a);
 
         // Set acting player based on who won last trick
         let trick_over = self.is_trick_over();
@@ -262,8 +252,8 @@ impl EuchreGameState {
     fn legal_actions_play(&self, actions: &mut Vec<Action>) {
         // If they are the first to act on a trick then can play any card in hand
         if self.is_trick_over() {
-            for i in 0..self.hands[self.cur_player].len() {
-                actions.push(self.hands[self.cur_player][i]);
+            for c in &self.hands[self.cur_player] {
+                actions.push(*c);
             }
             return;
         }
@@ -271,8 +261,7 @@ impl EuchreGameState {
         let leading_card = self.get_leading_card();
         let suit = self.get_suit(leading_card);
 
-        for i in 0..self.hands[self.cur_player].len() {
-            let c = self.hands[self.cur_player][i];
+        for &c in &self.hands[self.cur_player] {
             if self.get_suit(c) == suit {
                 actions.push(c);
             }
@@ -280,8 +269,8 @@ impl EuchreGameState {
 
         if actions.is_empty() {
             // no suit, can play any card
-            for i in 0..self.hands[self.cur_player].len() {
-                actions.push(self.hands[self.cur_player][i]);
+            for c in &self.hands[self.cur_player] {
+                actions.push(*c);
             }
         }
     }
@@ -502,7 +491,11 @@ impl GameState for EuchreGameState {
             EPhase::Pickup => {
                 actions.append(&mut vec![EAction::Pass.into(), EAction::Pickup.into()])
             }
-            EPhase::Discard => actions.append(&mut self.hands[3].to_vec()), // Dealer can discard any card
+            EPhase::Discard => {
+                for c in &self.hands[3] {
+                    actions.push(*c)
+                }
+            } // Dealer can discard any card
             EPhase::ChooseTrump => self.legal_actions_choose_trump(actions),
             EPhase::Play => self.legal_actions_play(actions),
         };
@@ -691,19 +684,48 @@ impl GameState for EuchreGameState {
 
     fn undo(&mut self) {
         self.cur_player = self.play_order.pop().unwrap();
-        let applied_state = self.parser.undo();
-        let _applied_action = self.key.pop();
+        self.parser.undo();
+        let applied_action = EAction::from(self.key.pop());
 
-        match applied_state {
-            parser::EuchreParserState::DealPlayers(_) => {
-                self.hands[self.cur_player].pop();
+        // We check the current state the game is expecting, that's what the last actions
+        // was
+        match (self.parser[self.parser.len() - 1], applied_action) {
+            (parser::EuchreParserState::DealPlayers(_), _) => {
+                self.hands[self.cur_player].remove(&applied_action.into());
             }
-            parser::EuchreParserState::DealFaceUp => {}
-            parser::EuchreParserState::Discard => {}
-            parser::EuchreParserState::PickupChoice(_) => {}
-            parser::EuchreParserState::CallChoice(_) => {}
-            parser::EuchreParserState::Play(_) => {}
-            parser::EuchreParserState::Terminal => todo!(),
+            (parser::EuchreParserState::DealFaceUp, _) => {
+                self.face_up = EAction::Pass; // default value
+            }
+            (parser::EuchreParserState::Discard, _) => {
+                self.discard = None;
+                self.hands[3].remove(&self.face_up.into());
+                self.hands[3].insert(applied_action.into());
+            }
+            (parser::EuchreParserState::PickupChoice(_), EAction::Pickup) => {
+                self.trump = Suit::Clubs; // default value
+                self.trump_caller = 0;
+            }
+            (parser::EuchreParserState::PickupChoice(_), EAction::Pass) => {}
+            (parser::EuchreParserState::PickupChoice(_), _) => {
+                self.trump = Suit::Clubs; // default value
+                self.trump_caller = 0;
+            }
+            (parser::EuchreParserState::CallChoice(_), _) => {
+                todo!()
+            }
+            (parser::EuchreParserState::Play(0), _) => {
+                self.first_played = None;
+                self.hands[self.cur_player].insert(applied_action.into());
+            }
+            (parser::EuchreParserState::Play(x), _) if (x + 1) % 4 == 0 => {
+                // end of trick
+                self.trick_winners[x / 5] = 0;
+                self.hands[self.cur_player].insert(applied_action.into());
+            }
+            (parser::EuchreParserState::Play(_), _) => {
+                self.hands[self.cur_player].insert(applied_action.into());
+            }
+            (parser::EuchreParserState::Terminal, _) => todo!(),
         };
     }
 }
