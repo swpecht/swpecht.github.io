@@ -258,38 +258,3 @@ impl Display for Suit {
         f.write_char(c)
     }
 }
-
-/// Populates a string buffer with formated card. Must be 2 characters long
-fn format_card(c: u8) -> String {
-    let mut out = "XX".to_string();
-    put_card(c, &mut out);
-    out.to_string()
-}
-
-fn put_card(c: u8, out: &mut str) {
-    assert_eq!(out.len(), 2);
-
-    let suit_char = match c / CARD_PER_SUIT {
-        x if x == Suit::Clubs as u8 => 'C',
-        x if x == Suit::Hearts as u8 => 'H',
-        x if x == Suit::Spades as u8 => 'S',
-        x if x == Suit::Diamonds as u8 => 'D',
-        _ => panic!("invalid card"),
-    };
-
-    let num_char = match c % CARD_PER_SUIT {
-        0 => '9',
-        1 => 'T',
-        2 => 'J',
-        3 => 'Q',
-        4 => 'K',
-        5 => 'A',
-        _ => panic!("invalid card"),
-    };
-
-    let s_bytes: &mut [u8] = unsafe { out.as_bytes_mut() };
-    assert_eq!(s_bytes.len(), 2);
-    // we've made sure this is safe.
-    s_bytes[0] = num_char as u8;
-    s_bytes[1] = suit_char as u8;
-}

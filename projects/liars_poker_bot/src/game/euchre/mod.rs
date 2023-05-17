@@ -1,4 +1,4 @@
-use std::{collections::HashSet, f64::consts::E, fmt::Display};
+use std::{collections::HashSet, fmt::Display};
 
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
@@ -11,12 +11,11 @@ use crate::{
 };
 
 use self::{
-    actions::{Card, EAction, Suit, CARD_PER_SUIT},
+    actions::{Card, EAction, Suit},
     deck::{CardLocation, Deck},
     parser::EuchreParser,
 };
 
-const NUM_CARDS: usize = 24;
 pub(super) const CARDS_PER_HAND: usize = 5;
 
 pub mod actions;
@@ -196,8 +195,8 @@ impl EuchreGameState {
 
         let sidx = self.key.len() - 3;
         let mut trick = [Card::NS; 4];
-        for i in 0..3 {
-            trick[i] = EAction::from(self.key[sidx + i]).card();
+        for (i, t) in trick.iter_mut().enumerate().take(3) {
+            *t = EAction::from(self.key[sidx + i]).card();
         }
         trick[3] = card;
 

@@ -42,7 +42,7 @@ impl<'a> IntoIterator for &'a Deck {
 
     fn into_iter(self) -> Self::IntoIter {
         DeckIterator {
-            deck: &self,
+            deck: self,
             index: 0,
         }
     }
