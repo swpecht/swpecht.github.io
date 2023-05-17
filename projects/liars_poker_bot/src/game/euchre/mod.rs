@@ -25,22 +25,17 @@ mod parser;
 pub struct Euchre {}
 impl Euchre {
     pub fn new_state() -> EuchreGameState {
-        let hands: [HashSet<Action>; 4] = Default::default();
-
         EuchreGameState {
             num_players: 4,
-            hands,
             cur_player: 0,
             trump: Suit::Clubs, // Default to one for now
             trump_caller: 0,
-            first_played: None,
             discard: None,
             trick_winners: [0; 5],
             key: IStateKey::default(),
             parser: EuchreParser::default(),
             play_order: Vec::new(),
             deck: Deck::default(),
-            history: Vec::new(),
         }
     }
 
@@ -58,14 +53,9 @@ impl Euchre {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EuchreGameState {
     num_players: usize,
-    /// Holds the cards for each player in the game
-    hands: [HashSet<Action>; 4],
     trump: Suit,
     trump_caller: usize,
     cur_player: usize,
-    /// index of the game key where the first played card is
-    /// used to make looking up tricks easier
-    first_played: Option<usize>,
     /// index of the discard action in the game key if one occured
     discard: Option<usize>,
     /// keep track of who has won tricks to avoid re-computing
@@ -74,8 +64,6 @@ pub struct EuchreGameState {
     parser: EuchreParser,
     play_order: Vec<Player>, // tracker of who went in what order. Last item is the current player
     deck: Deck,
-    /// Running history of what each player did
-    history: Vec<(EAction, Player)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy, Serialize, Deserialize)]
@@ -91,10 +79,10 @@ enum EPhase {
 
 impl EuchreGameState {
     fn apply_action_deal_hands(&mut self, a: Action) {
-        self.hands[self.cur_player].insert(a);
-        assert!(self.hands[self.cur_player].len() <= 5);
+        let card = EAction::from(a).card();
+        self.deck[card] = self.cur_player.into();
 
-        if self.hands[self.cur_player].len() == CARDS_PER_HAND {
+        if (self.key.len() + 1) % CARDS_PER_HAND == 0 {
             self.cur_player = (self.cur_player + 1) % self.num_players
         }
     }
@@ -141,7 +129,12 @@ impl EuchreGameState {
     /// Can only be done by the dealer (player 3)
     fn apply_action_discard(&mut self, a: Action) {
         let discard = EAction::from(a).card();
-        assert!(self.deck[discard] == CardLocation::Player3);
+        if self.deck[discard] != CardLocation::Player3 {
+            panic!(
+                "attempting to discard a card not in dealers hand: {}\n{:?}",
+                discard, self.deck
+            )
+        }
         self.deck[discard] = CardLocation::None; // dealer
 
         let pickup = self.face_up();
@@ -151,25 +144,20 @@ impl EuchreGameState {
     }
 
     fn apply_action_play(&mut self, a: Action) {
-        if self.first_played.is_none() {
-            self.first_played = Some(self.key.len());
-        }
-
-        self.hands[self.cur_player].remove(&a);
+        let card = EAction::from(a).card();
+        self.deck[card] = CardLocation::None;
 
         // Set acting player based on who won last trick
         let trick_over = self.is_trick_over();
-        let num_cards = self.hands[0].len();
         // trick is over and played at least one card
-        if trick_over && num_cards < 5 {
-            let card = EAction::from(a).card();
+        if trick_over && self.first_played().is_some() {
             let trick = self.get_last_trick(card);
             let starter = (self.cur_player + 1) % self.num_players;
             let winner = self.evaluate_trick(&trick, starter);
             self.cur_player = winner;
 
             // save the trick winner for later
-            let trick = ((self.key.len() + 1 - self.first_played.unwrap()) / 4) - 1;
+            let trick = ((self.key.len() + 1 - self.first_played().unwrap()) / 4) - 1;
             self.trick_winners[trick] = winner;
         } else {
             self.cur_player = (self.cur_player + 1) % self.num_players;
@@ -180,11 +168,11 @@ impl EuchreGameState {
     /// Also returns true if none have played
     fn is_trick_over(&self) -> bool {
         // if no one has played yet
-        if self.first_played.is_none() {
+        if self.first_played().is_none() {
             return true;
         }
 
-        (self.key.len() - self.first_played.unwrap() + 1) % 4 == 0
+        (self.key.len() - self.first_played().unwrap()) % 4 == 0
     }
 
     /// Gets last trick with a as the final action of the trick
@@ -209,8 +197,9 @@ impl EuchreGameState {
             panic!("tried to get leading card of trick at invalid time")
         }
 
-        let min_hand = self.hands.iter().map(|x| x.len()).min().unwrap();
-        let cards_played = self.hands.iter().filter(|&x| x.len() == min_hand).count();
+        let first_played = self.first_played().unwrap();
+        let cards_played = (self.key.len() - first_played) % 4;
+        assert!(cards_played > 0);
         EAction::from(self.key[self.key.len() - cards_played]).card()
     }
 
@@ -248,14 +237,7 @@ impl EuchreGameState {
     /// Needs to consider following suit if possible
     /// Can only play cards from hand
     fn legal_actions_play(&self, actions: &mut Vec<Action>) {
-        let player_loc = match self.cur_player {
-            0 => CardLocation::Player0,
-            1 => CardLocation::Player1,
-            2 => CardLocation::Player2,
-            3 => CardLocation::Player3,
-            _ => panic!("invalid player: {}", self.cur_player),
-        };
-
+        let player_loc = self.cur_player.into();
         // If they are the first to act on a trick then can play any card in hand
         if self.is_trick_over() {
             for (c, loc) in &self.deck {
@@ -396,7 +378,32 @@ impl EuchreGameState {
         // read the value from the deck
         // if it's not there, we're probably calling this to rewind, look through the
         // action history to find it
-        todo!()
+        for (c, loc) in &self.deck {
+            if *loc == CardLocation::FaceUp {
+                return c;
+            }
+        }
+
+        for a in self.key {
+            if let EAction::DealFaceUp { c } = EAction::from(a) {
+                return c;
+            }
+        }
+
+        panic!("couldn't find a face up card in deck or action history")
+    }
+
+    /// Returns the index of the first play action in self.key
+    ///
+    /// Used to make looking up tricks easier
+    fn first_played(&self) -> Option<usize> {
+        for (i, a) in self.key.iter().enumerate() {
+            if let EAction::Play { c: _ } = EAction::from(*a) {
+                return Some(i);
+            }
+        }
+
+        None
     }
 }
 
@@ -513,10 +520,13 @@ impl GameState for EuchreGameState {
                 actions.append(&mut vec![EAction::Pass.into(), EAction::Pickup.into()])
             }
             EPhase::Discard => {
-                for c in &self.hands[3] {
-                    actions.push(*c)
+                // Dealer can discard any card
+                for (c, loc) in &self.deck {
+                    if *loc == CardLocation::Player3 {
+                        actions.push(EAction::Discard { c }.into());
+                    }
                 }
-            } // Dealer can discard any card
+            }
             EPhase::ChooseTrump => self.legal_actions_choose_trump(actions),
             EPhase::Play => self.legal_actions_play(actions),
         };
@@ -672,7 +682,7 @@ impl GameState for EuchreGameState {
     }
 
     fn is_terminal(&self) -> bool {
-        if let Some(first_play) = self.first_played {
+        if let Some(first_play) = self.first_played() {
             return self.key.len() - first_play == 20;
         }
         false
@@ -712,7 +722,7 @@ impl GameState for EuchreGameState {
         // was
         match (self.parser[self.parser.len() - 1], applied_action) {
             (parser::EuchreParserState::DealPlayers(_), _) => {
-                self.hands[self.cur_player].remove(&applied_action.into());
+                self.deck[applied_action.card()] = CardLocation::None;
             }
             (parser::EuchreParserState::DealFaceUp, _) => {}
             (parser::EuchreParserState::Discard, _) => {
@@ -733,16 +743,15 @@ impl GameState for EuchreGameState {
                 todo!()
             }
             (parser::EuchreParserState::Play(0), _) => {
-                self.first_played = None;
-                self.hands[self.cur_player].insert(applied_action.into());
+                self.deck[applied_action.card()] = CardLocation::Player0;
             }
             (parser::EuchreParserState::Play(x), _) if (x + 1) % 4 == 0 => {
                 // end of trick
                 self.trick_winners[x / 5] = 0;
-                self.hands[self.cur_player].insert(applied_action.into());
+                self.deck[applied_action.card()] = self.cur_player().into();
             }
             (parser::EuchreParserState::Play(_), _) => {
-                self.hands[self.cur_player].insert(applied_action.into());
+                self.deck[applied_action.card()] = self.cur_player().into();
             }
             (parser::EuchreParserState::Terminal, _) => todo!(),
         };

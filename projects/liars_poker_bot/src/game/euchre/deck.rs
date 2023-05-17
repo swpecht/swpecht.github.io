@@ -2,6 +2,8 @@ use std::ops::{Index, IndexMut};
 
 use serde::{Deserialize, Serialize};
 
+use crate::game::Player;
+
 use super::actions::Card;
 
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -13,6 +15,18 @@ pub(super) enum CardLocation {
     FaceUp,
     #[default]
     None,
+}
+
+impl From<Player> for CardLocation {
+    fn from(value: Player) -> Self {
+        match value {
+            0 => Self::Player0,
+            1 => Self::Player1,
+            2 => Self::Player2,
+            3 => Self::Player3,
+            _ => panic!("only support converting to player values"),
+        }
+    }
 }
 
 /// Track location of all euchre cards
