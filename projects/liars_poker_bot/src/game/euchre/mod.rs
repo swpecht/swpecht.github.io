@@ -148,7 +148,10 @@ impl EuchreGameState {
         self.deck[card] = CardLocation::None;
 
         // Set acting player based on who won last trick
-        let trick_over = self.is_trick_over();
+        // We can't use the trick_over function, since we need to accounts for the action that
+        // hasn't yet been pushed to the action history. To accounts for this we add a +1 to key.len()
+        let trick_over = self.first_played().is_some()
+            && (self.key.len() - self.first_played().unwrap() + 1) % 4 == 0;
         // trick is over and played at least one card
         if trick_over && self.first_played().is_some() {
             let trick = self.get_last_trick(card);
@@ -177,10 +180,6 @@ impl EuchreGameState {
 
     /// Gets last trick with a as the final action of the trick
     fn get_last_trick(&self, card: Card) -> [Card; 4] {
-        if !self.is_trick_over() {
-            panic!("cannot get trick unless the trick is over");
-        }
-
         let sidx = self.key.len() - 3;
         let mut trick = [Card::NS; 4];
         for (i, t) in trick.iter_mut().enumerate().take(3) {
@@ -198,9 +197,11 @@ impl EuchreGameState {
         }
 
         let first_played = self.first_played().unwrap();
-        let cards_played = (self.key.len() - first_played) % 4;
-        assert!(cards_played > 0);
-        EAction::from(self.key[self.key.len() - cards_played]).card()
+        let cards_played_in_trick = (self.key.len() - first_played) % 4;
+        if cards_played_in_trick == 0 {
+            panic!()
+        }
+        EAction::from(self.key[self.key.len() - cards_played_in_trick]).card()
     }
 
     fn legal_actions_dealing(&self, actions: &mut Vec<Action>) {
