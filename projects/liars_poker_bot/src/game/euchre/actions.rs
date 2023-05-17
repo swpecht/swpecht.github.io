@@ -23,7 +23,10 @@ pub enum EAction {
 impl EAction {
     pub fn card(&self) -> Card {
         match self {
-            EAction::Discard { c } | EAction::DealPlayer { c } | EAction::Play { c } => *c,
+            EAction::Discard { c }
+            | EAction::DealPlayer { c }
+            | EAction::Play { c }
+            | EAction::DealFaceUp { c } => *c,
             _ => panic!("can't get card on: {:?}", self),
         }
     }
@@ -195,13 +198,13 @@ impl From<Action> for EAction {
             4 => EAction::Hearts,
             5 => EAction::Diamonds,
             x if x >= 200 => EAction::DealFaceUp {
-                c: Card::from(x - 50),
+                c: Card::from(x - 200),
             },
             x if x >= 150 => EAction::Discard {
-                c: Card::from(x - 50),
+                c: Card::from(x - 150),
             },
             x if x >= 100 => EAction::Play {
-                c: Card::from(x - 50),
+                c: Card::from(x - 100),
             },
             x if x >= 50 => EAction::DealPlayer {
                 c: Card::from(x - 50),
