@@ -88,9 +88,13 @@ impl EuchreGameState {
     }
 
     fn apply_action_deal_face_up(&mut self, a: Action) {
-        let card = EAction::from(a).card();
-        self.deck[card] = CardLocation::FaceUp;
-        self.cur_player = 0;
+        if let EAction::DealFaceUp { c } = a.into() {
+            self.deck[c] = CardLocation::FaceUp;
+            self.cur_player = 0;
+            return;
+        }
+
+        panic!("invalid deal face up action: {:?}", a)
     }
 
     fn apply_action_pickup(&mut self, a: Action) {
@@ -208,6 +212,14 @@ impl EuchreGameState {
         for (c, &loc) in &self.deck {
             if loc == CardLocation::None {
                 actions.push(EAction::DealPlayer { c }.into());
+            }
+        }
+    }
+
+    fn legal_actions_deal_face_up(&self, actions: &mut Vec<Action>) {
+        for (c, &loc) in &self.deck {
+            if loc == CardLocation::None {
+                actions.push(EAction::DealFaceUp { c }.into());
             }
         }
     }
@@ -516,7 +528,8 @@ impl GameState for EuchreGameState {
         actions.clear();
 
         match self.phase() {
-            EPhase::DealHands | EPhase::DealFaceUp => self.legal_actions_dealing(actions),
+            EPhase::DealHands => self.legal_actions_dealing(actions),
+            EPhase::DealFaceUp => self.legal_actions_deal_face_up(actions),
             EPhase::Pickup => {
                 actions.append(&mut vec![EAction::Pass.into(), EAction::Pickup.into()])
             }
@@ -570,10 +583,10 @@ impl GameState for EuchreGameState {
                 EAction::Spades => true,
                 EAction::Hearts => true,
                 EAction::Diamonds => true,
-                EAction::DealPlayer { c } => player == *p,
-                EAction::DealFaceUp { c } => true,
-                EAction::Discard { c } => player == 3, // dealer can see
-                EAction::Play { c } => true,
+                EAction::DealPlayer { c: _ } => player == *p,
+                EAction::DealFaceUp { c: _ } => true,
+                EAction::Discard { c: _ } => player == 3, // dealer can see
+                EAction::Play { c: _ } => true,
             };
 
             if is_visible {
@@ -739,7 +752,9 @@ impl GameState for EuchreGameState {
             (parser::EuchreParserState::DealPlayers(_), _) => {
                 self.deck[applied_action.card()] = CardLocation::None;
             }
-            (parser::EuchreParserState::DealFaceUp, _) => {}
+            (parser::EuchreParserState::DealFaceUp, _) => {
+                self.deck[applied_action.card()] = CardLocation::None;
+            }
             (parser::EuchreParserState::Discard, _) => {
                 let face_up = self.face_up();
                 self.deck[face_up] = CardLocation::FaceUp; // card is face up again
