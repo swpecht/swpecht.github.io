@@ -213,17 +213,17 @@ impl From<Action> for EAction {
 
 impl Display for EAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        EAction_fmt(self, f)
+        eaction_fmt(self, f)
     }
 }
 
 impl Debug for EAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        EAction_fmt(self, f)
+        eaction_fmt(self, f)
     }
 }
 
-fn EAction_fmt(v: &EAction, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+fn eaction_fmt(v: &EAction, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match v {
         EAction::Clubs => f.write_char('C'),
         EAction::Spades => f.write_char('S'),
@@ -244,16 +244,6 @@ pub(super) enum Suit {
     Spades,
     Hearts,
     Diamonds,
-}
-
-#[derive(PartialEq, Eq)]
-pub(super) enum Face {
-    N,
-    T,
-    J,
-    Q,
-    K,
-    A,
 }
 
 impl Display for Suit {
