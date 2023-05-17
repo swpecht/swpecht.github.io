@@ -561,9 +561,23 @@ impl GameState for EuchreGameState {
 
     fn istate_key(&self, player: Player) -> IStateKey {
         let mut istate = IStateKey::default();
-        for (i, s) in self.parser.history.iter().enumerate().take(self.key.len()) {
-            if s.is_visible(player) {
-                istate.push(self.key[i])
+
+        for (p, a) in self.play_order.iter().zip(self.key.iter()) {
+            let is_visible = match EAction::from(*a) {
+                EAction::Pickup => true,
+                EAction::Pass => true,
+                EAction::Clubs => true,
+                EAction::Spades => true,
+                EAction::Hearts => true,
+                EAction::Diamonds => true,
+                EAction::DealPlayer { c } => player == *p,
+                EAction::DealFaceUp { c } => true,
+                EAction::Discard { c } => player == 3, // dealer can see
+                EAction::Play { c } => true,
+            };
+
+            if is_visible {
+                istate.push(*a)
             }
         }
         istate.sort_range(0, CARDS_PER_HAND.min(istate.len()));
