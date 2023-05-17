@@ -1,5 +1,5 @@
 use log::debug;
-use rustc_hash::FxHashMap as HashMap;
+use rustc_hash::FxHashMap;
 
 use crate::{game::Action, istate::IStateKey};
 
@@ -10,9 +10,9 @@ const MAX_CHILDREN: usize = 32;
 pub struct Tree<T: Clone> {
     nodes: Vec<Node<T>>,
     /// the starting roots of the tree
-    roots: HashMap<Action, usize>,
+    roots: FxHashMap<Action, usize>,
     /// a cursor for each root of the tree
-    cursors: HashMap<Action, Cursor>,
+    cursors: FxHashMap<Action, Cursor>,
     stats: TreeStats,
     root_value: Option<T>,
 }
@@ -47,7 +47,7 @@ struct Cursor {
 #[derive(Clone)]
 struct Node<T> {
     parent: usize,
-    children: [usize; MAX_CHILDREN],
+    children: FxHashMap<Action, usize>,
     action: Action,
     v: Option<T>,
 }
@@ -56,7 +56,7 @@ impl<T> Node<T> {
     fn new(p: usize, a: Action, v: Option<T>) -> Self {
         Self {
             parent: p,
-            children: [0; MAX_CHILDREN],
+            children: FxHashMap::default(),
             action: a,
             v,
         }
@@ -73,8 +73,8 @@ impl<T: Clone> Tree<T> {
     pub fn new() -> Self {
         Self {
             nodes: Vec::new(),
-            roots: HashMap::default(),
-            cursors: HashMap::default(),
+            roots: FxHashMap::default(),
+            cursors: FxHashMap::default(),
             stats: TreeStats::new(),
             root_value: None,
         }
@@ -109,11 +109,10 @@ impl<T: Clone> Tree<T> {
     fn get_or_create_child(&mut self, parent: usize, action: Action) -> usize {
         let p = &self.nodes[parent];
         // let c = p.children.get(&action);
-        let v: u8 = action.into();
-        let c = p.children[v as usize];
+        let c = p.children.get(&action);
 
-        if c != 0 {
-            return c;
+        if let Some(c) = c {
+            return *c;
         }
 
         let cn: Node<T> = Node::new(parent, action, None);
@@ -121,7 +120,7 @@ impl<T: Clone> Tree<T> {
         self.nodes.push(cn);
 
         let p = &mut self.nodes[parent];
-        p.children[v as usize] = c;
+        p.children.insert(action, c);
 
         c
     }
