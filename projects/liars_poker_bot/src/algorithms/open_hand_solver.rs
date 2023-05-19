@@ -70,10 +70,13 @@ impl<G: GameState> Policy<G> for OpenHandSolver {
     }
 }
 
-pub fn alpha_beta_search<G: GameState>(gs: G, maximizing_player: Player) -> (f64, Option<Action>) {
+pub fn alpha_beta_search<G: GameState>(
+    mut gs: G,
+    maximizing_player: Player,
+) -> (f64, Option<Action>) {
     let maximizing_team = Team::from(maximizing_player);
     alpha_beta(
-        gs,
+        &mut gs,
         maximizing_team,
         f64::NEG_INFINITY,
         f64::INFINITY,
@@ -101,7 +104,7 @@ impl Default for AlphaBetaCache {
 /// Adapted from openspiel:
 ///     https://github.com/deepmind/open_spiel/blob/master/open_spiel/python/algorithms/minimax.py
 fn alpha_beta<G: GameState>(
-    gs: G,
+    gs: &mut G,
     maximizing_team: Team,
     mut alpha: f64,
     mut beta: f64,
@@ -125,9 +128,9 @@ fn alpha_beta<G: GameState>(
         let mut value = f64::NEG_INFINITY;
         gs.legal_actions(&mut actions);
         for a in &actions {
-            let mut child_state = gs.clone();
-            child_state.apply_action(*a);
-            let (child_value, _) = alpha_beta(child_state, maximizing_team, alpha, beta, cache);
+            gs.apply_action(*a);
+            let (child_value, _) = alpha_beta(gs, maximizing_team, alpha, beta, cache);
+            gs.undo();
             if child_value > value {
                 value = child_value;
                 best_action = Some(*a);
@@ -145,9 +148,9 @@ fn alpha_beta<G: GameState>(
         let mut value = f64::INFINITY;
         gs.legal_actions(&mut actions);
         for a in &actions {
-            let mut child_state = gs.clone();
-            child_state.apply_action(*a);
-            let (child_value, _) = alpha_beta(child_state, maximizing_team, alpha, beta, cache);
+            gs.apply_action(*a);
+            let (child_value, _) = alpha_beta(gs, maximizing_team, alpha, beta, cache);
+            gs.undo();
             if child_value < value {
                 value = child_value;
                 best_action = Some(*a);
