@@ -92,7 +92,7 @@ struct AlphaBetaCache {
 impl Default for AlphaBetaCache {
     fn default() -> Self {
         Self {
-            vec_pool: Pool::new(Vec::new),
+            vec_pool: Pool::new(|| Vec::with_capacity(5)),
         }
     }
 }
