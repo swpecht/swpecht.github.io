@@ -33,7 +33,6 @@ impl Euchre {
             discard: None,
             trick_winners: [0; 5],
             key: IStateKey::default(),
-            parser: EuchreParser::default(),
             play_order: Vec::new(),
             deck: Deck::default(),
         }
@@ -61,7 +60,6 @@ pub struct EuchreGameState {
     /// keep track of who has won tricks to avoid re-computing
     trick_winners: [Player; 5],
     key: IStateKey,
-    parser: EuchreParser,
     play_order: Vec<Player>, // tracker of who went in what order. Last item is the current player
     deck: Deck,
 }
@@ -372,7 +370,6 @@ impl EuchreGameState {
 
     fn update_keys(&mut self, a: Action) {
         self.key.push(a);
-        self.parser.consume(a);
     }
 
     fn phase(&self) -> EPhase {
@@ -754,48 +751,25 @@ impl GameState for EuchreGameState {
 
     fn undo(&mut self) {
         self.cur_player = self.play_order.pop().unwrap();
-        self.parser.undo();
         let applied_action = EAction::from(self.key.pop());
 
-        // We check the current state the game is expecting, that's what the last actions
-        // was
-        match (self.parser[self.parser.len() - 1], applied_action) {
-            (parser::EuchreParserState::DealPlayers(_), _) => {
-                self.deck[applied_action.card()] = CardLocation::None;
+        match applied_action {
+            EAction::Pickup => {}
+            EAction::Pass => {}
+            EAction::Clubs | EAction::Spades | EAction::Hearts | EAction::Diamonds => {
+                // return to defaults
+                self.trump_caller = 0;
+                self.trump = Suit::Clubs;
             }
-            (parser::EuchreParserState::DealFaceUp, _) => {
-                self.deck[applied_action.card()] = CardLocation::None;
-            }
-            (parser::EuchreParserState::Discard, _) => {
+            EAction::DealPlayer { c } => self.deck[c] = CardLocation::None,
+            EAction::DealFaceUp { c } => self.deck[c] = CardLocation::None,
+            EAction::Discard { c } => {
                 let face_up = self.face_up();
                 self.deck[face_up] = CardLocation::FaceUp; // card is face up again
-                self.deck[applied_action.card()] = CardLocation::Player3;
+                self.deck[c] = CardLocation::Player3;
             }
-            (parser::EuchreParserState::PickupChoice(_), EAction::Pickup) => {
-                self.trump = Suit::Clubs; // default value
-                self.trump_caller = 0;
-            }
-            (parser::EuchreParserState::PickupChoice(_), EAction::Pass) => {}
-            (parser::EuchreParserState::PickupChoice(_), _) => {
-                self.trump = Suit::Clubs; // default value
-                self.trump_caller = 0;
-            }
-            (parser::EuchreParserState::CallChoice(_), _) => {
-                todo!()
-            }
-            (parser::EuchreParserState::Play(0), _) => {
-                self.deck[applied_action.card()] = CardLocation::Player0;
-            }
-            (parser::EuchreParserState::Play(x), _) if (x + 1) % 4 == 0 => {
-                // end of trick
-                self.trick_winners[x / 5] = 0;
-                self.deck[applied_action.card()] = self.cur_player().into();
-            }
-            (parser::EuchreParserState::Play(_), _) => {
-                self.deck[applied_action.card()] = self.cur_player().into();
-            }
-            (parser::EuchreParserState::Terminal, _) => todo!(),
-        };
+            EAction::Play { c } => self.deck[c] = self.cur_player.into(),
+        }
     }
 }
 
