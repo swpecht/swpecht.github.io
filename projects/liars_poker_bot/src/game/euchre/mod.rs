@@ -376,14 +376,25 @@ impl EuchreGameState {
     }
 
     fn phase(&self) -> EPhase {
-        match self.parser.history[self.parser.history.len() - 1] {
-            parser::EuchreParserState::DealPlayers(_) => EPhase::DealHands,
-            parser::EuchreParserState::DealFaceUp => EPhase::DealFaceUp,
-            parser::EuchreParserState::Discard => EPhase::Discard,
-            parser::EuchreParserState::PickupChoice(_) => EPhase::Pickup,
-            parser::EuchreParserState::CallChoice(_) => EPhase::ChooseTrump,
-            parser::EuchreParserState::Play(_) => EPhase::Play,
-            parser::EuchreParserState::Terminal => EPhase::Play,
+        // handle key length items
+        if self.key.len() <= 19 {
+            return EPhase::DealHands;
+        } else if self.key.len() == 20 {
+            return EPhase::DealFaceUp;
+        }
+
+        // handle last action items
+        let last_action: EAction = self.key[self.key.len() - 1].into();
+        match last_action {
+            EAction::Pickup => EPhase::Discard,
+            EAction::Clubs | EAction::Diamonds | EAction::Hearts | EAction::Spades => EPhase::Play,
+            EAction::Discard { c: _ } => EPhase::Play,
+            // have had 4 passes and still passing
+            EAction::Pass if self.key.len() >= 25 => EPhase::ChooseTrump,
+            EAction::Pass => EPhase::Pickup,
+            EAction::DealPlayer { c: _ } => panic!("should have been handled by earlier statement"),
+            EAction::DealFaceUp { c: _ } => EPhase::Pickup,
+            EAction::Play { c: _ } => EPhase::Play,
         }
     }
 
