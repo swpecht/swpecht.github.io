@@ -33,6 +33,7 @@ impl Euchre {
             key: IStateKey::default(),
             play_order: Vec::new(),
             deck: Deck::default(),
+            cards_played: 0,
         }
     }
 
@@ -60,6 +61,7 @@ pub struct EuchreGameState {
     key: IStateKey,
     play_order: Vec<Player>, // tracker of who went in what order. Last item is the current player
     deck: Deck,
+    cards_played: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy, Serialize, Deserialize)]
@@ -146,6 +148,7 @@ impl EuchreGameState {
     fn apply_action_play(&mut self, a: Action) {
         let card = EAction::from(a).card();
         self.deck[card] = CardLocation::None;
+        self.cards_played += 1;
 
         // Set acting player based on who won last trick
         // We can't use the trick_over function, since we need to accounts for the action that
@@ -751,10 +754,18 @@ impl GameState for EuchreGameState {
         self.cur_player = self.play_order.pop().unwrap();
         let applied_action = EAction::from(self.key.pop());
 
+        // fix the trick winner counts
+        if self.cards_played > 0 && self.cards_played % 4 == 0 {
+            self.trick_winners[self.cards_played / 4 - 1] = 0; // reset it
+        }
+
         match applied_action {
-            EAction::Pickup => {}
             EAction::Pass => {}
-            EAction::Clubs | EAction::Spades | EAction::Hearts | EAction::Diamonds => {
+            EAction::Clubs
+            | EAction::Spades
+            | EAction::Hearts
+            | EAction::Diamonds
+            | EAction::Pickup => {
                 // return to defaults
                 self.trump_caller = 0;
                 self.trump = Suit::Clubs;
@@ -766,7 +777,10 @@ impl GameState for EuchreGameState {
                 self.deck[face_up] = CardLocation::FaceUp; // card is face up again
                 self.deck[c] = CardLocation::Player3;
             }
-            EAction::Play { c } => self.deck[c] = self.cur_player.into(),
+            EAction::Play { c } => {
+                self.deck[c] = self.cur_player.into();
+                self.cards_played -= 1;
+            }
         }
     }
 }
