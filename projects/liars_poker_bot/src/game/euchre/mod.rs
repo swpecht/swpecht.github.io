@@ -272,7 +272,9 @@ impl EuchreGameState {
         let leading_card = self.get_leading_card();
         let leading_suit = self.get_suit(leading_card);
         for (c, loc) in &self.deck {
-            if self.get_suit(c) == leading_suit && *loc == player_loc {
+            // We check if the player has the card before the suit to avoid the more
+            // expensive get_suit call
+            if *loc == player_loc && self.get_suit(c) == leading_suit {
                 actions.push(EAction::Play { c }.into());
             }
         }
