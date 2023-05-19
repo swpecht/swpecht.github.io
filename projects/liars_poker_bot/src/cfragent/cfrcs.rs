@@ -167,17 +167,19 @@ impl CFRCS {
             _ => panic!("invalid player"),
         };
 
-        // // post-traversals: update the infoset
-        if phase == CFRPhase::Phase1 && cur_player == update_player {
-            for &a in &actions {
-                node.borrow_mut().regret_sum[a] += opp_reach * (move_evs[a] - strat_ev);
+        // post-traversals: update the infoset
+        {
+            let mut n = node.borrow_mut();
+            if phase == CFRPhase::Phase1 && cur_player == update_player {
+                for &a in &actions {
+                    n.regret_sum[a] += opp_reach * (move_evs[a] - strat_ev);
+                }
             }
-        }
 
-        if phase == CFRPhase::Phase2 && cur_player == update_player {
-            for a in actions {
-                let mut n = node.borrow_mut();
-                n.total_move_prob[a] += my_reach * n.move_prob[a];
+            if phase == CFRPhase::Phase2 && cur_player == update_player {
+                for a in actions {
+                    n.total_move_prob[a] += my_reach * n.move_prob[a];
+                }
             }
         }
 
