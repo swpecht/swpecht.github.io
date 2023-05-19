@@ -13,14 +13,12 @@ use crate::{
 use self::{
     actions::{Card, EAction, Suit},
     deck::{CardLocation, Deck},
-    parser::EuchreParser,
 };
 
 pub(super) const CARDS_PER_HAND: usize = 5;
 
 pub mod actions;
 mod deck;
-mod parser;
 
 pub struct Euchre {}
 impl Euchre {
