@@ -639,12 +639,13 @@ impl GameState for EuchreGameState {
     fn is_terminal(&self) -> bool {
         self.cards_played == 20
         // Check if the scores are already decided: see if have tacken a trick in defence
-            || self.trick_winners[0] > 0 && self.trick_winners[1] > 3
-            || self.trick_winners[0] >= 3 && self.trick_winners[1] > 0
+        // todo: update this based on the number of won tricks, not just the trick winner
+        // || self.trick_winners[0] > 0 && self.trick_winners[1] > 3
+        // || self.trick_winners[0] >= 3 && self.trick_winners[1] > 0
     }
 
     fn is_chance_node(&self) -> bool {
-        self.key.len() < self.num_players * CARDS_PER_HAND + 1 // deals + face up card
+        self.phase == EPhase::DealHands || self.phase == EPhase::DealFaceUp
     }
 
     fn num_players(&self) -> usize {
@@ -731,8 +732,15 @@ impl ResampleFromInfoState for EuchreGameState {
             *c = self.key[player * CARDS_PER_HAND + i];
         }
 
-        if self.phase() == EPhase::Play {
-            todo!("implement resampling for play phases")
+        if self.phase() == EPhase::Play
+            || self.phase() == EPhase::Discard
+            || self.phase() == EPhase::DealHands
+            || self.phase() == EPhase::DealFaceUp
+        {
+            todo!(
+                "implement resampling for play and post discard phases: {:?}",
+                self
+            );
         }
 
         let mut ngs = Euchre::new_state();
@@ -759,11 +767,6 @@ impl ResampleFromInfoState for EuchreGameState {
                         break;
                     }
                 }
-            } else if true {
-                // handle the discard case, need a strategy for how dealer will discard here
-                // and what the proper way for determing the discard is
-                // If there is discard, need to have a card get dealt to the dealer that isn't played
-                todo!("need to properly implement discard handling")
             } else {
                 // public history gets repeated
                 ngs.apply_action(self.key[i]);
