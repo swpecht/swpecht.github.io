@@ -85,8 +85,13 @@ impl<G: GameState + ResampleFromInfoState> Policy<G> for OpenHandSolver {
             total += policy[a];
         }
 
+        // No chance of winning, return random policy
         if total == 0.0 {
-            panic!("invalid policy found");
+            let prob = 1.0 / actions.len() as f64;
+            for &a in &actions {
+                policy[a] = prob;
+            }
+            return policy;
         }
 
         for &a in &actions {

@@ -104,33 +104,33 @@ fn run_scratch(_args: Args) {
     let mut rng: StdRng = SeedableRng::seed_from_u64(42);
     let mut evaluator = OpenHandSolver::new(100, rng.clone());
 
-    for _ in 0..10 {
-        let mut gs = Euchre::new_state();
-        while gs.is_chance_node() {
-            let a = *actions!(gs).choose(&mut rng).unwrap();
-            gs.apply_action(a)
-        }
+    // for _ in 0..1 {
+    //     let mut gs = Euchre::new_state();
+    //     while gs.is_chance_node() {
+    //         let a = *actions!(gs).choose(&mut rng).unwrap();
+    //         gs.apply_action(a)
+    //     }
 
-        info!(
-            "Evaluator for {}: {:?}",
-            gs.istate_string(gs.cur_player()),
-            evaluator.evaluate(&gs)
-        );
-        while !gs.is_terminal() {
-            let cur_player = gs.cur_player();
-            let (v, a) = alpha_beta_search(gs.clone(), cur_player);
-            info!(
-                "{}: {}: value: {}, action: {}",
-                gs,
-                cur_player,
-                v,
-                EAction::from(a.unwrap())
-            );
-            gs.apply_action(a.unwrap());
-        }
+    //     info!(
+    //         "Evaluator for {}: {:?}",
+    //         gs.istate_string(gs.cur_player()),
+    //         evaluator.evaluate(&gs)
+    //     );
+    //     while !gs.is_terminal() {
+    //         let cur_player = gs.cur_player();
+    //         let (v, a) = alpha_beta_search(gs.clone(), cur_player);
+    //         info!(
+    //             "{}: {}: value: {}, action: {}",
+    //             gs,
+    //             cur_player,
+    //             v,
+    //             EAction::from(a.unwrap())
+    //         );
+    //         gs.apply_action(a.unwrap());
+    //     }
 
-        info!("p0, p1 value: {}, {}", gs.evaluate(0), gs.evaluate(1));
-    }
+    //     info!("p0, p1 value: {}, {}", gs.evaluate(0), gs.evaluate(1));
+    // }
 
     info!("calculating evaluator converge");
     for i in 0..50 {
@@ -140,10 +140,17 @@ fn run_scratch(_args: Args) {
             gs.apply_action(a)
         }
 
-        for rollouts in [1, 10, 100, 1_000, 10_000] {
+        for rollouts in [1, 10, 20, 100] {
             evaluator.set_rollout(rollouts);
             let policy = evaluator.action_probabilities(&gs);
-            info!("{}\t{}\t{}\t{:?}", i, rollouts, gs, policy);
+            info!(
+                "{}\t{}\t{}\t{}\t{}",
+                i,
+                rollouts,
+                gs,
+                policy[EAction::Pass.into()],
+                policy[EAction::Pickup.into()]
+            );
         }
     }
 }

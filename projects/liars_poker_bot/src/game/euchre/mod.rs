@@ -740,7 +740,6 @@ impl ResampleFromInfoState for EuchreGameState {
         }
 
         if self.phase() == EPhase::Play
-            || self.phase() == EPhase::Discard
             || self.phase() == EPhase::DealHands
             || self.phase() == EPhase::DealFaceUp
         {
