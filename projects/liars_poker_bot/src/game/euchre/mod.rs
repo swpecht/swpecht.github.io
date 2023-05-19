@@ -1,4 +1,4 @@
-use std::{collections::HashSet, fmt::Display};
+use std::fmt::Display;
 
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
@@ -153,17 +153,16 @@ impl EuchreGameState {
         // Set acting player based on who won last trick
         // We can't use the trick_over function, since we need to accounts for the action that
         // hasn't yet been pushed to the action history. To accounts for this we add a +1 to key.len()
-        let trick_over = self.first_played().is_some()
-            && (self.key.len() - self.first_played().unwrap() + 1) % 4 == 0;
+        let trick_over = self.cards_played % 4 == 0;
         // trick is over and played at least one card
-        if trick_over && self.first_played().is_some() {
+        if trick_over && self.cards_played > 0 {
             let trick = self.get_last_trick(card);
             let starter = (self.cur_player + 1) % self.num_players;
             let winner = self.evaluate_trick(&trick, starter);
             self.cur_player = winner;
 
             // save the trick winner for later
-            let trick = ((self.key.len() + 1 - self.first_played().unwrap()) / 4) - 1;
+            let trick = self.cards_played / 4 - 1;
             self.trick_winners[trick] = winner;
         } else {
             self.cur_player = (self.cur_player + 1) % self.num_players;
@@ -173,12 +172,7 @@ impl EuchreGameState {
     /// Determine if current trick is over (all 4 players have played)
     /// Also returns true if none have played
     fn is_trick_over(&self) -> bool {
-        // if no one has played yet
-        if self.first_played().is_none() {
-            return true;
-        }
-
-        (self.key.len() - self.first_played().unwrap()) % 4 == 0
+        self.cards_played % 4 == 0
     }
 
     /// Gets last trick with a as the final action of the trick
@@ -199,8 +193,7 @@ impl EuchreGameState {
             panic!("tried to get leading card of trick at invalid time")
         }
 
-        let first_played = self.first_played().unwrap();
-        let cards_played_in_trick = (self.key.len() - first_played) % 4;
+        let cards_played_in_trick = self.cards_played % 4;
         if cards_played_in_trick == 0 {
             panic!()
         }
@@ -413,19 +406,6 @@ impl EuchreGameState {
         }
 
         panic!("couldn't find a face up card in deck or action history")
-    }
-
-    /// Returns the index of the first play action in self.key
-    ///
-    /// Used to make looking up tricks easier
-    fn first_played(&self) -> Option<usize> {
-        for (i, a) in self.key.iter().enumerate() {
-            if let EAction::Play { c: _ } = EAction::from(*a) {
-                return Some(i);
-            }
-        }
-
-        None
     }
 }
 
@@ -719,10 +699,7 @@ impl GameState for EuchreGameState {
     }
 
     fn is_terminal(&self) -> bool {
-        if let Some(first_play) = self.first_played() {
-            return self.key.len() - first_play == 20;
-        }
-        false
+        self.cards_played == 20
     }
 
     fn is_chance_node(&self) -> bool {
