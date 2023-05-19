@@ -335,6 +335,11 @@ impl EuchreGameState {
     fn get_suit(&self, c: Card) -> Suit {
         let mut suit = c.suit();
 
+        let is_jack = (c == Card::JC) || (c == Card::JS) || (c == Card::JD) || (c == Card::JH);
+        if !is_jack {
+            return suit;
+        }
+
         // Correct the jack if in play phase
         if self.phase() == EPhase::Play {
             suit = match (c, self.trump) {
