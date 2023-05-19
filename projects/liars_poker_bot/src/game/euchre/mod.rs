@@ -697,6 +697,9 @@ impl GameState for EuchreGameState {
 
     fn is_terminal(&self) -> bool {
         self.cards_played == 20
+        // Check if the scores are already decided: see if have tacken a trick in defence
+            || self.trick_winners[0] > 0 && self.trick_winners[1] > 3
+            || self.trick_winners[0] >= 3 && self.trick_winners[1] > 0
     }
 
     fn is_chance_node(&self) -> bool {
