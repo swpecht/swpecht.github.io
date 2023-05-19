@@ -406,92 +406,35 @@ impl EuchreGameState {
 
 impl Display for EuchreGameState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let key = &self.key;
-        let mut n = write_phase_deal_hands(f, key, 0);
+        let key = &self.key();
+        let mut first_play = None;
 
-        if n < key.len() {
-            n = write_phase_pickup_call(f, key, n);
-        }
-        if n < key.len() {
-            write!(f, "|").unwrap();
-            write_phase_play(f, key, n);
+        for i in 0..key.len() {
+            let a = EAction::from(key[i]);
+            write!(f, "{}", a).unwrap();
+
+            if matches!(a, EAction::Play { c: _ }) && first_play.is_none() {
+                first_play = Some(i);
+            }
+
+            let append_pipe = match a {
+                EAction::DealPlayer { c: _ } => (i + 1) % 5 == 0,
+                EAction::DealFaceUp { c: _ } => true,
+                EAction::Pickup => true,
+                EAction::Clubs | EAction::Diamonds | EAction::Hearts | EAction::Spades => true,
+                EAction::Play { c: _ } => {
+                    (i - first_play.unwrap() + 1) % 4 == 0 && i != first_play.unwrap()
+                }
+
+                EAction::Discard { c: _ } => true,
+                EAction::Pass => false,
+            };
+            if append_pipe {
+                write!(f, "|").unwrap();
+            }
         }
         write!(f, "")
     }
-}
-
-/// Returns the index after the last written index
-fn write_phase_deal_hands(f: &mut std::fmt::Formatter<'_>, key: &IStateKey, start: usize) -> usize {
-    for i in start..20 {
-        if i == key.len() {
-            return i;
-        }
-
-        if i != start && (i - start) % 5 == 0 {
-            write!(f, "|").unwrap()
-        }
-        write!(f, "{}", EAction::from(key[i])).unwrap();
-    }
-
-    let face_up_index = start + 20;
-    if key.len() >= face_up_index {
-        write!(f, "|").unwrap();
-        write!(f, "{}", EAction::from(key[face_up_index])).unwrap();
-    }
-
-    write!(f, "|").unwrap();
-    start + 21
-}
-
-fn write_phase_pickup_call(
-    f: &mut std::fmt::Formatter<'_>,
-    key: &IStateKey,
-    start: usize,
-) -> usize {
-    for i in start..start + 4 {
-        if i == key.len() {
-            return i;
-        }
-
-        let a = EAction::from(key[i]);
-        write!(f, "{}", a).unwrap();
-        if a == EAction::Pickup {
-            // handle discard
-            write!(f, "|").unwrap();
-            write!(f, "{}", EAction::from(key[i + 1])).unwrap();
-            return i + 2;
-        }
-    }
-
-    write!(f, "|").unwrap();
-    for i in start + 4..start + 8 {
-        if i == key.len() {
-            return i;
-        }
-
-        let a = EAction::from(key[i]);
-        write!(f, "{}", a).unwrap();
-        if a == EAction::Clubs
-            || a == EAction::Diamonds
-            || a == EAction::Spades
-            || a == EAction::Hearts
-        {
-            return i + 1;
-        }
-    }
-
-    panic!("invalid pickup and call phase")
-}
-
-fn write_phase_play(f: &mut std::fmt::Formatter<'_>, key: &IStateKey, start: usize) -> usize {
-    for i in start..key.len() {
-        if i != start && (i - start) % 4 == 0 {
-            write!(f, "|").unwrap()
-        }
-        write!(f, "{}", EAction::from(key[i])).unwrap();
-    }
-
-    key.len()
 }
 
 impl GameState for EuchreGameState {
@@ -715,8 +658,9 @@ impl GameState for EuchreGameState {
     fn key(&self) -> IStateKey {
         let mut sorted_key = self.key;
         for p in 0..self.num_players {
+            let start_sort = p * CARDS_PER_HAND;
             let end_sort = sorted_key.len().min((p + 1) * CARDS_PER_HAND);
-            sorted_key.sort_range(p * CARDS_PER_HAND, end_sort);
+            sorted_key.sort_range(start_sort, end_sort - start_sort);
             if (p + 1) * CARDS_PER_HAND + 1 > sorted_key.len() {
                 break;
             }
