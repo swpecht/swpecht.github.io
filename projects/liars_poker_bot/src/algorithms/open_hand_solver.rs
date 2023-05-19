@@ -2,6 +2,7 @@ use rand::rngs::StdRng;
 use rayon::prelude::*;
 
 use crate::{
+    actions,
     alloc::Pool,
     cfragent::cfrnode::ActionVec,
     game::{Action, GameState, Player},
@@ -32,7 +33,7 @@ impl OpenHandSolver {
     }
 }
 
-impl<G: GameState + ResampleFromInfoState + Sized> Evaluator<G> for OpenHandSolver {
+impl<G: GameState + ResampleFromInfoState> Evaluator<G> for OpenHandSolver {
     fn evaluate(&mut self, gs: &G) -> Vec<f64> {
         let mut result = vec![0.0; gs.num_players()];
 
@@ -40,6 +41,8 @@ impl<G: GameState + ResampleFromInfoState + Sized> Evaluator<G> for OpenHandSolv
         for _ in 0..self.n_rollouts {
             worlds.push(gs.resample_from_istate(gs.cur_player(), &mut self.rng));
         }
+
+        // let r: f64 = (0..2).into_par_iter().map(|x| 2.0 * x as f64).sum();
 
         worlds.iter().for_each(|world| {
             for (i, r) in result.iter_mut().enumerate().take(2) {
@@ -64,9 +67,27 @@ impl<G: GameState + ResampleFromInfoState + Sized> Evaluator<G> for OpenHandSolv
     }
 }
 
-impl<G: GameState> Policy<G> for OpenHandSolver {
-    fn action_probabilities(&mut self, _gs: &G) -> ActionVec<f64> {
-        todo!()
+impl<G: GameState + ResampleFromInfoState> Policy<G> for OpenHandSolver {
+    fn action_probabilities(&mut self, gs: &G) -> ActionVec<f64> {
+        let maximizing_player = gs.cur_player();
+        let actions = actions!(gs);
+        let mut policy = ActionVec::new(&actions);
+        let mut gs = gs.clone();
+        for a in &actions {
+            gs.apply_action(*a);
+            policy[*a] = self.evaluate(&gs)[maximizing_player];
+            gs.undo()
+        }
+
+        let mut total = 0.0;
+        for &a in &actions {
+            total += policy[a];
+        }
+
+        for &a in &actions {
+            policy[a] /= total;
+        }
+        policy
     }
 }
 
