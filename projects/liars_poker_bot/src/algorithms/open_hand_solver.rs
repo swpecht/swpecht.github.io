@@ -75,13 +75,18 @@ impl<G: GameState + ResampleFromInfoState> Policy<G> for OpenHandSolver {
         let mut gs = gs.clone();
         for a in &actions {
             gs.apply_action(*a);
-            policy[*a] = self.evaluate(&gs)[maximizing_player];
+            let v = self.evaluate(&gs)[maximizing_player];
+            policy[*a] = v;
             gs.undo()
         }
 
         let mut total = 0.0;
         for &a in &actions {
             total += policy[a];
+        }
+
+        if total == 0.0 {
+            panic!("invalid policy found");
         }
 
         for &a in &actions {
@@ -137,6 +142,8 @@ fn alpha_beta<G: GameState>(
     }
 
     let mut actions = cache.vec_pool.detach();
+    actions.clear();
+    gs.legal_actions(&mut actions);
     if gs.is_chance_node() {
         todo!("add support for chance nodes")
     }
@@ -147,11 +154,10 @@ fn alpha_beta<G: GameState>(
 
     if team == maximizing_team {
         let mut value = f64::NEG_INFINITY;
-        gs.legal_actions(&mut actions);
         for a in &actions {
-            gs.apply_action(*a);
-            let (child_value, _) = alpha_beta(gs, maximizing_team, alpha, beta, cache);
-            gs.undo();
+            let mut ngs = gs.clone();
+            ngs.apply_action(*a);
+            let (child_value, _) = alpha_beta(&mut ngs, maximizing_team, alpha, beta, cache);
             if child_value > value {
                 value = child_value;
                 best_action = Some(*a);
@@ -162,16 +168,19 @@ fn alpha_beta<G: GameState>(
             }
         }
 
+        if value == f64::NEG_INFINITY || value == f64::INFINITY {
+            panic!("actions: {:?}\ngame: {}\n{:?}", actions, gs, gs);
+        }
         actions.clear();
         cache.vec_pool.attach(actions);
         (value, best_action)
     } else {
         let mut value = f64::INFINITY;
-        gs.legal_actions(&mut actions);
         for a in &actions {
-            gs.apply_action(*a);
-            let (child_value, _) = alpha_beta(gs, maximizing_team, alpha, beta, cache);
-            gs.undo();
+            let mut ngs = gs.clone();
+            ngs.apply_action(*a);
+            let (child_value, _) = alpha_beta(&mut ngs, maximizing_team, alpha, beta, cache);
+            // gs.undo();
             if child_value < value {
                 value = child_value;
                 best_action = Some(*a);
@@ -182,6 +191,9 @@ fn alpha_beta<G: GameState>(
             }
         }
 
+        if value == f64::NEG_INFINITY || value == f64::INFINITY {
+            panic!("actions: {:?}\ngame: {}\n{:?}", actions, gs, gs);
+        }
         actions.clear();
         cache.vec_pool.attach(actions);
         (value, best_action)

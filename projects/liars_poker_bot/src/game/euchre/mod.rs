@@ -77,6 +77,7 @@ enum EPhase {
 impl EuchreGameState {
     fn apply_action_deal_hands(&mut self, a: Action) {
         let card = EAction::from(a).card();
+        assert_eq!(self.deck[card], CardLocation::None);
         self.deck[card] = self.cur_player.into();
 
         if (self.key.len() + 1) % CARDS_PER_HAND == 0 {
@@ -90,6 +91,12 @@ impl EuchreGameState {
 
     fn apply_action_deal_face_up(&mut self, a: Action) {
         if let EAction::DealFaceUp { c } = a.into() {
+            if self.deck[c] != CardLocation::None {
+                panic!(
+                    "attempting to deal a card that was already dealt: {}, {:?}",
+                    c, self.deck
+                );
+            }
             self.deck[c] = CardLocation::FaceUp;
             self.cur_player = 0;
             self.phase = EPhase::Pickup;
@@ -726,10 +733,10 @@ impl GameState for EuchreGameState {
 /// It's not yet clear what impact this has on the results of downstream algorithms
 impl ResampleFromInfoState for EuchreGameState {
     fn resample_from_istate<T: rand::Rng>(&self, player: Player, rng: &mut T) -> Self {
-        let mut player_chance = [Action(99); 5];
+        let mut player_chance = [Card::AC; 5];
 
         for (i, c) in player_chance.iter_mut().enumerate() {
-            *c = self.key[player * CARDS_PER_HAND + i];
+            *c = EAction::from(self.key[player * CARDS_PER_HAND + i]).card();
         }
 
         if self.phase() == EPhase::Play
@@ -745,15 +752,20 @@ impl ResampleFromInfoState for EuchreGameState {
 
         let mut ngs = Euchre::new_state();
         let mut chance_iter = player_chance.iter();
-        let face_up_chance = self.key[20]; // 21st card dealt
+        let face_up_chance = EAction::from(self.key[20]).card(); // 21st card dealt
 
         for i in 0..self.key.len() {
             if i >= player * CARDS_PER_HAND && i < player * CARDS_PER_HAND + CARDS_PER_HAND {
                 // the player chance node
-                ngs.apply_action(*chance_iter.next().unwrap());
+                ngs.apply_action(
+                    EAction::DealPlayer {
+                        c: *chance_iter.next().unwrap(),
+                    }
+                    .into(),
+                );
             } else if i == 20 {
                 // the faceup chance node
-                ngs.apply_action(face_up_chance);
+                ngs.apply_action(EAction::DealFaceUp { c: face_up_chance }.into());
             } else if ngs.is_chance_node() {
                 assert!(ngs.cur_player() != player);
 
@@ -761,7 +773,8 @@ impl ResampleFromInfoState for EuchreGameState {
                 let mut actions = actions!(ngs);
                 actions.shuffle(rng);
                 for a in actions {
-                    if !player_chance.contains(&a) && a != face_up_chance {
+                    let card = EAction::from(a).card();
+                    if !player_chance.contains(&card) && card != face_up_chance {
                         // can't deal same card
                         ngs.apply_action(a);
                         break;
@@ -1041,6 +1054,7 @@ mod tests {
 
             while !gs.is_terminal() {
                 let actions = actions!(gs);
+                assert!(!actions.is_empty());
                 let a = actions.choose(&mut rng).unwrap();
                 let mut ngs = gs.clone();
                 ngs.apply_action(*a);
