@@ -33,6 +33,7 @@ impl Euchre {
             play_order: Vec::new(),
             deck: Deck::default(),
             cards_played: 0,
+            phase: EPhase::DealHands,
         }
     }
 
@@ -59,6 +60,7 @@ pub struct EuchreGameState {
     play_order: Vec<Player>, // tracker of who went in what order. Last item is the current player
     deck: Deck,
     cards_played: usize,
+    phase: EPhase,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy, Serialize, Deserialize)]
@@ -80,27 +82,35 @@ impl EuchreGameState {
         if (self.key.len() + 1) % CARDS_PER_HAND == 0 {
             self.cur_player = (self.cur_player + 1) % self.num_players
         }
+
+        if self.key.len() == 19 {
+            self.phase = EPhase::DealFaceUp;
+        }
     }
 
     fn apply_action_deal_face_up(&mut self, a: Action) {
         if let EAction::DealFaceUp { c } = a.into() {
             self.deck[c] = CardLocation::FaceUp;
             self.cur_player = 0;
+            self.phase = EPhase::Pickup;
             return;
         }
-
         panic!("invalid deal face up action: {:?}", a)
     }
 
     fn apply_action_pickup(&mut self, a: Action) {
         match EAction::from(a) {
             EAction::Pass => {
+                if self.cur_player == 3 {
+                    self.phase = EPhase::ChooseTrump;
+                }
                 self.cur_player = (self.cur_player + 1) % self.num_players;
             }
             EAction::Pickup => {
                 self.trump_caller = self.cur_player;
                 self.trump = self.face_up().suit();
                 self.cur_player = 3; // dealers turn
+                self.phase = EPhase::Discard;
             }
             _ => panic!("invalid action"),
         }
@@ -122,6 +132,7 @@ impl EuchreGameState {
         } else {
             self.trump_caller = self.cur_player;
             self.cur_player = 0;
+            self.phase = EPhase::Play
         }
     }
 
@@ -140,6 +151,7 @@ impl EuchreGameState {
         self.deck[pickup] = CardLocation::Player3;
 
         self.cur_player = 0;
+        self.phase = EPhase::Play
     }
 
     fn apply_action_play(&mut self, a: Action) {
@@ -364,26 +376,7 @@ impl EuchreGameState {
     }
 
     fn phase(&self) -> EPhase {
-        // handle key length items
-        if self.key.len() <= 19 {
-            return EPhase::DealHands;
-        } else if self.key.len() == 20 {
-            return EPhase::DealFaceUp;
-        }
-
-        // handle last action items
-        let last_action: EAction = self.key[self.key.len() - 1].into();
-        match last_action {
-            EAction::Pickup => EPhase::Discard,
-            EAction::Clubs | EAction::Diamonds | EAction::Hearts | EAction::Spades => EPhase::Play,
-            EAction::Discard { c: _ } => EPhase::Play,
-            // have had 4 passes and still passing
-            EAction::Pass if self.key.len() >= 25 => EPhase::ChooseTrump,
-            EAction::Pass => EPhase::Pickup,
-            EAction::DealPlayer { c: _ } => panic!("should have been handled by earlier statement"),
-            EAction::DealFaceUp { c: _ } => EPhase::Pickup,
-            EAction::Play { c: _ } => EPhase::Play,
-        }
+        self.phase
     }
 
     fn face_up(&self) -> Card {
@@ -737,22 +730,37 @@ impl GameState for EuchreGameState {
         }
 
         match applied_action {
-            EAction::Pass => {}
-            EAction::Clubs
-            | EAction::Spades
-            | EAction::Hearts
-            | EAction::Diamonds
-            | EAction::Pickup => {
+            EAction::Pass => {
+                // did we just undo the last pickup action?
+                if self.key.len() == 20 + 1 + 3 {
+                    self.phase = EPhase::Pickup;
+                }
+            }
+            EAction::Clubs | EAction::Spades | EAction::Hearts | EAction::Diamonds => {
+                self.phase = EPhase::ChooseTrump;
                 // return to defaults
                 self.trump_caller = 0;
                 self.trump = Suit::Clubs;
             }
-            EAction::DealPlayer { c } => self.deck[c] = CardLocation::None,
-            EAction::DealFaceUp { c } => self.deck[c] = CardLocation::None,
+            EAction::Pickup => {
+                self.phase = EPhase::Pickup;
+                // return to defaults
+                self.trump_caller = 0;
+                self.trump = Suit::Clubs;
+            }
+            EAction::DealPlayer { c } => {
+                self.deck[c] = CardLocation::None;
+                self.phase = EPhase::DealHands
+            }
+            EAction::DealFaceUp { c } => {
+                self.deck[c] = CardLocation::None;
+                self.phase = EPhase::DealFaceUp;
+            }
             EAction::Discard { c } => {
                 let face_up = self.face_up();
                 self.deck[face_up] = CardLocation::FaceUp; // card is face up again
                 self.deck[c] = CardLocation::Player3;
+                self.phase = EPhase::Discard;
             }
             EAction::Play { c } => {
                 self.deck[c] = self.cur_player.into();
