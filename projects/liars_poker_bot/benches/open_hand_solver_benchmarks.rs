@@ -8,7 +8,7 @@ use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
 pub fn criterion_benchmark(c: &mut Criterion) {
     let mut rng: StdRng = SeedableRng::seed_from_u64(42);
-    let mut evaluator = OpenHandSolver::new(1, rng.clone());
+    let mut evaluator = OpenHandSolver::new(100, rng.clone());
 
     let mut gs = Euchre::new_state();
     while gs.is_chance_node() {
@@ -16,7 +16,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         gs.apply_action(a)
     }
 
-    c.bench_function("open hand evaluator 1", |b| {
+    c.bench_function("open hand evaluator 100", |b| {
         b.iter(|| evaluator.evaluate(black_box(&gs)))
     });
 }
