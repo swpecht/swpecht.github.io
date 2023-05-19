@@ -28,7 +28,6 @@ impl Euchre {
             cur_player: 0,
             trump: Suit::Clubs, // Default to one for now
             trump_caller: 0,
-            discard: None,
             trick_winners: [0; 5],
             key: IStateKey::default(),
             play_order: Vec::new(),
@@ -54,8 +53,6 @@ pub struct EuchreGameState {
     trump: Suit,
     trump_caller: usize,
     cur_player: usize,
-    /// index of the discard action in the game key if one occured
-    discard: Option<usize>,
     /// keep track of who has won tricks to avoid re-computing
     trick_winners: [Player; 5],
     key: IStateKey,
@@ -802,7 +799,7 @@ impl ResampleFromInfoState for EuchreGameState {
                         break;
                     }
                 }
-            } else if self.discard.is_some() && i == self.discard.unwrap() {
+            } else if true {
                 // handle the discard case, need a strategy for how dealer will discard here
                 // and what the proper way for determing the discard is
                 // If there is discard, need to have a card get dealt to the dealer that isn't played
