@@ -29,6 +29,7 @@ impl Euchre {
             trump: Suit::Clubs, // Default to one for now
             trump_caller: 0,
             trick_winners: [0; 5],
+            tricks_won: [0; 2],
             key: IStateKey::default(),
             play_order: Vec::new(),
             deck: Deck::default(),
@@ -56,6 +57,7 @@ pub struct EuchreGameState {
     cur_player: usize,
     /// keep track of who has won tricks to avoid re-computing
     trick_winners: [Player; 5],
+    tricks_won: [u8; 2],
     key: IStateKey,
     play_order: Vec<Player>, // tracker of who went in what order. Last item is the current player
     deck: Deck,
@@ -180,6 +182,7 @@ impl EuchreGameState {
             // save the trick winner for later
             let trick = self.cards_played / 4 - 1;
             self.trick_winners[trick] = winner;
+            self.tricks_won[winner % 2] += 1;
         } else {
             self.cur_player = (self.cur_player + 1) % self.num_players;
         }
@@ -487,18 +490,12 @@ impl GameState for EuchreGameState {
             panic!("evaluate called on non-terminal gamestate");
         }
 
-        let mut won_tricks = [0; 2];
-        for i in 0..self.trick_winners.len() {
-            let winner = self.trick_winners[i] % 2;
-            won_tricks[winner] += 1;
-        }
-
         let team = p % 2;
 
         // no points, didn't win most tricks
-        if won_tricks[team] < won_tricks[(team + 1) % 2] {
+        if self.tricks_won[team] < self.tricks_won[(team + 1) % 2] {
             0.0
-        } else if won_tricks[team] == 5 {
+        } else if self.tricks_won[team] == 5 {
             2.0
         } else if self.trump_caller % 2 == team {
             1.0
@@ -647,10 +644,9 @@ impl GameState for EuchreGameState {
 
     fn is_terminal(&self) -> bool {
         self.cards_played == 20
-        // Check if the scores are already decided: see if have tacken a trick in defence
-        // todo: update this based on the number of won tricks, not just the trick winner
-        // || self.trick_winners[0] > 0 && self.trick_winners[1] > 3
-        // || self.trick_winners[0] >= 3 && self.trick_winners[1] > 0
+        // Check if the scores are already decided: see if have taken a trick in defence
+        || self.tricks_won[0] > 0 && self.tricks_won[1] >= 3
+        || self.tricks_won[0] >= 3 && self.tricks_won[1] > 0
     }
 
     fn is_chance_node(&self) -> bool {
@@ -685,7 +681,10 @@ impl GameState for EuchreGameState {
 
         // fix the trick winner counts
         if self.cards_played > 0 && self.cards_played % 4 == 0 {
-            self.trick_winners[self.cards_played / 4 - 1] = 0; // reset it
+            let trick = self.cards_played / 4 - 1;
+            let last_winner = self.trick_winners[trick];
+            self.trick_winners[trick] = 0; // reset it
+            self.tricks_won[last_winner % 2] -= 1;
         }
 
         match applied_action {
