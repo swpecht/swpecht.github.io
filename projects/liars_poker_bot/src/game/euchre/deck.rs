@@ -1,4 +1,4 @@
-use std::ops::{Index, IndexMut};
+use std::ops::{Deref, Index, IndexMut};
 
 use serde::{Deserialize, Serialize};
 
@@ -49,35 +49,10 @@ impl IndexMut<Card> for Deck {
     }
 }
 
-impl<'a> IntoIterator for &'a Deck {
-    type Item = (Card, &'a CardLocation);
+impl Deref for Deck {
+    type Target = [CardLocation; 24];
 
-    type IntoIter = DeckIterator<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        DeckIterator {
-            deck: self,
-            index: 0,
-        }
-    }
-}
-
-pub(super) struct DeckIterator<'a> {
-    deck: &'a Deck,
-    index: usize,
-}
-
-impl<'a> Iterator for DeckIterator<'a> {
-    type Item = (Card, &'a CardLocation);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.index == self.deck.locations.len() {
-            return None;
-        }
-
-        let location = &self.deck.locations[self.index];
-        let card = Card::from(self.index as u8);
-        self.index += 1;
-        Some((card, location))
+    fn deref(&self) -> &Self::Target {
+        &self.locations
     }
 }

@@ -20,13 +20,13 @@ use liars_poker_bot::cfragent::{CFRAgent, CFRAlgorithm};
 use liars_poker_bot::database::memory_node_store::MemoryNodeStore;
 use liars_poker_bot::database::Storage;
 use liars_poker_bot::game::bluff::{Bluff, BluffGameState};
-use liars_poker_bot::game::euchre::actions::EAction;
+use liars_poker_bot::game::euchre::actions::{Card, EAction};
 use liars_poker_bot::game::euchre::{Euchre, EuchreGameState};
 use liars_poker_bot::game::kuhn_poker::{KPGameState, KuhnPoker};
 use liars_poker_bot::game::{run_game, Action, Game, GameState};
 
 use liars_poker_bot::policy::Policy;
-use log::{debug, info};
+use log::{debug, info, trace};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{thread_rng, SeedableRng};
@@ -132,6 +132,11 @@ fn run_scratch(_args: Args) {
     //     info!("p0, p1 value: {}, {}", gs.evaluate(0), gs.evaluate(1));
     // }
 
+    info!("iterating through pass on the bower nodes");
+    for gs in PassOnBowerIterator::new() {
+        trace!("processing node: {}", gs);
+    }
+
     info!("calculating evaluator converge");
     for i in 0..50 {
         let mut gs = Euchre::new_state();
@@ -152,6 +157,75 @@ fn run_scratch(_args: Args) {
                 policy[EAction::Pickup.into()]
             );
         }
+    }
+}
+
+struct PassOnBowerIterator {
+    hands: Vec<[EAction; 5]>,
+}
+
+impl PassOnBowerIterator {
+    fn new() -> Self {
+        let mut hands = Vec::new();
+        // todo: rewrite with combination function?
+        for a in 0..20 {
+            for b in a + 1..21 {
+                for c in b + 1..22 {
+                    for d in c + 1..23 {
+                        for e in d + 1..24 {
+                            if a == Card::JS.into()
+                                || b == Card::JS.into()
+                                || c == Card::JS.into()
+                                || d == Card::JS.into()
+                                || e == Card::JS.into()
+                            {
+                                continue;
+                            }
+                            hands.push([
+                                EAction::DealPlayer { c: a.into() },
+                                EAction::DealPlayer { c: b.into() },
+                                EAction::DealPlayer { c: c.into() },
+                                EAction::DealPlayer { c: d.into() },
+                                EAction::DealPlayer { c: e.into() },
+                            ])
+                        }
+                    }
+                }
+            }
+        }
+        Self { hands }
+    }
+}
+
+impl Iterator for PassOnBowerIterator {
+    type Item = EuchreGameState;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let jack = EAction::DealPlayer { c: Card::JS };
+        if let Some(hand) = self.hands.pop() {
+            let mut gs = Euchre::new_state();
+            while gs.cur_player() != 3 {
+                let actions = actions!(gs);
+                for a in actions {
+                    if !hand.contains(&a.into()) && EAction::from(a) != jack {
+                        gs.apply_action(a);
+                        break;
+                    }
+                }
+            }
+
+            // deal the dealers hands
+            for c in hand {
+                gs.apply_action(c.into())
+            }
+
+            // deal the faceup card
+            gs.apply_action(EAction::DealFaceUp { c: Card::JS }.into());
+
+            return Some(gs);
+        }
+
+        None
     }
 }
 

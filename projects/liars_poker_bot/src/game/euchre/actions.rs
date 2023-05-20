@@ -107,6 +107,12 @@ impl From<u8> for Card {
     }
 }
 
+impl From<Card> for u8 {
+    fn from(value: Card) -> Self {
+        value as u8
+    }
+}
+
 impl From<&str> for Card {
     fn from(value: &str) -> Self {
         match value {
