@@ -2,11 +2,12 @@ use liars_poker_bot::{
     actions,
     algorithms::{
         ismcts::Evaluator,
-        open_hand_solver::{EuchreEarlyEnd, EuchreTranspositionTable, OpenHandSolver, Terminator},
+        open_hand_solver::{OpenHandSolver, Terminator},
     },
     game::{
         euchre::{
             actions::{Card, EAction},
+            terminators::{EuchreEarlyEnd, EuchreTranspositionTable},
             Euchre, EuchreGameState,
         },
         GameState,
@@ -101,6 +102,9 @@ impl Iterator for PassOnBowerIterator {
 
             // deal the faceup card
             gs.apply_action(EAction::DealFaceUp { c: Card::JS }.into());
+            gs.apply_action(EAction::Pass.into());
+            gs.apply_action(EAction::Pass.into());
+            gs.apply_action(EAction::Pass.into());
 
             return Some(gs);
         }
