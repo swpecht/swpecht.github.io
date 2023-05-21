@@ -1,3 +1,8 @@
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
+
 use rand::rngs::StdRng;
 use rayon::prelude::*;
 
@@ -5,7 +10,10 @@ use crate::{
     actions,
     alloc::Pool,
     cfragent::cfrnode::ActionVec,
-    game::{Action, GameState, Player},
+    game::{
+        euchre::{Euchre, EuchreGameState},
+        Action, GameState, Player,
+    },
     policy::Policy,
 };
 
@@ -18,14 +26,19 @@ use super::{
 ///
 /// This is an adaption of a double dummy solver for bridge
 /// http://privat.bahnhof.se/wb758135/bridge/Alg-dds_x.pdf
-pub struct OpenHandSolver {
+pub struct OpenHandSolver<G> {
     n_rollouts: usize,
     rng: StdRng,
+    terminators: Vec<Box<dyn Terminator<G>>>,
 }
 
-impl OpenHandSolver {
+impl<G> OpenHandSolver<G> {
     pub fn new(n_rollouts: usize, rng: StdRng) -> Self {
-        Self { rng, n_rollouts }
+        Self {
+            rng,
+            n_rollouts,
+            terminators: Vec::new(),
+        }
     }
 
     pub fn set_rollout(&mut self, n_rollouts: usize) {
@@ -33,7 +46,7 @@ impl OpenHandSolver {
     }
 }
 
-impl<G: GameState + ResampleFromInfoState + Send> Evaluator<G> for OpenHandSolver {
+impl<G: GameState + ResampleFromInfoState + Send> Evaluator<G> for OpenHandSolver<G> {
     fn evaluate(&mut self, gs: &G) -> Vec<f64> {
         let mut result = vec![0.0; gs.num_players()];
 
@@ -66,7 +79,7 @@ impl<G: GameState + ResampleFromInfoState + Send> Evaluator<G> for OpenHandSolve
     }
 }
 
-impl<G: GameState + ResampleFromInfoState + Send> Policy<G> for OpenHandSolver {
+impl<G: GameState + ResampleFromInfoState + Send> Policy<G> for OpenHandSolver<G> {
     fn action_probabilities(&mut self, gs: &G) -> ActionVec<f64> {
         let maximizing_player = gs.cur_player();
         let actions = actions!(gs);
@@ -195,6 +208,30 @@ fn alpha_beta<G: GameState>(
         (value, best_action)
     }
 }
+
+/// Possibly game specific code that can stop the alpha-beta search early. For example, a quick trick evaluator. Or a transposition table
+pub trait Terminator<G> {
+    fn evaluate(&mut self, gs: &mut G);
+}
+
+#[derive(Default)]
+pub struct EuchreTranspositionTable {}
+
+impl Terminator<EuchreGameState> for EuchreTranspositionTable {
+    fn evaluate(&mut self, gs: &mut EuchreGameState) {
+        todo!()
+    }
+}
+
+#[derive(Default)]
+pub struct EuchreEarlyEnd {}
+
+impl Terminator<EuchreGameState> for EuchreEarlyEnd {
+    fn evaluate(&mut self, gs: &mut EuchreGameState) {
+        todo!()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rand::SeedableRng;

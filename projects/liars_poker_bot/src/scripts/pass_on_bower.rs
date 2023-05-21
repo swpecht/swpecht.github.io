@@ -1,6 +1,9 @@
 use liars_poker_bot::{
     actions,
-    algorithms::{ismcts::Evaluator, open_hand_solver::OpenHandSolver},
+    algorithms::{
+        ismcts::Evaluator,
+        open_hand_solver::{EuchreEarlyEnd, EuchreTranspositionTable, OpenHandSolver, Terminator},
+    },
     game::{
         euchre::{
             actions::{Card, EAction},
@@ -16,6 +19,11 @@ use rand::{rngs::StdRng, SeedableRng};
 use crate::Args;
 
 pub fn open_hand_score_pass_on_bower(_args: Args) {
+    let mut terminators: Vec<Box<dyn Terminator<EuchreGameState>>> = vec![
+        Box::new(EuchreEarlyEnd::default()),
+        Box::new(EuchreTranspositionTable::default()),
+    ];
+
     let rng: StdRng = SeedableRng::seed_from_u64(42);
     let mut evaluator = OpenHandSolver::new(100, rng);
 
