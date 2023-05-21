@@ -33,7 +33,7 @@ impl OpenHandSolver {
     }
 }
 
-impl<G: GameState + ResampleFromInfoState> Evaluator<G> for OpenHandSolver {
+impl<G: GameState + ResampleFromInfoState + Send> Evaluator<G> for OpenHandSolver {
     fn evaluate(&mut self, gs: &G) -> Vec<f64> {
         let mut result = vec![0.0; gs.num_players()];
 
@@ -42,19 +42,18 @@ impl<G: GameState + ResampleFromInfoState> Evaluator<G> for OpenHandSolver {
             worlds.push(gs.resample_from_istate(gs.cur_player(), &mut self.rng));
         }
 
-        // let r: f64 = (0..2).into_par_iter().map(|x| 2.0 * x as f64).sum();
+        for (i, r) in result.iter_mut().enumerate().take(2) {
+            *r = worlds
+                .clone()
+                .into_par_iter()
+                .map(|w| alpha_beta_search(w, i).0)
+                .sum();
+        }
 
-        worlds.iter().for_each(|world| {
-            for (i, r) in result.iter_mut().enumerate().take(2) {
-                let (v, _) = alpha_beta_search(world.clone(), i);
-                *r += v;
-            }
-
-            // Only support evaluating for 2 teams, so we can copy over the results
-            for i in 2..result.len() {
-                result[i] = result[i % 2];
-            }
-        });
+        // Only support evaluating for 2 teams, so we can copy over the results
+        for i in 2..result.len() {
+            result[i] = result[i % 2];
+        }
 
         for r in result.iter_mut() {
             *r /= self.n_rollouts as f64;
@@ -67,7 +66,7 @@ impl<G: GameState + ResampleFromInfoState> Evaluator<G> for OpenHandSolver {
     }
 }
 
-impl<G: GameState + ResampleFromInfoState> Policy<G> for OpenHandSolver {
+impl<G: GameState + ResampleFromInfoState + Send> Policy<G> for OpenHandSolver {
     fn action_probabilities(&mut self, gs: &G) -> ActionVec<f64> {
         let maximizing_player = gs.cur_player();
         let actions = actions!(gs);
