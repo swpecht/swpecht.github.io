@@ -12,9 +12,9 @@ use liars_poker_bot::agents::{Agent, RandomAgent};
 use liars_poker_bot::algorithms::alphamu::AlphaMuBot;
 use liars_poker_bot::algorithms::exploitability::{self};
 use liars_poker_bot::algorithms::ismcts::{
-    Evaluator, ISMCTBotConfig, ISMCTSBot, RandomRolloutEvaluator, ResampleFromInfoState,
+    ISMCTBotConfig, ISMCTSBot, RandomRolloutEvaluator, ResampleFromInfoState,
 };
-use liars_poker_bot::algorithms::open_hand_solver::{alpha_beta_search, OpenHandSolver};
+use liars_poker_bot::algorithms::open_hand_solver::OpenHandSolver;
 use liars_poker_bot::cfragent::cfrnode::CFRNode;
 use liars_poker_bot::cfragent::{CFRAgent, CFRAlgorithm};
 use liars_poker_bot::database::memory_node_store::MemoryNodeStore;
@@ -30,6 +30,9 @@ use log::{debug, info, trace};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{thread_rng, SeedableRng};
+use scripts::pass_on_bower::open_hand_score_pass_on_bower;
+
+pub mod scripts;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ArgEnum, Debug)]
 enum GameType {
@@ -47,12 +50,13 @@ enum Mode {
     Analyze,
     Play,
     Scratch,
+    PassOnBowerOpenHand,
 }
 
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
-struct Args {
+pub struct Args {
     #[clap(short, long, value_parser, default_value_t = 1)]
     num_games: usize,
 
@@ -93,6 +97,7 @@ fn main() {
         Mode::Analyze => run_analyze(args),
         Mode::Play => run_play(args),
         Mode::Scratch => run_scratch(args),
+        Mode::PassOnBowerOpenHand => open_hand_score_pass_on_bower(args),
     }
 }
 
@@ -132,11 +137,6 @@ fn run_scratch(_args: Args) {
     //     info!("p0, p1 value: {}, {}", gs.evaluate(0), gs.evaluate(1));
     // }
 
-    info!("iterating through pass on the bower nodes");
-    for gs in PassOnBowerIterator::new() {
-        trace!("processing node: {}", gs);
-    }
-
     info!("calculating evaluator converge");
     for i in 0..50 {
         let mut gs = Euchre::new_state();
@@ -157,75 +157,6 @@ fn run_scratch(_args: Args) {
                 policy[EAction::Pickup.into()]
             );
         }
-    }
-}
-
-struct PassOnBowerIterator {
-    hands: Vec<[EAction; 5]>,
-}
-
-impl PassOnBowerIterator {
-    fn new() -> Self {
-        let mut hands = Vec::new();
-        // todo: rewrite with combination function?
-        for a in 0..20 {
-            for b in a + 1..21 {
-                for c in b + 1..22 {
-                    for d in c + 1..23 {
-                        for e in d + 1..24 {
-                            if a == Card::JS.into()
-                                || b == Card::JS.into()
-                                || c == Card::JS.into()
-                                || d == Card::JS.into()
-                                || e == Card::JS.into()
-                            {
-                                continue;
-                            }
-                            hands.push([
-                                EAction::DealPlayer { c: a.into() },
-                                EAction::DealPlayer { c: b.into() },
-                                EAction::DealPlayer { c: c.into() },
-                                EAction::DealPlayer { c: d.into() },
-                                EAction::DealPlayer { c: e.into() },
-                            ])
-                        }
-                    }
-                }
-            }
-        }
-        Self { hands }
-    }
-}
-
-impl Iterator for PassOnBowerIterator {
-    type Item = EuchreGameState;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let jack = EAction::DealPlayer { c: Card::JS };
-        if let Some(hand) = self.hands.pop() {
-            let mut gs = Euchre::new_state();
-            while gs.cur_player() != 3 {
-                let actions = actions!(gs);
-                for a in actions {
-                    if !hand.contains(&a.into()) && EAction::from(a) != jack {
-                        gs.apply_action(a);
-                        break;
-                    }
-                }
-            }
-
-            // deal the dealers hands
-            for c in hand {
-                gs.apply_action(c.into())
-            }
-
-            // deal the faceup card
-            gs.apply_action(EAction::DealFaceUp { c: Card::JS }.into());
-
-            return Some(gs);
-        }
-
-        None
     }
 }
 
