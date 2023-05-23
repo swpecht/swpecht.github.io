@@ -20,13 +20,13 @@ use liars_poker_bot::cfragent::{CFRAgent, CFRAlgorithm};
 use liars_poker_bot::database::memory_node_store::MemoryNodeStore;
 use liars_poker_bot::database::Storage;
 use liars_poker_bot::game::bluff::{Bluff, BluffGameState};
-use liars_poker_bot::game::euchre::actions::{Card, EAction};
+use liars_poker_bot::game::euchre::actions::EAction;
 use liars_poker_bot::game::euchre::{Euchre, EuchreGameState};
 use liars_poker_bot::game::kuhn_poker::{KPGameState, KuhnPoker};
 use liars_poker_bot::game::{run_game, Action, Game, GameState};
 
 use liars_poker_bot::policy::Policy;
-use log::{debug, info, trace};
+use log::{debug, info};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{thread_rng, SeedableRng};

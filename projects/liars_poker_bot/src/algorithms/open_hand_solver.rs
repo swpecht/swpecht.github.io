@@ -18,27 +18,14 @@ use super::{
 ///
 /// This is an adaption of a double dummy solver for bridge
 /// http://privat.bahnhof.se/wb758135/bridge/Alg-dds_x.pdf
-pub struct OpenHandSolver<G> {
+pub struct OpenHandSolver {
     n_rollouts: usize,
     rng: StdRng,
-    terminators: Vec<Box<dyn Terminator<G>>>,
 }
 
-impl<G> OpenHandSolver<G> {
+impl OpenHandSolver {
     pub fn new(n_rollouts: usize, rng: StdRng) -> Self {
-        Self::with_terminators(n_rollouts, rng, Vec::new())
-    }
-
-    pub fn with_terminators(
-        n_rollouts: usize,
-        rng: StdRng,
-        terminators: Vec<Box<dyn Terminator<G>>>,
-    ) -> Self {
-        Self {
-            n_rollouts,
-            rng,
-            terminators,
-        }
+        Self { n_rollouts, rng }
     }
 
     pub fn set_rollout(&mut self, n_rollouts: usize) {
@@ -46,7 +33,7 @@ impl<G> OpenHandSolver<G> {
     }
 }
 
-impl<G: GameState + ResampleFromInfoState + Send> Evaluator<G> for OpenHandSolver<G> {
+impl<G: GameState + ResampleFromInfoState + Send> Evaluator<G> for OpenHandSolver {
     fn evaluate(&mut self, gs: &G) -> Vec<f64> {
         let mut result = vec![0.0; gs.num_players()];
 
@@ -79,7 +66,7 @@ impl<G: GameState + ResampleFromInfoState + Send> Evaluator<G> for OpenHandSolve
     }
 }
 
-impl<G: GameState + ResampleFromInfoState + Send> Policy<G> for OpenHandSolver<G> {
+impl<G: GameState + ResampleFromInfoState + Send> Policy<G> for OpenHandSolver {
     fn action_probabilities(&mut self, gs: &G) -> ActionVec<f64> {
         let maximizing_player = gs.cur_player();
         let actions = actions!(gs);
@@ -207,11 +194,6 @@ fn alpha_beta<G: GameState>(
         cache.vec_pool.attach(actions);
         (value, best_action)
     }
-}
-
-/// Possibly game specific code that can stop the alpha-beta search early. For example, a quick trick evaluator. Or a transposition table
-pub trait Terminator<G> {
-    fn evaluate(&mut self, gs: &mut G);
 }
 
 #[cfg(test)]

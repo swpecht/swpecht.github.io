@@ -3,8 +3,6 @@ use rustc_hash::FxHashMap;
 
 use crate::{game::Action, istate::IStateKey};
 
-const MAX_CHILDREN: usize = 32;
-
 /// A performant datastructure for storing nodes in memory
 #[derive(Clone)]
 pub struct Tree<T: Clone> {
