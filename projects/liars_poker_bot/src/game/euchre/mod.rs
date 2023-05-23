@@ -27,7 +27,7 @@ impl Euchre {
         EuchreGameState {
             num_players: 4,
             cur_player: 0,
-            trump: Suit::Clubs, // Default to one for now
+            trump: None,
             trump_caller: 0,
             trick_winners: [0; 5],
             tricks_won: [0; 2],
@@ -53,7 +53,7 @@ impl Euchre {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EuchreGameState {
     num_players: usize,
-    trump: Suit,
+    trump: Option<Suit>,
     trump_caller: usize,
     cur_player: usize,
     /// keep track of who has won tricks to avoid re-computing
@@ -124,8 +124,9 @@ impl EuchreGameState {
             }
             EAction::Pickup => {
                 self.trump_caller = self.cur_player;
-                self.trump = self.face_up().suit();
+                self.trump = Some(self.face_up().suit());
                 self.cur_player = 3; // dealers turn
+                self.deck.set_trump(self.trump);
                 self.phase = EPhase::Discard;
             }
             _ => panic!("invalid action"),
@@ -134,14 +135,16 @@ impl EuchreGameState {
 
     fn apply_action_choose_trump(&mut self, a: Action) {
         let a = EAction::from(a);
-        match a {
-            EAction::Clubs => self.trump = Suit::Clubs,
-            EAction::Spades => self.trump = Suit::Spades,
-            EAction::Hearts => self.trump = Suit::Hearts,
-            EAction::Diamonds => self.trump = Suit::Diamonds,
-            EAction::Pass => {}
+        self.trump = match a {
+            EAction::Clubs => Some(Suit::Clubs),
+            EAction::Spades => Some(Suit::Spades),
+            EAction::Hearts => Some(Suit::Hearts),
+            EAction::Diamonds => Some(Suit::Diamonds),
+            EAction::Pass => None,
             _ => panic!("invalid action"),
         };
+
+        self.deck.set_trump(self.trump);
 
         if a == EAction::Pass {
             self.cur_player += 1;
@@ -323,13 +326,13 @@ impl EuchreGameState {
             let suit = self.get_suit(c);
             // Player can't win if not following suit or playing trump
             // The winning suit can only ever be trump or the lead suit
-            if suit != winning_suit && suit != self.trump {
+            if suit != winning_suit && suit != self.trump.unwrap() {
                 continue;
             }
 
             // Simple case where we don't need to worry about weird trump scoring
             if suit == winning_suit
-                && suit != self.trump
+                && suit != self.trump.unwrap()
                 && self.get_card_value(c) > self.get_card_value(winning_card)
             {
                 winner = i;
@@ -339,7 +342,7 @@ impl EuchreGameState {
             }
 
             // Play trump over lead suit
-            if suit == self.trump && winning_suit != self.trump {
+            if suit == self.trump.unwrap() && winning_suit != self.trump.unwrap() {
                 winner = i;
                 winning_card = c;
                 winning_suit = suit;
@@ -347,7 +350,7 @@ impl EuchreGameState {
             }
 
             // Handle trump scoring. Need to differentiate the left and right
-            if suit == self.trump && winning_suit == self.trump {
+            if suit == self.trump.unwrap() && winning_suit == self.trump.unwrap() {
                 let winning_card_value = self.get_card_value(winning_card);
                 let cur_card_value = self.get_card_value(c);
                 if cur_card_value > winning_card_value {
@@ -374,7 +377,7 @@ impl EuchreGameState {
 
         // Correct the jack if in play phase
         if self.phase() == EPhase::Play {
-            suit = match (c, self.trump) {
+            suit = match (c, self.trump.unwrap()) {
                 (Card::JC, Suit::Spades) => Suit::Spades,
                 (Card::JS, Suit::Clubs) => Suit::Clubs,
                 (Card::JH, Suit::Diamonds) => Suit::Diamonds,
@@ -395,7 +398,7 @@ impl EuchreGameState {
             return rank as usize;
         }
 
-        match (self.trump, card) {
+        match (self.trump.unwrap(), card) {
             (Suit::Clubs, Card::JC) => 100,
             (Suit::Clubs, Card::JS) => 99,
             (Suit::Spades, Card::JS) => 100,
@@ -625,7 +628,7 @@ impl GameState for EuchreGameState {
 
         r.push('|');
 
-        r.push_str(&format!("{}{}", self.trump_caller, self.trump));
+        r.push_str(&format!("{}{}", self.trump_caller, self.trump.unwrap()));
 
         if self.phase() == EPhase::Discard {
             return r;
@@ -719,13 +722,15 @@ impl GameState for EuchreGameState {
                 self.phase = EPhase::ChooseTrump;
                 // return to defaults
                 self.trump_caller = 0;
-                self.trump = Suit::Clubs;
+                self.trump = None;
+                self.deck.set_trump(None);
             }
             EAction::Pickup => {
                 self.phase = EPhase::Pickup;
                 // return to defaults
                 self.trump_caller = 0;
-                self.trump = Suit::Clubs;
+                self.trump = None;
+                self.deck.set_trump(None);
             }
             EAction::DealPlayer { c } => {
                 self.deck[c] = CardLocation::None;
@@ -951,7 +956,7 @@ mod tests {
         s.apply_action(EAction::DealFaceUp { c: Card::NC }.into()); // Deal the 9 face up
         s.apply_action(EAction::Pickup.into());
         s.apply_action(EAction::Discard { c: 20.into() }.into());
-        assert_eq!(s.trump, Suit::Clubs);
+        assert_eq!(s.trump, Some(Suit::Clubs));
         assert_eq!(s.phase(), EPhase::Play);
         // Jack of spades is now a club since it's trump
         assert_eq!(s.get_suit(Card::JS), Suit::Clubs);

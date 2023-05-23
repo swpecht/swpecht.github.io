@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::game::Player;
 
-use super::actions::Card;
+use super::actions::{Card, Suit};
 
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) enum CardLocation {
@@ -33,6 +33,13 @@ impl From<Player> for CardLocation {
 #[derive(Default, Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
 pub(super) struct Deck {
     locations: [CardLocation; 24],
+    trump: Option<Suit>,
+}
+
+impl Deck {
+    pub fn set_trump(&mut self, suit: Option<Suit>) {
+        self.trump = suit;
+    }
 }
 
 impl Index<Card> for Deck {
