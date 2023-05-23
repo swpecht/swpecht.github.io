@@ -1,8 +1,3 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
-
 use rand::rngs::StdRng;
 use rayon::prelude::*;
 
@@ -10,10 +5,7 @@ use crate::{
     actions,
     alloc::Pool,
     cfragent::cfrnode::ActionVec,
-    game::{
-        euchre::{Euchre, EuchreGameState},
-        Action, GameState, Player,
-    },
+    game::{Action, GameState, Player},
     policy::Policy,
 };
 
@@ -34,10 +26,18 @@ pub struct OpenHandSolver<G> {
 
 impl<G> OpenHandSolver<G> {
     pub fn new(n_rollouts: usize, rng: StdRng) -> Self {
+        Self::with_terminators(n_rollouts, rng, Vec::new())
+    }
+
+    pub fn with_terminators(
+        n_rollouts: usize,
+        rng: StdRng,
+        terminators: Vec<Box<dyn Terminator<G>>>,
+    ) -> Self {
         Self {
-            rng,
             n_rollouts,
-            terminators: Vec::new(),
+            rng,
+            terminators,
         }
     }
 
@@ -212,24 +212,6 @@ fn alpha_beta<G: GameState>(
 /// Possibly game specific code that can stop the alpha-beta search early. For example, a quick trick evaluator. Or a transposition table
 pub trait Terminator<G> {
     fn evaluate(&mut self, gs: &mut G);
-}
-
-#[derive(Default)]
-pub struct EuchreTranspositionTable {}
-
-impl Terminator<EuchreGameState> for EuchreTranspositionTable {
-    fn evaluate(&mut self, gs: &mut EuchreGameState) {
-        todo!()
-    }
-}
-
-#[derive(Default)]
-pub struct EuchreEarlyEnd {}
-
-impl Terminator<EuchreGameState> for EuchreEarlyEnd {
-    fn evaluate(&mut self, gs: &mut EuchreGameState) {
-        todo!()
-    }
 }
 
 #[cfg(test)]
