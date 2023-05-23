@@ -289,6 +289,7 @@ mod tests {
             kuhn_poker::{KPAction, KuhnPoker},
             GameState,
         },
+        policy::Policy,
     };
 
     use super::alpha_beta_search;
@@ -351,6 +352,9 @@ mod tests {
         let mut evaluator = OpenHandSolver::new(100, SeedableRng::seed_from_u64(109));
         let gs = KuhnPoker::from_actions(&[KPAction::Jack, KPAction::Queen]);
         assert_eq!(evaluator.evaluate(&gs), vec![-1.0, 1.0]);
+        let probs = evaluator.action_probabilities(&gs);
+        assert_eq!(probs[KPAction::Bet.into()], 0.0);
+        assert_eq!(probs[KPAction::Pass.into()], 1.0);
 
         let mut evaluator = OpenHandSolver::new(100, SeedableRng::seed_from_u64(109));
         let gs = KuhnPoker::from_actions(&[KPAction::Queen, KPAction::Jack]);
@@ -359,6 +363,9 @@ mod tests {
         let mut evaluator = OpenHandSolver::new(100, SeedableRng::seed_from_u64(109));
         let gs = KuhnPoker::from_actions(&[KPAction::King, KPAction::Jack]);
         assert_eq!(evaluator.evaluate(&gs), vec![1.0, -1.0]);
+        let probs = evaluator.action_probabilities(&gs);
+        assert_eq!(probs[KPAction::Bet.into()], 1.0);
+        assert_eq!(probs[KPAction::Pass.into()], 0.0);
     }
 
     #[test]
