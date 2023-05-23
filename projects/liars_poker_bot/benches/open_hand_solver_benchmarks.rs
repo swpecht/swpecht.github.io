@@ -3,6 +3,7 @@ use liars_poker_bot::{
     actions,
     algorithms::{ismcts::Evaluator, open_hand_solver::OpenHandSolver},
     game::{euchre::Euchre, GameState},
+    policy::Policy,
 };
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
@@ -17,7 +18,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     }
 
     c.bench_function("open hand evaluator 100", |b| {
-        b.iter(|| evaluator.evaluate(black_box(&gs)))
+        b.iter(|| evaluator.action_probabilities(black_box(&gs)))
     });
 }
 

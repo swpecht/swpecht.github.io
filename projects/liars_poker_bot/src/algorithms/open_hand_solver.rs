@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    marker::PhantomData,
     sync::{Arc, RwLock},
 };
 
@@ -25,50 +26,68 @@ use super::{
 ///
 /// This is an adaption of a double dummy solver for bridge
 /// http://privat.bahnhof.se/wb758135/bridge/Alg-dds_x.pdf
-pub struct OpenHandSolver {
+pub struct OpenHandSolver<G> {
     n_rollouts: usize,
     rng: StdRng,
     cache: AlphaBetaCache,
+    _phantom: PhantomData<G>,
 }
 
-impl OpenHandSolver {
+impl<G: GameState + ResampleFromInfoState + Send> OpenHandSolver<G> {
     pub fn new(n_rollouts: usize, rng: StdRng) -> Self {
         Self {
             n_rollouts,
             rng,
             cache: AlphaBetaCache::default(),
+            _phantom: PhantomData::default(),
         }
     }
 
     pub fn set_rollout(&mut self, n_rollouts: usize) {
         self.n_rollouts = n_rollouts;
     }
-}
 
-impl<G: GameState + ResampleFromInfoState + Send> Evaluator<G> for OpenHandSolver {
-    fn evaluate(&mut self, gs: &G) -> Vec<f64> {
-        let mut result = vec![0.0; gs.num_players()];
+    pub fn evaluate_player(&mut self, gs: &G, maximizing_player: Player) -> f64 {
+        let worlds = self.get_worlds(gs);
+        self.evaluate_with_worlds(maximizing_player, worlds)
+    }
 
+    fn evaluate_with_worlds(&mut self, maximizing_player: Player, worlds: Vec<G>) -> f64 {
+        let sum: f64 = worlds
+            // .into_iter()
+            .into_par_iter()
+            .map(|w| alpha_beta_search_cached(w, maximizing_player, self.cache.clone()).0)
+            .sum();
+
+        debug!(
+            "transposition table size: {}",
+            self.cache.transposition_table.read().unwrap().len()
+        );
+
+        sum / self.n_rollouts as f64
+    }
+
+    fn get_worlds(&mut self, gs: &G) -> Vec<G> {
         let mut worlds = Vec::with_capacity(self.n_rollouts);
         for _ in 0..self.n_rollouts {
             worlds.push(gs.resample_from_istate(gs.cur_player(), &mut self.rng));
         }
+        worlds
+    }
+}
+
+impl<G: GameState + ResampleFromInfoState + Send> Evaluator<G> for OpenHandSolver<G> {
+    fn evaluate(&mut self, gs: &G) -> Vec<f64> {
+        let mut result = vec![0.0; gs.num_players()];
+
+        let worlds = self.get_worlds(gs);
 
         for (i, r) in result.iter_mut().enumerate().take(2) {
-            *r = worlds
-                .clone()
-                // .into_iter()
-                .into_par_iter()
-                .map(|w| alpha_beta_search_cached(w, i, self.cache.clone()).0)
-                .sum();
+            *r = self.evaluate_with_worlds(i, worlds.clone());
         }
         // Only support evaluating for 2 teams, so we can copy over the results
         for i in 2..result.len() {
             result[i] = result[i % 2];
-        }
-
-        for r in result.iter_mut() {
-            *r /= self.n_rollouts as f64;
         }
 
         debug!(
@@ -84,7 +103,7 @@ impl<G: GameState + ResampleFromInfoState + Send> Evaluator<G> for OpenHandSolve
     }
 }
 
-impl<G: GameState + ResampleFromInfoState + Send> Policy<G> for OpenHandSolver {
+impl<G: GameState + ResampleFromInfoState + Send> Policy<G> for OpenHandSolver<G> {
     fn action_probabilities(&mut self, gs: &G) -> ActionVec<f64> {
         let maximizing_player = gs.cur_player();
         let actions = actions!(gs);
@@ -92,7 +111,7 @@ impl<G: GameState + ResampleFromInfoState + Send> Policy<G> for OpenHandSolver {
         let mut gs = gs.clone();
         for a in &actions {
             gs.apply_action(*a);
-            let v = self.evaluate(&gs)[maximizing_player];
+            let v = self.evaluate_player(&gs, maximizing_player);
             policy[*a] = v;
             gs.undo()
         }
