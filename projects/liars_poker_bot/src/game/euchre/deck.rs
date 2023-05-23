@@ -1,12 +1,12 @@
-use std::ops::{Deref, Index, IndexMut};
+use std::ops::{Index, IndexMut};
 
 use serde::{Deserialize, Serialize};
 
 use crate::game::Player;
 
-use super::actions::{Card, Suit};
+use super::actions::{Card, Suit, CARD_PER_SUIT};
 
-const CARDS: [Card; 24] = [
+const CARDS: &[Card] = &[
     Card::NC,
     Card::TC,
     Card::JC,
@@ -33,6 +33,11 @@ const CARDS: [Card; 24] = [
     Card::AD,
 ];
 
+const SUITS: &[Suit] = &[Suit::Clubs, Suit::Diamonds, Suit::Spades, Suit::Hearts];
+const JACK_RANK: u8 = 2;
+const LEFT_RANK: usize = 6;
+const RIGHT_RANK: usize = 7;
+
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum CardLocation {
     Player0,
@@ -42,17 +47,6 @@ pub enum CardLocation {
     FaceUp,
     #[default]
     None,
-}
-
-enum Face {
-    N,
-    T,
-    J,
-    Q,
-    K,
-    A,
-    Left,
-    Right,
 }
 
 impl From<Player> for CardLocation {
@@ -70,7 +64,7 @@ impl From<Player> for CardLocation {
 /// Track location of all euchre cards
 #[derive(Default, Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize, Hash)]
 pub(super) struct Deck {
-    locations: [CardLocation; 24],
+    locations: [[CardLocation; 6]; 4],
     trump: Option<Suit>,
 }
 
@@ -81,9 +75,36 @@ impl Deck {
 
     /// Returns an isomorphic representation of the deck
     pub fn isomorphic_rep(&self) -> Self {
-        let iso = *self;
+        let mut iso = *self;
+
+        for &s in SUITS {
+            if Some(s) == self.trump || Some(s.other_color()) == self.trump {
+                continue; // don't do anything to trump colored suits yet
+            }
+            let mut r = 0;
+            let mut last_card = CARD_PER_SUIT;
+            // We downshift cards that are in the None location. These a 10 is as valuable in future hands as a 9
+            // if the 9 has been played already
+            while r < last_card {
+                if iso.locations[s as usize][r as usize] == CardLocation::None {
+                    iso.locations[s as usize][r as usize..].rotate_left(1);
+                    last_card -= 1;
+                } else {
+                    r += 1;
+                }
+            }
+        }
+
+        // handle detecting trump for downshifting here
 
         iso
+    }
+
+    fn get_index(&self, c: Card) -> (usize, usize) {
+        let rank = c.rank();
+        let suit = c.suit();
+
+        (suit as usize, rank as usize)
     }
 }
 
@@ -91,13 +112,15 @@ impl Index<Card> for Deck {
     type Output = CardLocation;
 
     fn index(&self, index: Card) -> &Self::Output {
-        &self.locations[index as usize]
+        let index = self.get_index(index);
+        &self.locations[index.0][index.1]
     }
 }
 
 impl IndexMut<Card> for Deck {
     fn index_mut(&mut self, index: Card) -> &mut Self::Output {
-        &mut self.locations[index as usize]
+        let index = self.get_index(index);
+        &mut self.locations[index.0][index.1]
     }
 }
 

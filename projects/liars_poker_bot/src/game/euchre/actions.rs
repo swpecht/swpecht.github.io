@@ -255,6 +255,18 @@ pub(super) enum Suit {
     Diamonds,
 }
 
+impl Suit {
+    /// returns the suit of the other color
+    pub fn other_color(&self) -> Self {
+        match self {
+            Suit::Clubs => Suit::Spades,
+            Suit::Spades => Suit::Clubs,
+            Suit::Hearts => Suit::Diamonds,
+            Suit::Diamonds => Suit::Hearts,
+        }
+    }
+}
+
 impl Display for Suit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let c = match self {
