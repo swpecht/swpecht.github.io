@@ -758,7 +758,10 @@ impl GameState for EuchreGameState {
 
     fn isomorphic_hash(&self) -> crate::istate::IsomorphicHash {
         let mut hasher = DefaultHasher::new();
-        self.hash(&mut hasher);
+        // Just hash the deck and current player, how we got there isn't important
+        self.deck.hash(&mut hasher);
+        self.cur_player.hash(&mut hasher);
+
         hasher.finish()
     }
 }
