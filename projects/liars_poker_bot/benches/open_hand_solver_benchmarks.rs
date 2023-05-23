@@ -1,7 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use liars_poker_bot::{
     actions,
-    algorithms::{ismcts::Evaluator, open_hand_solver::OpenHandSolver},
+    algorithms::open_hand_solver::OpenHandSolver,
     game::{euchre::Euchre, GameState},
     policy::Policy,
 };
