@@ -3,6 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use log::debug;
 use rand::rngs::StdRng;
 use rayon::prelude::*;
 
@@ -27,11 +28,16 @@ use super::{
 pub struct OpenHandSolver {
     n_rollouts: usize,
     rng: StdRng,
+    cache: AlphaBetaCache,
 }
 
 impl OpenHandSolver {
     pub fn new(n_rollouts: usize, rng: StdRng) -> Self {
-        Self { n_rollouts, rng }
+        Self {
+            n_rollouts,
+            rng,
+            cache: AlphaBetaCache::default(),
+        }
     }
 
     pub fn set_rollout(&mut self, n_rollouts: usize) {
@@ -48,13 +54,12 @@ impl<G: GameState + ResampleFromInfoState + Send> Evaluator<G> for OpenHandSolve
             worlds.push(gs.resample_from_istate(gs.cur_player(), &mut self.rng));
         }
 
-        let cache = AlphaBetaCache::default();
         for (i, r) in result.iter_mut().enumerate().take(2) {
             *r = worlds
                 .clone()
-                .into_iter()
-                // .into_par_iter()
-                .map(|w| alpha_beta_search_cached(w, i, cache.clone()).0)
+                // .into_iter()
+                .into_par_iter()
+                .map(|w| alpha_beta_search_cached(w, i, self.cache.clone()).0)
                 .sum();
         }
         // Only support evaluating for 2 teams, so we can copy over the results
@@ -65,6 +70,12 @@ impl<G: GameState + ResampleFromInfoState + Send> Evaluator<G> for OpenHandSolve
         for r in result.iter_mut() {
             *r /= self.n_rollouts as f64;
         }
+
+        debug!(
+            "transposition table size: {}",
+            self.cache.transposition_table.lock().unwrap().len()
+        );
+
         result
     }
 
