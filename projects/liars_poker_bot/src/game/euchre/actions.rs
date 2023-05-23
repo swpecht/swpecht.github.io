@@ -249,7 +249,7 @@ fn eaction_fmt(v: &EAction, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy, Serialize, Deserialize, Hash)]
 pub(super) enum Suit {
-    Clubs,
+    Clubs = 0,
     Spades,
     Hearts,
     Diamonds,

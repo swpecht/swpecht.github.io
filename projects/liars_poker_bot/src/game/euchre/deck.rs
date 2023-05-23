@@ -84,6 +84,9 @@ impl Deck {
     pub fn isomorphic_rep(&self) -> Self {
         let mut iso = *self;
 
+        // todo: always put the trump suit in slot 0. Then sort all other suits by how many cards they have
+        // this could be sped up using integers and popcount instruction to count the number of
+
         for &s in SUITS {
             let mut r = 0;
             let mut last_card = 8;
@@ -99,7 +102,21 @@ impl Deck {
             }
         }
 
-        // handle detecting trump for downshifting here
+        fn get_count(x: &[CardLocation]) -> usize {
+            x.iter().filter(|x| **x != CardLocation::None).count()
+        }
+
+        if let Some(trump) = iso.trump {
+            // put trump in the first spot
+            iso.locations.swap(0, trump as usize);
+            // sort everything else
+            iso.locations[1..].sort_by_key(|a| get_count(a));
+            // and set trump the the 0 item
+            iso.trump = Some(Suit::Clubs);
+        } else {
+            // sort everything
+            iso.locations.sort_by_key(|a| get_count(a));
+        }
 
         iso
     }
