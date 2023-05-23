@@ -1,4 +1,8 @@
-use std::fmt::{Debug, Display};
+use std::{
+    collections::hash_map::DefaultHasher,
+    fmt::{Debug, Display},
+    hash::{Hash, Hasher},
+};
 
 pub mod bluff;
 pub mod euchre;
@@ -9,7 +13,10 @@ use log::trace;
 use rand::{seq::SliceRandom, Rng};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-use crate::{agents::Agent, istate::IStateKey};
+use crate::{
+    agents::Agent,
+    istate::{IStateKey, IsomorphicHash},
+};
 
 // pub type Action = usize;
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord, Default)]
@@ -42,7 +49,7 @@ pub struct Game<T: GameState> {
     pub max_actions: usize,
 }
 
-pub trait GameState: Display + Clone + Debug + Serialize + DeserializeOwned {
+pub trait GameState: Display + Clone + Debug + Serialize + DeserializeOwned + Hash {
     /// Applies an action in place
     fn apply_action(&mut self, a: Action);
     /// Returns all legal actions at a given game state
@@ -58,6 +65,12 @@ pub trait GameState: Display + Clone + Debug + Serialize + DeserializeOwned {
     fn cur_player(&self) -> Player;
     /// A key representing the entire game state, likely a history of all actions
     fn key(&self) -> IStateKey;
+    /// Returns an isomorphic hash of the current gamestate
+    fn isomorphic_hash(&self) -> IsomorphicHash {
+        let mut hasher = DefaultHasher::new();
+        self.hash(&mut hasher);
+        hasher.finish()
+    }
     /// Undo the last played actions
     fn undo(&mut self);
 }

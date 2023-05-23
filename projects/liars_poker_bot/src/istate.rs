@@ -117,5 +117,8 @@ impl Iterator for IStateKeyIterator {
     }
 }
 
+/// A key representing the state of the game (with perfect information). Used for transposition table lookups
+pub type IsomorphicHash = u64;
+
 #[cfg(test)]
 mod tests {}

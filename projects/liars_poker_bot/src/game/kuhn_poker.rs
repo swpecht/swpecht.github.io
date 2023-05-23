@@ -11,7 +11,7 @@ use itertools::Itertools;
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Copy, Serialize, Deserialize, Hash)]
 pub enum KPAction {
     Bet,
     Pass,
@@ -48,7 +48,7 @@ pub enum KPPhase {
 /// Adapted from: https://github.com/deepmind/open_spiel/blob/master/open_spiel/games/kuhn_poker.cc
 /// All of the randomness occurs outside of the gamestate. Instead some game states are change nodes. And the
 /// "Game runner" will choose of of the random, valid actions
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Debug, Hash)]
 pub struct KPGameState {
     num_players: usize,
     key: IStateKey,

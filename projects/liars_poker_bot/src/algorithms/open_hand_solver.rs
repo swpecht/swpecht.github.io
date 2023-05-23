@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use rand::rngs::StdRng;
 use rayon::prelude::*;
@@ -8,6 +11,7 @@ use crate::{
     alloc::Pool,
     cfragent::cfrnode::ActionVec,
     game::{Action, GameState, Player},
+    istate::IsomorphicHash,
     policy::Policy,
 };
 
@@ -135,12 +139,14 @@ fn alpha_beta_search_cached<G: GameState>(
 #[derive(Clone)]
 struct AlphaBetaCache {
     vec_pool: Pool<Vec<Action>>,
+    transposition_table: Arc<Mutex<HashMap<IsomorphicHash, (f64, Option<Action>)>>>,
 }
 
 impl Default for AlphaBetaCache {
     fn default() -> Self {
         Self {
             vec_pool: Pool::new(|| Vec::with_capacity(5)),
+            transposition_table: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }

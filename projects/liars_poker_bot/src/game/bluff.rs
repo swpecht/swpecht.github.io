@@ -1,4 +1,7 @@
-use std::fmt::{Display, Write};
+use std::{
+    fmt::{Display, Write},
+    hash::Hash,
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -20,7 +23,9 @@ const FACES: [Dice; 6] = [
     Dice::Wild,
 ];
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default, Serialize, Deserialize, Hash,
+)]
 pub enum Dice {
     #[default]
     One,
@@ -214,7 +219,7 @@ impl Bluff {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Hash, PartialEq, Eq)]
 pub struct BluffGameState {
     dice: [Vec<Dice>; 2],
     num_dice: [usize; 2],
@@ -452,12 +457,6 @@ fn calculate_payoff(
 impl Display for BluffGameState {
     fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         todo!()
-    }
-}
-
-impl PartialEq for BluffGameState {
-    fn eq(&self, other: &Self) -> bool {
-        self.key == other.key
     }
 }
 

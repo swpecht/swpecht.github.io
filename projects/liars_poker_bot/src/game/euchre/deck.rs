@@ -6,7 +6,7 @@ use crate::game::Player;
 
 use super::actions::{Card, Suit};
 
-#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub(super) enum CardLocation {
     Player0,
     Player1,
@@ -30,7 +30,7 @@ impl From<Player> for CardLocation {
 }
 
 /// Track location of all euchre cards
-#[derive(Default, Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
+#[derive(Default, Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize, Hash)]
 pub(super) struct Deck {
     locations: [CardLocation; 24],
     trump: Option<Suit>,

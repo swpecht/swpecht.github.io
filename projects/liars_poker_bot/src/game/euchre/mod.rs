@@ -49,7 +49,7 @@ impl Euchre {
 
 /// We use Rc for the starting hand information since these values rarely change
 /// and are consistent across all children of the given state
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct EuchreGameState {
     num_players: usize,
     trump: Option<Suit>,
@@ -65,7 +65,7 @@ pub struct EuchreGameState {
     phase: EPhase,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Copy, Serialize, Deserialize, Hash)]
 enum EPhase {
     DealHands,
     DealFaceUp,
@@ -750,6 +750,10 @@ impl GameState for EuchreGameState {
                 self.cards_played -= 1;
             }
         }
+    }
+
+    fn isomorphic_hash(&self) -> crate::istate::IsomorphicHash {
+        todo!()
     }
 }
 
