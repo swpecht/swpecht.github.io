@@ -6,6 +6,7 @@ use crate::game::Player;
 
 use super::actions::{Card, Suit, CARD_PER_SUIT};
 
+const JACK_RANK: usize = 2;
 const CARDS: &[Card] = &[
     Card::NC,
     Card::TC,
@@ -34,9 +35,6 @@ const CARDS: &[Card] = &[
 ];
 
 const SUITS: &[Suit] = &[Suit::Clubs, Suit::Diamonds, Suit::Spades, Suit::Hearts];
-const JACK_RANK: u8 = 2;
-const LEFT_RANK: usize = 6;
-const RIGHT_RANK: usize = 7;
 
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum CardLocation {
@@ -64,13 +62,22 @@ impl From<Player> for CardLocation {
 /// Track location of all euchre cards
 #[derive(Default, Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize, Hash)]
 pub(super) struct Deck {
-    locations: [[CardLocation; 6]; 4],
+    locations: [[CardLocation; 8]; 4],
     trump: Option<Suit>,
 }
 
 impl Deck {
-    pub fn set_trump(&mut self, suit: Option<Suit>) {
-        self.trump = suit;
+    /// Return a deck with the new trump
+    pub fn with_new_trump(self, trump: Option<Suit>) -> Self {
+        let mut new = Deck {
+            trump,
+            ..Default::default()
+        };
+        for &c in CARDS {
+            new[c] = self[c];
+        }
+
+        new
     }
 
     /// Returns an isomorphic representation of the deck
@@ -78,12 +85,9 @@ impl Deck {
         let mut iso = *self;
 
         for &s in SUITS {
-            if Some(s) == self.trump || Some(s.other_color()) == self.trump {
-                continue; // don't do anything to trump colored suits yet
-            }
             let mut r = 0;
-            let mut last_card = CARD_PER_SUIT;
-            // We downshift cards that are in the None location. These a 10 is as valuable in future hands as a 9
+            let mut last_card = 8;
+            // We downshift cards that are in the None location. For example,a 10 is as valuable in future hands as a 9
             // if the 9 has been played already
             while r < last_card {
                 if iso.locations[s as usize][r as usize] == CardLocation::None {
@@ -101,10 +105,28 @@ impl Deck {
     }
 
     fn get_index(&self, c: Card) -> (usize, usize) {
-        let rank = c.rank();
+        let rank = c.rank() as usize;
         let suit = c.suit();
 
-        (suit as usize, rank as usize)
+        if self.trump.is_none() {
+            return (suit as usize, rank);
+        }
+
+        let trump = self.trump.unwrap();
+        let is_trump = suit == trump;
+        let is_trump_color = suit.other_color() == self.trump.unwrap() || is_trump;
+
+        match (is_trump, is_trump_color, rank) {
+            (true, true, JACK_RANK) => (suit as usize, 7),
+            (false, true, JACK_RANK) => (trump as usize, 6),
+            (_, true, x) if x > JACK_RANK => (suit as usize, rank - 1),
+            (_, true, x) if x < JACK_RANK => (suit as usize, rank),
+            (false, false, _) => (suit as usize, rank),
+            _ => panic!(
+                "invalid card: {}, is_trump: {}, is_trump_color: {}, rank: {}",
+                c, is_trump, is_trump_color, rank
+            ),
+        }
     }
 }
 
@@ -160,7 +182,7 @@ impl<'a> Iterator for DeckIterator<'a> {
 #[cfg(test)]
 mod tests {
     use crate::game::euchre::{
-        actions::Card,
+        actions::{Card, Suit},
         deck::{CardLocation, Deck},
     };
 
@@ -189,6 +211,29 @@ mod tests {
 
     #[test]
     fn test_deck_iso_trump() {
-        todo!()
+        let mut d1 = Deck::default();
+
+        d1[Card::NS] = CardLocation::Player0;
+        d1[Card::TS] = CardLocation::Player0;
+        d1 = d1.with_new_trump(Some(Suit::Spades));
+
+        let mut d2 = d1;
+
+        assert_eq!(d1.isomorphic_rep(), d2.isomorphic_rep());
+        d2[Card::JS] = CardLocation::Player0;
+
+        assert!(d1.isomorphic_rep() != d2.isomorphic_rep());
+        d2[Card::NS] = CardLocation::None;
+        // player 0  still has the 2 highest spades
+        assert_eq!(d1.isomorphic_rep(), d2.isomorphic_rep());
+        d2[Card::JC] = CardLocation::Player0;
+        d2[Card::TS] = CardLocation::None;
+        // player 0  still has the 2 highest spades, JC and JS
+        assert_eq!(d1.isomorphic_rep(), d2.isomorphic_rep());
+
+        // this persists even if we deal some other cards
+        d1[Card::TH] = CardLocation::Player1;
+        d2[Card::TH] = CardLocation::Player1;
+        assert_eq!(d1.isomorphic_rep(), d2.isomorphic_rep());
     }
 }

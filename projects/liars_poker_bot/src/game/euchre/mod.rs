@@ -129,7 +129,7 @@ impl EuchreGameState {
                 self.trump_caller = self.cur_player;
                 self.trump = Some(self.face_up().suit());
                 self.cur_player = 3; // dealers turn
-                self.deck.set_trump(self.trump);
+                self.deck = self.deck.with_new_trump(self.trump);
                 self.phase = EPhase::Discard;
             }
             _ => panic!("invalid action"),
@@ -147,7 +147,7 @@ impl EuchreGameState {
             _ => panic!("invalid action"),
         };
 
-        self.deck.set_trump(self.trump);
+        self.deck = self.deck.with_new_trump(self.trump);
 
         if a == EAction::Pass {
             self.cur_player += 1;
@@ -712,14 +712,14 @@ impl GameState for EuchreGameState {
                 // return to defaults
                 self.trump_caller = 0;
                 self.trump = None;
-                self.deck.set_trump(None);
+                self.deck = self.deck.with_new_trump(None);
             }
             EAction::Pickup => {
                 self.phase = EPhase::Pickup;
                 // return to defaults
                 self.trump_caller = 0;
                 self.trump = None;
-                self.deck.set_trump(None);
+                self.deck = self.deck.with_new_trump(None);
             }
             EAction::DealPlayer { c } => {
                 self.deck[c] = CardLocation::None;
