@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex};
+
 use rand::rngs::StdRng;
 use rayon::prelude::*;
 
@@ -42,14 +44,14 @@ impl<G: GameState + ResampleFromInfoState + Send> Evaluator<G> for OpenHandSolve
             worlds.push(gs.resample_from_istate(gs.cur_player(), &mut self.rng));
         }
 
+        let cache = AlphaBetaCache::default();
         for (i, r) in result.iter_mut().enumerate().take(2) {
             *r = worlds
                 .clone()
                 .into_par_iter()
-                .map(|w| alpha_beta_search(w, i).0)
+                .map(|w| alpha_beta_search_cached(w, i, cache.clone()).0)
                 .sum();
         }
-
         // Only support evaluating for 2 teams, so we can copy over the results
         for i in 2..result.len() {
             result[i] = result[i % 2];
@@ -114,7 +116,23 @@ pub fn alpha_beta_search<G: GameState>(
     )
 }
 
+fn alpha_beta_search_cached<G: GameState>(
+    mut gs: G,
+    maximizing_player: Player,
+    mut cache: AlphaBetaCache,
+) -> (f64, Option<Action>) {
+    let maximizing_team = Team::from(maximizing_player);
+    alpha_beta(
+        &mut gs,
+        maximizing_team,
+        f64::NEG_INFINITY,
+        f64::INFINITY,
+        &mut cache,
+    )
+}
+
 /// Helper struct to speeding up alpha_beta search
+#[derive(Clone)]
 struct AlphaBetaCache {
     vec_pool: Pool<Vec<Action>>,
 }
