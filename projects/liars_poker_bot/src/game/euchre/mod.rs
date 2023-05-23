@@ -1,4 +1,8 @@
-use std::fmt::Display;
+use std::{
+    collections::hash_map::DefaultHasher,
+    fmt::Display,
+    hash::{Hash, Hasher},
+};
 
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
@@ -753,7 +757,9 @@ impl GameState for EuchreGameState {
     }
 
     fn isomorphic_hash(&self) -> crate::istate::IsomorphicHash {
-        todo!()
+        let mut hasher = DefaultHasher::new();
+        self.hash(&mut hasher);
+        hasher.finish()
     }
 }
 

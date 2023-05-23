@@ -52,7 +52,8 @@ impl<G: GameState + ResampleFromInfoState + Send> Evaluator<G> for OpenHandSolve
         for (i, r) in result.iter_mut().enumerate().take(2) {
             *r = worlds
                 .clone()
-                .into_par_iter()
+                .into_iter()
+                // .into_par_iter()
                 .map(|w| alpha_beta_search_cached(w, i, cache.clone()).0)
                 .sum();
         }
@@ -139,7 +140,7 @@ fn alpha_beta_search_cached<G: GameState>(
 #[derive(Clone)]
 struct AlphaBetaCache {
     vec_pool: Pool<Vec<Action>>,
-    transposition_table: Arc<Mutex<HashMap<IsomorphicHash, (f64, Option<Action>)>>>,
+    transposition_table: Arc<Mutex<HashMap<(Team, IsomorphicHash), (f64, Option<Action>)>>>,
 }
 
 impl Default for AlphaBetaCache {
@@ -148,6 +149,29 @@ impl Default for AlphaBetaCache {
             vec_pool: Pool::new(|| Vec::with_capacity(5)),
             transposition_table: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+}
+
+impl AlphaBetaCache {
+    pub fn get<G: GameState>(
+        &self,
+        gs: &G,
+        maximizing_team: Team,
+    ) -> Option<(f64, Option<Action>)> {
+        let k = gs.isomorphic_hash();
+        self.transposition_table
+            .lock()
+            .unwrap()
+            .get(&(maximizing_team, k))
+            .copied()
+    }
+
+    pub fn insert<G: GameState>(&self, gs: &G, v: (f64, Option<Action>), maximizing_team: Team) {
+        let k = gs.isomorphic_hash();
+        self.transposition_table
+            .lock()
+            .unwrap()
+            .insert((maximizing_team, k), v);
     }
 }
 
@@ -169,6 +193,10 @@ fn alpha_beta<G: GameState>(
         return (v, None);
     }
 
+    if let Some(v) = cache.get(gs, maximizing_team) {
+        return v;
+    }
+
     let mut actions = cache.vec_pool.detach();
     gs.legal_actions(&mut actions);
     if gs.is_chance_node() {
@@ -178,6 +206,7 @@ fn alpha_beta<G: GameState>(
     let player = gs.cur_player();
     let mut best_action = None;
     let team: Team = player.into();
+    let result;
 
     if team == maximizing_team {
         let mut value = f64::NEG_INFINITY;
@@ -194,10 +223,7 @@ fn alpha_beta<G: GameState>(
                 break; // Beta cut-off
             }
         }
-
-        actions.clear();
-        cache.vec_pool.attach(actions);
-        (value, best_action)
+        result = (value, best_action);
     } else {
         let mut value = f64::INFINITY;
         for a in &actions {
@@ -213,11 +239,13 @@ fn alpha_beta<G: GameState>(
                 break;
             }
         }
-
-        actions.clear();
-        cache.vec_pool.attach(actions);
-        (value, best_action)
+        result = (value, best_action);
     }
+
+    cache.insert(gs, result, maximizing_team);
+    actions.clear();
+    cache.vec_pool.attach(actions);
+    result
 }
 
 #[cfg(test)]
