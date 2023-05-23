@@ -6,8 +6,35 @@ use crate::game::Player;
 
 use super::actions::{Card, Suit};
 
+const CARDS: [Card; 24] = [
+    Card::NC,
+    Card::TC,
+    Card::JC,
+    Card::QC,
+    Card::KC,
+    Card::AC,
+    Card::NS,
+    Card::TS,
+    Card::JS,
+    Card::QS,
+    Card::KS,
+    Card::AS,
+    Card::NH,
+    Card::TH,
+    Card::JH,
+    Card::QH,
+    Card::KH,
+    Card::AH,
+    Card::ND,
+    Card::TD,
+    Card::JD,
+    Card::QD,
+    Card::KD,
+    Card::AD,
+];
+
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
-pub(super) enum CardLocation {
+pub enum CardLocation {
     Player0,
     Player1,
     Player2,
@@ -15,6 +42,17 @@ pub(super) enum CardLocation {
     FaceUp,
     #[default]
     None,
+}
+
+enum Face {
+    N,
+    T,
+    J,
+    Q,
+    K,
+    A,
+    Left,
+    Right,
 }
 
 impl From<Player> for CardLocation {
@@ -40,6 +78,13 @@ impl Deck {
     pub fn set_trump(&mut self, suit: Option<Suit>) {
         self.trump = suit;
     }
+
+    /// Returns an isomorphic representation of the deck
+    pub fn isomorphic_rep(&self) -> Self {
+        let iso = *self;
+
+        iso
+    }
 }
 
 impl Index<Card> for Deck {
@@ -56,10 +101,35 @@ impl IndexMut<Card> for Deck {
     }
 }
 
-impl Deref for Deck {
-    type Target = [CardLocation; 24];
+impl<'a> IntoIterator for &'a Deck {
+    type Item = (Card, CardLocation);
 
-    fn deref(&self) -> &Self::Target {
-        &self.locations
+    type IntoIter = DeckIterator<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        DeckIterator {
+            deck: self,
+            index: 0,
+        }
+    }
+}
+
+pub struct DeckIterator<'a> {
+    deck: &'a Deck,
+    index: usize,
+}
+
+impl<'a> Iterator for DeckIterator<'a> {
+    type Item = (Card, CardLocation);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index >= CARDS.len() {
+            return None;
+        }
+
+        let c = CARDS[self.index];
+        let loc = self.deck[c];
+        self.index += 1;
+        Some((c, loc))
     }
 }

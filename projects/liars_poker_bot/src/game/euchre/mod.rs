@@ -233,27 +233,17 @@ impl EuchreGameState {
     }
 
     fn legal_actions_dealing(&self, actions: &mut Vec<Action>) {
-        for (i, &loc) in self.deck.iter().enumerate() {
+        for (c, loc) in self.deck.into_iter() {
             if loc == CardLocation::None {
-                actions.push(
-                    EAction::DealPlayer {
-                        c: (i as u8).into(),
-                    }
-                    .into(),
-                );
+                actions.push(EAction::DealPlayer { c }.into());
             }
         }
     }
 
     fn legal_actions_deal_face_up(&self, actions: &mut Vec<Action>) {
-        for (i, &loc) in self.deck.iter().enumerate() {
+        for (c, loc) in self.deck.into_iter() {
             if loc == CardLocation::None {
-                actions.push(
-                    EAction::DealFaceUp {
-                        c: (i as u8).into(),
-                    }
-                    .into(),
-                );
+                actions.push(EAction::DealFaceUp { c }.into());
             }
         }
     }
@@ -287,9 +277,8 @@ impl EuchreGameState {
         let player_loc = self.cur_player.into();
         // If they are the first to act on a trick then can play any card in hand
         if self.is_trick_over() {
-            for (i, &loc) in self.deck.iter().enumerate() {
+            for (c, loc) in self.deck.into_iter() {
                 if loc == player_loc {
-                    let c = (i as u8).into();
                     actions.push(EAction::Play { c }.into());
                 }
             }
@@ -298,10 +287,9 @@ impl EuchreGameState {
 
         let leading_card = self.get_leading_card();
         let leading_suit = self.get_suit(leading_card);
-        for (i, &loc) in self.deck.iter().enumerate() {
+        for (c, loc) in self.deck.into_iter() {
             // We check if the player has the card before the suit to avoid the more
             // expensive get_suit call
-            let c = (i as u8).into();
             if loc == player_loc && self.get_suit(c) == leading_suit {
                 actions.push(EAction::Play { c }.into());
             }
@@ -309,9 +297,8 @@ impl EuchreGameState {
 
         if actions.is_empty() {
             // no suit, can play any card
-            for (i, &loc) in self.deck.iter().enumerate() {
+            for (c, loc) in self.deck.into_iter() {
                 if loc == player_loc {
-                    let c = (i as u8).into();
                     actions.push(EAction::Play { c }.into());
                 }
             }
@@ -426,9 +413,9 @@ impl EuchreGameState {
         // read the value from the deck
         // if it's not there, we're probably calling this to rewind, look through the
         // action history to find it
-        for (i, loc) in self.deck.iter().enumerate() {
-            if *loc == CardLocation::FaceUp {
-                return (i as u8).into();
+        for (c, loc) in self.deck.into_iter() {
+            if loc == CardLocation::FaceUp {
+                return c;
             }
         }
 
@@ -500,9 +487,8 @@ impl GameState for EuchreGameState {
             }
             EPhase::Discard => {
                 // Dealer can discard any card
-                for (i, loc) in self.deck.iter().enumerate() {
-                    if *loc == CardLocation::Player3 {
-                        let c = (i as u8).into();
+                for (c, loc) in self.deck.into_iter() {
+                    if loc == CardLocation::Player3 {
                         actions.push(EAction::Discard { c }.into());
                     }
                 }
@@ -758,9 +744,17 @@ impl GameState for EuchreGameState {
 
     fn isomorphic_hash(&self) -> crate::istate::IsomorphicHash {
         let mut hasher = DefaultHasher::new();
-        // Just hash the deck and current player, how we got there isn't important
-        self.deck.hash(&mut hasher);
+        // Just hash the deck, current player, and trump, how we got there isn't important
+        self.trump.hash(&mut hasher);
         self.cur_player.hash(&mut hasher);
+
+        // Here we "down grade" all cards. If a card lower than them isn't in play, that we consider that card
+        // the lower card. We need to be careful with how trump is handled.
+        let iso_deck = self.deck.isomorphic_rep();
+        iso_deck.hash(&mut hasher);
+
+        // Naive method:
+        // self.hash(&mut hasher);
 
         hasher.finish()
     }
