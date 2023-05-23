@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::game::Player;
 
-use super::actions::{Card, Suit, CARD_PER_SUIT};
+use super::actions::{Card, Suit};
 
 const JACK_RANK: usize = 2;
 const CARDS: &[Card] = &[
@@ -206,7 +206,24 @@ mod tests {
 
     #[test]
     fn test_deck_iso_across_suit() {
-        todo!()
+        let mut d1 = Deck::default();
+        d1[Card::NS] = CardLocation::Player0;
+        d1[Card::TS] = CardLocation::Player0;
+        d1[Card::JC] = CardLocation::Player1;
+
+        let mut d2 = Deck::default();
+        d2[Card::NH] = CardLocation::Player0;
+        d2[Card::TH] = CardLocation::Player0;
+        d2[Card::JD] = CardLocation::Player1;
+
+        // both have 2 lowest cards across suit
+        assert_eq!(d1.isomorphic_rep(), d2.isomorphic_rep());
+
+        d1 = d1.with_new_trump(Some(Suit::Spades));
+        assert!(d1.isomorphic_rep() != d2.isomorphic_rep());
+
+        d2 = d2.with_new_trump(Some(Suit::Hearts));
+        assert_eq!(d1.isomorphic_rep(), d2.isomorphic_rep());
     }
 
     #[test]
