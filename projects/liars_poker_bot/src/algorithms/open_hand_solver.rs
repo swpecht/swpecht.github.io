@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, RwLock},
 };
 
 use log::debug;
@@ -73,7 +73,7 @@ impl<G: GameState + ResampleFromInfoState + Send> Evaluator<G> for OpenHandSolve
 
         debug!(
             "transposition table size: {}",
-            self.cache.transposition_table.lock().unwrap().len()
+            self.cache.transposition_table.read().unwrap().len()
         );
 
         result
@@ -151,14 +151,14 @@ fn alpha_beta_search_cached<G: GameState>(
 #[derive(Clone)]
 struct AlphaBetaCache {
     vec_pool: Pool<Vec<Action>>,
-    transposition_table: Arc<Mutex<HashMap<(Team, IsomorphicHash), (f64, Option<Action>)>>>,
+    transposition_table: Arc<RwLock<HashMap<(Team, IsomorphicHash), (f64, Option<Action>)>>>,
 }
 
 impl Default for AlphaBetaCache {
     fn default() -> Self {
         Self {
             vec_pool: Pool::new(|| Vec::with_capacity(5)),
-            transposition_table: Arc::new(Mutex::new(HashMap::new())),
+            transposition_table: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }
@@ -171,7 +171,7 @@ impl AlphaBetaCache {
     ) -> Option<(f64, Option<Action>)> {
         let k = gs.isomorphic_hash();
         self.transposition_table
-            .lock()
+            .read()
             .unwrap()
             .get(&(maximizing_team, k))
             .copied()
@@ -180,7 +180,7 @@ impl AlphaBetaCache {
     pub fn insert<G: GameState>(&self, gs: &G, v: (f64, Option<Action>), maximizing_team: Team) {
         let k = gs.isomorphic_hash();
         self.transposition_table
-            .lock()
+            .write()
             .unwrap()
             .insert((maximizing_team, k), v);
     }
@@ -340,5 +340,12 @@ mod tests {
         let mut evaluator = OpenHandSolver::new(100, SeedableRng::seed_from_u64(109));
         let gs = KuhnPoker::from_actions(&[KPAction::King, KPAction::Jack]);
         assert_eq!(evaluator.evaluate(&gs), vec![1.0, -1.0]);
+    }
+
+    #[test]
+    fn test_open_hand_solver_euchre() {
+        // add a test comparing results wiht and without caching to unsure they're the same?
+        // maybe move it to the integration tests, may take a while to run
+        todo!()
     }
 }
