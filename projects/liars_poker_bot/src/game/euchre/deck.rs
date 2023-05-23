@@ -156,3 +156,39 @@ impl<'a> Iterator for DeckIterator<'a> {
         Some((c, loc))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::game::euchre::{
+        actions::Card,
+        deck::{CardLocation, Deck},
+    };
+
+    #[test]
+    fn test_deck_iso_no_trump() {
+        let mut d1 = Deck::default();
+
+        d1[Card::NS] = CardLocation::Player0;
+        d1[Card::TS] = CardLocation::Player0;
+
+        let mut d2 = d1;
+
+        assert_eq!(d1.isomorphic_rep(), d2.isomorphic_rep());
+        d2[Card::JS] = CardLocation::Player0;
+
+        assert!(d1.isomorphic_rep() != d2.isomorphic_rep());
+        d2[Card::NS] = CardLocation::None;
+
+        assert_eq!(d1.isomorphic_rep(), d2.isomorphic_rep());
+    }
+
+    #[test]
+    fn test_deck_iso_across_suit() {
+        todo!()
+    }
+
+    #[test]
+    fn test_deck_iso_trump() {
+        todo!()
+    }
+}
