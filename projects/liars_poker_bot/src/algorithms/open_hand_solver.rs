@@ -1,9 +1,6 @@
-use std::{
-    collections::HashMap,
-    marker::PhantomData,
-    sync::{Arc, RwLock},
-};
+use std::{marker::PhantomData, sync::Arc};
 
+use dashmap::DashMap;
 use log::debug;
 use rand::rngs::StdRng;
 use rayon::prelude::*;
@@ -61,7 +58,7 @@ impl<G: GameState + ResampleFromInfoState + Send> OpenHandSolver<G> {
 
         debug!(
             "transposition table size: {}",
-            self.cache.transposition_table.read().unwrap().len()
+            self.cache.transposition_table.len()
         );
 
         sum / self.n_rollouts as f64
@@ -92,7 +89,7 @@ impl<G: GameState + ResampleFromInfoState + Send> Evaluator<G> for OpenHandSolve
 
         debug!(
             "transposition table size: {}",
-            self.cache.transposition_table.read().unwrap().len()
+            self.cache.transposition_table.len()
         );
 
         result
@@ -170,14 +167,14 @@ fn alpha_beta_search_cached<G: GameState>(
 #[derive(Clone)]
 struct AlphaBetaCache {
     vec_pool: Pool<Vec<Action>>,
-    transposition_table: Arc<RwLock<HashMap<(Team, IsomorphicHash), (f64, Option<Action>)>>>,
+    transposition_table: Arc<DashMap<(Team, IsomorphicHash), (f64, Option<Action>)>>,
 }
 
 impl Default for AlphaBetaCache {
     fn default() -> Self {
         Self {
             vec_pool: Pool::new(|| Vec::with_capacity(5)),
-            transposition_table: Arc::new(RwLock::new(HashMap::new())),
+            transposition_table: Arc::new(DashMap::new()),
         }
     }
 }
@@ -190,18 +187,14 @@ impl AlphaBetaCache {
     ) -> Option<(f64, Option<Action>)> {
         let k = gs.isomorphic_hash();
         self.transposition_table
-            .read()
-            .unwrap()
             .get(&(maximizing_team, k))
+            .as_deref()
             .copied()
     }
 
     pub fn insert<G: GameState>(&self, gs: &G, v: (f64, Option<Action>), maximizing_team: Team) {
         let k = gs.isomorphic_hash();
-        self.transposition_table
-            .write()
-            .unwrap()
-            .insert((maximizing_team, k), v);
+        self.transposition_table.insert((maximizing_team, k), v);
     }
 }
 
