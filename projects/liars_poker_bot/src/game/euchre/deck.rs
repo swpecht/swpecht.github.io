@@ -42,6 +42,7 @@ pub enum CardLocation {
     Player1,
     Player2,
     Player3,
+    Played(Player),
     FaceUp,
     #[default]
     None,

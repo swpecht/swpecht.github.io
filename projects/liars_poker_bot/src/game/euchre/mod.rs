@@ -178,7 +178,8 @@ impl EuchreGameState {
 
     fn apply_action_play(&mut self, a: Action) {
         let card = EAction::from(a).card();
-        self.deck[card] = CardLocation::None;
+        // track the cards in play for isomorphic key
+        self.deck[card] = CardLocation::Played(self.cur_player);
         self.cards_played += 1;
 
         // Set acting player based on who won last trick
@@ -196,6 +197,18 @@ impl EuchreGameState {
             let trick = self.cards_played / 4 - 1;
             self.trick_winners[trick] = winner;
             self.tricks_won[winner % 2] += 1;
+
+            // clear the played cards
+            let mut cards_to_clear = Vec::new();
+            for (c, loc) in self.deck.into_iter() {
+                if matches!(loc, CardLocation::Played(_)) {
+                    cards_to_clear.push(c);
+                }
+            }
+
+            for c in cards_to_clear {
+                self.deck[c] = CardLocation::None;
+            }
         } else {
             self.cur_player = (self.cur_player + 1) % self.num_players;
         }
@@ -738,6 +751,19 @@ impl GameState for EuchreGameState {
             EAction::Play { c } => {
                 self.deck[c] = self.cur_player.into();
                 self.cards_played -= 1;
+                if self.cards_played % 4 == 3 {
+                    // put the old cards back on the table
+                    for (a, p) in self
+                        .key
+                        .iter()
+                        .rev()
+                        .take(self.cards_played % 4)
+                        .zip(self.play_order.iter().rev().take(self.cards_played % 4))
+                    {
+                        let c = EAction::from(*a).card();
+                        self.deck[c] = CardLocation::Played(*p);
+                    }
+                }
             }
         }
     }
@@ -754,20 +780,22 @@ impl GameState for EuchreGameState {
         } else {
             // self.num_players.hash(&mut hasher);
             if self.cards_played > 0 {
-                self.key[self.key.len() - self.cards_played..].hash(&mut hasher);
+                // self.key[self.key.len() - self.cards_played..].hash(&mut hasher);
             }
             // self.play_order.hash(&mut hasher);
             self.trump.hash(&mut hasher);
-            // self.deck.hash(&mut hasher);
-            iso_deck.hash(&mut hasher);
+            self.deck.hash(&mut hasher);
+            // iso_deck.hash(&mut hasher);
+
+            // Need to store what's in play as part of the deck so it's also properly shifted isomorphicallys
 
             // Needs to know which cards are currently in play for the current trick
-            let mut cards_played = Vec::new();
-            for a in &self.key[self.key.len() - self.cards_played % 4..] {
-                let c = EAction::from(*a).card();
-                cards_played.push(c);
-            }
-            cards_played.hash(&mut hasher);
+            // let mut cards_played = Vec::new();
+            // for a in &self.key[self.key.len() - self.cards_played % 4..] {
+            //     let c = EAction::from(*a).card();
+            //     cards_played.push(c);
+            // }
+            // cards_played.hash(&mut hasher);
 
             self.cur_player.hash(&mut hasher);
             self.trick_winners.hash(&mut hasher);
