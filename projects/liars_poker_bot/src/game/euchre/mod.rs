@@ -507,7 +507,7 @@ impl GameState for EuchreGameState {
 
         // no points, didn't win most tricks
         if self.tricks_won[team] < self.tricks_won[(team + 1) % 2] {
-            0.0
+            -1.0 * self.evaluate((p + 1) % self.num_players)
         } else if self.tricks_won[team] == 5 {
             2.0
         } else if self.trump_caller % 2 == team {
@@ -1013,9 +1013,9 @@ mod tests {
             gs.apply_action(a);
             gs.istate_string(0);
         }
-        assert_eq!(gs.evaluate(0), 0.0);
+        assert_eq!(gs.evaluate(0), -2.0);
         assert_eq!(gs.evaluate(1), 2.0);
-        assert_eq!(gs.evaluate(2), 0.0);
+        assert_eq!(gs.evaluate(2), -2.0);
         assert_eq!(gs.evaluate(3), 2.0);
 
         // Different calling path
