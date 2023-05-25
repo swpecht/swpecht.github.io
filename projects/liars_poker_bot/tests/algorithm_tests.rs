@@ -76,10 +76,10 @@ fn test_open_hand_solver_euchre() {
     let mut rng: StdRng = SeedableRng::seed_from_u64(51);
     let mut actions = Vec::new();
 
-    let mut cached = OpenHandSolver::new(100, rng.clone());
-    let mut no_cache = OpenHandSolver::new_without_cache(100, rng.clone());
+    let mut cached = OpenHandSolver::new(10, rng.clone());
+    let mut no_cache = OpenHandSolver::new_without_cache(10, rng.clone());
 
-    for _ in 0..1 {
+    for _ in 0..10 {
         let mut gs = Euchre::new_state();
         while gs.is_chance_node() {
             gs.legal_actions(&mut actions);

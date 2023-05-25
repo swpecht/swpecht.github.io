@@ -32,7 +32,7 @@ impl EAction {
     }
 }
 
-#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Debug, Hash)]
 pub enum Card {
     NC,
     TC,

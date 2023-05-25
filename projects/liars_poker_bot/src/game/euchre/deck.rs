@@ -87,36 +87,36 @@ impl Deck {
         // todo: always put the trump suit in slot 0. Then sort all other suits by how many cards they have
         // this could be sped up using integers and popcount instruction to count the number of
 
-        // for &s in SUITS {
-        //     let mut r = 0;
-        //     let mut last_card = 8;
-        //     // We downshift cards that are in the None location. For example,a 10 is as valuable in future hands as a 9
-        //     // if the 9 has been played already
-        //     while r < last_card {
-        //         if iso.locations[s as usize][r as usize] == CardLocation::None {
-        //             iso.locations[s as usize][r as usize..].rotate_left(1);
-        //             last_card -= 1;
-        //         } else {
-        //             r += 1;
-        //         }
-        //     }
-        // }
+        for &s in SUITS {
+            let mut r = 0;
+            let mut last_card = 8;
+            // We downshift cards that are in the None location. For example,a 10 is as valuable in future hands as a 9
+            // if the 9 has been played already
+            while r < last_card {
+                if iso.locations[s as usize][r as usize] == CardLocation::None {
+                    iso.locations[s as usize][r as usize..].rotate_left(1);
+                    last_card -= 1;
+                } else {
+                    r += 1;
+                }
+            }
+        }
 
-        // fn get_count(x: &[CardLocation]) -> usize {
-        //     x.iter().filter(|x| **x != CardLocation::None).count()
-        // }
+        fn get_count(x: &[CardLocation]) -> usize {
+            x.iter().filter(|x| **x != CardLocation::None).count()
+        }
 
-        // if let Some(trump) = iso.trump {
-        //     // put trump in the first spot
-        //     iso.locations.swap(0, trump as usize);
-        //     // sort everything else
-        //     iso.locations[1..].sort_by_key(|a| get_count(a));
-        //     // and set trump the the 0 item
-        //     iso.trump = Some(Suit::Clubs);
-        // } else {
-        //     // sort everything
-        //     iso.locations.sort_by_key(|a| get_count(a));
-        // }
+        if let Some(trump) = iso.trump {
+            // put trump in the first spot
+            iso.locations.swap(0, trump as usize);
+            // sort everything else
+            iso.locations[1..].sort_by_key(|a| get_count(a));
+            // and set trump the the 0 item
+            iso.trump = Some(Suit::Clubs);
+        } else {
+            // sort everything
+            iso.locations.sort_by_key(|a| get_count(a));
+        }
 
         iso
     }

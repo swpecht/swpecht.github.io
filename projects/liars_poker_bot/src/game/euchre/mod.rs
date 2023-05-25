@@ -746,24 +746,34 @@ impl GameState for EuchreGameState {
         let mut hasher = DefaultHasher::new();
         let iso_deck = self.deck.isomorphic_rep();
 
-        if self.phase != EPhase::Play {
+        if self.phase == EPhase::DealHands || self.phase == EPhase::DealFaceUp {
+            iso_deck.hash(&mut hasher);
+        } else if self.phase != EPhase::Play {
             // todo: make this just the bet history
             self.hash(&mut hasher);
-        } else if self.phase == EPhase::DealHands || self.phase == EPhase::DealFaceUp {
-            iso_deck.hash(&mut hasher);
         } else {
             // self.num_players.hash(&mut hasher);
-            // self.key.hash(&mut hasher);
-            self.play_order.hash(&mut hasher);
+            if self.cards_played > 0 {
+                self.key[self.key.len() - self.cards_played..].hash(&mut hasher);
+            }
+            // self.play_order.hash(&mut hasher);
             self.trump.hash(&mut hasher);
             // self.deck.hash(&mut hasher);
             iso_deck.hash(&mut hasher);
-            self.trump_caller.hash(&mut hasher);
+
+            // Needs to know which cards are currently in play for the current trick
+            let mut cards_played = Vec::new();
+            for a in &self.key[self.key.len() - self.cards_played % 4..] {
+                let c = EAction::from(*a).card();
+                cards_played.push(c);
+            }
+            cards_played.hash(&mut hasher);
+
             self.cur_player.hash(&mut hasher);
             self.trick_winners.hash(&mut hasher);
             self.tricks_won.hash(&mut hasher);
-            self.cards_played.hash(&mut hasher);
-            self.phase.hash(&mut hasher);
+
+            self.trump_caller.hash(&mut hasher);
         }
 
         hasher.finish()
