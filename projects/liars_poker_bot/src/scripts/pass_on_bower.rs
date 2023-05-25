@@ -26,6 +26,7 @@ pub fn open_hand_score_pass_on_bower(_args: Args) {
         gs.undo();
         gs.apply_action(EAction::Pickup.into());
         let pickup_value = evaluator.evaluate_player(&gs, 3);
+        gs.undo();
         info!(
             "policy evaluation\t{}\t{}\t{}",
             gs, pass_value, pickup_value
