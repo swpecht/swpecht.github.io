@@ -14,18 +14,17 @@ use liars_poker_bot::algorithms::exploitability::{self};
 use liars_poker_bot::algorithms::ismcts::{
     ISMCTBotConfig, ISMCTSBot, RandomRolloutEvaluator, ResampleFromInfoState,
 };
-use liars_poker_bot::algorithms::open_hand_solver::OpenHandSolver;
+
 use liars_poker_bot::cfragent::cfrnode::CFRNode;
 use liars_poker_bot::cfragent::{CFRAgent, CFRAlgorithm};
 use liars_poker_bot::database::memory_node_store::MemoryNodeStore;
 use liars_poker_bot::database::Storage;
 use liars_poker_bot::game::bluff::{Bluff, BluffGameState};
-use liars_poker_bot::game::euchre::actions::EAction;
+
 use liars_poker_bot::game::euchre::{Euchre, EuchreGameState};
 use liars_poker_bot::game::kuhn_poker::{KPGameState, KuhnPoker};
 use liars_poker_bot::game::{run_game, Action, Game, GameState};
 
-use liars_poker_bot::policy::Policy;
 use log::{debug, info};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
@@ -108,7 +107,7 @@ fn run_scratch(_args: Args) {
     println!("euchre size: {}", mem::size_of::<EuchreGameState>());
 
     let mut rng: StdRng = SeedableRng::seed_from_u64(42);
-    let mut evaluator = OpenHandSolver::new(100, rng.clone());
+    // let mut evaluator = OpenHandSolver::new(100, rng.clone());
 
     // for _ in 0..1 {
     //     let mut gs = Euchre::new_state();
@@ -138,27 +137,27 @@ fn run_scratch(_args: Args) {
     //     info!("p0, p1 value: {}, {}", gs.evaluate(0), gs.evaluate(1));
     // }
 
-    info!("calculating evaluator converge");
-    for i in 0..50 {
-        let mut gs = Euchre::new_state();
-        while gs.is_chance_node() {
-            let a = *actions!(gs).choose(&mut rng).unwrap();
-            gs.apply_action(a)
-        }
+    // info!("calculating evaluator converge");
+    // for i in 0..50 {
+    //     let mut gs = Euchre::new_state();
+    //     while gs.is_chance_node() {
+    //         let a = *actions!(gs).choose(&mut rng).unwrap();
+    //         gs.apply_action(a)
+    //     }
 
-        for rollouts in [1, 10, 20, 100] {
-            evaluator.set_rollout(rollouts);
-            let policy = evaluator.action_probabilities(&gs);
-            info!(
-                "{}\t{}\t{}\t{}\t{}",
-                i,
-                rollouts,
-                gs,
-                policy[EAction::Pass.into()],
-                policy[EAction::Pickup.into()]
-            );
-        }
-    }
+    //     for rollouts in [1, 10, 20, 100] {
+    //         evaluator.set_rollout(rollouts);
+    //         let policy = evaluator.action_probabilities(&gs);
+    //         info!(
+    //             "{}\t{}\t{}\t{}\t{}",
+    //             i,
+    //             rollouts,
+    //             gs,
+    //             policy[EAction::Pass.into()],
+    //             policy[EAction::Pickup.into()]
+    //         );
+    //     }
+    // }
 }
 
 fn run_analyze(args: Args) {

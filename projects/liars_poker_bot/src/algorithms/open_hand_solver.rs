@@ -6,12 +6,10 @@ use rand::rngs::StdRng;
 use rayon::prelude::*;
 
 use crate::{
-    actions,
     alloc::Pool,
     cfragent::cfrnode::ActionVec,
     game::{Action, GameState, Player},
     istate::IsomorphicHash,
-    policy::Policy,
 };
 
 use super::{
@@ -36,6 +34,15 @@ impl<G: GameState + ResampleFromInfoState + Send> OpenHandSolver<G> {
             n_rollouts,
             rng,
             cache: AlphaBetaCache::default(),
+            _phantom: PhantomData::default(),
+        }
+    }
+
+    pub fn new_without_cache(n_rollouts: usize, rng: StdRng) -> Self {
+        Self {
+            n_rollouts,
+            rng,
+            cache: AlphaBetaCache::new(false),
             _phantom: PhantomData::default(),
         }
     }
@@ -95,44 +102,8 @@ impl<G: GameState + ResampleFromInfoState + Send> Evaluator<G> for OpenHandSolve
         result
     }
 
-    fn prior(&mut self, gs: &G) -> ActionVec<f64> {
-        self.action_probabilities(gs)
-    }
-}
-
-impl<G: GameState + ResampleFromInfoState + Send> Policy<G> for OpenHandSolver<G> {
-    fn action_probabilities(&mut self, gs: &G) -> ActionVec<f64> {
-        let maximizing_player = gs.cur_player();
-        let actions = actions!(gs);
-        let mut policy = ActionVec::new(&actions);
-        let mut gs = gs.clone();
-        for a in &actions {
-            gs.apply_action(*a);
-            let v = self.evaluate_player(&gs, maximizing_player);
-            policy[*a] = v;
-            gs.undo()
-        }
-
-        let mut total = 0.0;
-        for &a in &actions {
-            total += policy[a];
-        }
-
-        // No chance of winning, return random policy
-        if total == 0.0 {
-            let prob = 1.0 / actions.len() as f64;
-            for &a in &actions {
-                policy[a] = prob;
-            }
-            return policy;
-        }
-
-        for &a in &actions {
-            policy[a] /= total;
-        }
-
-        todo!("have this return 1 for the highest value action");
-        policy
+    fn prior(&mut self, _gs: &G) -> ActionVec<f64> {
+        todo!()
     }
 }
 
@@ -170,14 +141,22 @@ fn alpha_beta_search_cached<G: GameState>(
 struct AlphaBetaCache {
     vec_pool: Pool<Vec<Action>>,
     transposition_table: Arc<DashMap<(Team, IsomorphicHash), (f64, Option<Action>)>>,
+    use_tt: bool,
+}
+
+impl AlphaBetaCache {
+    fn new(use_tt: bool) -> Self {
+        Self {
+            vec_pool: Pool::new(|| Vec::with_capacity(5)),
+            transposition_table: Arc::new(DashMap::new()),
+            use_tt,
+        }
+    }
 }
 
 impl Default for AlphaBetaCache {
     fn default() -> Self {
-        Self {
-            vec_pool: Pool::new(|| Vec::with_capacity(5)),
-            transposition_table: Arc::new(DashMap::new()),
-        }
+        Self::new(true)
     }
 }
 
@@ -187,6 +166,10 @@ impl AlphaBetaCache {
         gs: &G,
         maximizing_team: Team,
     ) -> Option<(f64, Option<Action>)> {
+        if !self.use_tt {
+            return None;
+        }
+
         let k = gs.isomorphic_hash();
         self.transposition_table
             .get(&(maximizing_team, k))
@@ -195,6 +178,10 @@ impl AlphaBetaCache {
     }
 
     pub fn insert<G: GameState>(&self, gs: &G, v: (f64, Option<Action>), maximizing_team: Team) {
+        if !self.use_tt {
+            return;
+        }
+
         let k = gs.isomorphic_hash();
         self.transposition_table.insert((maximizing_team, k), v);
     }
@@ -284,7 +271,6 @@ mod tests {
             kuhn_poker::{KPAction, KuhnPoker},
             GameState,
         },
-        policy::Policy,
     };
 
     use super::alpha_beta_search;
@@ -347,9 +333,6 @@ mod tests {
         let mut evaluator = OpenHandSolver::new(100, SeedableRng::seed_from_u64(109));
         let gs = KuhnPoker::from_actions(&[KPAction::Jack, KPAction::Queen]);
         assert_eq!(evaluator.evaluate(&gs), vec![-1.0, 1.0]);
-        let probs = evaluator.action_probabilities(&gs);
-        assert_eq!(probs[KPAction::Bet.into()], 0.0);
-        assert_eq!(probs[KPAction::Pass.into()], 1.0);
 
         let mut evaluator = OpenHandSolver::new(100, SeedableRng::seed_from_u64(109));
         let gs = KuhnPoker::from_actions(&[KPAction::Queen, KPAction::Jack]);
@@ -358,15 +341,5 @@ mod tests {
         let mut evaluator = OpenHandSolver::new(100, SeedableRng::seed_from_u64(109));
         let gs = KuhnPoker::from_actions(&[KPAction::King, KPAction::Jack]);
         assert_eq!(evaluator.evaluate(&gs), vec![1.0, -1.0]);
-        let probs = evaluator.action_probabilities(&gs);
-        assert_eq!(probs[KPAction::Bet.into()], 1.0);
-        assert_eq!(probs[KPAction::Pass.into()], 0.0);
-    }
-
-    #[test]
-    fn test_open_hand_solver_euchre() {
-        // add a test comparing results wiht and without caching to unsure they're the same?
-        // maybe move it to the integration tests, may take a while to run
-        todo!()
     }
 }
