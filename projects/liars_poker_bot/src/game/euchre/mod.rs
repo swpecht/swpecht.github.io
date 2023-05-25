@@ -753,8 +753,10 @@ impl GameState for EuchreGameState {
         let iso_deck = self.deck.isomorphic_rep();
         iso_deck.hash(&mut hasher);
 
-        // Naive method:
-        // self.hash(&mut hasher);
+        // The deck state along is insufficient for the key before the play phase
+        if self.phase != EPhase::Play {
+            self.hash(&mut hasher);
+        }
 
         hasher.finish()
     }
