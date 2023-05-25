@@ -57,6 +57,10 @@ impl<G: GameState + ResampleFromInfoState + Send> OpenHandSolver<G> {
     }
 
     fn evaluate_with_worlds(&mut self, maximizing_player: Player, worlds: Vec<G>) -> f64 {
+        // clear the transposition table since it was generated with a different set of worlds
+        // this can be removed if we can iterate over all possible worlds for a given state
+        self.cache.transposition_table.clear();
+
         let sum: f64 = worlds
             // .into_iter()
             .into_par_iter()
@@ -341,34 +345,5 @@ mod tests {
         let mut evaluator = OpenHandSolver::new(100, SeedableRng::seed_from_u64(109));
         let gs = KuhnPoker::from_actions(&[KPAction::King, KPAction::Jack]);
         assert_eq!(evaluator.evaluate(&gs), vec![1.0, -1.0]);
-    }
-
-    #[test]
-    fn test_open_hand_solver_kuhn_cache() {
-        // verify cached and uncached versions give the same results
-        let mut rng: StdRng = SeedableRng::seed_from_u64(51);
-        let mut actions = Vec::new();
-
-        let mut cached = OpenHandSolver::new(100, rng.clone());
-        let mut no_cache = OpenHandSolver::new_without_cache(100, rng.clone());
-
-        for _ in 0..100 {
-            let mut gs = KuhnPoker::new_state();
-            while gs.is_chance_node() {
-                gs.legal_actions(&mut actions);
-                let a = actions.choose(&mut rng).unwrap();
-                gs.apply_action(*a);
-            }
-
-            while !gs.is_terminal() {
-                let c = cached.evaluate(&gs);
-                let no_c = no_cache.evaluate(&gs);
-                assert_eq!(c, no_c);
-
-                gs.legal_actions(&mut actions);
-                let a = actions.choose(&mut rng).unwrap();
-                gs.apply_action(*a);
-            }
-        }
     }
 }

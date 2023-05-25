@@ -744,18 +744,26 @@ impl GameState for EuchreGameState {
 
     fn isomorphic_hash(&self) -> crate::istate::IsomorphicHash {
         let mut hasher = DefaultHasher::new();
-        // Just hash the deck, current player, and trump, how we got there isn't important
-        self.trump.hash(&mut hasher);
-        self.cur_player.hash(&mut hasher);
-
-        // Here we "down grade" all cards. If a card lower than them isn't in play, that we consider that card
-        // the lower card. We need to be careful with how trump is handled.
         let iso_deck = self.deck.isomorphic_rep();
-        iso_deck.hash(&mut hasher);
 
-        // The deck state along is insufficient for the key before the play phase
         if self.phase != EPhase::Play {
+            // todo: make this just the bet history
             self.hash(&mut hasher);
+        } else if self.phase == EPhase::DealHands || self.phase == EPhase::DealFaceUp {
+            iso_deck.hash(&mut hasher);
+        } else {
+            // self.num_players.hash(&mut hasher);
+            // self.key.hash(&mut hasher);
+            self.play_order.hash(&mut hasher);
+            self.trump.hash(&mut hasher);
+            // self.deck.hash(&mut hasher);
+            iso_deck.hash(&mut hasher);
+            self.trump_caller.hash(&mut hasher);
+            self.cur_player.hash(&mut hasher);
+            self.trick_winners.hash(&mut hasher);
+            self.tricks_won.hash(&mut hasher);
+            self.cards_played.hash(&mut hasher);
+            self.phase.hash(&mut hasher);
         }
 
         hasher.finish()

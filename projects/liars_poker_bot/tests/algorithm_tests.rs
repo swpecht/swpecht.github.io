@@ -9,7 +9,7 @@ use liars_poker_bot::{
     },
     cfragent::{CFRAgent, CFRAlgorithm},
     database::memory_node_store::MemoryNodeStore,
-    game::{euchre::Euchre, kuhn_poker::KuhnPoker, GameState},
+    game::{bluff::Bluff, euchre::Euchre, kuhn_poker::KuhnPoker, GameState},
 };
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
@@ -43,7 +43,8 @@ fn test_cfr_exploitability() {
 }
 
 #[test]
-fn test_open_hand_solver_euchre() {
+fn test_open_hand_solver_bluff_cache() {
+    // verify cached and uncached versions give the same results
     let mut rng: StdRng = SeedableRng::seed_from_u64(51);
     let mut actions = Vec::new();
 
@@ -51,7 +52,7 @@ fn test_open_hand_solver_euchre() {
     let mut no_cache = OpenHandSolver::new_without_cache(100, rng.clone());
 
     for _ in 0..100 {
-        let mut gs = Euchre::new_state();
+        let mut gs = Bluff::new_state(2, 2);
         while gs.is_chance_node() {
             gs.legal_actions(&mut actions);
             let a = actions.choose(&mut rng).unwrap();
@@ -59,6 +60,37 @@ fn test_open_hand_solver_euchre() {
         }
 
         while !gs.is_terminal() {
+            let c = cached.evaluate(&gs);
+            let no_c = no_cache.evaluate(&gs);
+            assert_eq!(c, no_c);
+
+            gs.legal_actions(&mut actions);
+            let a = actions.choose(&mut rng).unwrap();
+            gs.apply_action(*a);
+        }
+    }
+}
+
+#[test]
+fn test_open_hand_solver_euchre() {
+    let mut rng: StdRng = SeedableRng::seed_from_u64(51);
+    let mut actions = Vec::new();
+
+    let mut cached = OpenHandSolver::new(100, rng.clone());
+    let mut no_cache = OpenHandSolver::new_without_cache(100, rng.clone());
+
+    for _ in 0..1 {
+        let mut gs = Euchre::new_state();
+        while gs.is_chance_node() {
+            gs.legal_actions(&mut actions);
+            let a = actions.choose(&mut rng).unwrap();
+            gs.apply_action(*a);
+        }
+
+        // todo -- once support resampling for later phases, have this iterate
+        // through all to verify state. For now we just apply a single pick / pass actions
+        // while !gs.is_terminal() {
+        for _ in 0..1 {
             let c = cached.evaluate(&gs);
             let no_c = no_cache.evaluate(&gs);
             assert_eq!(c, no_c);

@@ -3,9 +3,10 @@ use std::{
     hash::Hash,
 };
 
+use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 
-use crate::istate::IStateKey;
+use crate::{actions, algorithms::ismcts::ResampleFromInfoState, istate::IStateKey};
 
 use super::{Action, Game, GameState, Player};
 
@@ -422,6 +423,34 @@ impl GameState for BluffGameState {
         }
 
         self.key.pop();
+    }
+}
+
+impl ResampleFromInfoState for BluffGameState {
+    fn resample_from_istate<T: rand::Rng>(&self, player: Player, rng: &mut T) -> Self {
+        let mut player_chance = match player {
+            0 => self.key[0..self.num_dice[0]].to_vec(),
+            1 => self.key[self.num_dice[0]..self.num_dice[0] + self.num_dice[1]].to_vec(),
+            _ => panic!("invalid player"),
+        };
+
+        let mut ngs = Bluff::new_state(self.num_dice[0], self.num_dice[1]);
+
+        for i in 0..self.key.len() {
+            if ngs.is_chance_node() && ngs.cur_player() == player {
+                // the player chance node
+                ngs.apply_action(player_chance.pop().unwrap());
+            } else if ngs.is_chance_node() {
+                // other player chance node
+                let actions = actions!(ngs);
+                let a = actions.choose(rng).unwrap();
+                ngs.apply_action(*a);
+            } else {
+                // public history gets repeated
+                ngs.apply_action(self.key[i]);
+            }
+        }
+        ngs
     }
 }
 

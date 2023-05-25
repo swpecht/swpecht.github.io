@@ -1,4 +1,8 @@
-use std::fmt::{Debug, Display};
+use std::{
+    collections::hash_map::DefaultHasher,
+    fmt::{Debug, Display},
+    hash::{self, Hash, Hasher},
+};
 
 use crate::{
     actions,
