@@ -266,7 +266,7 @@ fn alpha_beta<G: GameState>(
 
 #[cfg(test)]
 mod tests {
-    use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
+    use rand::SeedableRng;
 
     use crate::{
         algorithms::{ismcts::Evaluator, open_hand_solver::OpenHandSolver},

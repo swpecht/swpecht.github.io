@@ -8,7 +8,6 @@ use liars_poker_bot::{
         },
         GameState,
     },
-    policy::Policy,
 };
 use log::info;
 use rand::{rngs::StdRng, SeedableRng};

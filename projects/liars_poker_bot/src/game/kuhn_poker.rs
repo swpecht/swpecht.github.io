@@ -1,7 +1,6 @@
 use std::{
-    collections::hash_map::DefaultHasher,
     fmt::{Debug, Display},
-    hash::{self, Hash, Hasher},
+    hash::Hash,
 };
 
 use crate::{
