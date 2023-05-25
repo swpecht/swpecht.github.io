@@ -20,13 +20,15 @@ pub fn open_hand_score_pass_on_bower(_args: Args) {
     let mut evaluator = OpenHandSolver::new(100, rng);
 
     info!("iterating through pass on the bower nodes");
-    for gs in PassOnBowerIterator::new() {
-        let policy = evaluator.action_probabilities(&gs);
+    for mut gs in PassOnBowerIterator::new() {
+        gs.apply_action(EAction::Pass.into());
+        let pass_value = evaluator.evaluate_player(&gs, 3);
+        gs.undo();
+        gs.apply_action(EAction::Pickup.into());
+        let pickup_value = evaluator.evaluate_player(&gs, 3);
         info!(
             "policy evaluation\t{}\t{}\t{}",
-            gs,
-            policy[EAction::Pass.into()],
-            policy[EAction::Pickup.into()]
+            gs, pass_value, pickup_value
         )
     }
 }

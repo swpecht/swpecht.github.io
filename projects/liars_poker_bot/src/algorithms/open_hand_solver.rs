@@ -130,6 +130,8 @@ impl<G: GameState + ResampleFromInfoState + Send> Policy<G> for OpenHandSolver<G
         for &a in &actions {
             policy[a] /= total;
         }
+
+        todo!("have this return 1 for the highest value action");
         policy
     }
 }
