@@ -34,8 +34,6 @@ const CARDS: &[Card] = &[
     Card::AD,
 ];
 
-const SUITS: &[Suit] = &[Suit::Clubs, Suit::Diamonds, Suit::Spades, Suit::Hearts];
-
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum CardLocation {
     Player0,
@@ -88,20 +86,20 @@ impl Deck {
         // todo: always put the trump suit in slot 0. Then sort all other suits by how many cards they have
         // this could be sped up using integers and popcount instruction to count the number of
 
-        for &s in SUITS {
-            let mut r = 0;
-            let mut last_card = 8;
-            // We downshift cards that are in the None location. For example,a 10 is as valuable in future hands as a 9
-            // if the 9 has been played already
-            while r < last_card {
-                if iso.locations[s as usize][r as usize] == CardLocation::None {
-                    iso.locations[s as usize][r as usize..].rotate_left(1);
-                    last_card -= 1;
-                } else {
-                    r += 1;
-                }
-            }
-        }
+        // for suit_locations in iso.locations.iter_mut() {
+        //     let mut r = 0;
+        //     let mut last_card = 8;
+        //     // We downshift cards that are in the None location. For example,a 10 is as valuable in future hands as a 9
+        //     // if the 9 has been played already
+        //     while r < last_card {
+        //         if suit_locations[r as usize] == CardLocation::None {
+        //             suit_locations[r as usize..].rotate_left(1);
+        //             last_card -= 1;
+        //         } else {
+        //             r += 1;
+        //         }
+        //     }
+        // }
 
         fn get_count(x: &[CardLocation]) -> usize {
             x.iter().filter(|x| **x != CardLocation::None).count()
