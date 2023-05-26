@@ -48,6 +48,8 @@ impl<G: GameState + ResampleFromInfoState + Send> OpenHandSolver<G> {
     }
 
     pub fn set_rollout(&mut self, n_rollouts: usize) {
+        // clears all cached data for different world counts
+        self.reset();
         self.n_rollouts = n_rollouts;
     }
 
@@ -59,7 +61,7 @@ impl<G: GameState + ResampleFromInfoState + Send> OpenHandSolver<G> {
     fn evaluate_with_worlds(&mut self, maximizing_player: Player, worlds: Vec<G>) -> f64 {
         // clear the transposition table since it was generated with a different set of worlds
         // this can be removed if we can iterate over all possible worlds for a given state
-        self.cache.transposition_table.clear();
+        // self.cache.transposition_table.clear();
 
         let sum: f64 = worlds
             // .into_iter()
@@ -81,6 +83,10 @@ impl<G: GameState + ResampleFromInfoState + Send> OpenHandSolver<G> {
             worlds.push(gs.resample_from_istate(gs.cur_player(), &mut self.rng));
         }
         worlds
+    }
+
+    pub fn reset(&mut self) {
+        self.cache.transposition_table.clear();
     }
 }
 
