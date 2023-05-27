@@ -123,6 +123,8 @@ impl EuchreGameState {
             EAction::Pass => {
                 if self.cur_player == 3 {
                     self.phase = EPhase::ChooseTrump;
+                    let face_up = self.face_up();
+                    self.deck[face_up] = CardLocation::None;
                 }
                 self.cur_player = (self.cur_player + 1) % self.num_players;
             }
@@ -722,6 +724,8 @@ impl GameState for EuchreGameState {
                 // did we just undo the last pickup action?
                 if self.key.len() == 20 + 1 + 3 {
                     self.phase = EPhase::Pickup;
+                    let face_up = self.face_up();
+                    self.deck[face_up] = CardLocation::FaceUp;
                 }
             }
             EAction::Clubs | EAction::Spades | EAction::Hearts | EAction::Diamonds => {
