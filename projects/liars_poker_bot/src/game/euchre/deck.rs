@@ -61,7 +61,7 @@ impl From<Player> for CardLocation {
 /// Track location of all euchre cards
 #[derive(Default, Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize, Hash)]
 pub(super) struct Deck {
-    locations: [[CardLocation; 8]; 4],
+    locations: [[CardLocation; 7]; 4],
     trump: Option<Suit>,
 }
 
@@ -86,20 +86,20 @@ impl Deck {
         // todo: always put the trump suit in slot 0. Then sort all other suits by how many cards they have
         // this could be sped up using integers and popcount instruction to count the number of
 
-        // for suit_locations in iso.locations.iter_mut() {
-        //     let mut r = 0;
-        //     let mut last_card = 8;
-        //     // We downshift cards that are in the None location. For example,a 10 is as valuable in future hands as a 9
-        //     // if the 9 has been played already
-        //     while r < last_card {
-        //         if suit_locations[r as usize] == CardLocation::None {
-        //             suit_locations[r as usize..].rotate_left(1);
-        //             last_card -= 1;
-        //         } else {
-        //             r += 1;
-        //         }
-        //     }
-        // }
+        for suit_locations in iso.locations.iter_mut() {
+            let mut i = 0;
+            let mut last_card = suit_locations.len();
+            // We downshift cards that are in the None location. For example,a 10 is as valuable in future hands as a 9
+            // if the 9 has been played already
+            while i < last_card {
+                if suit_locations[i] == CardLocation::None {
+                    suit_locations[i..].rotate_left(1);
+                    last_card -= 1;
+                } else {
+                    i += 1;
+                }
+            }
+        }
 
         fn get_count(x: &[CardLocation]) -> usize {
             x.iter().filter(|x| **x != CardLocation::None).count()
@@ -133,8 +133,8 @@ impl Deck {
         let is_trump_color = suit.other_color() == self.trump.unwrap() || is_trump;
 
         match (is_trump, is_trump_color, rank) {
-            (true, true, JACK_RANK) => (suit as usize, 7),
-            (false, true, JACK_RANK) => (trump as usize, 6),
+            (true, true, JACK_RANK) => (suit as usize, 6),
+            (false, true, JACK_RANK) => (trump as usize, 5),
             (_, true, x) if x > JACK_RANK => (suit as usize, rank - 1),
             (_, true, x) if x < JACK_RANK => (suit as usize, rank),
             (false, false, _) => (suit as usize, rank),

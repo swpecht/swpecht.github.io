@@ -1,6 +1,8 @@
+use core::num;
 use std::{
+    collections::hash_map::DefaultHasher,
     fmt::{Display, Write},
-    hash::Hash,
+    hash::{Hash, Hasher},
 };
 
 use rand::seq::SliceRandom;
@@ -79,7 +81,7 @@ impl From<u8> for Dice {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Debug, Eq, Serialize, Deserialize)]
+#[derive(Copy, Clone, PartialEq, Debug, Eq, Serialize, Deserialize, Hash)]
 pub enum BluffActions {
     Roll(Dice),
     Bid(usize, Dice),
@@ -424,6 +426,24 @@ impl GameState for BluffGameState {
 
         self.key.pop();
     }
+
+    fn isomorphic_hash(&self) -> crate::istate::IsomorphicHash {
+        let mut hasher = DefaultHasher::new();
+
+        if self.phase() == Phase::RollingDice {
+            self.key().hash(&mut hasher);
+        } else {
+            // get all the rolled dice
+            self.key()[..self.num_dice[0] + self.num_dice[1]].hash(&mut hasher);
+            let last_bid = self.last_bid();
+            last_bid.hash(&mut hasher);
+            if last_bid == BluffActions::Call {
+                self.key()[self.key().len() - 2].hash(&mut hasher);
+            }
+            self.cur_player().hash(&mut hasher);
+        }
+        hasher.finish()
+    }
 }
 
 impl ResampleFromInfoState for BluffGameState {
@@ -484,8 +504,19 @@ fn calculate_payoff(
 }
 
 impl Display for BluffGameState {
-    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, a) in self.key().iter().enumerate() {
+            write!(f, "{}", BluffActions::from(*a)).unwrap();
+            let num_dice = self.num_dice.iter().sum();
+            if i == self.num_dice[0] - 1
+                || i == self.num_dice[1] - 1
+                || (i > num_dice && (i - num_dice) % 2 == 0)
+            {
+                write!(f, "|").unwrap();
+            }
+        }
+
+        write!(f, "")
     }
 }
 
