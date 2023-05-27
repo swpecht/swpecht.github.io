@@ -23,6 +23,7 @@ pub(super) const CARDS_PER_HAND: usize = 5;
 
 pub mod actions;
 mod deck;
+mod parser;
 
 pub struct Euchre {}
 impl Euchre {
