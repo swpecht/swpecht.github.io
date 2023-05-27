@@ -281,6 +281,7 @@ mod tests {
         algorithms::{ismcts::Evaluator, open_hand_solver::OpenHandSolver},
         game::{
             bluff::{Bluff, BluffActions, Dice},
+            euchre::EuchreGameState,
             kuhn_poker::{KPAction, KuhnPoker},
             GameState,
         },
@@ -354,5 +355,22 @@ mod tests {
         let mut evaluator = OpenHandSolver::new(100, SeedableRng::seed_from_u64(109));
         let gs = KuhnPoker::from_actions(&[KPAction::King, KPAction::Jack]);
         assert_eq!(evaluator.evaluate(&gs), vec![1.0, -1.0]);
+    }
+
+    #[test]
+    fn test_open_hand_solver_euchre_samples() {
+        let mut e1 = OpenHandSolver::new_without_cache(10, SeedableRng::seed_from_u64(109));
+        let mut game = "TCQCQHAHTD|9HKHJDKDAD|AC9SKSTHJH|9CJCKCJSQD|AS|".to_string();
+        let gs1 = EuchreGameState::from(game.as_str());
+        let mut e2 = OpenHandSolver::new_without_cache(10, SeedableRng::seed_from_u64(109));
+        // manually downshit spade cards since some of them weren't dealt
+        game = game.replace("KS", "QS");
+        game = game.replace("AS", "KS");
+        let gs2 = EuchreGameState::from(game.as_str());
+
+        let v1 = e1.evaluate(&gs1);
+        let v2 = e2.evaluate(&gs2);
+
+        assert_eq!(v1, v2);
     }
 }

@@ -48,7 +48,7 @@ fn test_cfr_exploitability() {
 }
 
 #[test]
-fn test_open_hand_solver_bluff_cache() {
+fn test_alg_open_hand_solver_bluff_cache() {
     // verify cached and uncached versions give the same results
     let mut rng: StdRng = SeedableRng::seed_from_u64(100);
     let mut actions = Vec::new();
@@ -79,7 +79,7 @@ fn test_open_hand_solver_bluff_cache() {
 }
 
 #[test]
-fn test_open_hand_solver_euchre() {
+fn test_alg_open_hand_solver_euchre() {
     let mut rng: StdRng = SeedableRng::seed_from_u64(51);
     let mut actions = Vec::new();
 
