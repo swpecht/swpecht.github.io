@@ -9,7 +9,12 @@ use liars_poker_bot::{
     },
     cfragent::{CFRAgent, CFRAlgorithm},
     database::memory_node_store::MemoryNodeStore,
-    game::{bluff::Bluff, euchre::Euchre, kuhn_poker::KuhnPoker, GameState},
+    game::{
+        bluff::{Bluff, BluffActions},
+        euchre::Euchre,
+        kuhn_poker::KuhnPoker,
+        GameState,
+    },
 };
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
@@ -45,7 +50,7 @@ fn test_cfr_exploitability() {
 #[test]
 fn test_open_hand_solver_bluff_cache() {
     // verify cached and uncached versions give the same results
-    let mut rng: StdRng = SeedableRng::seed_from_u64(51);
+    let mut rng: StdRng = SeedableRng::seed_from_u64(100);
     let mut actions = Vec::new();
 
     let mut cached = OpenHandSolver::new(100, rng.clone());
@@ -60,8 +65,10 @@ fn test_open_hand_solver_bluff_cache() {
         }
 
         while !gs.is_terminal() {
+            println!("{}", gs);
             let c = cached.evaluate(&gs);
             let no_c = no_cache.evaluate(&gs);
+
             assert_eq!(c, no_c);
 
             gs.legal_actions(&mut actions);
@@ -91,6 +98,7 @@ fn test_open_hand_solver_euchre() {
         // through all to verify state. For now we just apply a single pick / pass actions
         // while !gs.is_terminal() {
         for _ in 0..1 {
+            println!("{}", gs);
             let c = cached.evaluate(&gs);
             let no_c = no_cache.evaluate(&gs);
             assert_eq!(c, no_c);
