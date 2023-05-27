@@ -505,13 +505,10 @@ fn calculate_payoff(
 
 impl Display for BluffGameState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let num_dice = self.num_dice.iter().sum();
         for (i, a) in self.key().iter().enumerate() {
             write!(f, "{}", BluffActions::from(*a)).unwrap();
-            let num_dice = self.num_dice.iter().sum();
-            if i == self.num_dice[0] - 1
-                || i == self.num_dice[1] - 1
-                || (i > num_dice && (i - num_dice) % 2 == 0)
-            {
+            if i == self.num_dice[0] - 1 || i == num_dice - 1 || (i >= num_dice) {
                 write!(f, "|").unwrap();
             }
         }
