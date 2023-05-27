@@ -773,10 +773,12 @@ impl GameState for EuchreGameState {
         let iso_deck = self.deck.isomorphic_rep();
 
         if self.phase == EPhase::DealHands || self.phase == EPhase::DealFaceUp {
-            iso_deck.hash(&mut hasher);
+            panic!("don't support caching with chance nodes")
+            // iso_deck.hash(&mut hasher);
         } else if self.phase != EPhase::Play {
-            // todo: make this just the bet history
-            self.hash(&mut hasher);
+            // capture the deal state and the trump bidding so far
+            iso_deck.hash(&mut hasher);
+            self.key()[20..].hash(&mut hasher);
         } else {
             iso_deck.hash(&mut hasher);
 
