@@ -20,25 +20,46 @@ Going to use Liar's poker bots to illustrate why.
 
 Improving exploitability and CFR
 [ ] Do we actually need to pre-compute everything for tabular exploitability? Instead can we 'search' and compute on the fly?
+    * Is there not some way to "filter" for this?
+    * Confirm why the MC chance sampled version doesn't converge
 [ ] Look at alternative sampling algorithms for CFR -- might change the read-write characteristics -- external sampling?
     * Marc mentioned this dominates chance sampling across all dimensions
 [ ] What people are doing these days for approximate best response is running "DQN-BR" (use reinforcement learning as an exploiter). See, for example, the MMD paper: https://arxiv.org/pdf/2206.05825.pdf. There's an example of this in OpenSpiel:  https://github.com/deepmind/open_spiel/blob/master/open_spiel/python/examples/rl_response.py. This idea is the basis of PSRO, btw, which is a paper which may interest you: https://arxiv.org/abs/1711.00832. Anyway, there are even more sophisticated methods that add MCTS search on top of it (see our ABR paper: https://arxiv.org/abs/2004.09677) but it is a bit heavy and compute-hungry so I'd recommend starting with DQN-BR.
 
 
 Evaluating other algorithms and games
-[ ] Implement strategy for up the river down the river -- could constrain to the lower number of cards in hand to see what is optimal
-    * https://plentifun.com/rules-to-play-up-down-river-card-game
-    * re-read marc's email (from my google?) on if cfr worksw ith multiple players -- e.g. could it work for up the river down the river? with 4 players?
-    * Does the exploitanility function work in that instance? -- good test bet for agents
+[ ] See notes in blog post
 [ ] Implement double dummy solver (open hand solver)
+    * Implement a sort range function for IStateKey -- and get rid of SortedArrayVec, then can just sort the keys in place at the right time
+    * Implement undo for Euchre
+      * 14% of run time going to cloning gamestates
+    * How many tricks are there actually -- create a transposition table for all tricks and the evaluation? Euchre gamestate could store this
+      * Only 170k tricks if ignore order after first card -- probably less than that if can do some de-duping with suit
+        * 24 * (23 choose 3) * 4 suits
+    * Look at tips from bridge solvers on improving evaluation speed, especially figuring out who won tricks
+    * Implement undo method for game? -- would avoid needing to copy memory for each iteration of search -- probably a lot of savings
+    * Identify quick hands -- see if there are certain actions always taken. For example, if have the right trump and can lead -- always lead with that?
+    * Implement transposition table for evaluating tricks?
+    * Transposition table for legal moves? given leading card and trump suit and cards in hand
+[ ] Extend doubly dummy solver to search the entire state tree for a hand? Not just a sample of worlds?
+    * From DDS paper -- moves are all the possible cards that could be played, not just moves for and instance of the game -- everything that hasn't been seen
+    * Could be a set of new traits, e.g. undoable, possible actions (all possible moves from thse not scene), number of tricks already taken, etc.
 [ ] Extend alphamu to scoring and not just win vs loss metrics -- could see if this improve performance of the agent
+
+Tech debt cleanup:
+[ ] Have nodestores return references to nodes rather than owned copies. Just need to have the calling code release the reference to the node
+    * And then do the other computation, and then can get the reference again
 
 
 Misc ideas
 [ ] Multithread for rollout?
 [ ] Implement other rollout methods
 [ ] For benchmarking -- create a policy agent. Takes policy as an input -- might be an easier way to have all the agents play
-
+[ ] Blog post on an introduction to these search alogirithms:
+    * Start with min-max
+    * Ok, but no perfect information -- so instead we sample a bunch of possible worlds -- this is X
+    * Ok, but have locality problem -- so ismcts
+    * then improvements for alpha mu
 
 ## Tricky things about euchre
 

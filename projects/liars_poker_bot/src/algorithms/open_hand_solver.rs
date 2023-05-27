@@ -360,7 +360,7 @@ mod tests {
     #[test]
     fn test_open_hand_solver_euchre_samples() {
         let mut e1 = OpenHandSolver::new_without_cache(10, SeedableRng::seed_from_u64(109));
-        let mut game = "TCQCQHAHTD|9HKHJDKDAD|AC9SQSTHJH|9CJCKCJSQD|AS|".to_string();
+        let mut game = "TCQCQHAHTD|9HKHJDKDAD|AC9SQSTHJH|9CJCKCJSQD|AS|PPPP|".to_string();
         let gs1 = EuchreGameState::from(game.as_str());
         let mut e2 = OpenHandSolver::new_without_cache(10, SeedableRng::seed_from_u64(109));
         // manually downshit spade cards since some of them weren't dealt
@@ -369,9 +369,13 @@ mod tests {
         let gs2 = EuchreGameState::from(game.as_str());
 
         // Just downshifting the faceup card is enough to change the evaluation of the game. Why??
+        // expected value for the dealer decreases when the card is downshifted 1.1 to 0.8
+        // Does it happen when the dealer takes the card or only when passed?
+        // Doesn't seem to occure when dealer takes card, only when the pass occurs
+        // Need to fix the resampling to further troubleshoot
 
-        let v1 = e1.evaluate(&gs1);
-        let v2 = e2.evaluate(&gs2);
+        let v1 = e1.evaluate_player(&gs1, 3);
+        let v2 = e2.evaluate_player(&gs2, 3);
 
         assert_eq!(v1, v2);
     }
