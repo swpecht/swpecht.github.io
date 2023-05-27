@@ -360,13 +360,15 @@ mod tests {
     #[test]
     fn test_open_hand_solver_euchre_samples() {
         let mut e1 = OpenHandSolver::new_without_cache(10, SeedableRng::seed_from_u64(109));
-        let mut game = "TCQCQHAHTD|9HKHJDKDAD|AC9SKSTHJH|9CJCKCJSQD|AS|".to_string();
+        let mut game = "TCQCQHAHTD|9HKHJDKDAD|AC9SQSTHJH|9CJCKCJSQD|AS|".to_string();
         let gs1 = EuchreGameState::from(game.as_str());
         let mut e2 = OpenHandSolver::new_without_cache(10, SeedableRng::seed_from_u64(109));
         // manually downshit spade cards since some of them weren't dealt
-        game = game.replace("KS", "QS");
+        // game = game.replace("KS", "QS");
         game = game.replace("AS", "KS");
         let gs2 = EuchreGameState::from(game.as_str());
+
+        // Just downshifting the faceup card is enough to change the evaluation of the game. Why??
 
         let v1 = e1.evaluate(&gs1);
         let v2 = e2.evaluate(&gs2);

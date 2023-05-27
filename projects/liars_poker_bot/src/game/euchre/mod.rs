@@ -128,8 +128,11 @@ impl EuchreGameState {
             }
             EAction::Pickup => {
                 self.trump_caller = self.cur_player;
-                self.trump = Some(self.face_up().suit());
+                let face_up = self.face_up();
+                self.trump = Some(face_up.suit());
                 self.cur_player = 3; // dealers turn
+                self.deck[face_up] = CardLocation::Player3;
+
                 self.deck = self.deck.with_new_trump(self.trump);
                 self.phase = EPhase::Discard;
             }
@@ -733,6 +736,8 @@ impl GameState for EuchreGameState {
                 // return to defaults
                 self.trump_caller = 0;
                 self.trump = None;
+                let face_up = self.face_up();
+                self.deck[face_up] = CardLocation::FaceUp;
                 self.deck = self.deck.with_new_trump(None);
             }
             EAction::DealPlayer { c } => {
@@ -744,8 +749,6 @@ impl GameState for EuchreGameState {
                 self.phase = EPhase::DealFaceUp;
             }
             EAction::Discard { c } => {
-                let face_up = self.face_up();
-                self.deck[face_up] = CardLocation::FaceUp; // card is face up again
                 self.deck[c] = CardLocation::Player3;
                 self.phase = EPhase::Discard;
             }
@@ -947,13 +950,13 @@ mod tests {
         );
 
         gs.apply_action(EAction::Pickup.into());
-        // Cards in dealers hand
+        // Cards in dealers hand, including face up card
         assert_eq!(
             actions!(gs)
                 .iter()
                 .map(|x| EAction::from(*x).to_string())
                 .collect_vec(),
-            vec!["QH", "KH", "AH", "9D", "TD"]
+            vec!["QH", "KH", "AH", "9D", "TD", "QD"]
         );
         assert_eq!(gs.phase(), EPhase::Discard);
         gs.apply_action(EAction::Discard { c: Card::QH }.into());
