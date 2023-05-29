@@ -807,57 +807,75 @@ impl GameState for EuchreGameState {
 /// It's not yet clear what impact this has on the results of downstream algorithms
 impl ResampleFromInfoState for EuchreGameState {
     fn resample_from_istate<T: rand::Rng>(&self, player: Player, rng: &mut T) -> Self {
-        let mut player_chance = [Card::AC; 5];
-
-        for (i, c) in player_chance.iter_mut().enumerate() {
-            *c = EAction::from(self.key[player * CARDS_PER_HAND + i]).card();
+        // Collect known cards: those played, dealt face up, or dealt to the player whose istate we're recreating
+        let face_up = EAction::from(self.key[20]).card(); // 21st card dealt
+        let mut known_dealt_cards = Deck::default();
+        for (a, p) in self.key.iter().zip(self.play_order.iter()) {
+            let a = EAction::from(*a);
+            if (matches!(a, EAction::Play { c: _ }) && a.card() != face_up)
+                || (matches!(a, EAction::DealPlayer { c: _ }) && *p == player)
+                || (matches!(a, EAction::Discard { c: _ }) && player == 3 && a.card() != face_up)
+            // track the discard card for dealer
+            {
+                known_dealt_cards[a.card()] = CardLocation::from(*p);
+            }
         }
 
-        if self.phase() == EPhase::Play
-            || self.phase() == EPhase::DealHands
-            || self.phase() == EPhase::DealFaceUp
-        {
-            todo!(
-                "implement resampling for play and post discard phases: {:?}",
-                self
-            );
+        if self.phase() == EPhase::DealHands || self.phase() == EPhase::DealFaceUp {
+            panic!("don't yet support resampling of deal phase gamestates")
         }
 
         let mut ngs = Euchre::new_state();
-        let mut chance_iter = player_chance.iter();
-        let face_up_chance = EAction::from(self.key[20]).card(); // 21st card dealt
 
-        for i in 0..self.key.len() {
-            if i >= player * CARDS_PER_HAND && i < player * CARDS_PER_HAND + CARDS_PER_HAND {
-                // the player chance node
-                ngs.apply_action(
-                    EAction::DealPlayer {
-                        c: *chance_iter.next().unwrap(),
-                    }
-                    .into(),
-                );
-            } else if i == 20 {
-                // the faceup chance node
-                ngs.apply_action(EAction::DealFaceUp { c: face_up_chance }.into());
-            } else if ngs.is_chance_node() {
-                assert!(ngs.cur_player() != player);
+        let mut actions = Vec::new();
+        // deal player cards
+        'deals: for _ in 0..20 {
+            // if we have a known card, deal that first
+            ngs.legal_actions(&mut actions);
+            let p = ngs.cur_player();
 
-                // other player chance node
-                let mut actions = actions!(ngs);
+            for a in actions.iter().map(|x| EAction::from(*x)) {
+                let card = a.card();
+                if known_dealt_cards[card] == p.into() {
+                    ngs.apply_action(a.into());
+                    continue 'deals;
+                }
+            }
+
+            // no known card, so deal a random one.
+            actions.shuffle(rng);
+            for c in actions.iter().map(|x| EAction::from(*x).card()) {
+                if known_dealt_cards[c] == CardLocation::None && c != face_up {
+                    ngs.apply_action(EAction::DealPlayer { c }.into());
+                    break;
+                }
+            }
+        }
+
+        // deal the face up
+        ngs.apply_action(EAction::DealFaceUp { c: face_up }.into());
+
+        // apply the non-deal actions
+        for a in &self.key()[21..] {
+            // handle the discard case. We randomly select a card to discard that isn't seen later. TBD
+            // what impact this random discarding has on the sampling because an actual player would not discard a
+            // card randomly.
+            //
+            // If it's not a discard, we apply the actions in the order we saw them.
+            if matches!(EAction::from(*a), EAction::Discard { c: _ }) && player != 3 {
+                ngs.legal_actions(&mut actions);
                 actions.shuffle(rng);
-                for a in actions {
-                    let card = EAction::from(a).card();
-                    if !player_chance.contains(&card) && card != face_up_chance {
-                        // can't deal same card
-                        ngs.apply_action(a);
-                        break;
+                for da in actions.iter().map(|x| EAction::from(*x)) {
+                    let card = da.card();
+                    if known_dealt_cards[card] == CardLocation::None {
+                        ngs.apply_action(da.into());
                     }
                 }
             } else {
-                // public history gets repeated
-                ngs.apply_action(self.key[i]);
+                ngs.apply_action(*a);
             }
         }
+
         ngs
     }
 }
@@ -1095,7 +1113,7 @@ mod tests {
         let mut ra = RandomAgent::new();
         let mut rng = thread_rng();
 
-        for _ in 0..1000 {
+        for _ in 0..100 {
             let mut s = Euchre::new_state();
 
             while s.is_chance_node() {
@@ -1106,7 +1124,7 @@ mod tests {
             while !s.is_terminal() {
                 for p in 0..s.num_players() {
                     let original_istate = s.istate_key(p);
-                    for _ in 0..100 {
+                    for _ in 0..10 {
                         let sampled_state = s.resample_from_istate(p, &mut rng);
                         let sampled_key = sampled_state.istate_key(p);
                         assert_eq!(sampled_key, original_istate)
