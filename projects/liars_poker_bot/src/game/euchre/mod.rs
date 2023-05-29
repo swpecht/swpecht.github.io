@@ -463,7 +463,7 @@ impl EuchreGameState {
         //     }
         // }
 
-        // todo: update
+        // todo!("update to support automatically scoring highest card");
         (self.tricks_won[0], self.tricks_won[1])
     }
 

@@ -32,7 +32,9 @@ use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{thread_rng, SeedableRng};
 use scripts::estimate_euchre_game_tree::estimate_euchre_game_tree;
-use scripts::pass_on_bower::{calculate_convergence, open_hand_score_pass_on_bower};
+use scripts::pass_on_bower::{
+    calculate_convergence, open_hand_score_pass_on_bower, spot_check_pass_on_bower,
+};
 
 pub mod scripts;
 
@@ -99,8 +101,8 @@ fn main() {
         Mode::Analyze => run_analyze(args),
         Mode::Play => run_play(args),
         Mode::Scratch => run_scratch(args),
-        // Mode::PassOnBowerOpenHand => calculate_convergence(args),
-        Mode::PassOnBowerOpenHand => open_hand_score_pass_on_bower(args),
+        Mode::PassOnBowerOpenHand => spot_check_pass_on_bower(args),
+        // Mode::PassOnBowerOpenHand => open_hand_score_pass_on_bower(args),
     }
 }
 
