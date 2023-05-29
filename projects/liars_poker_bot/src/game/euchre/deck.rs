@@ -159,6 +159,11 @@ impl Deck {
             ),
         }
     }
+
+    /// Returns the player with the nth highest card
+    pub fn highest_card(&self, n: usize) -> Option<Player> {
+        todo!()
+    }
 }
 
 impl Index<Card> for Deck {

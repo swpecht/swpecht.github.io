@@ -451,6 +451,41 @@ impl EuchreGameState {
 
         panic!("couldn't find a face up card in deck or action history")
     }
+
+    /// Returns the number of future tricks each team is guaranteed to win
+    fn future_tricks(&self) -> (usize, usize) {
+        let mut highest_card_owners = Vec::new();
+        for i in 0..3 {
+            let owner = self.deck.highest_card(i);
+            if let Some(o) = owner {
+                highest_card_owners.push(o);
+                break;
+            }
+        }
+
+        todo!()
+    }
+
+    /// Returns the score for team 0 based on tricks won for each team
+    fn score(&self, tricks0: u8, tricks1: u8) -> f64 {
+        // needs to be a winner
+        assert!(tricks0 >= 3 || tricks1 >= 3);
+        assert_eq!(self.phase(), EPhase::Play);
+
+        let team_0_call = self.trump_caller % 2 == 0;
+        match (tricks0, tricks1, team_0_call) {
+            (5, 0, _) => 2.0,
+            (0, 5, _) => -2.0,
+            (3 | 4, _, true) => 1.0,
+            (3 | 4, _, false) => 2.0,
+            (_, 3 | 4, true) => -2.0,
+            (_, 3 | 4, false) => -1.0,
+            _ => panic!(
+                "invalid trick state to call score: {}, {}",
+                tricks0, tricks1
+            ),
+        }
+    }
 }
 
 impl Display for EuchreGameState {
@@ -529,16 +564,14 @@ impl GameState for EuchreGameState {
 
         let team = p % 2;
 
-        // no points, didn't win most tricks
-        if self.tricks_won[team] < self.tricks_won[(team + 1) % 2] {
-            -1.0 * self.evaluate((p + 1) % self.num_players)
-        } else if self.tricks_won[team] == 5 {
-            2.0
-        } else if self.trump_caller % 2 == team {
-            1.0
+        if self.tricks_won[0] < 3 && self.tricks_won[1] < 3 {
+            todo!("implement scoring for unfinished games, e.g. have the highest card")
+        }
+
+        if team == 0 {
+            self.score(self.tricks_won[0], self.tricks_won[1])
         } else {
-            //euchred them
-            2.0
+            -1.0 * self.score(self.tricks_won[0], self.tricks_won[1])
         }
     }
 
