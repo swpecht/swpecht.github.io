@@ -781,7 +781,7 @@ impl GameState for EuchreGameState {
         }
     }
 
-    fn isomorphic_hash(&self) -> crate::istate::IsomorphicHash {
+    fn transposition_table_hash(&self) -> Option<crate::istate::IsomorphicHash> {
         let mut hasher = DefaultHasher::new();
         let iso_deck = self.deck.isomorphic_rep();
 
@@ -802,7 +802,7 @@ impl GameState for EuchreGameState {
             calling_team.hash(&mut hasher);
         }
 
-        hasher.finish()
+        Some(hasher.finish())
     }
 }
 

@@ -183,11 +183,15 @@ impl AlphaBetaCache {
             return None;
         }
 
-        let k = gs.isomorphic_hash();
-        self.transposition_table
-            .get(&(maximizing_team, k))
-            .as_deref()
-            .copied()
+        let k = gs.transposition_table_hash();
+        if let Some(k) = k {
+            self.transposition_table
+                .get(&(maximizing_team, k))
+                .as_deref()
+                .copied()
+        } else {
+            None
+        }
     }
 
     pub fn insert<G: GameState>(&self, gs: &G, v: (f64, Option<Action>), maximizing_team: Team) {
@@ -195,8 +199,11 @@ impl AlphaBetaCache {
             return;
         }
 
-        let k = gs.isomorphic_hash();
-        self.transposition_table.insert((maximizing_team, k), v);
+        // Check if the game wants to store this state
+        let k = gs.transposition_table_hash();
+        if let Some(k) = k {
+            self.transposition_table.insert((maximizing_team, k), v);
+        }
     }
 }
 

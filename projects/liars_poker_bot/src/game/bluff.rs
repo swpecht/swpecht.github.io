@@ -426,7 +426,7 @@ impl GameState for BluffGameState {
         self.key.pop();
     }
 
-    fn isomorphic_hash(&self) -> crate::istate::IsomorphicHash {
+    fn transposition_table_hash(&self) -> Option<crate::istate::IsomorphicHash> {
         let mut hasher = DefaultHasher::new();
 
         if self.phase() == Phase::RollingDice {
@@ -441,7 +441,7 @@ impl GameState for BluffGameState {
             }
             self.cur_player().hash(&mut hasher);
         }
-        hasher.finish()
+        Some(hasher.finish())
     }
 }
 

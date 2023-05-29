@@ -66,10 +66,8 @@ pub trait GameState: Display + Clone + Debug + Serialize + DeserializeOwned + Ha
     /// A key representing the entire game state, likely a history of all actions
     fn key(&self) -> IStateKey;
     /// Returns an isomorphic hash of the current gamestate
-    fn isomorphic_hash(&self) -> IsomorphicHash {
-        let mut hasher = DefaultHasher::new();
-        self.hash(&mut hasher);
-        hasher.finish()
+    fn transposition_table_hash(&self) -> Option<IsomorphicHash> {
+        None
     }
     /// Undo the last played actions
     fn undo(&mut self);
