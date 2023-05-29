@@ -464,7 +464,7 @@ impl EuchreGameState {
         // }
 
         // todo: update
-        (self.tricks_won[0], self.tricks_won[0])
+        (self.tricks_won[0], self.tricks_won[1])
     }
 
     /// Returns the score for team 0 based on tricks won for each team
@@ -710,10 +710,12 @@ impl GameState for EuchreGameState {
     }
 
     fn is_terminal(&self) -> bool {
+        let future_tricks = self.future_tricks();
+
         self.cards_played == 20
         // Check if the scores are already decided: see if have taken a trick in defence
-        || self.tricks_won[0] > 0 && self.tricks_won[1] >= 3
-        || self.tricks_won[0] >= 3 && self.tricks_won[1] > 0
+        || (future_tricks.0 > 0 && future_tricks.1 >= 3)
+        || (future_tricks.0 >= 3 && future_tricks.1 > 0)
     }
 
     fn is_chance_node(&self) -> bool {
