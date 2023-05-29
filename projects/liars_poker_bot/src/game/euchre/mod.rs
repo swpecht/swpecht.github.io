@@ -453,17 +453,18 @@ impl EuchreGameState {
     }
 
     /// Returns the number of future tricks each team is guaranteed to win
-    fn future_tricks(&self) -> (usize, usize) {
-        let mut highest_card_owners = Vec::new();
-        for i in 0..3 {
-            let owner = self.deck.highest_card(i);
-            if let Some(o) = owner {
-                highest_card_owners.push(o);
-                break;
-            }
-        }
+    fn future_tricks(&self) -> (u8, u8) {
+        // let mut highest_card_owners = Vec::new();
+        // for i in 0..3 {
+        //     let owner = self.deck.highest_card(i);
+        //     if let Some(o) = owner {
+        //         highest_card_owners.push(o);
+        //         break;
+        //     }
+        // }
 
-        todo!()
+        // todo: update
+        (self.tricks_won[0], self.tricks_won[0])
     }
 
     /// Returns the score for team 0 based on tricks won for each team
@@ -563,15 +564,11 @@ impl GameState for EuchreGameState {
         }
 
         let team = p % 2;
-
-        if self.tricks_won[0] < 3 && self.tricks_won[1] < 3 {
-            todo!("implement scoring for unfinished games, e.g. have the highest card")
-        }
-
+        let future_tricks = self.future_tricks();
         if team == 0 {
-            self.score(self.tricks_won[0], self.tricks_won[1])
+            self.score(future_tricks.0, future_tricks.1)
         } else {
-            -1.0 * self.score(self.tricks_won[0], self.tricks_won[1])
+            -1.0 * self.score(future_tricks.0, future_tricks.1)
         }
     }
 
