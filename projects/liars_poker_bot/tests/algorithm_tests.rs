@@ -53,8 +53,8 @@ fn test_alg_open_hand_solver_bluff_cache() {
     let mut rng: StdRng = SeedableRng::seed_from_u64(100);
     let mut actions = Vec::new();
 
-    let mut cached = OpenHandSolver::new(100, rng.clone());
-    let mut no_cache = OpenHandSolver::new_without_cache(100, rng.clone());
+    let mut cached = OpenHandSolver::new(10000, rng.clone());
+    let mut no_cache = OpenHandSolver::new_without_cache(10000, rng.clone());
 
     for _ in 0..100 {
         let mut gs = Bluff::new_state(2, 2);
@@ -78,29 +78,31 @@ fn test_alg_open_hand_solver_bluff_cache() {
     }
 }
 
-// #[test]
-// fn test_alg_open_hand_solver_euchre() {
-//     let mut rng: StdRng = SeedableRng::seed_from_u64(51);
-//     let mut actions = Vec::new();
+// Disabling this test for now as it is highly sensative to world selection. And many
+// isomorphic changes will impact world selection. But still good to verify ismorphic implementations
+#[test]
+fn test_alg_open_hand_solver_euchre() {
+    let mut rng: StdRng = SeedableRng::seed_from_u64(51);
+    let mut actions = Vec::new();
 
-//     let mut cached = OpenHandSolver::new(100, rng.clone());
-//     let mut no_cache = OpenHandSolver::new_without_cache(100, rng.clone());
+    let mut cached = OpenHandSolver::new(100, rng.clone());
+    let mut no_cache = OpenHandSolver::new_without_cache(100, rng.clone());
 
-//     for _ in 0..10 {
-//         let mut gs = Euchre::new_state();
-//         while gs.is_chance_node() {
-//             gs.legal_actions(&mut actions);
-//             let a = actions.choose(&mut rng).unwrap();
-//             gs.apply_action(*a);
-//         }
+    for _ in 0..10 {
+        let mut gs = Euchre::new_state();
+        while gs.is_chance_node() {
+            gs.legal_actions(&mut actions);
+            let a = actions.choose(&mut rng).unwrap();
+            gs.apply_action(*a);
+        }
 
-//         println!("{}", gs);
-//         let c = cached.evaluate(&gs);
-//         let no_c = no_cache.evaluate(&gs);
-//         assert_relative_eq!(c[0], no_c[0]);
-//         assert_relative_eq!(c[1], no_c[1]);
-//     }
-// }
+        println!("{}", gs);
+        let c = cached.evaluate(&gs);
+        let no_c = no_cache.evaluate(&gs);
+        assert_relative_eq!(c[0], no_c[0]);
+        assert_relative_eq!(c[1], no_c[1]);
+    }
+}
 
 #[test]
 fn test_open_hand_solver_euchre_samples() {

@@ -79,7 +79,7 @@ impl<G: GameState + ResampleFromInfoState + Send> OpenHandSolver<G> {
 
     fn get_worlds(&mut self, gs: &G) -> Vec<G> {
         // since we're generating new worlds, we reset the cache
-        self.reset();
+        // self.reset();
 
         let mut worlds = Vec::with_capacity(self.n_rollouts);
         for _ in 0..self.n_rollouts {

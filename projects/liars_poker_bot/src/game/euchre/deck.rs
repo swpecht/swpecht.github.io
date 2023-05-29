@@ -102,6 +102,18 @@ impl Deck {
                     }
                 }
             }
+        } else {
+            // we can only swap things around the jacks
+            for suit_locations in iso.locations.iter_mut() {
+                for i in 0..suit_locations.len() - 1 {
+                    if i != JACK_RANK
+                        && i + 1 != JACK_RANK
+                        && suit_locations[i] == CardLocation::None
+                    {
+                        suit_locations.swap(i, i + 1);
+                    }
+                }
+            }
         }
 
         fn get_count(x: &[CardLocation]) -> usize {
@@ -210,12 +222,11 @@ mod tests {
         let mut d1 = Deck::default();
 
         d1[Card::NS] = CardLocation::Player0;
-        d1[Card::TS] = CardLocation::Player0;
 
         let mut d2 = d1;
 
         assert_eq!(d1.isomorphic_rep(), d2.isomorphic_rep());
-        d2[Card::JS] = CardLocation::Player0;
+        d2[Card::TS] = CardLocation::Player0;
 
         assert!(d1.isomorphic_rep() != d2.isomorphic_rep());
         d2[Card::NS] = CardLocation::None;

@@ -795,12 +795,11 @@ impl GameState for EuchreGameState {
             self.key()[20..].hash(&mut hasher);
         } else {
             iso_deck.hash(&mut hasher);
-
             self.cur_player.hash(&mut hasher);
-            self.trick_winners.hash(&mut hasher);
+            // self.trick_winners.hash(&mut hasher);
             self.tricks_won.hash(&mut hasher);
-
-            self.trump_caller.hash(&mut hasher);
+            let calling_team = self.trump_caller % 2;
+            calling_team.hash(&mut hasher);
         }
 
         hasher.finish()
