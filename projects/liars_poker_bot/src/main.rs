@@ -99,8 +99,8 @@ fn main() {
         Mode::Analyze => run_analyze(args),
         Mode::Play => run_play(args),
         Mode::Scratch => run_scratch(args),
-        Mode::PassOnBowerOpenHand => calculate_convergence(args),
-        // Mode::PassOnBowerOpenHand => open_hand_score_pass_on_bower(args),
+        // Mode::PassOnBowerOpenHand => calculate_convergence(args),
+        Mode::PassOnBowerOpenHand => open_hand_score_pass_on_bower(args),
     }
 }
 

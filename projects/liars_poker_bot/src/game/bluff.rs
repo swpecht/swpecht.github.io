@@ -1,4 +1,3 @@
-use core::num;
 use std::{
     collections::hash_map::DefaultHasher,
     fmt::{Display, Write},

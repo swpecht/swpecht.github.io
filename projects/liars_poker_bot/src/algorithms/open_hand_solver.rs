@@ -275,14 +275,13 @@ fn alpha_beta<G: GameState>(
 
 #[cfg(test)]
 mod tests {
-    use log::debug;
+
     use rand::SeedableRng;
 
     use crate::{
         algorithms::{ismcts::Evaluator, open_hand_solver::OpenHandSolver},
         game::{
             bluff::{Bluff, BluffActions, Dice},
-            euchre::EuchreGameState,
             kuhn_poker::{KPAction, KuhnPoker},
             GameState,
         },

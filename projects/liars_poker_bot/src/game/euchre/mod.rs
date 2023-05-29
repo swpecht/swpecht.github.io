@@ -8,7 +8,6 @@ use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    actions,
     algorithms::ismcts::ResampleFromInfoState,
     game::{Action, Game, GameState, Player},
     istate::IStateKey,
@@ -795,8 +794,9 @@ impl GameState for EuchreGameState {
             self.key()[20..].hash(&mut hasher);
         } else {
             iso_deck.hash(&mut hasher);
-            self.cur_player.hash(&mut hasher);
-            // self.trick_winners.hash(&mut hasher);
+            let cur_team = self.cur_player % 2;
+            cur_team.hash(&mut hasher);
+
             self.tricks_won.hash(&mut hasher);
             let calling_team = self.trump_caller % 2;
             calling_team.hash(&mut hasher);
