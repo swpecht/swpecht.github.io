@@ -21,9 +21,9 @@ pub fn open_hand_score_pass_on_bower(_args: Args) {
 
     info!("iterating through pass on the bower nodes");
     for (i, mut gs) in PassOnBowerIterator::new().enumerate() {
-        if i % 500 == 0 {
-            evaluator.reset() // to avoid memory pressure
-        }
+        // if i % 500 == 0 {
+        //     evaluator.reset() // to avoid memory pressure
+        // }
         gs.apply_action(EAction::Pass.into());
         let pass_value = evaluator.evaluate_player(&gs, 3);
         gs.undo();

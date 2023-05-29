@@ -782,25 +782,24 @@ impl GameState for EuchreGameState {
     }
 
     fn transposition_table_hash(&self) -> Option<crate::istate::IsomorphicHash> {
+        if self.phase != EPhase::Play {
+            return None;
+        }
+
+        if !self.is_trick_over() && self.cards_played > 0 {
+            // only cache values at the start of the trick
+            return None;
+        }
+
         let mut hasher = DefaultHasher::new();
         let iso_deck = self.deck.isomorphic_rep();
+        iso_deck.hash(&mut hasher);
+        let cur_team = self.cur_player % 2;
+        cur_team.hash(&mut hasher);
 
-        if self.phase == EPhase::DealHands || self.phase == EPhase::DealFaceUp {
-            panic!("don't support caching with chance nodes")
-            // iso_deck.hash(&mut hasher);
-        } else if self.phase != EPhase::Play {
-            // capture the deal state and the trump bidding so far
-            iso_deck.hash(&mut hasher);
-            self.key()[20..].hash(&mut hasher);
-        } else {
-            iso_deck.hash(&mut hasher);
-            let cur_team = self.cur_player % 2;
-            cur_team.hash(&mut hasher);
-
-            self.tricks_won.hash(&mut hasher);
-            let calling_team = self.trump_caller % 2;
-            calling_team.hash(&mut hasher);
-        }
+        self.tricks_won.hash(&mut hasher);
+        let calling_team = self.trump_caller % 2;
+        calling_team.hash(&mut hasher);
 
         Some(hasher.finish())
     }
