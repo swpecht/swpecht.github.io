@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use liars_poker_bot::{
     actions,
     algorithms::open_hand_solver::OpenHandSolver,
@@ -10,7 +11,7 @@ use liars_poker_bot::{
     },
 };
 use log::info;
-use rand::{rngs::StdRng, SeedableRng};
+use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
 use crate::Args;
 
@@ -30,6 +31,39 @@ pub fn open_hand_score_pass_on_bower(_args: Args) {
             "policy evaluation\t{}\t{}\t{}",
             gs, pass_value, pickup_value
         )
+    }
+}
+
+pub fn calculate_convergence(_args: Args) {
+    info!("calculating evaluator converge");
+
+    let mut rng: StdRng = SeedableRng::seed_from_u64(42);
+    let rollouts: Vec<usize> = vec![1, 10, 100, 1000, 10000];
+    // to re-use cache between runs
+    let mut evaluators = rollouts
+        .iter()
+        .map(|x| OpenHandSolver::new(*x, rng.clone()))
+        .collect_vec();
+    info!("rollouts: {:?}", rollouts);
+
+    let generator = PassOnBowerIterator::new();
+    let mut worlds = generator.collect_vec();
+    worlds.shuffle(&mut rng);
+
+    for gs in worlds.iter().take(100) {
+        let mut gs = gs.clone();
+        gs.apply_action(EAction::Pickup.into());
+        let mut results = Vec::new();
+        for (e, r) in evaluators.iter_mut().zip(rollouts.iter()) {
+            e.reset(); // to avoid memory pressure
+            let v = e.evaluate_player(&gs, 3);
+            results.push(v);
+        }
+
+        info!(
+            "{}\t{}\t{}\t{}\t{}\t{}",
+            gs, results[0], results[1], results[2], results[3], results[4]
+        );
     }
 }
 

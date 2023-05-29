@@ -32,7 +32,7 @@ use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{thread_rng, SeedableRng};
 use scripts::estimate_euchre_game_tree::estimate_euchre_game_tree;
-use scripts::pass_on_bower::open_hand_score_pass_on_bower;
+use scripts::pass_on_bower::{calculate_convergence, open_hand_score_pass_on_bower};
 
 pub mod scripts;
 
@@ -99,7 +99,8 @@ fn main() {
         Mode::Analyze => run_analyze(args),
         Mode::Play => run_play(args),
         Mode::Scratch => run_scratch(args),
-        Mode::PassOnBowerOpenHand => open_hand_score_pass_on_bower(args),
+        Mode::PassOnBowerOpenHand => calculate_convergence(args),
+        // Mode::PassOnBowerOpenHand => open_hand_score_pass_on_bower(args),
     }
 }
 
@@ -137,28 +138,6 @@ fn run_scratch(_args: Args) {
 
         info!("p0, p1 value: {}, {}", gs.evaluate(0), gs.evaluate(1));
     }
-
-    // info!("calculating evaluator converge");
-    // for i in 0..50 {
-    //     let mut gs = Euchre::new_state();
-    //     while gs.is_chance_node() {
-    //         let a = *actions!(gs).choose(&mut rng).unwrap();
-    //         gs.apply_action(a)
-    //     }
-
-    //     for rollouts in [1, 10, 20, 100] {
-    //         evaluator.set_rollout(rollouts);
-    //         let policy = evaluator.action_probabilities(&gs);
-    //         info!(
-    //             "{}\t{}\t{}\t{}\t{}",
-    //             i,
-    //             rollouts,
-    //             gs,
-    //             policy[EAction::Pass.into()],
-    //             policy[EAction::Pickup.into()]
-    //         );
-    //     }
-    // }
 }
 
 fn run_analyze(args: Args) {
