@@ -88,20 +88,20 @@ impl Deck {
 
         if self.trump.is_some() {
             // todo: be smater to downshift some things if there is no trump, really just can't move the jacks and above
-            // for suit_locations in iso.locations.iter_mut() {
-            //     let mut i = 0;
-            //     let mut last_card = suit_locations.len();
-            //     // We downshift cards that are in the None location. For example,a 10 is as valuable in future hands as a 9
-            //     // if the 9 has been played already
-            //     while i < last_card {
-            //         if suit_locations[i] == CardLocation::None {
-            //             suit_locations[i..].rotate_left(1);
-            //             last_card -= 1;
-            //         } else {
-            //             i += 1;
-            //         }
-            //     }
-            // }
+            for suit_locations in iso.locations.iter_mut() {
+                let mut i = 0;
+                let mut last_card = suit_locations.len();
+                // We downshift cards that are in the None location. For example,a 10 is as valuable in future hands as a 9
+                // if the 9 has been played already
+                while i < last_card {
+                    if suit_locations[i] == CardLocation::None {
+                        suit_locations[i..].rotate_left(1);
+                        last_card -= 1;
+                    } else {
+                        i += 1;
+                    }
+                }
+            }
         }
 
         fn get_count(x: &[CardLocation]) -> usize {

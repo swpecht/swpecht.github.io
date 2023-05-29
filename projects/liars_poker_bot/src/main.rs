@@ -12,15 +12,17 @@ use liars_poker_bot::agents::{Agent, RandomAgent};
 use liars_poker_bot::algorithms::alphamu::AlphaMuBot;
 use liars_poker_bot::algorithms::exploitability::{self};
 use liars_poker_bot::algorithms::ismcts::{
-    ISMCTBotConfig, ISMCTSBot, RandomRolloutEvaluator, ResampleFromInfoState,
+    Evaluator, ISMCTBotConfig, ISMCTSBot, RandomRolloutEvaluator, ResampleFromInfoState,
 };
 
+use liars_poker_bot::algorithms::open_hand_solver::{alpha_beta_search, OpenHandSolver};
 use liars_poker_bot::cfragent::cfrnode::CFRNode;
 use liars_poker_bot::cfragent::{CFRAgent, CFRAlgorithm};
 use liars_poker_bot::database::memory_node_store::MemoryNodeStore;
 use liars_poker_bot::database::Storage;
 use liars_poker_bot::game::bluff::{Bluff, BluffGameState};
 
+use liars_poker_bot::game::euchre::actions::EAction;
 use liars_poker_bot::game::euchre::{Euchre, EuchreGameState};
 use liars_poker_bot::game::kuhn_poker::{KPGameState, KuhnPoker};
 use liars_poker_bot::game::{run_game, Action, Game, GameState};
@@ -106,36 +108,35 @@ fn run_scratch(_args: Args) {
     println!("kuhn poker size: {}", mem::size_of::<KPGameState>());
     println!("euchre size: {}", mem::size_of::<EuchreGameState>());
 
-    let mut rng: StdRng = SeedableRng::seed_from_u64(42);
-    // let mut evaluator = OpenHandSolver::new(100, rng.clone());
+    let mut game = "TCQCQHAHTD|9HKHJDKDAD|AC9SQSTHJH|9CJCKCJSQD|AS|PPPP|H".to_string();
+    let gs1 = EuchreGameState::from(game.as_str());
+    game = game.replace("AS", "KS");
+    let gs2 = EuchreGameState::from(game.as_str());
 
-    // for _ in 0..1 {
-    //     let mut gs = Euchre::new_state();
-    //     while gs.is_chance_node() {
-    //         let a = *actions!(gs).choose(&mut rng).unwrap();
-    //         gs.apply_action(a)
-    //     }
+    for mut gs in vec![gs1, gs2] {
+        let mut evaluator =
+            OpenHandSolver::new_without_cache(1000, SeedableRng::seed_from_u64(109));
 
-    //     info!(
-    //         "Evaluator for {}: {:?}",
-    //         gs.istate_string(gs.cur_player()),
-    //         evaluator.evaluate(&gs)
-    //     );
-    //     while !gs.is_terminal() {
-    //         let cur_player = gs.cur_player();
-    //         let (v, a) = alpha_beta_search(gs.clone(), cur_player);
-    //         info!(
-    //             "{}: {}: value: {}, action: {}",
-    //             gs,
-    //             cur_player,
-    //             v,
-    //             EAction::from(a.unwrap())
-    //         );
-    //         gs.apply_action(a.unwrap());
-    //     }
+        info!(
+            "Evaluator for {}: {:?}",
+            gs.istate_string(gs.cur_player()),
+            evaluator.evaluate(&gs)
+        );
+        while !gs.is_terminal() {
+            let cur_player = gs.cur_player();
+            let (v, a) = alpha_beta_search(gs.clone(), cur_player);
+            info!(
+                "{}: {}: value: {}, action: {}",
+                gs,
+                cur_player,
+                v,
+                EAction::from(a.unwrap())
+            );
+            gs.apply_action(a.unwrap());
+        }
 
-    //     info!("p0, p1 value: {}, {}", gs.evaluate(0), gs.evaluate(1));
-    // }
+        info!("p0, p1 value: {}, {}", gs.evaluate(0), gs.evaluate(1));
+    }
 
     // info!("calculating evaluator converge");
     // for i in 0..50 {

@@ -153,6 +153,12 @@ impl EuchreGameState {
             _ => panic!("invalid action"),
         };
 
+        let face_up = self.face_up();
+        if let Some(trump) = self.trump {
+            // can't call the face up card as trump
+            assert!(face_up.suit() != trump);
+        }
+
         self.deck = self.deck.with_new_trump(self.trump);
 
         if a == EAction::Pass {
@@ -918,7 +924,7 @@ mod tests {
         assert_eq!(s.phase(), EPhase::ChooseTrump);
         assert_eq!(s.cur_player, 0);
         s.apply_action(EAction::Pass.into());
-        s.apply_action(EAction::Diamonds.into());
+        s.apply_action(EAction::Clubs.into());
         assert_eq!(s.cur_player, 0);
 
         assert_eq!(s.phase(), EPhase::Play);
