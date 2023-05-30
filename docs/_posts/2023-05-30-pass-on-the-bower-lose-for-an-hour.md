@@ -1,6 +1,7 @@
 ---
 layout: post
 title:  "Euchre wisdom: pass on the bower, lose for an hour?"
+date:   2023-05-30 02:00:43 +0000
 categories: project-log
 ---
 
