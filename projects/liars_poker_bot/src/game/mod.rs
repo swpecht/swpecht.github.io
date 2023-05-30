@@ -1,7 +1,6 @@
 use std::{
-    collections::hash_map::DefaultHasher,
     fmt::{Debug, Display},
-    hash::{Hash, Hasher},
+    hash::Hash,
 };
 
 pub mod bluff;

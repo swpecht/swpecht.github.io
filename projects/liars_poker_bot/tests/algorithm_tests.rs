@@ -10,7 +10,7 @@ use liars_poker_bot::{
     cfragent::{CFRAgent, CFRAlgorithm},
     database::memory_node_store::MemoryNodeStore,
     game::{
-        bluff::{Bluff, BluffActions},
+        bluff::Bluff,
         euchre::{Euchre, EuchreGameState},
         kuhn_poker::KuhnPoker,
         GameState,

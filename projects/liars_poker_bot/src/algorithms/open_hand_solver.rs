@@ -1,7 +1,6 @@
 use std::{marker::PhantomData, sync::Arc};
 
 use dashmap::DashMap;
-use log::debug;
 use rand::rngs::StdRng;
 use rayon::prelude::*;
 
@@ -71,11 +70,6 @@ impl<G: GameState + ResampleFromInfoState + Send> OpenHandSolver<G> {
             .map(|w| alpha_beta_search_cached(w, maximizing_player, self.cache.clone()).0)
             .sum();
 
-        debug!(
-            "transposition table size: {}",
-            self.cache.transposition_table.len()
-        );
-
         sum / self.n_rollouts as f64
     }
 
@@ -108,11 +102,6 @@ impl<G: GameState + ResampleFromInfoState + Send> Evaluator<G> for OpenHandSolve
         for i in 2..result.len() {
             result[i] = result[i % 2];
         }
-
-        debug!(
-            "transposition table size: {}",
-            self.cache.transposition_table.len()
-        );
 
         result
     }
