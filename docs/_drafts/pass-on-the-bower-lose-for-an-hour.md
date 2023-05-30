@@ -1,81 +1,109 @@
 ---
 layout: post
-title:  "Evaluating Euchre sayings -- pass on the bower, lose for an hour?"
+title:  "Euchre wisdom: pass on the bower, lose for an hour?"
 categories: project-log
 ---
 
+# Problem
+A common saying in [Euchre](https://en.wikipedia.org/wiki/Euchre) is "pass on the bower, lose for an hour". It represents the idea that the dealer should always choose to pickup a jack if they have the opportunity to -- it would be the highest card in the game. The downside, is if they don't win the majority of the tricks, they'll be "euchred" and the other team gets 2 points.
 
-## Todos:
-[ ] Speed up open hand solver, takeing ~30hrs to evaluate all moves -- now at a bit over an hour
-  [ ] Add test to verify transposition table implementation
-  [ ] Make deck indifferent to whose move it is -- have player0 always be whoever is going to go next
-  [*] Switch to DashMap
-
-[ ] Evaluate what was found from previous run, for example, why 9CJCQCKCAC|9STSKSAS9H|THKHAHTDJD|TCQSJHQH9D|JS| considered a take?
-  * problem may be caused by caching incorrect values for open hand solver -- implement the verification code before continuing
-  [*] Verify working for Kunh Poker
-  [*] Verify working with entire state hashed as part of isomorphic key
-  [*] Verify each element of making the deck isomorphic -- just return the deck doesn't make the results match
-  [ ] See what is failing with deck isomorphic call
-    * Re-ordering suits works as expected
-    * Down shifting cards seems to fail
-    * Re-factor the isomorphism call to be part of the euchre game, and not tracked in the deck? Or at least remove the trump tracking
-    * See notes in failing test -- downshifting a face up card causes the error, but only when the card doesn't end up in play
-  [ ] change pre-play hash calls -- to be more isomorphic
-  [ ] Re-organize deck to take cur_player and trump as parameters to isomorphic call
-
-## Content
-There are 10^15 possible deals for Euchre. 10^13 if set the face up card to be one of the jacks.
-
-https://docs.google.com/spreadsheets/d/1naRU_pnwoS7RmBhVK0ruyavqhnlRiQSeN7LTpQbdWXM/edit#gid=0 -- calculate an isomorphism
+In this post, I explore if this is true for euchre[0] using an open hand solver. All of the code is available [on Github](https://github.com/swpecht/swpecht.github.io/tree/master/projects/liars_poker_bot).
 
 
-https://docs.google.com/spreadsheets/d/1naRU_pnwoS7RmBhVK0ruyavqhnlRiQSeN7LTpQbdWXM/edit#gid=0
+# Approach
+I use an open hand solver -- a Perfect Information Monte Carlo sampling (PIMC) bot. Given a deal of Euchre it can see, it generates possible cards for the other players (different worlds) and solves them using Alpha-Beta search. It effectively assumes that all players can see each others cards and play perfectly.
+
+**Example of what the bot can see from a deal of Euchre**
+```
+Game:     QHTSADTC9S|9D|PPPT
+Meaning: |--- D ----|F | P/T
+
+* D: Dealers hand, e.g. QH = Queen of Hearts
+* F: Face up card
+* P/T: Whether each player in turn Passed or told the dealer to Take the card
+```
+
+Since it's not possible to reasonably calculate this for all possible deals for a given hand, we do this for 100 different random worlds and take the average score across all worlds to evaluate a deal state. For more information on why 100 worlds, see [appendix 1](#appendix-1).
+
+For example, our solver will output the following: 
+```
+# Game                 Valuation at 10k iterations
+1 JCTSASAHTD|JS|PPPT|  1.93
+2 9HTH9DTDQD|JS|PPPT|  -0.96
+```
+
+For 1, the dealer's team is expected to get almost 2 points (1.93) from this game state. They are very likely to win and have a good chance of taking all 5 tricks. The dealer has a very strong hand with the 3 highest cards in the game (JS, JC, AS) and an offsuit ace (AH). Conversely in 2,  the dealer is likely to lose the game. They'll have the highest card, but also no other trump and low offsuit cards.
 
 
-Do an initial post with just the open hand evaluator -- see when it recommends doing something else
+# Findings: always pickup the jack?
+There are 33k possible deals ($\binom{23}{5}$) for the dealer if we only look at times when the Jack of Spades is face up. We can evaluate all of these possible deals to determine when it makes sense to pass. While we're only looking at deals where JS is face up, these results translate to the mirrored suits.
 
-* Deal myself random hands with Jack of spade as the face up card
-* Run the evaluator on each
+After running all 33k possible deals the dealer could receive through the open hand solver, I compared the expected value of picking up the jack to the expected value of passing it. A positive value means picking up the card is better than passing it. The distribution values is below:
 
-
-Problems with open hand solver:
-* If p0 has a very strong hand to take the face up, but partner has an even stronger hand for a different suit. Won't call take, will let it come around and call their suit -- since know every hand
-  * Example: `QDJDKHQCKD|TDJH9HACJC|KSJSKCQSAS|QHTSADTC9S|9D|PPPP|S|KH9HKCQH|JS9SQCJC|JDTDQSAD|QDACKSTC|KDJHAS`: 3: value: 0, action: TS
-
-
-CFR approach:
-* Likely not enough compute for iterations, 10^14 30s iterations to see each possible game state once
-* Challenge calculating exploitability -- high memory requirements for tabular exploitability calcs
-
-Search approach:
-* Create an OpenHand solver to use for rollouts in search algorithms
-* Fix AlphaMu to work for changing valid world states
-* Need to figure out how to handle re-sampling of euchre states since there is a discard action that is hidden
-  * Maybe do an analysis of how random discards would be a negative here?
-
-## How many iterations are needed for the open hand solver?
-
-No difference in answer from 20 iterations and 100 iterations from open and solver -- use 20 iterations
-
-Computation estimate:
-* Number of hands = 23 choose 5 = 34k hands
-* Estimated number of solver worlds for convergence -- 20 iterations (0.8s)
-
-see txt file for convergence data
-
-https://docs.google.com/spreadsheets/d/1jSnrLpAOYBPiV-qoYRqIv6wxFkVrDlFsdcSSF2k41wk/edit
-4 out of 50 changed when looking at 20 iterations vs 100
+**Distribution of hands by expected value of (Pickup - Pass)**
+```
+<0      |1
+0-0.5   |12
+0.5-1.5 |███3091 (9.2%)
+1.5-2.5 |███████████11733 (35%)
+2.5-3.5 |█████████████████17633 (52%)
+3.5-4.0 |█1178 (3.5%)
+4.0+    |1
+```
 
 
-About 8 hrs of computation at the current rates
+There is only a single deal where it is better to pass on the jack rather than pick it up:
+```
+9CTCQCKCAC|JS|PPP
+```
 
-## Find games to evaluate -- naive approach
+This is one of the worst possible hands to get in this situation. It's single suited with a guarantee of no trump unless the dealer picks up the card. And it's extremely unlikely for another player to call clubs as trump since we have all of the trump cards.
 
-Naive approach -- evaluate all games -- from that state, see when should take it
+But this analysis is wrong.
 
 
-## Solver playing solver, what can we estimate about oponents hands? What game states would get us to the decisions we currently have?
-More complicated -- look at games where the open hand solver would get us into this state -- what's different?
+# Why it's wrong
+The open hand solver doesn't represent actual play. We can see this if we look at the expected value distributions for Pickup states (time when the dealer has chosen to pickup the Jack) and Pass states.
 
-TBD if this is world doing -- maybe just save the question for more complicated agents
+**Distribution of hands by expected value and action**
+```
+     Pickup                    Pass
+<-1  |103                     |█████████████████████████████████33k
+-1-0 |██████6k (18%)          |197
+0-1  |██████████████14k (43%) |0
+1-2  |█████████████13k (39%)  |0
+2    |91                      |0
+```
+
+Whenever we pass, we have an expected value of <-1 -- indicating the other team is often taking all 5 tricks and scoring 2 points against us.
+
+This is the strategy fusion problem of Perfect Information Monte Carlo sampling (PIMC) (arXiv:1911.07960)[https://arxiv.org/abs/1911.07960]. The open hand solver isn't constrained to have a consistent strategy between each world it evaluates. It plays each hand as if had perfect information. And the ability to see all cards and arbitrarily choose trump is too strong of an advantage. With this advantage, the player after the dealer is able to choose a trump suit to almost always get all 5 tricks.
+
+The next step would be to find a way to evaluate euchre hands that doesn't suffer from the strategy fusion problem.
+
+## Appendix
+
+# Appendix 1
+
+It's not possible to run the open hand solver on all possible 618M worlds for a given deal.
+$$
+\binom{18}{5} * \binom{13}{5} * \binom{8}{5} = 618M
+$$
+
+Instead, I estimated convergence of the open hand solver by scoring 500 different deals for a variety of rollouts to see when we get close enough.
+
+**Difference in game value for dealer by number of open hand solver iterations (n=500)**
+```
+            Difference vs 10,000 iterations
+Iterations            Median          Max 
+1           -0.17 ██████|             |██████ 3.11 		
+10                      |█0.014       |██▌1.43
+100                     |█0.017       |▌0.40
+1,000                   |0.0068       |▌0.15
+10,000                  |0            |0
+```
+
+The maximum difference we see between 100 iterations and 10k is 0.13. If there were any gamestates where the difference in value between Passing and Picking up is lower than this value, I would have re-evaluated them with a higher number of iterations.
+
+# Footnotes
+[0] For simplicity, I've ignored "going alone".

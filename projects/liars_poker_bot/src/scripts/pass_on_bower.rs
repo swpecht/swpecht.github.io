@@ -21,9 +21,6 @@ pub fn open_hand_score_pass_on_bower(_args: Args) {
 
     info!("iterating through pass on the bower nodes");
     for (i, mut gs) in PassOnBowerIterator::new().enumerate() {
-        // if i % 500 == 0 {
-        //     evaluator.reset() // to avoid memory pressure
-        // }
         gs.apply_action(EAction::Pass.into());
         let pass_value = evaluator.evaluate_player(&gs, 3);
         gs.undo();
@@ -88,12 +85,11 @@ pub fn spot_check_pass_on_bower(_args: Args) {
     }
 }
 
-pub fn calculate_convergence(_args: Args) {
+pub fn calculate_open_hand_solver_convergence(_args: Args) {
     info!("calculating evaluator converge");
 
     let mut rng: StdRng = SeedableRng::seed_from_u64(42);
     let rollouts: Vec<usize> = vec![1, 10, 100, 1000, 10000];
-    // to re-use cache between runs
     let mut evaluators = rollouts
         .iter()
         .map(|x| OpenHandSolver::new(*x, rng.clone()))
@@ -104,7 +100,7 @@ pub fn calculate_convergence(_args: Args) {
     let mut worlds = generator.collect_vec();
     worlds.shuffle(&mut rng);
 
-    for gs in worlds.iter().take(100) {
+    for gs in worlds.iter().take(1000) {
         let mut gs = gs.clone();
         gs.apply_action(EAction::Pickup.into());
         let mut results = Vec::new();
