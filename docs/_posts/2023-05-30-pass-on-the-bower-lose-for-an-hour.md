@@ -85,7 +85,7 @@ Pass
 
 Whenever we pass, we have an expected value of <-1 -- indicating the other team is often taking all 5 tricks and scoring 2 points against us.
 
-This is the strategy fusion problem of Perfect Information Monte Carlo sampling (PIMC) [arXiv:1911.07960](https://arxiv.org/abs/1911.07960). The open hand solver isn't constrained to have a consistent strategy between each world it evaluates. It plays each hand as if had perfect information. And the ability to see all cards and arbitrarily choose trump is too strong of an advantage. With this advantage, the player after the dealer is able to choose a trump suit to almost always get all 5 tricks.
+This is the strategy fusion problem of Perfect Information Monte Carlo sampling (PIMC) ([arXiv:1911.07960](https://arxiv.org/abs/1911.07960)). The open hand solver isn't constrained to have a consistent strategy between each world it evaluates. It plays each hand as if had perfect information. And the ability to see all cards and arbitrarily choose trump is too strong of an advantage. With this advantage, the player after the dealer is able to choose a trump suit to almost always get all 5 tricks.
 
 The next step would be to find a way to evaluate euchre hands that doesn't suffer from the strategy fusion problem.
 
@@ -102,16 +102,15 @@ Instead, I estimated convergence of the open hand solver by scoring 500 differen
 
 **Difference in game value for dealer by number of open hand solver iterations (n=500)**
 ```
-            Difference vs 10,000 iterations
-Iterations            Median          Max 
-1           -0.17 ██████|             |██████ 3.11 		
-10                       |█0.014       |██▌1.43
-100                      |█0.017       |▌0.40
-1,000                    |0.0068       |▌0.15
-10,000                   |0            |0
+Iterations    Max difference vs 10k iterations 
+1             |██████ 3.11 		
+10            |██▌1.43
+100           |▌0.40
+1,000         |▌0.15
+10,000        |0
 ```
 
-The maximum difference we see between 100 iterations and 10k is 0.13. If there were any gamestates where the difference in value between Passing and Picking up is lower than this value, I would have re-evaluated them with a higher number of iterations.
+The maximum difference between 100 iterations and 10k is 0.13. If there were any gamestates where the difference in value between Passing and Picking up is lower than this value, I would have re-evaluated them with a higher number of iterations.
 
 # Footnotes
 [0] For simplicity, I've ignored "going alone".
