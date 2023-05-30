@@ -16,12 +16,14 @@ use crate::{
 use self::{
     actions::{Card, EAction, Suit},
     deck::{CardLocation, Deck},
+    ismorphic::iso_deck,
 };
 
 pub(super) const CARDS_PER_HAND: usize = 5;
 
 pub mod actions;
 mod deck;
+mod ismorphic;
 mod parser;
 
 pub struct Euchre {}
@@ -134,7 +136,6 @@ impl EuchreGameState {
                 self.cur_player = 3; // dealers turn
                 self.deck[face_up] = CardLocation::Player3;
 
-                self.deck = self.deck.with_new_trump(self.trump);
                 self.phase = EPhase::Discard;
             }
             _ => panic!("invalid action"),
@@ -157,8 +158,6 @@ impl EuchreGameState {
             // can't call the face up card as trump
             assert!(face_up.suit() != trump);
         }
-
-        self.deck = self.deck.with_new_trump(self.trump);
 
         if a == EAction::Pass {
             self.cur_player += 1;
@@ -770,7 +769,6 @@ impl GameState for EuchreGameState {
                 // return to defaults
                 self.trump_caller = 0;
                 self.trump = None;
-                self.deck = self.deck.with_new_trump(None);
             }
             EAction::Pickup => {
                 self.phase = EPhase::Pickup;
@@ -779,7 +777,6 @@ impl GameState for EuchreGameState {
                 self.trump = None;
                 let face_up = self.face_up();
                 self.deck[face_up] = CardLocation::FaceUp;
-                self.deck = self.deck.with_new_trump(None);
             }
             EAction::DealPlayer { c } => {
                 self.deck[c] = CardLocation::None;
@@ -824,7 +821,7 @@ impl GameState for EuchreGameState {
         }
 
         let mut hasher = DefaultHasher::new();
-        let iso_deck = self.deck.isomorphic_rep();
+        let iso_deck = iso_deck(self.deck, self.trump);
         iso_deck.hash(&mut hasher);
         let cur_team = self.cur_player % 2;
         cur_team.hash(&mut hasher);

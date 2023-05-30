@@ -61,124 +61,20 @@ impl From<Player> for CardLocation {
 /// Track location of all euchre cards
 #[derive(Default, Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize, Hash)]
 pub(super) struct Deck {
-    locations: [[CardLocation; 7]; 4],
-    trump: Option<Suit>,
-}
-
-impl Deck {
-    /// Return a deck with the new trump
-    pub fn with_new_trump(self, trump: Option<Suit>) -> Self {
-        let mut new = Deck {
-            trump,
-            ..Default::default()
-        };
-        for &c in CARDS {
-            new[c] = self[c];
-        }
-
-        new
-    }
-
-    /// Returns an isomorphic representation of the deck
-    pub fn isomorphic_rep(&self) -> Self {
-        let mut iso = *self;
-
-        // todo: always put the trump suit in slot 0. Then sort all other suits by how many cards they have
-        // this could be sped up using integers and popcount instruction to count the number of
-
-        if self.trump.is_some() {
-            // todo: be smater to downshift some things if there is no trump, really just can't move the jacks and above
-            for suit_locations in iso.locations.iter_mut() {
-                let mut i = 0;
-                let mut last_card = suit_locations.len();
-                // We downshift cards that are in the None location. For example,a 10 is as valuable in future hands as a 9
-                // if the 9 has been played already
-                while i < last_card {
-                    if suit_locations[i] == CardLocation::None {
-                        suit_locations[i..].rotate_left(1);
-                        last_card -= 1;
-                    } else {
-                        i += 1;
-                    }
-                }
-            }
-        } else {
-            // we can only swap things around the jacks
-            for suit_locations in iso.locations.iter_mut() {
-                for i in 0..suit_locations.len() - 1 {
-                    if i != JACK_RANK
-                        && i + 1 != JACK_RANK
-                        && suit_locations[i] == CardLocation::None
-                    {
-                        suit_locations.swap(i, i + 1);
-                    }
-                }
-            }
-        }
-
-        fn get_count(x: &[CardLocation]) -> usize {
-            x.iter().filter(|x| **x != CardLocation::None).count()
-        }
-
-        if let Some(trump) = iso.trump {
-            // put trump in the first spot
-            iso.locations.swap(0, trump as usize);
-            // sort everything else
-            iso.locations[1..].sort_by_key(|a| get_count(a));
-            // and set trump the the 0 item
-            iso.trump = Some(Suit::Clubs);
-        } else {
-            // sort everything
-            iso.locations.sort_by_key(|a| get_count(a));
-        }
-
-        iso
-    }
-
-    fn get_index(&self, c: Card) -> (usize, usize) {
-        let rank = c.rank() as usize;
-        let suit = c.suit();
-
-        if self.trump.is_none() {
-            return (suit as usize, rank);
-        }
-
-        let trump = self.trump.unwrap();
-        let is_trump = suit == trump;
-        let is_trump_color = suit.other_color() == self.trump.unwrap() || is_trump;
-
-        match (is_trump, is_trump_color, rank) {
-            (true, true, JACK_RANK) => (suit as usize, 6),
-            (false, true, JACK_RANK) => (trump as usize, 5),
-            (_, true, x) if x > JACK_RANK => (suit as usize, rank - 1),
-            (_, true, x) if x < JACK_RANK => (suit as usize, rank),
-            (false, false, _) => (suit as usize, rank),
-            _ => panic!(
-                "invalid card: {}, is_trump: {}, is_trump_color: {}, rank: {}",
-                c, is_trump, is_trump_color, rank
-            ),
-        }
-    }
-
-    /// Returns the player with the nth highest card
-    pub fn highest_card(&self, n: usize) -> Option<Player> {
-        todo!()
-    }
+    locations: [[CardLocation; 6]; 4],
 }
 
 impl Index<Card> for Deck {
     type Output = CardLocation;
 
     fn index(&self, index: Card) -> &Self::Output {
-        let index = self.get_index(index);
-        &self.locations[index.0][index.1]
+        &self.locations[index.suit() as usize][index.rank() as usize]
     }
 }
 
 impl IndexMut<Card> for Deck {
     fn index_mut(&mut self, index: Card) -> &mut Self::Output {
-        let index = self.get_index(index);
-        &mut self.locations[index.0][index.1]
+        &mut self.locations[index.suit() as usize][index.rank() as usize]
     }
 }
 
@@ -212,80 +108,5 @@ impl<'a> Iterator for DeckIterator<'a> {
         let loc = self.deck[c];
         self.index += 1;
         Some((c, loc))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::game::euchre::{
-        actions::{Card, Suit},
-        deck::{CardLocation, Deck},
-    };
-
-    #[test]
-    fn test_deck_iso_no_trump() {
-        let mut d1 = Deck::default();
-
-        d1[Card::NS] = CardLocation::Player0;
-
-        let mut d2 = d1;
-
-        assert_eq!(d1.isomorphic_rep(), d2.isomorphic_rep());
-        d2[Card::TS] = CardLocation::Player0;
-
-        assert!(d1.isomorphic_rep() != d2.isomorphic_rep());
-        d2[Card::NS] = CardLocation::None;
-
-        assert_eq!(d1.isomorphic_rep(), d2.isomorphic_rep());
-    }
-
-    #[test]
-    fn test_deck_iso_across_suit() {
-        let mut d1 = Deck::default();
-        d1[Card::NS] = CardLocation::Player0;
-        d1[Card::TS] = CardLocation::Player0;
-        d1[Card::JC] = CardLocation::Player1;
-
-        let mut d2 = Deck::default();
-        d2[Card::NH] = CardLocation::Player0;
-        d2[Card::TH] = CardLocation::Player0;
-        d2[Card::JD] = CardLocation::Player1;
-
-        // both have 2 lowest cards across suit
-        assert_eq!(d1.isomorphic_rep(), d2.isomorphic_rep());
-
-        d1 = d1.with_new_trump(Some(Suit::Spades));
-        assert!(d1.isomorphic_rep() != d2.isomorphic_rep());
-
-        d2 = d2.with_new_trump(Some(Suit::Hearts));
-        assert_eq!(d1.isomorphic_rep(), d2.isomorphic_rep());
-    }
-
-    #[test]
-    fn test_deck_iso_trump() {
-        let mut d1 = Deck::default();
-
-        d1[Card::NS] = CardLocation::Player0;
-        d1[Card::TS] = CardLocation::Player0;
-        d1 = d1.with_new_trump(Some(Suit::Spades));
-
-        let mut d2 = d1;
-
-        assert_eq!(d1.isomorphic_rep(), d2.isomorphic_rep());
-        d2[Card::JS] = CardLocation::Player0;
-
-        assert!(d1.isomorphic_rep() != d2.isomorphic_rep());
-        d2[Card::NS] = CardLocation::None;
-        // player 0  still has the 2 highest spades
-        assert_eq!(d1.isomorphic_rep(), d2.isomorphic_rep());
-        d2[Card::JC] = CardLocation::Player0;
-        d2[Card::TS] = CardLocation::None;
-        // player 0  still has the 2 highest spades, JC and JS
-        assert_eq!(d1.isomorphic_rep(), d2.isomorphic_rep());
-
-        // this persists even if we deal some other cards
-        d1[Card::TH] = CardLocation::Player1;
-        d2[Card::TH] = CardLocation::Player1;
-        assert_eq!(d1.isomorphic_rep(), d2.isomorphic_rep());
     }
 }
