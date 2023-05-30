@@ -3,7 +3,10 @@ use std::collections::HashMap;
 use itertools::Itertools;
 use liars_poker_bot::{
     agents::{Agent, PolicyAgent, RandomAgent},
-    algorithms::{ismcts::ResampleFromInfoState, open_hand_solver::OpenHandSolver},
+    algorithms::{
+        ismcts::{RandomRolloutEvaluator, ResampleFromInfoState},
+        open_hand_solver::OpenHandSolver,
+    },
     game::{euchre::Euchre, kuhn_poker::KuhnPoker, run_game, Game, GameState},
 };
 use rand::{rngs::StdRng, thread_rng, SeedableRng};
@@ -25,8 +28,11 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
     let ra: &mut dyn Agent<G> = &mut RandomAgent::new();
     agents.insert(ra.get_name(), ra);
 
-    let pimcts = &mut PolicyAgent::new(OpenHandSolver::new(100, rng()), rng());
-    agents.insert("pimcts".to_string(), pimcts);
+    let a = &mut PolicyAgent::new(OpenHandSolver::new(20, rng()), rng());
+    agents.insert("pimcts, 20 worlds, open hand".to_string(), a);
+
+    let a = &mut PolicyAgent::new(RandomRolloutEvaluator::new(20, rng()), rng());
+    agents.insert("pimcts, 20 worlds, random rollout".to_string(), a);
 
     // let config = ISMCTBotConfig::default();
     // let ismcts = &mut ISMCTSBot::new(
@@ -74,7 +80,10 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
             }
             println!(
                 "{:?}\t{:?}\t{}\t{}",
-                a1_name, a2_name, returns[0], returns[1]
+                a1_name,
+                a2_name,
+                returns[0] / args.num_games as f64,
+                returns[1] / args.num_games as f64
             );
 
             agents.insert(a1_name.clone(), a1);

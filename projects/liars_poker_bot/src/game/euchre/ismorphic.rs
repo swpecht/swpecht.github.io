@@ -6,6 +6,9 @@ use super::{
 };
 
 const JACK_RANK: usize = 2;
+const SUITS: &[Suit] = &[Suit::Spades, Suit::Clubs, Suit::Hearts, Suit::Diamonds];
+const RANKS: &[usize] = &[0, 1, 2, 3, 4, 5];
+
 const CARDS: &[Card] = &[
     Card::NC,
     Card::TC,
@@ -35,6 +38,8 @@ const CARDS: &[Card] = &[
 
 pub(super) fn iso_deck(deck: Deck, trump: Option<Suit>) -> [[CardLocation; 7]; 4] {
     let mut locations = [[CardLocation::None; 7]; 4];
+
+    // todo: build this without spacing to begin with somehow? Can we do this in a single pass without need to "squish" things later
     for &c in CARDS {
         let (s, r) = get_index(c, trump);
         locations[s][r] = deck[c];

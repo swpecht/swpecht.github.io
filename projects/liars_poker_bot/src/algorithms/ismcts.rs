@@ -140,6 +140,35 @@ impl<G: GameState> Evaluator<G> for RandomRolloutEvaluator {
     }
 }
 
+impl<G: GameState> Policy<G> for RandomRolloutEvaluator {
+    fn action_probabilities(&mut self, gs: &G) -> ActionVec<f64> {
+        let mut values = Vec::new();
+        let actions = actions!(gs);
+        let mut gs = gs.clone();
+        let player = gs.cur_player();
+
+        for a in actions.clone() {
+            gs.apply_action(a);
+            let v = self.evaluate(&gs)[player];
+            values.push(v);
+            gs.undo();
+        }
+
+        let mut probs = ActionVec::new(&actions);
+
+        let index_of_max = values
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.total_cmp(b))
+            .map(|(index, _)| index)
+            .unwrap();
+
+        probs[actions[index_of_max]] = 1.0;
+
+        probs
+    }
+}
+
 /// Resample the chance nodes to other versions of the gamestate that result in the same istate for a given player
 pub trait ResampleFromInfoState {
     fn resample_from_istate<T: Rng>(&self, player: Player, rng: &mut T) -> Self;
