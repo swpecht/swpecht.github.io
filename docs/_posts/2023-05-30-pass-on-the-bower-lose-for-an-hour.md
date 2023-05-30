@@ -68,12 +68,19 @@ The open hand solver doesn't represent actual play. We can see this if we look a
 
 **Distribution of hands by expected value and action**
 ```
-     Pickup                        Pass
-<-1  |103                          |█████████████████████████████████33k
--1-0 |██████6k (18%)               |197
-0-1  |██████████████14k (43%)      |0
-1-2  |█████████████13k (39%)       |0
-2    |91                           |0
+Pickup                        
+<-1  |103                          
+-1-0 |██████6k (18%)               
+0-1  |██████████████14k (43%)      
+1-2  |█████████████13k (39%)       
+2    |91
+
+Pass
+<-1  |█████████████████████████████████33k
+-1-0 |197
+0-1  |0
+1-2  |0
+2    |0
 ```
 
 Whenever we pass, we have an expected value of <-1 -- indicating the other team is often taking all 5 tricks and scoring 2 points against us.
