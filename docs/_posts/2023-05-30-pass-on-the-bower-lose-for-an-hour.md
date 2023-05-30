@@ -105,10 +105,10 @@ Instead, I estimated convergence of the open hand solver by scoring 500 differen
             Difference vs 10,000 iterations
 Iterations            Median          Max 
 1           -0.17 ██████|             |██████ 3.11 		
-10                      |█0.014       |██▌1.43
-100                     |█0.017       |▌0.40
-1,000                   |0.0068       |▌0.15
-10,000                  |0            |0
+10                       |█0.014       |██▌1.43
+100                      |█0.017       |▌0.40
+1,000                    |0.0068       |▌0.15
+10,000                   |0            |0
 ```
 
 The maximum difference we see between 100 iterations and 10k is 0.13. If there were any gamestates where the difference in value between Passing and Picking up is lower than this value, I would have re-evaluated them with a higher number of iterations.
