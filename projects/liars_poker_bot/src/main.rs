@@ -7,7 +7,7 @@ use clap::clap_derive::ArgEnum;
 
 use itertools::Itertools;
 use liars_poker_bot::actions;
-use liars_poker_bot::agents::{Agent, RandomAgent};
+use liars_poker_bot::agents::{Agent, PolicyAgent, RandomAgent};
 
 use liars_poker_bot::algorithms::alphamu::AlphaMuBot;
 use liars_poker_bot::algorithms::exploitability::{self};
@@ -229,36 +229,42 @@ fn run_benchmark(args: Args) {
     }
 }
 
-fn run_benchmark_for_game<G: GameState + ResampleFromInfoState>(args: Args, game: Game<G>) {
+fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Args, game: Game<G>) {
     let mut agents: HashMap<String, &mut dyn Agent<G>> = HashMap::new();
     let ra: &mut dyn Agent<G> = &mut RandomAgent::new();
     agents.insert(ra.get_name(), ra);
 
-    let config = ISMCTBotConfig::default();
-    let ismcts = &mut ISMCTSBot::new(
-        game.clone(),
-        1.5,
-        100,
-        RandomRolloutEvaluator::new(100, SeedableRng::seed_from_u64(1)),
-        config,
+    let pimcts = &mut PolicyAgent::new(
+        OpenHandSolver::new(100, SeedableRng::seed_from_u64(2)),
+        SeedableRng::seed_from_u64(3),
     );
-    agents.insert(ismcts.get_name(), ismcts);
+    agents.insert("pimcts".to_string(), pimcts);
 
-    let alphamu = &mut AlphaMuBot::new(
-        RandomRolloutEvaluator::new(100, SeedableRng::seed_from_u64(1)),
-        30,
-        30,
-    );
-    agents.insert(alphamu.get_name(), alphamu);
+    // let config = ISMCTBotConfig::default();
+    // let ismcts = &mut ISMCTSBot::new(
+    //     game.clone(),
+    //     1.5,
+    //     100,
+    //     RandomRolloutEvaluator::new(100, SeedableRng::seed_from_u64(1)),
+    //     config,
+    // );
+    // agents.insert(ismcts.get_name(), ismcts);
 
-    let mut cfr = CFRAgent::new(
-        game.clone(),
-        42,
-        MemoryNodeStore::default(),
-        CFRAlgorithm::CFRCS,
-    );
-    cfr.train(10000);
-    agents.insert(cfr.get_name(), &mut cfr);
+    // let alphamu = &mut AlphaMuBot::new(
+    //     RandomRolloutEvaluator::new(100, SeedableRng::seed_from_u64(1)),
+    //     30,
+    //     30,
+    // );
+    // agents.insert(alphamu.get_name(), alphamu);
+
+    // let mut cfr = CFRAgent::new(
+    //     game.clone(),
+    //     42,
+    //     MemoryNodeStore::default(),
+    //     CFRAlgorithm::CFRCS,
+    // );
+    // cfr.train(10000);
+    // agents.insert(cfr.get_name(), &mut cfr);
 
     let agent_names = agents.keys().cloned().collect_vec();
 
@@ -271,7 +277,7 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState>(args: Args, game
                 None
             };
 
-            let mut returns = vec![0.0; game.max_players];
+            let mut returns = vec![0.0; 4];
             for _ in 0..args.num_games {
                 let r = run_game(&mut (game.new)(), a1, &mut a2, &mut thread_rng());
                 for (i, v) in r.iter().enumerate() {
@@ -289,8 +295,6 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState>(args: Args, game
             }
         }
     }
-
-    todo!("implement exploitability calculation")
 }
 
 fn run_play(_args: Args) {

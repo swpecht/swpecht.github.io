@@ -6,10 +6,12 @@ use rand::rngs::StdRng;
 use rayon::prelude::*;
 
 use crate::{
+    actions,
     alloc::Pool,
     cfragent::cfrnode::ActionVec,
     game::{Action, GameState, Player},
     istate::IsomorphicHash,
+    policy::Policy,
 };
 
 use super::{
@@ -117,6 +119,35 @@ impl<G: GameState + ResampleFromInfoState + Send> Evaluator<G> for OpenHandSolve
 
     fn prior(&mut self, _gs: &G) -> ActionVec<f64> {
         todo!()
+    }
+}
+
+impl<G: GameState + ResampleFromInfoState + Send> Policy<G> for OpenHandSolver<G> {
+    fn action_probabilities(&mut self, gs: &G) -> ActionVec<f64> {
+        let mut values = Vec::new();
+        let actions = actions!(gs);
+        let mut gs = gs.clone();
+        let player = gs.cur_player();
+
+        for a in actions.clone() {
+            gs.apply_action(a);
+            let v = self.evaluate_player(&gs, player);
+            values.push(v);
+            gs.undo();
+        }
+
+        let mut probs = ActionVec::new(&actions);
+
+        let index_of_max = values
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.total_cmp(b))
+            .map(|(index, _)| index)
+            .unwrap();
+
+        probs[actions[index_of_max]] = 1.0;
+
+        probs
     }
 }
 
