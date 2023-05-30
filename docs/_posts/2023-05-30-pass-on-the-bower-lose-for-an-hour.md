@@ -85,7 +85,7 @@ Pass
 
 Whenever we pass, we have an expected value of <-1 -- indicating the other team is often taking all 5 tricks and scoring 2 points against us.
 
-This is the strategy fusion problem of Perfect Information Monte Carlo sampling (PIMC) (arXiv:1911.07960)[https://arxiv.org/abs/1911.07960]. The open hand solver isn't constrained to have a consistent strategy between each world it evaluates. It plays each hand as if had perfect information. And the ability to see all cards and arbitrarily choose trump is too strong of an advantage. With this advantage, the player after the dealer is able to choose a trump suit to almost always get all 5 tricks.
+This is the strategy fusion problem of Perfect Information Monte Carlo sampling (PIMC) [arXiv:1911.07960](https://arxiv.org/abs/1911.07960). The open hand solver isn't constrained to have a consistent strategy between each world it evaluates. It plays each hand as if had perfect information. And the ability to see all cards and arbitrarily choose trump is too strong of an advantage. With this advantage, the player after the dealer is able to choose a trump suit to almost always get all 5 tricks.
 
 The next step would be to find a way to evaluate euchre hands that doesn't suffer from the strategy fusion problem.
 
