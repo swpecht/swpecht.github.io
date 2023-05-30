@@ -6,7 +6,7 @@ use liars_poker_bot::{
     algorithms::{ismcts::ResampleFromInfoState, open_hand_solver::OpenHandSolver},
     game::{euchre::Euchre, kuhn_poker::KuhnPoker, run_game, Game, GameState},
 };
-use rand::{thread_rng, SeedableRng};
+use rand::{rngs::StdRng, thread_rng, SeedableRng};
 
 use crate::{Args, GameType};
 
@@ -25,10 +25,7 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
     let ra: &mut dyn Agent<G> = &mut RandomAgent::new();
     agents.insert(ra.get_name(), ra);
 
-    let pimcts = &mut PolicyAgent::new(
-        OpenHandSolver::new(100, SeedableRng::seed_from_u64(2)),
-        SeedableRng::seed_from_u64(3),
-    );
+    let pimcts = &mut PolicyAgent::new(OpenHandSolver::new(100, rng()), rng());
     agents.insert("pimcts".to_string(), pimcts);
 
     // let config = ISMCTBotConfig::default();
@@ -70,7 +67,7 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
 
             let mut returns = vec![0.0; 4];
             for _ in 0..args.num_games {
-                let r = run_game(&mut (game.new)(), a1, &mut a2, &mut thread_rng());
+                let r = run_game(&mut (game.new)(), a1, &mut a2, &mut rng());
                 for (i, v) in r.iter().enumerate() {
                     returns[i] += v;
                 }
@@ -86,4 +83,8 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
             }
         }
     }
+}
+
+fn rng() -> StdRng {
+    StdRng::from_rng(thread_rng()).unwrap()
 }
