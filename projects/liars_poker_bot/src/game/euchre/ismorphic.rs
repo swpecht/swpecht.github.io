@@ -1,7 +1,7 @@
 use crate::game::euchre::deck::CardLocation;
 
 use super::{
-    actions::{Card, Suit},
+    actions::{Card as C, Suit},
     deck::Deck,
 };
 
@@ -12,59 +12,46 @@ const WORD_SIZE: usize = 4;
 const MAX_WORDS: usize = 7;
 type Locations = u32;
 
-const CARDS: &[Card] = &[
-    Card::NC,
-    Card::TC,
-    Card::JC,
-    Card::QC,
-    Card::KC,
-    Card::AC,
-    Card::NS,
-    Card::TS,
-    Card::JS,
-    Card::QS,
-    Card::KS,
-    Card::AS,
-    Card::NH,
-    Card::TH,
-    Card::JH,
-    Card::QH,
-    Card::KH,
-    Card::AH,
-    Card::ND,
-    Card::TD,
-    Card::JD,
-    Card::QD,
-    Card::KD,
-    Card::AD,
-];
+// Pre-computed ordering of cards by value
+const SPADES_NONE: &[C] = &[C::NS, C::TS, C::JS, C::QS, C::KS, C::AS];
+const CLUBS_NONE: &[C] = &[C::NC, C::TC, C::JC, C::QC, C::KC, C::AC];
+const HEARTS_NONE: &[C] = &[C::NH, C::TH, C::JH, C::QH, C::KH, C::AH];
+const DIAMONDS_NONE: &[C] = &[C::ND, C::TD, C::JD, C::QD, C::KD, C::AD];
+
+const SPADES_CLUBS: &[C] = &[C::NS, C::TS, C::QS, C::KS, C::AS];
+const CLUBS_CLUBS: &[C] = &[C::NC, C::TC, C::QC, C::KC, C::AC, C::JS, C::JC];
+
+const SPADES_SPADES: &[C] = &[C::NS, C::TS, C::QS, C::KS, C::AS, C::JC, C::JS];
+const CLUBS_SPADES: &[C] = &[C::NC, C::TC, C::QC, C::KC, C::AC];
+
+const HEARTS_HEARTS: &[C] = &[C::NH, C::TH, C::QH, C::KH, C::AH, C::JD, C::JH];
+const DIAMONDS_HEARTS: &[C] = &[C::ND, C::TD, C::QD, C::KD, C::AD];
+
+const HEARTS_DIAMONDS: &[C] = &[C::NH, C::TH, C::QH, C::KH, C::AH];
+const DIAMONDS_DIAMONDS: &[C] = &[C::ND, C::TD, C::QD, C::KD, C::AD, C::JH, C::JD];
 
 pub(super) fn iso_deck(deck: Deck, trump: Option<Suit>) -> [Locations; 4] {
     let mut locations = [0; 4];
-
-    // todo: build this without spacing to begin with somehow? Can we do this in a single pass without need to "squish" things later
-    for &c in CARDS {
-        let (s, r) = get_index(c, trump);
-        set_loc(&mut locations[s], r, deck[c]);
-    }
-
+    // if we have trump, skip all the none locations, we can fully compress
     if trump.is_some() {
-        // todo: be smater to downshift some things if there is no trump, really just can't move the jacks and above
-        for suit_locations in locations.iter_mut() {
-            let mut i = 0;
-            let mut last_card = MAX_WORDS;
-            // We downshift cards that are in the None location. For example,a 10 is as valuable in future hands as a 9
-            // if the 9 has been played already
-            while i < last_card {
-                if is_equal(suit_locations, i, CardLocation::None) {
-                    downshift(suit_locations, i);
-                    last_card -= 1;
-                } else {
-                    i += 1;
+        for s in SUITS {
+            for c in get_cards(*s, trump) {
+                if deck[*c] != CardLocation::None {
+                    locations[*s as usize] <<= WORD_SIZE;
+                    locations[*s as usize] |= location_mask(deck[*c])
                 }
             }
         }
     } else {
+        // todo: could do this in a single path if needed for performance reasons
+        // if no trump, we load everything and then swap around the jacks
+        for s in SUITS {
+            for c in get_cards(*s, trump) {
+                locations[*s as usize] <<= WORD_SIZE;
+                locations[*s as usize] |= location_mask(deck[*c])
+            }
+        }
+
         // we can only swap things around the jacks
         for suit_locations in locations.iter_mut() {
             for i in 0..MAX_WORDS - 1 {
@@ -91,7 +78,7 @@ pub(super) fn iso_deck(deck: Deck, trump: Option<Suit>) -> [Locations; 4] {
     locations
 }
 
-fn get_index(c: Card, trump: Option<Suit>) -> (usize, usize) {
+fn get_index(c: C, trump: Option<Suit>) -> (usize, usize) {
     let rank = c.rank() as usize;
     let suit = c.suit();
 
@@ -167,6 +154,25 @@ fn swap_loc(l: &mut Locations, a: usize, b: usize) {
 /// Returns if card location in position i equals loc
 fn is_equal(l: &Locations, i: usize, loc: CardLocation) -> bool {
     ((*l >> (i * WORD_SIZE)) & 0b1111) == location_mask(loc)
+}
+
+/// Return all cards, in order from lowest to highest of a suit for a given trump
+fn get_cards(suit: Suit, trump: Option<Suit>) -> &'static [C] {
+    match (suit, trump) {
+        (Suit::Clubs, Some(Suit::Clubs)) => CLUBS_CLUBS,
+        (Suit::Clubs, Some(Suit::Spades)) => CLUBS_SPADES,
+        (Suit::Spades, Some(Suit::Spades)) => SPADES_SPADES,
+        (Suit::Spades, Some(Suit::Clubs)) => SPADES_CLUBS,
+        (Suit::Hearts, Some(Suit::Hearts)) => HEARTS_HEARTS,
+        (Suit::Hearts, Some(Suit::Diamonds)) => HEARTS_DIAMONDS,
+        (Suit::Diamonds, Some(Suit::Diamonds)) => DIAMONDS_DIAMONDS,
+        (Suit::Diamonds, Some(Suit::Hearts)) => DIAMONDS_HEARTS,
+        // No trump or off color
+        (Suit::Clubs, _) => CLUBS_NONE,
+        (Suit::Spades, _) => SPADES_NONE,
+        (Suit::Diamonds, _) => DIAMONDS_NONE,
+        (Suit::Hearts, _) => HEARTS_NONE,
+    }
 }
 
 #[cfg(test)]
