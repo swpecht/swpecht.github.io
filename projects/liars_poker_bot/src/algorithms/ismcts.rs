@@ -1,5 +1,6 @@
 use std::collections::{hash_map::Entry, HashMap};
 
+use log::info;
 use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
 use rustc_hash::FxHashMap;
 
@@ -112,6 +113,9 @@ impl<G: GameState> Evaluator<G> for RandomRolloutEvaluator {
 
             while !working_state.is_terminal() {
                 working_state.legal_actions(&mut actions);
+                if actions.is_empty() {
+                    info!("{}", working_state);
+                }
                 let a = *actions.choose(&mut self.rng).unwrap();
                 working_state.apply_action(a);
             }

@@ -4,6 +4,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
+use log::debug;
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 
@@ -187,6 +188,8 @@ impl EuchreGameState {
     }
 
     fn apply_action_play(&mut self, a: Action) {
+        assert!(matches!(EAction::from(a), EAction::Play { c: _ }));
+
         let card = EAction::from(a).card();
         // track the cards in play for isomorphic key
         self.deck[card] = CardLocation::Played(self.cur_player);
@@ -507,9 +510,8 @@ impl Display for EuchreGameState {
                 EAction::Pickup => true,
                 EAction::Clubs | EAction::Diamonds | EAction::Hearts | EAction::Spades => true,
                 EAction::Play { c: _ } => {
-                    (i - first_play.unwrap() + 1) % 4 == 0 && i != first_play.unwrap()
+                    ((i - first_play.unwrap() + 1) % 4 == 0) && (i != first_play.unwrap())
                 }
-
                 EAction::Discard { c: _ } => true,
                 EAction::Pass => false,
             };
@@ -902,6 +904,7 @@ impl ResampleFromInfoState for EuchreGameState {
                     let card = da.card();
                     if known_dealt_cards[card] == CardLocation::None {
                         ngs.apply_action(da.into());
+                        break;
                     }
                 }
             } else {
