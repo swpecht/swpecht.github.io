@@ -4,7 +4,7 @@ use itertools::Itertools;
 use liars_poker_bot::{
     agents::{Agent, PolicyAgent, RandomAgent},
     algorithms::{
-        ismcts::{RandomRolloutEvaluator, ResampleFromInfoState},
+        ismcts::{ISMCTBotConfig, ISMCTSBot, RandomRolloutEvaluator, ResampleFromInfoState},
         open_hand_solver::OpenHandSolver,
     },
     game::{euchre::Euchre, kuhn_poker::KuhnPoker, run_game, Game, GameState},
@@ -34,15 +34,15 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
     let a = &mut PolicyAgent::new(RandomRolloutEvaluator::new(20, rng()), rng());
     agents.insert("pimcts, 20 worlds, random rollout".to_string(), a);
 
-    // let config = ISMCTBotConfig::default();
-    // let ismcts = &mut ISMCTSBot::new(
-    //     game.clone(),
-    //     1.5,
-    //     100,
-    //     RandomRolloutEvaluator::new(100, SeedableRng::seed_from_u64(1)),
-    //     config,
-    // );
-    // agents.insert(ismcts.get_name(), ismcts);
+    let config = ISMCTBotConfig::default();
+    let ismcts = &mut ISMCTSBot::new(
+        game.clone(),
+        1.5,
+        100,
+        RandomRolloutEvaluator::new(100, SeedableRng::seed_from_u64(1)),
+        config,
+    );
+    agents.insert(ismcts.get_name(), ismcts);
 
     // let alphamu = &mut AlphaMuBot::new(
     //     RandomRolloutEvaluator::new(100, SeedableRng::seed_from_u64(1)),

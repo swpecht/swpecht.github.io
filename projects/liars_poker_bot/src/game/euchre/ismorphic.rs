@@ -8,6 +8,9 @@ use super::{
 const JACK_RANK: usize = 2;
 const SUITS: &[Suit] = &[Suit::Spades, Suit::Clubs, Suit::Hearts, Suit::Diamonds];
 const RANKS: &[usize] = &[0, 1, 2, 3, 4, 5];
+const WORD_SIZE: usize = 4;
+const MAX_WORDS: usize = 7;
+type Locations = u32;
 
 const CARDS: &[Card] = &[
     Card::NC,
@@ -36,25 +39,25 @@ const CARDS: &[Card] = &[
     Card::AD,
 ];
 
-pub(super) fn iso_deck(deck: Deck, trump: Option<Suit>) -> [[CardLocation; 7]; 4] {
-    let mut locations = [[CardLocation::None; 7]; 4];
+pub(super) fn iso_deck(deck: Deck, trump: Option<Suit>) -> [Locations; 4] {
+    let mut locations = [0; 4];
 
     // todo: build this without spacing to begin with somehow? Can we do this in a single pass without need to "squish" things later
     for &c in CARDS {
         let (s, r) = get_index(c, trump);
-        locations[s][r] = deck[c];
+        set_loc(&mut locations[s], r, deck[c]);
     }
 
     if trump.is_some() {
         // todo: be smater to downshift some things if there is no trump, really just can't move the jacks and above
         for suit_locations in locations.iter_mut() {
             let mut i = 0;
-            let mut last_card = suit_locations.len();
+            let mut last_card = MAX_WORDS;
             // We downshift cards that are in the None location. For example,a 10 is as valuable in future hands as a 9
             // if the 9 has been played already
             while i < last_card {
-                if suit_locations[i] == CardLocation::None {
-                    suit_locations[i..].rotate_left(1);
+                if is_equal(suit_locations, i, CardLocation::None) {
+                    downshift(suit_locations, i);
                     last_card -= 1;
                 } else {
                     i += 1;
@@ -64,26 +67,25 @@ pub(super) fn iso_deck(deck: Deck, trump: Option<Suit>) -> [[CardLocation; 7]; 4
     } else {
         // we can only swap things around the jacks
         for suit_locations in locations.iter_mut() {
-            for i in 0..suit_locations.len() - 1 {
-                if i != JACK_RANK && i + 1 != JACK_RANK && suit_locations[i] == CardLocation::None {
-                    suit_locations.swap(i, i + 1);
+            for i in 0..MAX_WORDS - 1 {
+                if i != JACK_RANK
+                    && i + 1 != JACK_RANK
+                    && is_equal(suit_locations, i, CardLocation::None)
+                {
+                    swap_loc(suit_locations, i, i + 1);
                 }
             }
         }
-    }
-
-    fn get_count(x: &[CardLocation]) -> usize {
-        x.iter().filter(|x| **x != CardLocation::None).count()
     }
 
     if let Some(trump) = trump {
         // put trump in the first spot
         locations.swap(0, trump as usize);
         // sort everything else
-        locations[1..].sort_by_key(|a| get_count(a));
+        locations[1..].sort();
     } else {
         // sort everything
-        locations.sort_by_key(|a| get_count(a));
+        locations.sort();
     }
 
     locations
@@ -114,12 +116,65 @@ fn get_index(c: Card, trump: Option<Suit>) -> (usize, usize) {
     }
 }
 
+/// Returns the bit mask associated with each location.
+///
+/// Results are arbitrary.
+fn location_mask(loc: CardLocation) -> Locations {
+    match loc {
+        CardLocation::Player0 => 0b1000,
+        CardLocation::Player1 => 0b0001,
+        CardLocation::Player2 => 0b0010,
+        CardLocation::Player3 => 0b0011,
+        CardLocation::Played(_) => 0b0100,
+        CardLocation::FaceUp => 0b0101,
+        CardLocation::None => 0b0000,
+    }
+}
+
+/// Deletes the ith word, downshift all following elements
+pub fn downshift(l: &mut Locations, i: usize) {
+    let m = mask(i);
+    let x = *l & m;
+    *l &= !m;
+    *l >>= 4;
+    *l |= x;
+}
+fn mask(i: usize) -> Locations {
+    if i == 0 {
+        0
+    } else {
+        u32::MAX >> (32 - (i * WORD_SIZE))
+    }
+}
+
+fn set_loc(l: &mut Locations, i: usize, loc: CardLocation) {
+    let m = 0b1111 << (i * WORD_SIZE);
+    *l &= !m;
+    let word_mask = location_mask(loc) << (i * WORD_SIZE);
+    *l |= word_mask;
+}
+
+/// Swap words
+///
+/// http://graphics.stanford.edu/~seander/bithacks.html#SwappingBitsXOR
+fn swap_loc(l: &mut Locations, a: usize, b: usize) {
+    let i = a * WORD_SIZE;
+    let j = b * WORD_SIZE;
+    let x = ((*l >> i) ^ (*l >> j)) & ((1 << WORD_SIZE) - 1);
+    *l ^= (x << i) | (x << j);
+}
+
+/// Returns if card location in position i equals loc
+fn is_equal(l: &Locations, i: usize, loc: CardLocation) -> bool {
+    ((*l >> (i * WORD_SIZE)) & 0b1111) == location_mask(loc)
+}
+
 #[cfg(test)]
 mod tests {
     use crate::game::euchre::{
         actions::{Card, Suit},
         deck::{CardLocation, Deck},
-        ismorphic::iso_deck,
+        ismorphic::{downshift, iso_deck, set_loc, swap_loc},
     };
 
     #[test]
@@ -199,5 +254,42 @@ mod tests {
             iso_deck(d1, Some(Suit::Spades)),
             iso_deck(d2, Some(Suit::Spades))
         );
+    }
+
+    #[test]
+    fn test_downshift() {
+        let mut l = 0;
+        downshift(&mut l, 1);
+        assert_eq!(l, 0);
+
+        let mut l = 0b0001;
+        downshift(&mut l, 0);
+        assert_eq!(l, 0);
+
+        let mut l = 0b00010000;
+        downshift(&mut l, 0);
+        assert_eq!(l, 0b0001);
+
+        let mut l = 0b0010_0000_0101_0001;
+        downshift(&mut l, 2);
+        assert_eq!(l, 0b0010_0101_0001);
+    }
+
+    #[test]
+    fn test_set_loc() {
+        let mut l = 0;
+        set_loc(&mut l, 1, CardLocation::Player1);
+        assert_eq!(l, 0b00010000);
+    }
+
+    #[test]
+    fn test_swap_loc() {
+        let mut l = 0b1010_0101;
+        swap_loc(&mut l, 0, 1);
+        assert_eq!(l, 0b0101_1010);
+
+        let mut l = 0;
+        swap_loc(&mut l, 0, 1);
+        assert_eq!(l, 0);
     }
 }

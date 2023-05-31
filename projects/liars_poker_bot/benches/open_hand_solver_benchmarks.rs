@@ -13,9 +13,27 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     let mut rng: StdRng = SeedableRng::seed_from_u64(42);
     let mut evaluator = OpenHandSolver::new(100, SeedableRng::seed_from_u64(100));
 
+    let mut array = [1; 7];
+    let mut v = 1;
+
+    c.bench_function("shift rotate", |b| b.iter(|| rotate_array(&mut array)));
+
+    c.bench_function("shift bitshift", |b| b.iter(|| bit_shift(&mut v)));
+
     c.bench_function("open hand evaluator 100", |b| {
         b.iter(|| evaluate_games(&mut evaluator, &mut rng))
     });
+}
+
+fn rotate_array(array: &mut [u8]) {
+    array[1..].rotate_left(1);
+}
+
+fn bit_shift(v: &mut u32) {
+    let x = *v & 0b1111;
+    *v >>= 4;
+    *v &= !(0b1111);
+    *v |= x;
 }
 
 fn evaluate_games(evaluator: &mut OpenHandSolver<EuchreGameState>, rng: &mut StdRng) {
