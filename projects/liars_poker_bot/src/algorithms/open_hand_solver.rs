@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, sync::Arc};
+use std::sync::Arc;
 
 use dashmap::DashMap;
 
@@ -253,12 +253,13 @@ fn alpha_beta<G: GameState>(
 #[cfg(test)]
 mod tests {
 
-    use rand::SeedableRng;
+    use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
     use crate::{
         algorithms::{ismcts::Evaluator, open_hand_solver::OpenHandSolver},
         game::{
             bluff::{Bluff, BluffActions, Dice},
+            euchre::Euchre,
             kuhn_poker::{KPAction, KuhnPoker},
             GameState,
         },
@@ -317,5 +318,29 @@ mod tests {
             BluffActions::from(a.unwrap()),
             BluffActions::Bid(3, Dice::Three)
         );
+    }
+
+    #[test]
+    fn test_alg_open_hand_solver_euchre() {
+        let mut rng: StdRng = SeedableRng::seed_from_u64(51);
+        let mut actions = Vec::new();
+
+        let mut cached = OpenHandSolver::new();
+        let mut no_cache = OpenHandSolver::new_without_cache();
+
+        for _ in 0..10 {
+            let mut gs = Euchre::new_state();
+            while gs.is_chance_node() {
+                gs.legal_actions(&mut actions);
+                let a = actions.choose(&mut rng).unwrap();
+                gs.apply_action(*a);
+            }
+
+            println!("{}", gs);
+            let c = cached.evaluate(&gs);
+            let no_c = no_cache.evaluate(&gs);
+            assert_eq!(c[0], no_c[0]);
+            assert_eq!(c[1], no_c[1]);
+        }
     }
 }

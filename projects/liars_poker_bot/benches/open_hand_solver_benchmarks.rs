@@ -1,7 +1,7 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use liars_poker_bot::{
     actions,
-    algorithms::{open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot},
+    algorithms::pimcts::PIMCTSBot,
     game::{
         euchre::{Euchre, EuchreGameState},
         GameState,
