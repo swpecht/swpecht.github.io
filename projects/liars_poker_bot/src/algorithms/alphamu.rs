@@ -3,7 +3,7 @@ use std::{
     marker::PhantomData,
 };
 
-use log::{debug, trace};
+use log::trace;
 use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
 use rustc_hash::FxHashMap;
 
@@ -158,8 +158,9 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             // min node
             for a in self.all_moves(&worlds) {
                 let worlds_1 = self.filter_and_progress_worlds(&worlds, a);
-                let key = self.cur_istate(&worlds_1);
+
                 let f = self.alphamu(m, worlds_1);
+                let key = self.cur_istate(&worlds);
                 self.save_node(key, a, &f);
                 front = front.min(f);
             }
@@ -167,8 +168,8 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             // max node
             for a in self.all_moves(&worlds) {
                 let worlds_1 = self.filter_and_progress_worlds(&worlds, a);
-                let key = self.cur_istate(&worlds_1);
                 let f = self.alphamu(m - 1, worlds_1);
+                let key = self.cur_istate(&worlds);
                 self.save_node(key, a, &f);
                 front = front.max(f);
             }
