@@ -62,14 +62,18 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         self.reset();
 
         let mut rng = thread_rng();
-        self.team = self.get_team(root_node);
+        self.team = match root_node.cur_player() {
+            0 | 2 => Team::Team1,
+            1 | 3 => Team::Team2,
+            _ => panic!("invalid player"),
+        };
         let player = root_node.cur_player();
         let mut worlds = Vec::new();
         for _ in 0..self.num_worlds {
             worlds.push(Some(root_node.resample_from_istate(player, &mut rng)))
         }
 
-        self.alphamu(root_node, self.m, worlds);
+        self.alphamu(self.m, worlds);
         self.get_final_policy(root_node)
     }
 
@@ -98,40 +102,49 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         policy
     }
 
-    fn alphamu(&mut self, gs: &G, m: usize, worlds: Vec<Option<G>>) -> AMFront {
+    fn alphamu(&mut self, m: usize, worlds: Vec<Option<G>>) -> AMFront {
         trace!(
-            "alpha mu call: gs: {:?}\tm: {}\tworlds: {:?}",
-            gs,
+            "alpha mu call: istate: {:?}\tm: {}\tworlds: {:?}",
+            self.cur_istate(&worlds),
             m,
             worlds
         );
 
-        assert!(!gs.is_chance_node());
+        // ensure we have no chance nodes, not yet implemented
+        worlds
+            .iter()
+            .flatten()
+            .map(|w| assert!(!w.is_chance_node()))
+            .count();
 
         let mut result = AMFront::default();
         result.push(AMVector::from_worlds(&worlds));
-        if self.stop(gs, m, &worlds, &mut result) {
-            trace!("stopping alpha mu for {:?}, found front: {:?}", gs, result);
+        if self.stop(m, &worlds, &mut result) {
+            trace!(
+                "stopping alpha mu for {:?}, found front: {:?}",
+                self.cur_istate(&worlds),
+                result
+            );
             return result;
         }
 
         let mut front = AMFront::default();
-        if self.team != self.get_team(gs) {
+        if self.team != self.get_team(&worlds) {
             // min node
             for a in self.all_moves(&worlds) {
-                let s = self.play(gs, a);
                 let worlds_1 = self.filter_and_progress_worlds(&worlds, a);
-                let f = self.alphamu(&s, m, worlds_1);
-                self.save_node(gs, a, &f);
+                let key = self.cur_istate(&worlds_1);
+                let f = self.alphamu(m, worlds_1);
+                self.save_node(key, a, &f);
                 front = front.min(f);
             }
         } else {
             // max node
             for a in self.all_moves(&worlds) {
-                let s = self.play(gs, a);
                 let worlds_1 = self.filter_and_progress_worlds(&worlds, a);
-                let f = self.alphamu(&s, m - 1, worlds_1);
-                self.save_node(gs, a, &f);
+                let key = self.cur_istate(&worlds_1);
+                let f = self.alphamu(m - 1, worlds_1);
+                self.save_node(key, a, &f);
                 front = front.max(f);
             }
         }
@@ -140,8 +153,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         front
     }
 
-    fn save_node(&mut self, gs: &G, a: Action, f: &AMFront) {
-        let key = gs.istate_key(gs.cur_player());
+    fn save_node(&mut self, key: IStateKey, a: Action, f: &AMFront) {
         let node = self.nodes.entry(key).or_insert(ChildNode::default());
         node.update_action_value(a, f);
     }
@@ -156,6 +168,23 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             }
         }
         all_moves
+    }
+
+    /// Returns the istate key for all valid worlds
+    fn cur_istate(&self, worlds: &[Option<G>]) -> IStateKey {
+        let p = worlds
+            .iter()
+            .flatten()
+            .map(|x| x.cur_player())
+            .next()
+            .unwrap();
+
+        worlds
+            .iter()
+            .flatten()
+            .map(|w| w.istate_key(p))
+            .next()
+            .expect("no valid worlds for istate")
     }
 
     /// Returns the progressed worlds where `a` was a valid action. Otherwise it
@@ -188,16 +217,21 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         ngs
     }
 
-    fn stop(&mut self, gs: &G, m: usize, worlds: &[Option<G>], result: &mut AMFront) -> bool {
+    fn stop(&mut self, m: usize, worlds: &[Option<G>], result: &mut AMFront) -> bool {
         let mut all_states_terminal = true;
         for w in worlds.iter().flatten() {
             all_states_terminal &= w.is_terminal();
         }
-        if gs.is_terminal() & !all_states_terminal {
-            panic!("gs is terminal but other states are not")
+
+        let mut any_states_terminal = false;
+        for w in worlds.iter().flatten() {
+            any_states_terminal |= w.is_terminal();
+        }
+        if all_states_terminal != any_states_terminal {
+            panic!("worlds not all terminating at same time: {:?}", worlds)
         }
 
-        if gs.is_terminal() {
+        if any_states_terminal {
             // Unlike in bridge, we can't determin who won only from the public information at the gamestate
             // instead we need to evaluate each world individually
             for (i, w) in worlds.iter().enumerate() {
@@ -236,8 +270,15 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         self.nodes.clear();
     }
 
-    fn get_team(&self, gs: &G) -> Team {
-        match gs.cur_player() {
+    fn get_team(&self, worlds: &[Option<G>]) -> Team {
+        let player = worlds
+            .iter()
+            .flatten()
+            .map(|x| x.cur_player())
+            .next()
+            .unwrap();
+
+        match player {
             0 | 2 => Team::Team1,
             1 | 3 => Team::Team2,
             _ => panic!("invalid player"),

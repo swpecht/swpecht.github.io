@@ -31,22 +31,22 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
     let ra: &mut dyn Agent<G> = &mut RandomAgent::new();
     agents.insert(ra.get_name(), ra);
 
-    let a = &mut PolicyAgent::new(PIMCTSBot::new(20, rng()), rng());
-    agents.insert("pimcts, 20 worlds, open hand".to_string(), a);
+    // let a = &mut PolicyAgent::new(PIMCTSBot::new(20, rng()), rng());
+    // agents.insert("pimcts, 20 worlds, open hand".to_string(), a);
 
     let a = &mut PolicyAgent::new(RandomRolloutEvaluator::new(20, rng()), rng());
     agents.insert("pimcts, 20 worlds, random rollout".to_string(), a);
 
-    let config = ISMCTBotConfig::default();
-    let ismcts = &mut ISMCTSBot::new(game.clone(), 1.5, 20, OpenHandSolver::new(), config);
-    agents.insert("ismcts".to_string(), ismcts);
+    // let config = ISMCTBotConfig::default();
+    // let ismcts = &mut ISMCTSBot::new(game.clone(), 1.5, 20, OpenHandSolver::new(), config);
+    // agents.insert("ismcts".to_string(), ismcts);
 
-    // let alphamu = &mut AlphaMuBot::new(
-    //     RandomRolloutEvaluator::new(100, SeedableRng::seed_from_u64(1)),
-    //     30,
-    //     30,
-    // );
-    // agents.insert(alphamu.get_name(), alphamu);
+    let alphamu = &mut AlphaMuBot::new(
+        RandomRolloutEvaluator::new(100, SeedableRng::seed_from_u64(1)),
+        30,
+        30,
+    );
+    agents.insert(alphamu.get_name(), alphamu);
 
     // let mut cfr = CFRAgent::new(
     //     game.clone(),
