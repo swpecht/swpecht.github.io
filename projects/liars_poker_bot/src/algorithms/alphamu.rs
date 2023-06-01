@@ -331,9 +331,9 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Agent<G> for AlphaMu
     }
 }
 
-impl<G: GameState, E: Evaluator<G>> Policy<G> for AlphaMuBot<G, E> {
+impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Policy<G> for AlphaMuBot<G, E> {
     fn action_probabilities(&mut self, gs: &G) -> ActionVec<f64> {
-        todo!()
+        self.run_search(gs)
     }
 }
 
