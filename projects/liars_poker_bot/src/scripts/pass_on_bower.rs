@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use liars_poker_bot::{
     actions,
-    algorithms::open_hand_solver::OpenHandSolver,
+    algorithms::{open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot},
     game::{
         euchre::{
             actions::{Card, EAction},
@@ -17,7 +17,7 @@ use crate::Args;
 
 pub fn open_hand_score_pass_on_bower(_args: Args) {
     let rng: StdRng = SeedableRng::seed_from_u64(42);
-    let mut evaluator = OpenHandSolver::new(100, rng);
+    let mut evaluator = PIMCTSBot::new(100, rng);
 
     info!("iterating through pass on the bower nodes");
     for mut gs in PassOnBowerIterator::new() {
@@ -36,7 +36,7 @@ pub fn open_hand_score_pass_on_bower(_args: Args) {
 
 pub fn spot_check_pass_on_bower(_args: Args) {
     let rng: StdRng = SeedableRng::seed_from_u64(42);
-    let mut evaluator = OpenHandSolver::new(10000, rng);
+    let mut evaluator = PIMCTSBot::new(10000, rng);
 
     let games = vec![
         "JCAC9STSQS|KSASTHJHQH|KHAH9DTDJD|9CTCQCKC9H|JS|PPP",
@@ -92,7 +92,7 @@ pub fn calculate_open_hand_solver_convergence(_args: Args) {
     let rollouts: Vec<usize> = vec![1, 10, 100, 1000, 10000];
     let mut evaluators = rollouts
         .iter()
-        .map(|x| OpenHandSolver::new(*x, rng.clone()))
+        .map(|x| PIMCTSBot::new(*x, rng.clone()))
         .collect_vec();
     info!("rollouts: {:?}", rollouts);
 
@@ -105,7 +105,6 @@ pub fn calculate_open_hand_solver_convergence(_args: Args) {
         gs.apply_action(EAction::Pickup.into());
         let mut results = Vec::new();
         for (e, r) in evaluators.iter_mut().zip(rollouts.iter()) {
-            e.reset(); // to avoid memory pressure
             let v = e.evaluate_player(&gs, 3);
             results.push(v);
         }

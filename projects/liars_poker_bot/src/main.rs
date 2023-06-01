@@ -111,8 +111,7 @@ fn run_scratch(_args: Args) {
     let gs2 = EuchreGameState::from(game.as_str());
 
     for mut gs in vec![gs1, gs2] {
-        let mut evaluator =
-            OpenHandSolver::new_without_cache(1000, SeedableRng::seed_from_u64(109));
+        let mut evaluator = OpenHandSolver::new_without_cache();
 
         info!(
             "Evaluator for {}: {:?}",

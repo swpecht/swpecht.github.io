@@ -158,7 +158,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         all_moves
     }
 
-    /// Returns the progressed worlds where a was a valid action. Otherwise it
+    /// Returns the progressed worlds where `a` was a valid action. Otherwise it
     /// marks that spot as None
     fn filter_and_progress_worlds(&mut self, worlds: &Vec<Option<G>>, a: Action) -> Vec<Option<G>> {
         let mut worlds_1 = Vec::with_capacity(worlds.len());
@@ -166,6 +166,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         for w in worlds.iter() {
             if w.is_none() {
                 worlds_1.push(None);
+                continue;
             }
             let w = w.as_ref().unwrap();
             w.legal_actions(&mut actions);

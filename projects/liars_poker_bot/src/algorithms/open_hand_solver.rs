@@ -1,8 +1,6 @@
 use std::{marker::PhantomData, sync::Arc};
 
 use dashmap::DashMap;
-use rand::rngs::StdRng;
-use rayon::prelude::*;
 
 use crate::{
     actions,
@@ -10,94 +8,55 @@ use crate::{
     cfragent::cfrnode::ActionVec,
     game::{Action, GameState, Player},
     istate::IsomorphicHash,
-    policy::Policy,
 };
 
-use super::{
-    alphamu::Team,
-    ismcts::{Evaluator, ResampleFromInfoState},
-};
+use super::{alphamu::Team, ismcts::Evaluator};
 
 /// Rollout solver that assumes perfect information by playing against open hands
 ///
 /// This is an adaption of a double dummy solver for bridge
 /// http://privat.bahnhof.se/wb758135/bridge/Alg-dds_x.pdf
+#[derive(Clone)]
 pub struct OpenHandSolver<G> {
-    n_rollouts: usize,
-    rng: StdRng,
     cache: AlphaBetaCache,
     _phantom: PhantomData<G>,
 }
 
-impl<G: GameState + ResampleFromInfoState + Send> OpenHandSolver<G> {
-    pub fn new(n_rollouts: usize, rng: StdRng) -> Self {
+impl<G: GameState> OpenHandSolver<G> {
+    pub fn new() -> Self {
         Self {
-            n_rollouts,
-            rng,
             cache: AlphaBetaCache::default(),
             _phantom: PhantomData::default(),
         }
     }
 
-    pub fn new_without_cache(n_rollouts: usize, rng: StdRng) -> Self {
+    pub fn new_without_cache() -> Self {
         Self {
-            n_rollouts,
-            rng,
             cache: AlphaBetaCache::new(false),
             _phantom: PhantomData::default(),
         }
     }
 
-    pub fn set_rollout(&mut self, n_rollouts: usize) {
-        // clears all cached data for different world counts
-        self.reset();
-        self.n_rollouts = n_rollouts;
-    }
-
+    /// Evaluates the gamestate for a maximizing player using alpha-beta search
     pub fn evaluate_player(&mut self, gs: &G, maximizing_player: Player) -> f64 {
-        let worlds = self.get_worlds(gs);
-        self.evaluate_with_worlds(maximizing_player, worlds)
-    }
-
-    fn evaluate_with_worlds(&mut self, maximizing_player: Player, worlds: Vec<G>) -> f64 {
-        // clear the transposition table since it was generated with a different set of worlds
-        // this can be removed if we can iterate over all possible worlds for a given state
-        // self.cache.transposition_table.clear();
-
-        let sum: f64 = worlds
-            // .into_iter()
-            .into_par_iter()
-            .map(|w| alpha_beta_search_cached(w, maximizing_player, self.cache.clone()).0)
-            .sum();
-
-        sum / self.n_rollouts as f64
-    }
-
-    fn get_worlds(&mut self, gs: &G) -> Vec<G> {
-        // since we're generating new worlds, we reset the cache
-        // self.reset();
-
-        let mut worlds = Vec::with_capacity(self.n_rollouts);
-        for _ in 0..self.n_rollouts {
-            worlds.push(gs.resample_from_istate(gs.cur_player(), &mut self.rng));
-        }
-        worlds
-    }
-
-    pub fn reset(&mut self) {
-        self.cache.transposition_table.clear();
+        alpha_beta_search_cached(gs.clone(), maximizing_player, self.cache.clone()).0
     }
 }
 
-impl<G: GameState + ResampleFromInfoState + Send> Evaluator<G> for OpenHandSolver<G> {
+impl<G: GameState> Default for OpenHandSolver<G> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<G: GameState> Evaluator<G> for OpenHandSolver<G> {
     fn evaluate(&mut self, gs: &G) -> Vec<f64> {
         let mut result = vec![0.0; gs.num_players()];
 
-        let worlds = self.get_worlds(gs);
-
-        for (i, r) in result.iter_mut().enumerate().take(2) {
-            *r = self.evaluate_with_worlds(i, worlds.clone());
+        for (p, r) in result.iter_mut().enumerate().take(2) {
+            *r = self.evaluate_player(gs, p);
         }
+
         // Only support evaluating for 2 teams, so we can copy over the results
         for i in 2..result.len() {
             result[i] = result[i % 2];
@@ -106,13 +65,7 @@ impl<G: GameState + ResampleFromInfoState + Send> Evaluator<G> for OpenHandSolve
         result
     }
 
-    fn prior(&mut self, _gs: &G) -> ActionVec<f64> {
-        todo!()
-    }
-}
-
-impl<G: GameState + ResampleFromInfoState + Send> Policy<G> for OpenHandSolver<G> {
-    fn action_probabilities(&mut self, gs: &G) -> ActionVec<f64> {
+    fn prior(&mut self, gs: &G) -> ActionVec<f64> {
         let mut values = Vec::new();
         let actions = actions!(gs);
         let mut gs = gs.clone();
@@ -367,20 +320,5 @@ mod tests {
             BluffActions::from(a.unwrap()),
             BluffActions::Bid(3, Dice::Three)
         );
-    }
-
-    #[test]
-    fn test_open_hand_solver_kuhn() {
-        let mut evaluator = OpenHandSolver::new(100, SeedableRng::seed_from_u64(109));
-        let gs = KuhnPoker::from_actions(&[KPAction::Jack, KPAction::Queen]);
-        assert_eq!(evaluator.evaluate(&gs), vec![-1.0, 1.0]);
-
-        let mut evaluator = OpenHandSolver::new(100, SeedableRng::seed_from_u64(109));
-        let gs = KuhnPoker::from_actions(&[KPAction::Queen, KPAction::Jack]);
-        assert_eq!(evaluator.evaluate(&gs), vec![0.0, 0.0]);
-
-        let mut evaluator = OpenHandSolver::new(100, SeedableRng::seed_from_u64(109));
-        let gs = KuhnPoker::from_actions(&[KPAction::King, KPAction::Jack]);
-        assert_eq!(evaluator.evaluate(&gs), vec![1.0, -1.0]);
     }
 }

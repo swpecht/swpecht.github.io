@@ -53,8 +53,8 @@ fn test_alg_open_hand_solver_bluff_cache() {
     let mut rng: StdRng = SeedableRng::seed_from_u64(100);
     let mut actions = Vec::new();
 
-    let mut cached = OpenHandSolver::new(10000, rng.clone());
-    let mut no_cache = OpenHandSolver::new_without_cache(10000, rng.clone());
+    let mut cached = OpenHandSolver::new();
+    let mut no_cache = OpenHandSolver::new_without_cache();
 
     for _ in 0..100 {
         let mut gs = Bluff::new_state(2, 2);
@@ -85,8 +85,8 @@ fn test_alg_open_hand_solver_euchre() {
     let mut rng: StdRng = SeedableRng::seed_from_u64(51);
     let mut actions = Vec::new();
 
-    let mut cached = OpenHandSolver::new(100, rng.clone());
-    let mut no_cache = OpenHandSolver::new_without_cache(100, rng.clone());
+    let mut cached = OpenHandSolver::new();
+    let mut no_cache = OpenHandSolver::new_without_cache();
 
     for _ in 0..10 {
         let mut gs = Euchre::new_state();
@@ -99,17 +99,17 @@ fn test_alg_open_hand_solver_euchre() {
         println!("{}", gs);
         let c = cached.evaluate(&gs);
         let no_c = no_cache.evaluate(&gs);
-        assert!((c[0] - no_c[0]).abs() < 0.1);
-        assert!((c[1] - no_c[1]).abs() < 0.1);
+        assert_eq!(c[0], no_c[0]);
+        assert_eq!(c[1], no_c[1]);
     }
 }
 
 #[test]
 fn test_open_hand_solver_euchre_samples() {
-    let mut e1 = OpenHandSolver::new_without_cache(1000, SeedableRng::seed_from_u64(109));
+    let mut e1 = OpenHandSolver::new_without_cache();
     let mut game = "TCQCQHAHTD|9HKHJDKDAD|AC9SQSTHJH|9CJCKCJSQD|AS|PPPP|H".to_string();
     let gs1 = EuchreGameState::from(game.as_str());
-    let mut e2 = OpenHandSolver::new_without_cache(1000, SeedableRng::seed_from_u64(109));
+    let mut e2 = OpenHandSolver::new_without_cache();
     // manually downshit spade cards since some of them weren't dealt
     // game = game.replace("KS", "QS");
     game = game.replace("AS", "KS");

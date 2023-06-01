@@ -4,11 +4,14 @@ use itertools::Itertools;
 use liars_poker_bot::{
     agents::{Agent, PolicyAgent, RandomAgent},
     algorithms::{
+        alphamu::AlphaMuBot,
         ismcts::{ISMCTBotConfig, ISMCTSBot, RandomRolloutEvaluator, ResampleFromInfoState},
         open_hand_solver::OpenHandSolver,
+        pimcts::PIMCTSBot,
     },
     game::{euchre::Euchre, kuhn_poker::KuhnPoker, run_game, Game, GameState},
 };
+use log::debug;
 use rand::{rngs::StdRng, thread_rng, SeedableRng};
 
 use crate::{Args, GameType};
@@ -28,21 +31,15 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
     let ra: &mut dyn Agent<G> = &mut RandomAgent::new();
     agents.insert(ra.get_name(), ra);
 
-    let a = &mut PolicyAgent::new(OpenHandSolver::new(20, rng()), rng());
+    let a = &mut PolicyAgent::new(PIMCTSBot::new(20, rng()), rng());
     agents.insert("pimcts, 20 worlds, open hand".to_string(), a);
 
     let a = &mut PolicyAgent::new(RandomRolloutEvaluator::new(20, rng()), rng());
     agents.insert("pimcts, 20 worlds, random rollout".to_string(), a);
 
     let config = ISMCTBotConfig::default();
-    let ismcts = &mut ISMCTSBot::new(
-        game.clone(),
-        1.5,
-        100,
-        RandomRolloutEvaluator::new(100, SeedableRng::seed_from_u64(1)),
-        config,
-    );
-    agents.insert(ismcts.get_name(), ismcts);
+    let ismcts = &mut ISMCTSBot::new(game.clone(), 1.5, 20, OpenHandSolver::new(), config);
+    agents.insert("ismcts".to_string(), ismcts);
 
     // let alphamu = &mut AlphaMuBot::new(
     //     RandomRolloutEvaluator::new(100, SeedableRng::seed_from_u64(1)),
@@ -71,6 +68,7 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
                 None
             };
 
+            debug!("starting play for {} vs {}", a1_name, a2_name);
             let mut returns = vec![0.0; 4];
             for _ in 0..args.num_games {
                 let r = run_game(&mut (game.new)(), a1, &mut a2, &mut rng());
