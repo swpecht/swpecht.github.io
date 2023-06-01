@@ -61,20 +61,20 @@ impl From<Player> for CardLocation {
 /// Track location of all euchre cards
 #[derive(Default, Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize, Hash)]
 pub(super) struct Deck {
-    locations: [[CardLocation; 6]; 4],
+    locations: [CardLocation; 24],
 }
 
 impl Index<Card> for Deck {
     type Output = CardLocation;
 
     fn index(&self, index: Card) -> &Self::Output {
-        &self.locations[index.suit() as usize][index.rank() as usize]
+        &self.locations[index as usize]
     }
 }
 
 impl IndexMut<Card> for Deck {
     fn index_mut(&mut self, index: Card) -> &mut Self::Output {
-        &mut self.locations[index.suit() as usize][index.rank() as usize]
+        &mut self.locations[index as usize]
     }
 }
 
