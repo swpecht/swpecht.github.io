@@ -43,7 +43,7 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
 
     let alphamu = &mut AlphaMuBot::new(
         RandomRolloutEvaluator::new(100, SeedableRng::seed_from_u64(1)),
-        30,
+        2,
         30,
     );
     agents.insert(alphamu.get_name(), alphamu);

@@ -3,7 +3,7 @@ use std::{
     marker::PhantomData,
 };
 
-use log::trace;
+use log::{debug, trace};
 use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
 use rustc_hash::FxHashMap;
 
@@ -325,5 +325,45 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Agent<G> for AlphaMu
             "AlphaMu, worlds: {}, m: {}, evaluator: todo",
             self.num_worlds, self.m
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rand::{seq::SliceRandom, thread_rng, SeedableRng};
+
+    use crate::{
+        actions,
+        agents::{Agent, RandomAgent},
+        algorithms::ismcts::RandomRolloutEvaluator,
+        game::{kuhn_poker::KuhnPoker, GameState},
+    };
+
+    use super::AlphaMuBot;
+
+    #[test]
+    fn test_alpha_mu_is_agent() {
+        let rng = SeedableRng::seed_from_u64(42);
+        let mut alphamu = AlphaMuBot::new(RandomRolloutEvaluator::new(100, rng), 20, 10);
+        let mut opponent = RandomAgent::default();
+
+        for _ in 0..10 {
+            let mut gs = KuhnPoker::new_state();
+            while gs.is_chance_node() {
+                let a = *actions!(gs).choose(&mut thread_rng()).unwrap();
+                gs.apply_action(a)
+            }
+
+            while !gs.is_terminal() {
+                let a = match gs.cur_player() {
+                    0 => alphamu.step(&gs),
+                    1 => opponent.step(&gs),
+                    _ => panic!("invalid player"),
+                };
+                gs.apply_action(a);
+            }
+
+            gs.evaluate(0);
+        }
     }
 }
