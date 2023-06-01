@@ -26,6 +26,7 @@ use log::{debug, info};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
+use scripts::agent_exploitability::calcualte_agent_exploitability;
 use scripts::benchmark::run_benchmark;
 use scripts::estimate_euchre_game_tree::estimate_euchre_game_tree;
 use scripts::pass_on_bower::calculate_open_hand_solver_convergence;
@@ -48,6 +49,7 @@ enum Mode {
     Analyze,
     Play,
     Scratch,
+    Exploitability,
     PassOnBowerOpenHand,
 }
 
@@ -96,6 +98,7 @@ fn main() {
         Mode::Play => run_play(args),
         Mode::Scratch => run_scratch(args),
         Mode::PassOnBowerOpenHand => calculate_open_hand_solver_convergence(args),
+        Mode::Exploitability => calcualte_agent_exploitability(args),
         // Mode::PassOnBowerOpenHand => open_hand_score_pass_on_bower(args),
     }
 }

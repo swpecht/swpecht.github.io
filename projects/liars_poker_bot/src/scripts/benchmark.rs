@@ -36,7 +36,7 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
     // agents.insert("pimcts, 20 worlds, open hand".to_string(), a);
 
     let a = &mut PolicyAgent::new(RandomRolloutEvaluator::new(20, rng()), rng());
-    agents.insert("pimcts, 20 worlds, random rollout".to_string(), a);
+    agents.insert("random rollout, 20 worlds".to_string(), a);
 
     // let config = ISMCTBotConfig::default();
     // let ismcts = &mut ISMCTSBot::new(game.clone(), 1.5, 20, OpenHandSolver::new(), config);
@@ -88,9 +88,16 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
         }
     }
 
-    // info!("{}", exploitability(KuhnPoker::game(), alphamu).nash_conv);
+    // info!(
+    //     "{}",
+    //     exploitability(
+    //         KuhnPoker::game(),
+    //         &mut AlphaMuBot::new(OpenHandSolver::new(), 20, 10)
+    //     )
+    //     .nash_conv
+    // );
 }
 
-fn rng() -> StdRng {
+pub fn rng() -> StdRng {
     StdRng::from_rng(thread_rng()).unwrap()
 }

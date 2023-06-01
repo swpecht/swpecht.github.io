@@ -27,7 +27,7 @@ pub(super) struct TabularBestResponse<'a, G: GameState, P> {
     best_response_cache: Tree<Action>,
 }
 
-impl<'a, G: GameState, P: Policy<G> + Clone> TabularBestResponse<'a, G, P> {
+impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
     pub fn new(policy: &'a mut P, root_state: &G, player: Player, cut_threshold: f64) -> Self {
         let mut br = Self {
             _root_state: root_state.clone(),
@@ -49,7 +49,7 @@ impl<'a, G: GameState, P: Policy<G> + Clone> TabularBestResponse<'a, G, P> {
         debug!("building info sets...");
         let mut infosets = HashMap::new();
 
-        for (s, p) in DecisionNodeIterator::new(state.clone(), self.policy.clone(), self.player) {
+        for (s, p) in DecisionNodeIterator::new(state.clone(), self.policy, self.player) {
             let k = s.istate_key(self.player);
 
             let list = infosets.entry(k).or_insert(Vec::new());
@@ -206,14 +206,14 @@ fn transitions<G: GameState, P: Policy<G>>(
     list
 }
 
-struct DecisionNodeIterator<G, P> {
+struct DecisionNodeIterator<'a, G, P> {
     stack: Vec<(G, f64)>,
-    policy: P,
+    policy: &'a mut P,
     player: Player,
 }
 
-impl<G, P> DecisionNodeIterator<G, P> {
-    fn new(root_node: G, policy: P, player: Player) -> Self {
+impl<'a, G, P> DecisionNodeIterator<'a, G, P> {
+    fn new(root_node: G, policy: &'a mut P, player: Player) -> Self {
         let stack = vec![(root_node, 1.0)];
         Self {
             stack,
@@ -223,7 +223,7 @@ impl<G, P> DecisionNodeIterator<G, P> {
     }
 }
 
-impl<G: GameState, P: Policy<G>> Iterator for DecisionNodeIterator<G, P> {
+impl<'a, G: GameState, P: Policy<G>> Iterator for DecisionNodeIterator<'a, G, P> {
     type Item = (G, f64);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -233,7 +233,7 @@ impl<G: GameState, P: Policy<G>> Iterator for DecisionNodeIterator<G, P> {
             }
 
             // iterate backwards to maintain the same call stack as recusrive versions
-            for (action, p_action) in transitions(&parent_state, &mut self.policy, self.player)
+            for (action, p_action) in transitions(&parent_state, self.policy, self.player)
                 .iter()
                 .rev()
             {
@@ -310,8 +310,8 @@ mod tests {
         let root_state = KP::new_state();
         let mut br = TabularBestResponse::new(&mut policy, &root_state, 0, 0.0);
 
-        let first_decision_nodes =
-            DecisionNodeIterator::new(root_state.clone(), UniformRandomPolicy::new(), 0);
+        let mut policy = UniformRandomPolicy::new();
+        let first_decision_nodes = DecisionNodeIterator::new(root_state.clone(), &mut policy, 0);
 
         let mut unrolled_decision_nodes = DiskBackedVec::new();
         br._decision_nodes(&root_state, &mut unrolled_decision_nodes, 1.0);
@@ -332,8 +332,8 @@ mod tests {
         let root_state = Bluff::new_state(1, 1);
         let mut br = TabularBestResponse::new(&mut policy, &root_state, 0, 0.0);
 
-        let first_decision_nodes =
-            DecisionNodeIterator::new(root_state.clone(), UniformRandomPolicy::new(), 0);
+        let mut policy = UniformRandomPolicy::new();
+        let first_decision_nodes = DecisionNodeIterator::new(root_state.clone(), &mut policy, 0);
 
         let mut unrolled_decision_nodes = DiskBackedVec::new();
         br._decision_nodes(&root_state, &mut unrolled_decision_nodes, 1.0);
