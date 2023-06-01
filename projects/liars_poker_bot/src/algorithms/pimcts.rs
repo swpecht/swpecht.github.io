@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use rand::rngs::StdRng;
 
 use crate::{
@@ -16,7 +18,8 @@ use super::{
 pub struct PIMCTSBot<G> {
     n_rollouts: usize,
     rng: StdRng,
-    solver: OpenHandSolver<G>,
+    solver: OpenHandSolver,
+    _phantom: PhantomData<G>,
 }
 
 impl<G: GameState + ResampleFromInfoState + Send> PIMCTSBot<G> {
@@ -25,6 +28,7 @@ impl<G: GameState + ResampleFromInfoState + Send> PIMCTSBot<G> {
             n_rollouts,
             rng,
             solver: OpenHandSolver::new(),
+            _phantom: PhantomData,
         }
     }
 
@@ -39,8 +43,8 @@ impl<G: GameState + ResampleFromInfoState + Send> PIMCTSBot<G> {
         // self.cache.transposition_table.clear();
 
         let sum: f64 = worlds
-            .into_iter()
-            // .into_par_iter()
+            // .into_iter()
+            .into_par_iter()
             .map(|w| evaluate_with_solver(w, self.solver.clone(), maximizing_player))
             .sum();
 
@@ -58,7 +62,7 @@ impl<G: GameState + ResampleFromInfoState + Send> PIMCTSBot<G> {
 
 fn evaluate_with_solver<G: GameState + Send>(
     w: G,
-    mut solver: OpenHandSolver<G>,
+    mut solver: OpenHandSolver,
     maximizing_player: Player,
 ) -> f64 {
     solver.evaluate_player(&w, maximizing_player)

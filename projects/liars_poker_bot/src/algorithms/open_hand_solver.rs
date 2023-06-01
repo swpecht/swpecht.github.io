@@ -17,39 +17,36 @@ use super::{alphamu::Team, ismcts::Evaluator};
 /// This is an adaption of a double dummy solver for bridge
 /// http://privat.bahnhof.se/wb758135/bridge/Alg-dds_x.pdf
 #[derive(Clone)]
-pub struct OpenHandSolver<G> {
+pub struct OpenHandSolver {
     cache: AlphaBetaCache,
-    _phantom: PhantomData<G>,
 }
 
-impl<G: GameState> OpenHandSolver<G> {
+impl OpenHandSolver {
     pub fn new() -> Self {
         Self {
             cache: AlphaBetaCache::default(),
-            _phantom: PhantomData::default(),
         }
     }
 
     pub fn new_without_cache() -> Self {
         Self {
             cache: AlphaBetaCache::new(false),
-            _phantom: PhantomData::default(),
         }
     }
 
     /// Evaluates the gamestate for a maximizing player using alpha-beta search
-    pub fn evaluate_player(&mut self, gs: &G, maximizing_player: Player) -> f64 {
+    pub fn evaluate_player<G: GameState>(&mut self, gs: &G, maximizing_player: Player) -> f64 {
         alpha_beta_search_cached(gs.clone(), maximizing_player, self.cache.clone()).0
     }
 }
 
-impl<G: GameState> Default for OpenHandSolver<G> {
+impl Default for OpenHandSolver {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<G: GameState> Evaluator<G> for OpenHandSolver<G> {
+impl<G: GameState> Evaluator<G> for OpenHandSolver {
     fn evaluate(&mut self, gs: &G) -> Vec<f64> {
         let mut result = vec![0.0; gs.num_players()];
 
