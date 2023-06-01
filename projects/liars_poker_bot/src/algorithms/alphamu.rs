@@ -3,7 +3,7 @@ use std::{
     marker::PhantomData,
 };
 
-use log::trace;
+use log::{debug, trace};
 use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
 use rustc_hash::FxHashMap;
 
@@ -14,6 +14,7 @@ use crate::{
     cfragent::cfrnode::ActionVec,
     game::{Action, GameState, Player},
     istate::IStateKey,
+    policy::Policy,
 };
 
 use self::front::AMFront;
@@ -44,7 +45,7 @@ impl From<Player> for Team {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct ChildNode {
     /// Average chance of winning averaged across all worlds in all fronts
     win_sum: FxHashMap<Action, f64>,
@@ -106,6 +107,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
     fn get_final_policy(&self, root_node: &G) -> ActionVec<f64> {
         let key = root_node.istate_key(root_node.cur_player());
         let node = self.nodes.get(&key).unwrap();
+        debug!("{}, node: {:?}", root_node, node);
 
         let v_sum: f64 = node.win_sum.values().sum();
         let actions = actions!(root_node);
@@ -118,10 +120,10 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
                 policy[a] = prob;
             }
             return policy;
-        }
-
-        for (a, v) in &node.win_sum {
-            policy[*a] = v / v_sum;
+        } else {
+            for (a, v) in &node.win_sum {
+                policy[*a] = v / v_sum;
+            }
         }
 
         policy
@@ -326,6 +328,12 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Agent<G> for AlphaMu
             "AlphaMu, worlds: {}, m: {}, evaluator: todo",
             self.num_worlds, self.m
         )
+    }
+}
+
+impl<G: GameState, E: Evaluator<G>> Policy<G> for AlphaMuBot<G, E> {
+    fn action_probabilities(&mut self, gs: &G) -> ActionVec<f64> {
+        todo!()
     }
 }
 

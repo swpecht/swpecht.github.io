@@ -5,13 +5,14 @@ use liars_poker_bot::{
     agents::{Agent, PolicyAgent, RandomAgent},
     algorithms::{
         alphamu::AlphaMuBot,
+        exploitability::exploitability,
         ismcts::{ISMCTBotConfig, ISMCTSBot, RandomRolloutEvaluator, ResampleFromInfoState},
         open_hand_solver::OpenHandSolver,
         pimcts::PIMCTSBot,
     },
     game::{euchre::Euchre, kuhn_poker::KuhnPoker, run_game, Game, GameState},
 };
-use log::debug;
+use log::{debug, info};
 use rand::{rngs::StdRng, thread_rng, SeedableRng};
 
 use crate::{Args, GameType};
@@ -41,11 +42,7 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
     // let ismcts = &mut ISMCTSBot::new(game.clone(), 1.5, 20, OpenHandSolver::new(), config);
     // agents.insert("ismcts".to_string(), ismcts);
 
-    let alphamu = &mut AlphaMuBot::new(
-        RandomRolloutEvaluator::new(100, SeedableRng::seed_from_u64(1)),
-        2,
-        5,
-    );
+    let alphamu = &mut AlphaMuBot::new(OpenHandSolver::new(), 20, 10);
     agents.insert("alphamu".to_string(), alphamu);
 
     // let mut cfr = CFRAgent::new(
@@ -90,6 +87,8 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
             }
         }
     }
+
+    // info!("{}", exploitability(KuhnPoker::game(), alphamu).nash_conv);
 }
 
 fn rng() -> StdRng {
