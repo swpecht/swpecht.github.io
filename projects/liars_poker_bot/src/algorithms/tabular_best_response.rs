@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, hash::Hash};
 
 use log::{debug, trace};
 
@@ -23,8 +23,8 @@ pub(super) struct TabularBestResponse<'a, G: GameState, P> {
     info_sets: HashMap<IStateKey, Vec<(G, f64)>>,
     cut_threshold: f64,
     policy: &'a mut P,
-    value_cache: Tree<f64>,
-    best_response_cache: Tree<Action>,
+    value_cache: HashMap<IStateKey, f64>,            //Tree<f64>,
+    best_response_cache: HashMap<IStateKey, Action>, // Tree<Action>,
 }
 
 impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
@@ -36,8 +36,8 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
             info_sets: HashMap::new(),
             cut_threshold,
             policy,
-            value_cache: Tree::new(),
-            best_response_cache: Tree::new(),
+            value_cache: HashMap::new(),
+            best_response_cache: HashMap::new(),
         };
         br.info_sets = br.info_sets(root_state);
 
@@ -92,7 +92,7 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
         trace!("calling best response value on: {}", gs);
         let key = gs.key();
         if self.value_cache.contains_key(&key) {
-            return self.value_cache.get(&key).unwrap();
+            return *self.value_cache.get(&key).unwrap();
         }
 
         if gs.is_terminal() {
@@ -146,7 +146,7 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
     /// Returns the best response for this information state.
     pub fn best_response_action(&mut self, infostate: &IStateKey) -> Action {
         if self.best_response_cache.contains_key(infostate) {
-            return self.best_response_cache.get(infostate).unwrap();
+            return *self.best_response_cache.get(infostate).unwrap();
         }
 
         let infoset = self.info_sets.get(infostate);
