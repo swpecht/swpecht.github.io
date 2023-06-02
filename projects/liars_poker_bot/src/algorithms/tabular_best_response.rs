@@ -335,10 +335,7 @@ mod tests {
 
         // assert_eq!(unrolled_decision_nodes.len(), first_decision_nodes.len());
 
-        for (i, fd) in first_decision_nodes
-            .enumerate()
-            .take(unrolled_decision_nodes.len())
-        {
+        for (i, fd) in first_decision_nodes.enumerate() {
             assert_eq!(*unrolled_decision_nodes.get(i), fd);
         }
     }
@@ -355,10 +352,7 @@ mod tests {
         let mut unrolled_decision_nodes = DiskBackedVec::new();
         br._decision_nodes(&root_state, &mut unrolled_decision_nodes, 1.0);
 
-        for (i, fd) in first_decision_nodes
-            .enumerate()
-            .take(unrolled_decision_nodes.len())
-        {
+        for (i, fd) in first_decision_nodes.enumerate() {
             assert_eq!(unrolled_decision_nodes.get(i).0, fd.0);
             assert_relative_eq!(unrolled_decision_nodes.get(i).1, fd.1)
         }
