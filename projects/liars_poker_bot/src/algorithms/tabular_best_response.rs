@@ -60,12 +60,7 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
     }
 
     /// Optmized version of OpenSpiel decision nodes algorithm
-    fn _decision_nodes(
-        &mut self,
-        parent_state: &G,
-        nodes: &mut DiskBackedVec<(G, f64)>,
-        p_state: f64,
-    ) {
+    fn _decision_nodes(&mut self, parent_state: &G, nodes: &mut Vec<(G, f64)>, p_state: f64) {
         if parent_state.is_terminal() {
             return;
         }
@@ -330,14 +325,16 @@ mod tests {
         let mut policy = UniformRandomPolicy::new();
         let first_decision_nodes = DecisionNodeIterator::new(root_state.clone(), &mut policy, 0);
 
-        let mut unrolled_decision_nodes = DiskBackedVec::new();
+        let mut unrolled_decision_nodes = Vec::new();
         br._decision_nodes(&root_state, &mut unrolled_decision_nodes, 1.0);
 
-        // assert_eq!(unrolled_decision_nodes.len(), first_decision_nodes.len());
-
+        let mut n = 0;
         for (i, fd) in first_decision_nodes.enumerate() {
-            assert_eq!(*unrolled_decision_nodes.get(i), fd);
+            assert_eq!(unrolled_decision_nodes[i], fd);
+            n += 1;
         }
+
+        assert_eq!(n, unrolled_decision_nodes.len());
     }
 
     #[test]
@@ -349,12 +346,16 @@ mod tests {
         let mut policy = UniformRandomPolicy::new();
         let first_decision_nodes = DecisionNodeIterator::new(root_state.clone(), &mut policy, 0);
 
-        let mut unrolled_decision_nodes = DiskBackedVec::new();
+        let mut unrolled_decision_nodes = Vec::new();
         br._decision_nodes(&root_state, &mut unrolled_decision_nodes, 1.0);
 
+        let mut n = 0;
         for (i, fd) in first_decision_nodes.enumerate() {
-            assert_eq!(unrolled_decision_nodes.get(i).0, fd.0);
-            assert_relative_eq!(unrolled_decision_nodes.get(i).1, fd.1)
+            assert_eq!(unrolled_decision_nodes[i].0, fd.0);
+            assert_relative_eq!(unrolled_decision_nodes[i].1, fd.1);
+            n += 1;
         }
+
+        assert_eq!(n, unrolled_decision_nodes.len());
     }
 }
