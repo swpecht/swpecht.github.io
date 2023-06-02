@@ -7,7 +7,6 @@ use super::{
 
 const JACK_RANK: usize = 2;
 const SUITS: &[Suit] = &[Suit::Spades, Suit::Clubs, Suit::Hearts, Suit::Diamonds];
-const RANKS: &[usize] = &[0, 1, 2, 3, 4, 5];
 const WORD_SIZE: usize = 4;
 const MAX_WORDS: usize = 7;
 type Locations = u32;
@@ -78,31 +77,6 @@ pub(super) fn iso_deck(deck: Deck, trump: Option<Suit>) -> [Locations; 4] {
     locations
 }
 
-fn get_index(c: C, trump: Option<Suit>) -> (usize, usize) {
-    let rank = c.rank() as usize;
-    let suit = c.suit();
-
-    if trump.is_none() {
-        return (suit as usize, rank);
-    }
-
-    let trump = trump.unwrap();
-    let is_trump = suit == trump;
-    let is_trump_color = suit.other_color() == trump || is_trump;
-
-    match (is_trump, is_trump_color, rank) {
-        (true, true, JACK_RANK) => (suit as usize, 6),
-        (false, true, JACK_RANK) => (trump as usize, 5),
-        (_, true, x) if x > JACK_RANK => (suit as usize, rank - 1),
-        (_, true, x) if x < JACK_RANK => (suit as usize, rank),
-        (false, false, _) => (suit as usize, rank),
-        _ => panic!(
-            "invalid card: {}, is_trump: {}, is_trump_color: {}, rank: {}",
-            c, is_trump, is_trump_color, rank
-        ),
-    }
-}
-
 /// Returns the bit mask associated with each location.
 ///
 /// Results are arbitrary.
@@ -116,29 +90,6 @@ fn location_mask(loc: CardLocation) -> Locations {
         CardLocation::FaceUp => 0b0101,
         CardLocation::None => 0b0000,
     }
-}
-
-/// Deletes the ith word, downshift all following elements
-pub fn downshift(l: &mut Locations, i: usize) {
-    let m = mask(i);
-    let x = *l & m;
-    *l &= !m;
-    *l >>= 4;
-    *l |= x;
-}
-fn mask(i: usize) -> Locations {
-    if i == 0 {
-        0
-    } else {
-        u32::MAX >> (32 - (i * WORD_SIZE))
-    }
-}
-
-fn set_loc(l: &mut Locations, i: usize, loc: CardLocation) {
-    let m = 0b1111 << (i * WORD_SIZE);
-    *l &= !m;
-    let word_mask = location_mask(loc) << (i * WORD_SIZE);
-    *l |= word_mask;
 }
 
 /// Swap words
@@ -180,7 +131,7 @@ mod tests {
     use crate::game::euchre::{
         actions::{Card, Suit},
         deck::{CardLocation, Deck},
-        ismorphic::{downshift, iso_deck, set_loc, swap_loc},
+        ismorphic::{iso_deck, swap_loc},
     };
 
     #[test]
@@ -260,32 +211,6 @@ mod tests {
             iso_deck(d1, Some(Suit::Spades)),
             iso_deck(d2, Some(Suit::Spades))
         );
-    }
-
-    #[test]
-    fn test_downshift() {
-        let mut l = 0;
-        downshift(&mut l, 1);
-        assert_eq!(l, 0);
-
-        let mut l = 0b0001;
-        downshift(&mut l, 0);
-        assert_eq!(l, 0);
-
-        let mut l = 0b00010000;
-        downshift(&mut l, 0);
-        assert_eq!(l, 0b0001);
-
-        let mut l = 0b0010_0000_0101_0001;
-        downshift(&mut l, 2);
-        assert_eq!(l, 0b0010_0101_0001);
-    }
-
-    #[test]
-    fn test_set_loc() {
-        let mut l = 0;
-        set_loc(&mut l, 1, CardLocation::Player1);
-        assert_eq!(l, 0b00010000);
     }
 
     #[test]

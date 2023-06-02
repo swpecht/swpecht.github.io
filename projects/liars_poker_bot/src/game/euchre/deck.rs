@@ -4,9 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::game::Player;
 
-use super::actions::{Card, Suit};
+use super::actions::Card;
 
-const JACK_RANK: usize = 2;
 const CARDS: &[Card] = &[
     Card::NC,
     Card::TC,
