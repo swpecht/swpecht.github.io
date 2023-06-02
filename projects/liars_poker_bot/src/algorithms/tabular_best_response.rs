@@ -89,6 +89,7 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
 
     /// Returns the value of the specified state to the best-responder.
     pub fn value(&mut self, gs: &mut G) -> f64 {
+        trace!("calling best response value on: {}", gs);
         let key = gs.key();
         if self.value_cache.contains_key(&key) {
             return self.value_cache.get(&key).unwrap();
@@ -96,22 +97,39 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
 
         if gs.is_terminal() {
             let v = gs.evaluate(self.player);
-            trace!("found terminal node: {:?} with value: {}", gs, v);
+            trace!("found terminal node: {} with value: {}", gs, v);
 
             self.value_cache.insert(key, v);
             v
         } else if gs.cur_player() == self.player && !gs.is_chance_node() {
             let action = self.best_response_action(&gs.istate_key(self.player));
-            trace!("found best response action of {:?} for {}", action, gs);
             gs.apply_action(action);
-
             let v = self.value(gs);
+            trace!(
+                "found best response action (last action) for {} with value: {}",
+                gs,
+                v
+            );
             self.value_cache.insert(key, v);
             gs.undo();
             return v;
+        } else if gs.is_chance_node() {
+            trace!("evaluating chance node: {}", gs);
+            let mut v = 0.0;
+            for (a, p) in self.transitions(gs) {
+                if p > self.cut_threshold {
+                    gs.apply_action(a);
+                    v += p * self.value(gs);
+                    gs.undo();
+                }
+            }
+
+            self.value_cache.insert(key, v);
+            trace!("found value for chance node: {}: {}", gs, v);
+            return v;
         } else {
             let mut v = 0.0;
-            trace!("evaluating children for {:?}", gs);
+            trace!("evaluating children for {}", gs);
             for (a, p) in self.transitions(gs) {
                 if p > self.cut_threshold {
                     gs.apply_action(a);
