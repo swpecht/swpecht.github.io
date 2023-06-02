@@ -32,7 +32,15 @@ impl Algorithm for CFRCS {
         gs: &T,
         update_player: Player,
     ) {
-        self.cfrcs(ns, gs, update_player, 0, 1.0, 1.0, CFRPhase::Phase1);
+        self.cfrcs(
+            ns,
+            &mut gs.clone(),
+            update_player,
+            0,
+            1.0,
+            1.0,
+            CFRPhase::Phase1,
+        );
     }
 
     fn nodes_touched(&self) -> usize {
@@ -53,7 +61,7 @@ impl CFRCS {
     fn cfrcs<T: GameState, N: NodeStore<CFRNode>>(
         &mut self,
         ns: &mut N,
-        gs: &T,
+        gs: &mut T,
         update_player: Player,
         _depth: usize,
         reach0: f64,
@@ -74,16 +82,18 @@ impl CFRCS {
         gs.legal_actions(&mut actions);
         if actions.len() == 1 {
             // avoid processing nodes with no choices
-            let mut ngs = gs.clone();
-            ngs.apply_action(actions[0]);
-            return self.cfrcs(ns, &ngs, update_player, _depth + 1, reach0, reach1, phase);
+            gs.apply_action(actions[0]);
+            let v = self.cfrcs(ns, gs, update_player, _depth + 1, reach0, reach1, phase);
+            gs.undo();
+            return v;
         }
 
         if gs.is_chance_node() {
             let a = *actions.choose(&mut self.rng).unwrap();
-            let mut ngs = gs.clone();
-            ngs.apply_action(a);
-            return self.cfrcs(ns, &ngs, update_player, _depth + 1, reach0, reach1, phase);
+            gs.apply_action(a);
+            let v = self.cfrcs(ns, gs, update_player, _depth + 1, reach0, reach1, phase);
+            gs.undo();
+            return v;
         }
 
         // check for cuts  (pruning optimization from Section 2.2.2) of Marc's thesis
@@ -146,17 +156,17 @@ impl CFRCS {
                 _ => panic!("invalid player"),
             };
 
-            let mut ngs = gs.clone();
-            ngs.apply_action(a);
+            gs.apply_action(a);
             let payoff = self.cfrcs(
                 ns,
-                &ngs,
+                gs,
                 update_player,
                 _depth + 1,
                 newreach0,
                 newreach1,
                 phase,
             );
+            gs.undo();
             move_evs[a] = payoff;
             strat_ev += move_probs[a] * payoff;
         }
