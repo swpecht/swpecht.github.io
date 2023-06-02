@@ -88,7 +88,7 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
     }
 
     /// Returns the value of the specified state to the best-responder.
-    pub fn value(&mut self, gs: &G) -> f64 {
+    pub fn value(&mut self, gs: &mut G) -> f64 {
         let key = gs.key();
         if self.value_cache.contains_key(&key) {
             return self.value_cache.get(&key).unwrap();
@@ -102,21 +102,21 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
             v
         } else if gs.cur_player() == self.player && !gs.is_chance_node() {
             let action = self.best_response_action(&gs.istate_key(self.player));
-            trace!("found best response action of {:?} for {:?}", action, gs);
-            let mut ngs = gs.clone();
-            ngs.apply_action(action);
+            trace!("found best response action of {:?} for {}", action, gs);
+            gs.apply_action(action);
 
-            let v = self.value(&ngs);
+            let v = self.value(gs);
             self.value_cache.insert(key, v);
+            gs.undo();
             return v;
         } else {
             let mut v = 0.0;
-            trace!("evaluating childre for {:?}", gs);
+            trace!("evaluating children for {:?}", gs);
             for (a, p) in self.transitions(gs) {
                 if p > self.cut_threshold {
-                    let mut ngs = gs.clone();
-                    ngs.apply_action(a);
-                    v += p * self.value(&ngs);
+                    gs.apply_action(a);
+                    v += p * self.value(gs);
+                    gs.undo();
                 }
             }
 
@@ -135,7 +135,7 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
         if infoset.is_none() {
             panic!("couldn't find key");
         }
-        let infoset = infoset.unwrap().clone();
+        let mut infoset = infoset.unwrap().clone();
 
         // Get actions from the first (state, cf_prob) pair in the infoset list.
         // Return the best action by counterfactual-reach-weighted state-value.
@@ -146,10 +146,10 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
         let mut max_v = f64::NEG_INFINITY;
         for a in actions {
             let mut v = 0.0;
-            for (gs, cf_p) in &infoset {
-                let mut ngs = gs.clone();
-                ngs.apply_action(a);
-                v += cf_p * self.value(&ngs);
+            for (gs, cf_p) in infoset.iter_mut() {
+                gs.apply_action(a);
+                v += *cf_p * self.value(gs);
+                gs.undo()
             }
 
             if v > max_v {
