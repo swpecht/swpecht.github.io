@@ -1,4 +1,4 @@
-use std::{collections::HashMap, hash::Hash};
+use std::collections::HashMap;
 
 use log::{debug, trace};
 
@@ -6,7 +6,6 @@ use crate::{
     actions,
     cfragent::cfrnode::ActionVec,
     collections::diskbackedvec::DiskBackedVec,
-    database::node_tree::Tree,
     game::{Action, GameState, Player},
     istate::IStateKey,
     policy::Policy,
