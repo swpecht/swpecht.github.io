@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 
-use log::{debug, trace};
+use log::{debug, log_enabled, trace};
 
 use crate::{
     actions,
     cfragent::cfrnode::ActionVec,
-    collections::diskbackedvec::DiskBackedVec,
     game::{Action, GameState, Player},
     istate::IStateKey,
     policy::Policy,
@@ -83,32 +82,24 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
 
     /// Returns the value of the specified state to the best-responder.
     pub fn value(&mut self, gs: &mut G) -> f64 {
-        trace!("calling best response value on: {}", gs);
         let key = gs.key();
         if self.value_cache.contains_key(&key) {
             return *self.value_cache.get(&key).unwrap();
         }
 
-        if gs.is_terminal() {
+        trace!("looking for value of {}", gs);
+        let v = if gs.is_terminal() {
             let v = gs.evaluate(self.player);
-            trace!("found terminal node: {} with value: {}", gs, v);
-
             self.value_cache.insert(key, v);
             v
         } else if gs.cur_player() == self.player && !gs.is_chance_node() {
             let action = self.best_response_action(&gs.istate_key(self.player));
             gs.apply_action(action);
             let v = self.value(gs);
-            trace!(
-                "found best response action (last action) for {} with value: {}",
-                gs,
-                v
-            );
             self.value_cache.insert(key, v);
             gs.undo();
-            return v;
+            v
         } else if gs.is_chance_node() {
-            trace!("evaluating chance node: {}", gs);
             let mut v = 0.0;
             for (a, p) in self.transitions(gs) {
                 if p > self.cut_threshold {
@@ -117,13 +108,10 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
                     gs.undo();
                 }
             }
-
             self.value_cache.insert(key, v);
-            trace!("found value for chance node: {}: {}", gs, v);
-            return v;
+            v
         } else {
             let mut v = 0.0;
-            trace!("evaluating children for {}", gs);
             for (a, p) in self.transitions(gs) {
                 if p > self.cut_threshold {
                     gs.apply_action(a);
@@ -132,9 +120,17 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
                 }
             }
 
-            self.value_cache.insert(key, v);
-            return v;
-        }
+            v
+        };
+
+        trace!(
+            "found value for {}: to player {} of: {}",
+            gs,
+            self.player,
+            v
+        );
+        self.value_cache.insert(key, v);
+        v
     }
 
     /// Returns the best response for this information state.
@@ -152,16 +148,36 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
         // Get actions from the first (state, cf_prob) pair in the infoset list.
         // Return the best action by counterfactual-reach-weighted state-value.
         let gs = &infoset[0].0;
+        assert_eq!(gs.cur_player(), self.player);
 
         let actions = actions!(gs);
         let mut max_action = actions[0];
         let mut max_v = f64::NEG_INFINITY;
+        trace!(
+            "looking for best response at: {}",
+            gs.istate_string(self.player)
+        );
         for a in actions {
             let mut v = 0.0;
+
             for (gs, cf_p) in infoset.iter_mut() {
                 gs.apply_action(a);
                 v += *cf_p * self.value(gs);
-                gs.undo()
+                gs.undo();
+            }
+
+            if log_enabled!(log::Level::Trace) {
+                let mut gs = infoset[0].0.clone();
+                let starting_state = gs.istate_string(self.player);
+                gs.apply_action(a);
+                let new_state = gs.istate_string(self.player);
+
+                trace!(
+                    "evaluated from {} to {} as {}",
+                    starting_state,
+                    new_state,
+                    v
+                );
             }
 
             if v > max_v {
@@ -271,7 +287,6 @@ mod tests {
 
     use crate::{
         algorithms::tabular_best_response::{DecisionNodeIterator, TabularBestResponse},
-        collections::diskbackedvec::DiskBackedVec,
         game::{
             bluff::Bluff,
             kuhn_poker::{KPAction as A, KuhnPoker as KP},

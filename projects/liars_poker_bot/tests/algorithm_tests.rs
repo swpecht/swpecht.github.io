@@ -21,7 +21,7 @@ fn test_ismcts_exploitability() {
         KuhnPoker::game(),
         1.5,
         10000,
-        RandomRolloutEvaluator::new(100, SeedableRng::seed_from_u64(42)),
+        RandomRolloutEvaluator::new(100),
         config,
     );
 

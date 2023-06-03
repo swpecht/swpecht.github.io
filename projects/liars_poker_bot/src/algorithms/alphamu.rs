@@ -339,7 +339,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Policy<G> for AlphaM
 
 #[cfg(test)]
 mod tests {
-    use rand::{seq::SliceRandom, thread_rng, SeedableRng};
+    use rand::{seq::SliceRandom, thread_rng};
 
     use crate::{
         actions,
@@ -352,8 +352,7 @@ mod tests {
 
     #[test]
     fn test_alpha_mu_is_agent() {
-        let rng = SeedableRng::seed_from_u64(42);
-        let mut alphamu = AlphaMuBot::new(RandomRolloutEvaluator::new(100, rng), 20, 10);
+        let mut alphamu = AlphaMuBot::new(RandomRolloutEvaluator::new(100), 20, 10);
         let mut opponent = RandomAgent::default();
 
         for _ in 0..10 {

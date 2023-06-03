@@ -1,4 +1,10 @@
-use std::collections::{hash_map::Entry, HashMap};
+use std::{
+    collections::{
+        hash_map::{DefaultHasher, Entry},
+        HashMap,
+    },
+    hash::{Hash, Hasher},
+};
 
 use log::info;
 use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
@@ -84,7 +90,8 @@ pub trait Evaluator<G> {
     fn prior(&mut self, gs: &G) -> ActionVec<f64>;
 }
 
-/// A simple evaluator doing random rollouts.
+/// A simple evaluator doing random rollouts. It will always return the same result
+/// if called on the same gamestate
 ///
 /// This evaluator returns the average outcome of playing random actions from the
 /// given state until the end of the game.  n_rollouts is the number of random
@@ -92,17 +99,22 @@ pub trait Evaluator<G> {
 #[derive(Clone)]
 pub struct RandomRolloutEvaluator {
     n_rollouts: usize,
-    rng: StdRng,
 }
 
 impl RandomRolloutEvaluator {
-    pub fn new(n_rollouts: usize, rng: StdRng) -> Self {
-        Self { n_rollouts, rng }
+    pub fn new(n_rollouts: usize) -> Self {
+        Self { n_rollouts }
     }
 }
 
 impl<G: GameState> Evaluator<G> for RandomRolloutEvaluator {
     fn evaluate(&mut self, gs: &G) -> Vec<f64> {
+        let key = gs.key();
+        let mut hasher = DefaultHasher::default();
+        key.hash(&mut hasher);
+        let seed = hasher.finish();
+        let mut rng: StdRng = SeedableRng::seed_from_u64(seed);
+
         let mut result = vec![0.0; gs.num_players()];
         let mut working_state = gs.clone();
         let mut actions = Vec::new();
@@ -116,7 +128,7 @@ impl<G: GameState> Evaluator<G> for RandomRolloutEvaluator {
                 if actions.is_empty() {
                     info!("{}", working_state);
                 }
-                let a = *actions.choose(&mut self.rng).unwrap();
+                let a = *actions.choose(&mut rng).unwrap();
                 working_state.apply_action(a);
             }
 
@@ -141,35 +153,6 @@ impl<G: GameState> Evaluator<G> for RandomRolloutEvaluator {
             r[a] = prob;
         }
         r
-    }
-}
-
-impl<G: GameState> Policy<G> for RandomRolloutEvaluator {
-    fn action_probabilities(&mut self, gs: &G) -> ActionVec<f64> {
-        let mut values = Vec::new();
-        let actions = actions!(gs);
-        let mut gs = gs.clone();
-        let player = gs.cur_player();
-
-        for a in actions.clone() {
-            gs.apply_action(a);
-            let v = self.evaluate(&gs)[player];
-            values.push(v);
-            gs.undo();
-        }
-
-        let mut probs = ActionVec::new(&actions);
-
-        let index_of_max = values
-            .iter()
-            .enumerate()
-            .max_by(|(_, a), (_, b)| a.total_cmp(b))
-            .map(|(index, _)| index)
-            .unwrap();
-
-        probs[actions[index_of_max]] = 1.0;
-
-        probs
     }
 }
 
@@ -486,19 +469,22 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Policy<G> for ISMCTS
 #[cfg(test)]
 mod tests {
     use approx::assert_ulps_eq;
-    use rand::{seq::SliceRandom, thread_rng, SeedableRng};
+    use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
+    use stderrlog::new;
 
     use crate::{
         actions,
         agents::{Agent, RandomAgent},
         algorithms::ismcts::{Evaluator, ISMCTSBot, RandomRolloutEvaluator},
         game::{
+            bluff::Bluff,
             kuhn_poker::{KPAction, KuhnPoker},
             GameState,
         },
+        policy::Policy,
     };
 
-    use super::ISMCTBotConfig;
+    use super::{ISMCTBotConfig, ResampleFromInfoState};
 
     #[test]
     fn test_ismcts_is_agent() {
@@ -506,7 +492,7 @@ mod tests {
             KuhnPoker::game(),
             1.5,
             100,
-            RandomRolloutEvaluator::new(100, SeedableRng::seed_from_u64(42)),
+            RandomRolloutEvaluator::new(100),
             ISMCTBotConfig::default(),
         );
         let mut opponent = RandomAgent::default();
@@ -537,7 +523,7 @@ mod tests {
             KuhnPoker::game(),
             1.5,
             100,
-            RandomRolloutEvaluator::new(100, SeedableRng::seed_from_u64(42)),
+            RandomRolloutEvaluator::new(100),
             ISMCTBotConfig::default(),
         );
 
@@ -576,9 +562,26 @@ mod tests {
     /// Should be +0.125 expected value for player 0
     #[test]
     fn test_random_rollout() {
-        let mut e = RandomRolloutEvaluator::new(10000, SeedableRng::seed_from_u64(42));
+        let mut e = RandomRolloutEvaluator::new(10000);
 
         let gs = KuhnPoker::from_actions(&[KPAction::Queen]);
         assert_ulps_eq!(e.evaluate(&gs)[0], 0.125, epsilon = 0.01);
+    }
+
+    #[test]
+    fn test_random_rollout_repeatable() {
+        let mut p = RandomRolloutEvaluator::new(100);
+        let mut rng: StdRng = SeedableRng::seed_from_u64(100);
+        for _ in 0..100 {
+            let mut gs = Bluff::new_state(1, 1);
+            while gs.is_chance_node() {
+                let actions = actions!(gs);
+                let a = actions.choose(&mut rng).unwrap();
+                gs.apply_action(*a);
+            }
+            let e = p.evaluate(&gs);
+            let new_e = p.evaluate(&gs);
+            assert_eq!(e, new_e);
+        }
     }
 }
