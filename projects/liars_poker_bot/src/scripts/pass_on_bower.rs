@@ -104,7 +104,7 @@ pub fn calculate_open_hand_solver_convergence(_args: Args) {
         let mut gs = gs.clone();
         gs.apply_action(EAction::Pickup.into());
         let mut results = Vec::new();
-        for (e, r) in evaluators.iter_mut().zip(rollouts.iter()) {
+        for (e, _r) in evaluators.iter_mut().zip(rollouts.iter()) {
             let v = e.evaluate_player(&gs, 3);
             results.push(v);
         }

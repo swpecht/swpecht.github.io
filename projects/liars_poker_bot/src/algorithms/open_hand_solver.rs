@@ -119,11 +119,13 @@ fn alpha_beta_search_cached<G: GameState>(
     )
 }
 
+type AlphaBetaResult = (f64, Option<Action>);
+type TranspositionKey = (Team, IsomorphicHash);
 /// Helper struct to speeding up alpha_beta search
 #[derive(Clone)]
 struct AlphaBetaCache {
     vec_pool: Pool<Vec<Action>>,
-    transposition_table: Arc<DashMap<(Team, IsomorphicHash), (f64, Option<Action>)>>,
+    transposition_table: Arc<DashMap<TranspositionKey, AlphaBetaResult>>,
     use_tt: bool,
 }
 

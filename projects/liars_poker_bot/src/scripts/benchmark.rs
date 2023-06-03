@@ -2,17 +2,15 @@ use std::collections::HashMap;
 
 use itertools::Itertools;
 use liars_poker_bot::{
-    agents::{Agent, PolicyAgent, RandomAgent},
+    agents::{Agent, RandomAgent},
     algorithms::{
         alphamu::AlphaMuBot,
-        exploitability::exploitability,
-        ismcts::{ISMCTBotConfig, ISMCTSBot, RandomRolloutEvaluator, ResampleFromInfoState},
+        ismcts::{ResampleFromInfoState},
         open_hand_solver::OpenHandSolver,
-        pimcts::PIMCTSBot,
     },
     game::{euchre::Euchre, kuhn_poker::KuhnPoker, run_game, Game, GameState},
 };
-use log::{debug, info};
+use log::{debug};
 use rand::{rngs::StdRng, thread_rng, SeedableRng};
 
 use crate::{Args, GameType};

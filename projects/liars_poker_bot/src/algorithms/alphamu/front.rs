@@ -179,6 +179,8 @@ impl AMFront {
                         (true, false) => s[w],
                         (false, true) => o[w],
                         (true, true) => {
+                            // Like this to match paper
+                            #[allow(clippy::bool_comparison)]
                             if s[w] < o[w] {
                                 s[w]
                             } else {
