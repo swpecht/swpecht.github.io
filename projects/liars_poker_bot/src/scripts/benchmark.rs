@@ -2,15 +2,16 @@ use std::collections::HashMap;
 
 use itertools::Itertools;
 use liars_poker_bot::{
-    agents::{Agent, RandomAgent},
+    agents::{Agent, PolicyAgent, RandomAgent},
     algorithms::{
         alphamu::AlphaMuBot,
-        ismcts::{ResampleFromInfoState},
+        ismcts::{RandomRolloutEvaluator, ResampleFromInfoState},
         open_hand_solver::OpenHandSolver,
+        pimcts::PIMCTSBot,
     },
-    game::{euchre::Euchre, kuhn_poker::KuhnPoker, run_game, Game, GameState},
+    game::{bluff::Bluff, euchre::Euchre, kuhn_poker::KuhnPoker, run_game, Game, GameState},
 };
-use log::{debug};
+use log::debug;
 use rand::{rngs::StdRng, thread_rng, SeedableRng};
 
 use crate::{Args, GameType};
@@ -19,9 +20,9 @@ pub fn run_benchmark(args: Args) {
     match args.game {
         GameType::KuhnPoker => run_benchmark_for_game(args, KuhnPoker::game()),
         GameType::Euchre => run_benchmark_for_game(args, Euchre::game()),
-        GameType::Bluff11 => todo!(),
-        GameType::Bluff21 => todo!(),
-        GameType::Bluff22 => todo!(),
+        GameType::Bluff11 => run_benchmark_for_game(args, Bluff::game(1, 1)),
+        GameType::Bluff21 => run_benchmark_for_game(args, Bluff::game(2, 1)),
+        GameType::Bluff22 => run_benchmark_for_game(args, Bluff::game(2, 2)),
     }
 }
 
@@ -30,27 +31,17 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
     let ra: &mut dyn Agent<G> = &mut RandomAgent::new();
     agents.insert(ra.get_name(), ra);
 
-    // let a = &mut PolicyAgent::new(PIMCTSBot::new(20, rng()), rng());
-    // agents.insert("pimcts, 20 worlds, open hand".to_string(), a);
+    let a = &mut PolicyAgent::new(PIMCTSBot::new(20, OpenHandSolver::new(), rng()), rng());
+    agents.insert("pimcts, 20 worlds, open hand".to_string(), a);
 
-    // let a = &mut PolicyAgent::new(RandomRolloutEvaluator::new(20, rng()), rng());
-    // agents.insert("random rollout, 20 worlds".to_string(), a);
+    let a = &mut PolicyAgent::new(
+        PIMCTSBot::new(20, RandomRolloutEvaluator::new(10), rng()),
+        rng(),
+    );
+    agents.insert("pimcts, 20 worlds, random".to_string(), a);
 
-    // let config = ISMCTBotConfig::default();
-    // let ismcts = &mut ISMCTSBot::new(game.clone(), 1.5, 20, OpenHandSolver::new(), config);
-    // agents.insert("ismcts".to_string(), ismcts);
-
-    let alphamu = &mut AlphaMuBot::new(OpenHandSolver::new(), 20, 10);
-    agents.insert("alphamu".to_string(), alphamu);
-
-    // let mut cfr = CFRAgent::new(
-    //     game.clone(),
-    //     42,
-    //     MemoryNodeStore::default(),
-    //     CFRAlgorithm::CFRCS,
-    // );
-    // cfr.train(10000);
-    // agents.insert(cfr.get_name(), &mut cfr);
+    // let alphamu = &mut AlphaMuBot::new(OpenHandSolver::new(), 20, 10);
+    // agents.insert("alphamu, open hand".to_string(), alphamu);
 
     let agent_names = agents.keys().cloned().collect_vec();
 
@@ -85,15 +76,6 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
             }
         }
     }
-
-    // info!(
-    //     "{}",
-    //     exploitability(
-    //         KuhnPoker::game(),
-    //         &mut AlphaMuBot::new(OpenHandSolver::new(), 20, 10)
-    //     )
-    //     .nash_conv
-    // );
 }
 
 pub fn rng() -> StdRng {
