@@ -19,7 +19,7 @@ pub struct PIMCTSBot<G, E> {
     _phantom: PhantomData<G>,
 }
 
-impl<G: GameState + ResampleFromInfoState + Send, E: Evaluator<G> + Clone> PIMCTSBot<G, E> {
+impl<G: GameState + ResampleFromInfoState + Send, E: Evaluator<G> + Clone + Sync> PIMCTSBot<G, E> {
     pub fn new(n_rollouts: usize, solver: E, rng: StdRng) -> Self {
         Self {
             n_rollouts,
@@ -35,8 +35,8 @@ impl<G: GameState + ResampleFromInfoState + Send, E: Evaluator<G> + Clone> PIMCT
         // self.cache.transposition_table.clear();
 
         let sum: f64 = worlds
-            .into_iter()
-            // .into_par_iter()
+            // .into_iter()
+            .into_par_iter()
             .map(|w| evaluate_with_solver(w, self.solver.clone(), maximizing_player))
             .sum();
 
@@ -60,7 +60,7 @@ fn evaluate_with_solver<G: GameState + Send, E: Evaluator<G>>(
     solver.evaluate_player(&w, maximizing_player)
 }
 
-impl<G: GameState + ResampleFromInfoState + Send, E: Evaluator<G> + Clone> Evaluator<G>
+impl<G: GameState + ResampleFromInfoState + Send, E: Evaluator<G> + Clone + Sync> Evaluator<G>
     for PIMCTSBot<G, E>
 {
     fn evaluate_player(&mut self, gs: &G, maximizing_player: Player) -> f64 {
@@ -89,7 +89,7 @@ impl<G: GameState + ResampleFromInfoState + Send, E: Evaluator<G> + Clone> Evalu
     }
 }
 
-impl<G: GameState + ResampleFromInfoState + Send, E: Evaluator<G> + Clone> Policy<G>
+impl<G: GameState + ResampleFromInfoState + Send, E: Evaluator<G> + Clone + Sync> Policy<G>
     for PIMCTSBot<G, E>
 {
     fn action_probabilities(&mut self, gs: &G) -> ActionVec<f64> {
