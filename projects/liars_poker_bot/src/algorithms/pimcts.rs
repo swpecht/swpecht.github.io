@@ -10,31 +10,23 @@ use crate::{
 };
 use rayon::prelude::*;
 
-use super::{
-    ismcts::{Evaluator, ResampleFromInfoState},
-    open_hand_solver::OpenHandSolver,
-};
+use super::ismcts::{Evaluator, ResampleFromInfoState};
 
-pub struct PIMCTSBot<G> {
+pub struct PIMCTSBot<G, E> {
     n_rollouts: usize,
     rng: StdRng,
-    solver: OpenHandSolver,
+    solver: E,
     _phantom: PhantomData<G>,
 }
 
-impl<G: GameState + ResampleFromInfoState + Send> PIMCTSBot<G> {
-    pub fn new(n_rollouts: usize, rng: StdRng) -> Self {
+impl<G: GameState + ResampleFromInfoState + Send, E: Evaluator<G> + Clone> PIMCTSBot<G, E> {
+    pub fn new(n_rollouts: usize, solver: E, rng: StdRng) -> Self {
         Self {
             n_rollouts,
             rng,
-            solver: OpenHandSolver::new(),
+            solver,
             _phantom: PhantomData,
         }
-    }
-
-    pub fn evaluate_player(&mut self, gs: &G, maximizing_player: Player) -> f64 {
-        let worlds = self.get_worlds(gs);
-        self.evaluate_with_worlds(maximizing_player, worlds)
     }
 
     fn evaluate_with_worlds(&mut self, maximizing_player: Player, worlds: Vec<G>) -> f64 {
@@ -43,8 +35,8 @@ impl<G: GameState + ResampleFromInfoState + Send> PIMCTSBot<G> {
         // self.cache.transposition_table.clear();
 
         let sum: f64 = worlds
-            // .into_iter()
-            .into_par_iter()
+            .into_iter()
+            // .into_par_iter()
             .map(|w| evaluate_with_solver(w, self.solver.clone(), maximizing_player))
             .sum();
 
@@ -60,15 +52,22 @@ impl<G: GameState + ResampleFromInfoState + Send> PIMCTSBot<G> {
     }
 }
 
-fn evaluate_with_solver<G: GameState + Send>(
+fn evaluate_with_solver<G: GameState + Send, E: Evaluator<G>>(
     w: G,
-    mut solver: OpenHandSolver,
+    mut solver: E,
     maximizing_player: Player,
 ) -> f64 {
     solver.evaluate_player(&w, maximizing_player)
 }
 
-impl<G: GameState + ResampleFromInfoState + Send> Evaluator<G> for PIMCTSBot<G> {
+impl<G: GameState + ResampleFromInfoState + Send, E: Evaluator<G> + Clone> Evaluator<G>
+    for PIMCTSBot<G, E>
+{
+    fn evaluate_player(&mut self, gs: &G, maximizing_player: Player) -> f64 {
+        let worlds = self.get_worlds(gs);
+        self.evaluate_with_worlds(maximizing_player, worlds)
+    }
+
     fn evaluate(&mut self, gs: &G) -> Vec<f64> {
         let mut result = vec![0.0; gs.num_players()];
 
@@ -90,7 +89,9 @@ impl<G: GameState + ResampleFromInfoState + Send> Evaluator<G> for PIMCTSBot<G> 
     }
 }
 
-impl<G: GameState + ResampleFromInfoState + Send> Policy<G> for PIMCTSBot<G> {
+impl<G: GameState + ResampleFromInfoState + Send, E: Evaluator<G> + Clone> Policy<G>
+    for PIMCTSBot<G, E>
+{
     fn action_probabilities(&mut self, gs: &G) -> ActionVec<f64> {
         let mut values = Vec::new();
         let actions = actions!(gs);
@@ -125,22 +126,22 @@ mod tests {
     use rand::SeedableRng;
 
     use crate::{
-        algorithms::{ismcts::Evaluator, pimcts::PIMCTSBot},
+        algorithms::{ismcts::Evaluator, open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot},
         game::kuhn_poker::{KPAction, KuhnPoker},
     };
 
     #[test]
     fn test_open_hand_solver_kuhn() {
-        let mut evaluator = PIMCTSBot::new(100, SeedableRng::seed_from_u64(109));
+        let mut agent = PIMCTSBot::new(100, OpenHandSolver::new(), SeedableRng::seed_from_u64(109));
         let gs = KuhnPoker::from_actions(&[KPAction::Jack, KPAction::Queen]);
-        assert_eq!(evaluator.evaluate(&gs), vec![-1.0, 1.0]);
+        assert_eq!(agent.evaluate(&gs), vec![-1.0, 1.0]);
 
-        let mut evaluator = PIMCTSBot::new(100, SeedableRng::seed_from_u64(109));
+        let mut agent = PIMCTSBot::new(100, OpenHandSolver::new(), SeedableRng::seed_from_u64(109));
         let gs = KuhnPoker::from_actions(&[KPAction::Queen, KPAction::Jack]);
-        assert_eq!(evaluator.evaluate(&gs), vec![0.0, 0.0]);
+        assert_eq!(agent.evaluate(&gs), vec![0.0, 0.0]);
 
-        let mut evaluator = PIMCTSBot::new(100, SeedableRng::seed_from_u64(109));
+        let mut agent = PIMCTSBot::new(100, OpenHandSolver::new(), SeedableRng::seed_from_u64(109));
         let gs = KuhnPoker::from_actions(&[KPAction::King, KPAction::Jack]);
-        assert_eq!(evaluator.evaluate(&gs), vec![1.0, -1.0]);
+        assert_eq!(agent.evaluate(&gs), vec![1.0, -1.0]);
     }
 }

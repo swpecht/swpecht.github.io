@@ -86,6 +86,7 @@ impl Default for ISMCTSNode {
 pub trait Evaluator<G> {
     /// Returns evaluation on given state.
     fn evaluate(&mut self, gs: &G) -> Vec<f64>;
+    fn evaluate_player(&mut self, gs: &G, p: Player) -> f64;
     /// Returns a probability for each legal action in the given state.
     fn prior(&mut self, gs: &G) -> ActionVec<f64>;
 }
@@ -153,6 +154,10 @@ impl<G: GameState> Evaluator<G> for RandomRolloutEvaluator {
             r[a] = prob;
         }
         r
+    }
+
+    fn evaluate_player(&mut self, gs: &G, p: Player) -> f64 {
+        self.evaluate(gs)[p]
     }
 }
 
@@ -470,7 +475,6 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Policy<G> for ISMCTS
 mod tests {
     use approx::assert_ulps_eq;
     use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
-    use stderrlog::new;
 
     use crate::{
         actions,
@@ -481,10 +485,9 @@ mod tests {
             kuhn_poker::{KPAction, KuhnPoker},
             GameState,
         },
-        policy::Policy,
     };
 
-    use super::{ISMCTBotConfig, ResampleFromInfoState};
+    use super::ISMCTBotConfig;
 
     #[test]
     fn test_ismcts_is_agent() {

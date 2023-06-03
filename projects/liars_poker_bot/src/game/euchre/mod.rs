@@ -4,7 +4,6 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use log::debug;
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 

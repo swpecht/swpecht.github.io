@@ -33,11 +33,6 @@ impl OpenHandSolver {
             cache: AlphaBetaCache::new(false),
         }
     }
-
-    /// Evaluates the gamestate for a maximizing player using alpha-beta search
-    pub fn evaluate_player<G: GameState>(&mut self, gs: &G, maximizing_player: Player) -> f64 {
-        alpha_beta_search_cached(gs.clone(), maximizing_player, self.cache.clone()).0
-    }
 }
 
 impl Default for OpenHandSolver {
@@ -47,6 +42,11 @@ impl Default for OpenHandSolver {
 }
 
 impl<G: GameState> Evaluator<G> for OpenHandSolver {
+    /// Evaluates the gamestate for a maximizing player using alpha-beta search
+    fn evaluate_player(&mut self, gs: &G, maximizing_player: Player) -> f64 {
+        alpha_beta_search_cached(gs.clone(), maximizing_player, self.cache.clone()).0
+    }
+
     fn evaluate(&mut self, gs: &G) -> Vec<f64> {
         let mut result = vec![0.0; gs.num_players()];
 

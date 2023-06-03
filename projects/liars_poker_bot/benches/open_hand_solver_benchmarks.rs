@@ -1,7 +1,7 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use liars_poker_bot::{
     actions,
-    algorithms::pimcts::PIMCTSBot,
+    algorithms::{ismcts::Evaluator, open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot},
     game::{
         euchre::{Euchre, EuchreGameState},
         GameState,
@@ -11,7 +11,7 @@ use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
 pub fn criterion_benchmark(c: &mut Criterion) {
     let mut rng: StdRng = SeedableRng::seed_from_u64(42);
-    let mut evaluator = PIMCTSBot::new(100, SeedableRng::seed_from_u64(100));
+    let mut evaluator = PIMCTSBot::new(100, OpenHandSolver::new(), SeedableRng::seed_from_u64(100));
 
     let mut array = [1; 7];
     let mut v = 1;
@@ -36,7 +36,7 @@ fn bit_shift(v: &mut u32) {
     *v |= x;
 }
 
-fn evaluate_games(evaluator: &mut PIMCTSBot<EuchreGameState>, rng: &mut StdRng) {
+fn evaluate_games(evaluator: &mut PIMCTSBot<EuchreGameState, OpenHandSolver>, rng: &mut StdRng) {
     let gs = &get_game(rng);
     evaluator.evaluate_player(gs, 3);
 }
