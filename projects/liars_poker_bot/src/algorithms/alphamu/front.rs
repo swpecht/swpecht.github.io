@@ -153,7 +153,7 @@ impl IndexMut<usize> for AMVector {
     }
 }
 
-#[derive(Default, PartialEq)]
+#[derive(Default, PartialEq, Clone)]
 pub(super) struct AMFront {
     vectors: Vec<AMVector>,
 }
@@ -218,6 +218,10 @@ impl AMFront {
     /// This method does nothing if the vector is dominated by an existing vector.
     /// And it removes any vectors that are dominated by the new one
     pub fn push(&mut self, v: AMVector) {
+        if self.vectors.contains(&v) {
+            return; // nothing to do if already contained
+        }
+
         let mut is_dominated = false;
         for sv in &self.vectors {
             if v.is_dominated(sv) {
@@ -354,6 +358,15 @@ mod tests {
         let f2 = front!(amvec![1, 1, 1]);
         let f3 = f1.min(f2);
         assert_eq!(f3, front!(amvec![1, 1, 1]));
+
+        // test min and max with all zeros
+        let f1 = front!(amvec![0, 0, 0]);
+        let f2 = front!(amvec![0, 0, 0]);
+        assert_eq!(f1.min(f2), front!(amvec![0, 0, 0]));
+
+        let f1 = front!(amvec![0, 0, 0]);
+        let f2 = front!(amvec![0, 0, 0]);
+        assert_eq!(f1.max(f2), front!(amvec![0, 0, 0]));
     }
 }
 
