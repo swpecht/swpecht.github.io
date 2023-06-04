@@ -30,10 +30,6 @@ impl<G: GameState + ResampleFromInfoState + Send, E: Evaluator<G> + Clone + Sync
     }
 
     fn evaluate_with_worlds(&mut self, maximizing_player: Player, worlds: Vec<G>) -> f64 {
-        // clear the transposition table since it was generated with a different set of worlds
-        // this can be removed if we can iterate over all possible worlds for a given state
-        // self.cache.transposition_table.clear();
-
         let sum: f64 = worlds
             // .into_iter()
             .into_par_iter()
@@ -131,7 +127,7 @@ mod tests {
     };
 
     #[test]
-    fn test_open_hand_solver_kuhn() {
+    fn test_pimcts_kuhn() {
         let mut agent = PIMCTSBot::new(100, OpenHandSolver::new(), SeedableRng::seed_from_u64(109));
         let gs = KuhnPoker::from_actions(&[KPAction::Jack, KPAction::Queen]);
         assert_eq!(agent.evaluate(&gs), vec![-1.0, 1.0]);

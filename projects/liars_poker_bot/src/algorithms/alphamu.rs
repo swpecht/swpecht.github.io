@@ -73,6 +73,9 @@ pub struct AlphaMuBot<G, E> {
 
 impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
     pub fn new(evaluator: E, num_worlds: usize, m: usize) -> Self {
+        if m == 0 {
+            todo!("implement support for m=0, should be the same as PIMCTS")
+        }
         Self {
             evaluator,
             team: Team::Team1,
@@ -88,12 +91,13 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         self.reset();
 
         let mut rng = thread_rng();
-        self.team = match root_node.cur_player() {
+        let player = root_node.cur_player();
+        self.team = match player {
             0 | 2 => Team::Team1,
             1 | 3 => Team::Team2,
             _ => panic!("invalid player"),
         };
-        let player = root_node.cur_player();
+
         let mut worlds = Vec::new();
         for _ in 0..self.num_worlds {
             worlds.push(Some(root_node.resample_from_istate(player, &mut rng)))
