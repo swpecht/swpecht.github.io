@@ -257,6 +257,10 @@ impl AMFront {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+
+    pub fn less_than_or_equal(&self, other: AMFront) -> bool {
+        todo!()
+    }
 }
 
 impl Debug for AMFront {

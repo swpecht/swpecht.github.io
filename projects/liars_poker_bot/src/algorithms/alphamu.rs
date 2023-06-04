@@ -143,17 +143,21 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         let mut result = AMFront::default();
         result.push(AMVector::from_worlds(&worlds));
         if self.stop(m, &worlds, &mut result) {
+            self.cache.insert(&worlds, result.clone(), self.team);
             return result;
         }
 
-        let cached = self.cache.get(&worlds, self.team);
-        if let Some(c) = cached {
-            return c.clone();
-        }
+        let t = self.cache.get(&worlds, self.team);
 
         let mut front = AMFront::default();
+
         if self.team != self.get_team(&worlds) {
             // min node
+
+            if t.is_some() && alpha.is_some() && t.unwrap().less_than_or_equal(alpha.unwrap()) {
+                return front;
+            }
+
             for a in self.all_moves(&worlds) {
                 let worlds_1 = self.filter_and_progress_worlds(&worlds, a);
 
@@ -274,7 +278,9 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         false
     }
 
-    fn reset(&mut self) {}
+    fn reset(&mut self) {
+        self.cache.reset();
+    }
 
     fn get_team(&self, worlds: &[Option<G>]) -> Team {
         let player = worlds
@@ -330,28 +336,30 @@ impl<G> Default for AlphaMuCache<G> {
 }
 
 impl<G: GameState> AlphaMuCache<G> {
-    fn get(&mut self, _worlds: &[Option<G>], _max_team: Team) -> Option<&AMFront> {
-        // let key = worlds
-        //     .iter()
-        //     .flatten()
-        //     .next()
-        //     .unwrap()
-        //     .istate_key(max_team.into());
+    fn get(&self, worlds: &[Option<G>], maximizing_team: Team) -> Option<&AMFront> {
+        let key = worlds
+            .iter()
+            .flatten()
+            .next()
+            .unwrap()
+            .istate_key(maximizing_team.into());
 
-        // self.transposition_table.get(&(max_team, key))
-        None
+        self.transposition_table.get(&(maximizing_team, key))
     }
 
-    pub fn insert(&mut self, _worlds: &[Option<G>], _v: AMFront, _maximizing_team: Team) {
-
+    pub fn insert(&mut self, worlds: &[Option<G>], v: AMFront, maximizing_team: Team) {
         // // Check if the game wants to store this state
-        // let key = worlds
-        //     .iter()
-        //     .flatten()
-        //     .next()
-        //     .unwrap()
-        //     .istate_key(maximizing_team.into());
-        // self.transposition_table.insert((maximizing_team, key), v);
+        let key = worlds
+            .iter()
+            .flatten()
+            .next()
+            .unwrap()
+            .istate_key(maximizing_team.into());
+        self.transposition_table.insert((maximizing_team, key), v);
+    }
+
+    pub fn reset(&mut self) {
+        self.transposition_table.clear();
     }
 }
 
