@@ -101,6 +101,12 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         let mut max_action = actions[0];
         for a in actions {
             let a_worlds = self.filter_and_progress_worlds(&worlds, a);
+
+            // Do the iterative deepening to guide the search
+            for i in 0..self.m - 1 {
+                self.alphamu(i, a_worlds.clone(), None);
+            }
+
             let front = self.alphamu(self.m - 1, a_worlds.clone(), None);
             let wins = front.avg_wins();
             debug!(
