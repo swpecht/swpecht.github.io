@@ -16,10 +16,10 @@ I use an open hand solver -- a Perfect Information Monte Carlo sampling (PIMC) b
 
 **Example of what the bot can see from a deal of Euchre**
 ```
-Game:     QHTSADTC9S|9D|PPPT
+Game:     QhTsAdTc9s|9d|PPPT
 Meaning: |--- D ----|F | P/T
 
-* D: Dealers hand, e.g. QH = Queen of Hearts
+* D: Dealers hand, e.g. Qh = Queen of Hearts
 * F: Face up card
 * P/T: Whether each player in turn Passed or told the dealer to Take the card
 ```
@@ -29,11 +29,11 @@ Since it's not possible to reasonably calculate this for all possible deals for 
 For example, our solver will output the following: 
 ```
 # Game                 Valuation at 10k iterations
-1 JCTSASAHTD|JS|PPPT|  1.93
-2 9HTH9DTDQD|JS|PPPT|  -0.96
+1 JcTsAsAhTd|JS|PPPT|  1.93
+2 9hTh9dTdQd|JS|PPPT|  -0.96
 ```
 
-For 1, the dealer's team is expected to get almost 2 points (1.93) from this game state. They are very likely to win and have a good chance of taking all 5 tricks. The dealer has a very strong hand with the 3 highest cards in the game (JS, JC, AS) and an offsuit ace (AH). Conversely in 2,  the dealer is likely to lose the game. They'll have the highest card, but also no other trump and low offsuit cards.
+For 1, the dealer's team is expected to get almost 2 points (1.93) from this game state. They are very likely to win and have a good chance of taking all 5 tricks. The dealer has a very strong hand with the 3 highest cards in the game (Js, Jc, As) and an offsuit ace (Ah). Conversely in 2,  the dealer is likely to lose the game. They'll have the highest card, but also no other trump and low offsuit cards.
 
 
 # Findings: always pickup the jack?
@@ -55,7 +55,7 @@ After running all 33k possible deals the dealer could receive through the open h
 
 There is only a single deal where it is better to pass on the jack rather than pick it up:
 ```
-9CTCQCKCAC|JS|PPP
+9cTcQcKcAc|Js|PPP
 ```
 
 This is one of the worst possible hands to get in this situation. It's single suited with a guarantee of no trump unless the dealer picks up the card. And it's extremely unlikely for another player to call clubs as trump since we have all of the trump cards.
