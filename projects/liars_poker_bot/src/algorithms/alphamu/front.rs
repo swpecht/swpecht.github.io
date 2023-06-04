@@ -256,7 +256,13 @@ impl AMFront {
         let total: usize = self
             .vectors
             .iter()
-            .map(|v| v.is_win.iter().filter(|x| **x).count())
+            .map(|v| {
+                v.is_valid
+                    .iter()
+                    .zip(v.is_win.iter())
+                    .filter(|(v, w)| **v && **w)
+                    .count()
+            })
             .sum();
 
         total as f64 / self.vectors.len() as f64

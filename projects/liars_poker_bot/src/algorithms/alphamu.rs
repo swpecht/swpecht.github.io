@@ -11,6 +11,7 @@ use crate::{
     actions,
     agents::Agent,
     algorithms::alphamu::front::AMVector,
+    alloc::Pool,
     cfragent::cfrnode::ActionVec,
     game::{Action, GameState, Player},
     istate::IStateKey,
@@ -45,24 +46,12 @@ impl From<Player> for Team {
     }
 }
 
-#[derive(Default, Debug)]
-struct ChildNode {
-    /// Average chance of winning averaged across all worlds in all fronts
-    win_sum: FxHashMap<Action, f64>,
-}
-
-impl ChildNode {
-    fn update_action_value(&mut self, a: Action, f: &AMFront) {
-        let sum = self.win_sum.entry(a).or_insert(0.0);
-        *sum = f.avg_wins();
-    }
-}
-
 /// Implementation for AlphaMu from "The αµ Search Algorithm for the Game of Bridge"
 ///
 /// https://arxiv.org/pdf/1911.07960.pdf
 pub struct AlphaMuBot<G, E> {
     evaluator: E,
+    cache: AlphaMuCache<G>,
     team: Team,
     num_worlds: usize,
     m: usize,
@@ -72,12 +61,17 @@ pub struct AlphaMuBot<G, E> {
 
 impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
     pub fn new(evaluator: E, num_worlds: usize, m: usize) -> Self {
+        if m < 1 {
+            panic!("m must be at least 1, m=1 is PIMCTS")
+        }
+
         Self {
             evaluator,
             team: Team::Team1,
             _phantom_data: PhantomData,
             num_worlds,
             m,
+            cache: AlphaMuCache::default(),
             rng: SeedableRng::seed_from_u64(42),
         }
     }
@@ -107,11 +101,16 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         let mut max_action = actions[0];
         for a in actions {
             let a_worlds = self.filter_and_progress_worlds(&worlds, a);
-            let front = self.alphamu(self.m, a_worlds.clone());
+            let front = self.alphamu(self.m - 1, a_worlds.clone());
             let wins = front.avg_wins();
             debug!(
                 "evaluated {} to avg wins of {} with front: {:?}",
-                a_worlds.iter().flatten().next().unwrap(),
+                a_worlds
+                    .iter()
+                    .flatten()
+                    .next()
+                    .unwrap()
+                    .istate_string(player),
                 wins,
                 front
             );
@@ -127,11 +126,11 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
 
     /// Runs alphamu search returning the new front and optionally the actions to achieve it
     fn alphamu(&mut self, m: usize, worlds: Vec<Option<G>>) -> AMFront {
+        let w = worlds.iter().flatten().next().unwrap();
         trace!(
-            "alpha mu call: istate: {:?}\tm: {}\tworlds: {:?}",
-            self.cur_istate(&worlds),
-            m,
-            worlds
+            "alpha mu call: istate: {}\tm: {}",
+            w.istate_string(self.team.into()),
+            m
         );
 
         // ensure we have no chance nodes, not yet implemented
@@ -144,12 +143,12 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         let mut result = AMFront::default();
         result.push(AMVector::from_worlds(&worlds));
         if self.stop(m, &worlds, &mut result) {
-            trace!(
-                "stopping alpha mu for {:?}, found front: {:?}",
-                self.cur_istate(&worlds),
-                result
-            );
             return result;
+        }
+
+        let cached = self.cache.get(&worlds, self.team);
+        if let Some(c) = cached {
+            return c.clone();
         }
 
         let mut front = AMFront::default();
@@ -171,6 +170,15 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         }
 
         assert!(!front.is_empty());
+
+        trace!(
+            "alpha mu found: istate: {}\tm: {}\t{:?}",
+            w.istate_string(self.team.into()),
+            m,
+            front
+        );
+        self.cache.insert(&worlds, front.clone(), self.team);
+        self.cache.world_vector_pool.attach(worlds);
         front
     }
 
@@ -186,27 +194,11 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         all_moves
     }
 
-    /// Returns the istate key for all valid worlds
-    fn cur_istate(&self, worlds: &[Option<G>]) -> IStateKey {
-        let p = worlds
-            .iter()
-            .flatten()
-            .map(|x| x.cur_player())
-            .next()
-            .unwrap();
-
-        worlds
-            .iter()
-            .flatten()
-            .map(|w| w.istate_key(p))
-            .next()
-            .expect("no valid worlds for istate")
-    }
-
     /// Returns the progressed worlds where `a` was a valid action. Otherwise it
     /// marks that spot as None
     fn filter_and_progress_worlds(&mut self, worlds: &Vec<Option<G>>, a: Action) -> Vec<Option<G>> {
-        let mut worlds_1 = Vec::with_capacity(worlds.len());
+        let mut worlds_1 = self.cache.world_vector_pool.detach();
+        worlds_1.clear();
         let mut actions = Vec::new();
         for w in worlds.iter() {
             if w.is_none() {
@@ -268,8 +260,8 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         if m == 0 {
             for (i, w) in worlds.iter().enumerate().filter(|(_, w)| w.is_some()) {
                 let w = w.as_ref().unwrap();
-                let r = self.evaluator.evaluate(w);
-                if r[self.team as usize] > 0.0 {
+                let v = self.evaluator.evaluate_player(w, self.team.into());
+                if v > 0.0 {
                     // win most times
                     result.set(i, true);
                 } else {
@@ -320,6 +312,46 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Agent<G> for AlphaMu
 impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Policy<G> for AlphaMuBot<G, E> {
     fn action_probabilities(&mut self, gs: &G) -> ActionVec<f64> {
         self.run_search(gs)
+    }
+}
+
+struct AlphaMuCache<G> {
+    world_vector_pool: Pool<Vec<Option<G>>>,
+    transposition_table: HashMap<(Team, IStateKey), AMFront>,
+}
+
+impl<G> Default for AlphaMuCache<G> {
+    fn default() -> Self {
+        Self {
+            world_vector_pool: Pool::new(Vec::new),
+            transposition_table: HashMap::default(),
+        }
+    }
+}
+
+impl<G: GameState> AlphaMuCache<G> {
+    fn get(&mut self, _worlds: &[Option<G>], _max_team: Team) -> Option<&AMFront> {
+        // let key = worlds
+        //     .iter()
+        //     .flatten()
+        //     .next()
+        //     .unwrap()
+        //     .istate_key(max_team.into());
+
+        // self.transposition_table.get(&(max_team, key))
+        None
+    }
+
+    pub fn insert(&mut self, _worlds: &[Option<G>], _v: AMFront, _maximizing_team: Team) {
+
+        // // Check if the game wants to store this state
+        // let key = worlds
+        //     .iter()
+        //     .flatten()
+        //     .next()
+        //     .unwrap()
+        //     .istate_key(maximizing_team.into());
+        // self.transposition_table.insert((maximizing_team, key), v);
     }
 }
 
