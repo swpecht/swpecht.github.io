@@ -1,7 +1,4 @@
-use std::{
-    fmt::Debug,
-    ops::{Index, IndexMut},
-};
+use std::fmt::Debug;
 
 use crate::collections::bitarray::BitArray;
 

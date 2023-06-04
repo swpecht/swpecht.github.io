@@ -164,8 +164,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             // max node
             for a in self.all_moves(&worlds) {
                 let worlds_1 = self.filter_and_progress_worlds(&worlds, a);
-                // let f = self.alphamu(m - 1, worlds_1, Some(front.clone()));
-                let f = self.alphamu(m - 1, worlds_1, None);
+                let f = self.alphamu(m - 1, worlds_1, Some(front.clone()));
                 front = front.max(f);
             }
         }
