@@ -3,23 +3,23 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use bitvec::prelude::*;
+use crate::collections::bitarray::BitArray;
 
 /// An alphamu vector
 ///
 /// True means the game is won, false means it is lost
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub(super) struct AMVector {
-    is_win: BitArr!(for 32, in u32),
-    is_valid: BitArr!(for 32, in u32),
+    is_win: BitArray,
+    is_valid: BitArray,
     len: usize,
 }
 
 impl AMVector {
     fn new(size: usize) -> Self {
         Self {
-            is_win: bitarr!(u32, Lsb0; 0, 32),
-            is_valid: bitarr!(u32, Lsb0; 0, 32),
+            is_win: BitArray::default(),
+            is_valid: BitArray::default(),
             len: size,
         }
     }
@@ -41,7 +41,7 @@ impl AMVector {
     }
 
     pub fn from_worlds<T>(worlds: &Vec<Option<T>>) -> Self {
-        let mut is_valid = bitarr!(u32, Lsb0; 0, 32);
+        let mut is_valid = BitArray::default();
         for (i, w) in worlds.iter().enumerate() {
             if w.is_some() {
                 is_valid.set(i, true);
@@ -49,7 +49,7 @@ impl AMVector {
         }
 
         Self {
-            is_win: bitarr!(u32, Lsb0; 0, 32),
+            is_win: BitArray::default(),
             is_valid,
             len: worlds.len(),
         }
@@ -64,9 +64,9 @@ impl AMVector {
     fn _min(mut self, other: Self) -> Self {
         assert_eq!(self.len, other.len);
 
-        for i in 0..self.is_win.len() {
-            let is_win = self.is_win[i];
-            self.is_win.set(i, is_win && other.is_win[i]);
+        for i in 0..self.len() {
+            let is_win = self.is_win.get(i);
+            self.is_win.set(i, is_win && other.is_win.get(i));
         }
 
         self
@@ -76,8 +76,8 @@ impl AMVector {
         assert_eq!(self.len, other.len);
 
         for i in 0..self.len {
-            let is_win = self.is_win[i];
-            self.is_win.set(i, is_win || other.is_win[i]);
+            let is_win = self.is_win.get(i);
+            self.is_win.set(i, is_win || other.is_win.get(i));
         }
 
         self
@@ -108,22 +108,23 @@ impl AMVector {
             return false;
         }
 
-        let mut is_greater_or_equal = true;
-        for (i, is_win) in self
-            .is_win
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| self.is_valid[*i])
-        {
-            is_greater_or_equal &= other.is_win[i] >= *is_win;
-        }
-
-        is_greater_or_equal
+        let s_wins = self.is_win.values & self.is_valid.values;
+        let o_wins = other.is_win.values & other.is_valid.values;
+        // we check if o gives us any other wins, if not, self is dominated by other
+        (s_wins | o_wins) == o_wins
     }
 
     pub fn set(&mut self, index: usize, value: bool) {
         self.is_valid.set(index, true);
         self.is_win.set(index, value);
+    }
+
+    pub fn get(&self, index: usize) -> bool {
+        if !self.is_valid.get(index) {
+            panic!("accessing invalid world index")
+        }
+
+        self.is_win.get(index)
     }
 }
 
@@ -132,7 +133,7 @@ impl Debug for AMVector {
         write!(f, "[").unwrap();
 
         for i in 0..self.len {
-            match (self.is_valid[i], self.is_win[i]) {
+            match (self.is_valid.get(i), self.is_win.get(i)) {
                 (true, true) => write!(f, "1").unwrap(),
                 (true, false) => write!(f, "0").unwrap(),
                 (false, _) => write!(f, "-").unwrap(),
@@ -140,17 +141,6 @@ impl Debug for AMVector {
         }
 
         write!(f, "]")
-    }
-}
-
-impl Index<usize> for AMVector {
-    type Output = bool;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        if !self.is_valid[index] {
-            panic!("accessing data for invalid world");
-        }
-        &self.is_win[index]
     }
 }
 
@@ -176,17 +166,17 @@ impl AMFront {
                 // vectors they take for each index the minimum between the two values
                 // at this index of the two vectors.
                 for w in 0..s.len() {
-                    let v = match (s.is_valid[w], o.is_valid[w]) {
+                    let v = match (s.is_valid.get(w), o.is_valid.get(w)) {
                         (false, false) => continue,
-                        (true, false) => s[w],
-                        (false, true) => o[w],
+                        (true, false) => s.get(w),
+                        (false, true) => o.get(w),
                         (true, true) => {
                             // Like this to match paper
                             #[allow(clippy::bool_comparison)]
-                            if s[w] < o[w] {
-                                s[w]
+                            if s.get(w) < o.get(w) {
+                                s.get(w)
                             } else {
-                                o[w]
+                                o.get(w)
                             }
                         }
                     };
@@ -255,17 +245,10 @@ impl AMFront {
     pub fn avg_wins(&self) -> f64 {
         assert!(!self.vectors.is_empty());
 
-        let total: usize = self
-            .vectors
-            .iter()
-            .map(|v| {
-                v.is_valid
-                    .iter()
-                    .zip(v.is_win.iter())
-                    .filter(|(v, w)| **v && **w)
-                    .count()
-            })
-            .sum();
+        let mut total = 0;
+        for v in &self.vectors {
+            total += (v.is_valid.values & v.is_win.values).count_ones()
+        }
 
         total as f64 / self.vectors.len() as f64
     }
