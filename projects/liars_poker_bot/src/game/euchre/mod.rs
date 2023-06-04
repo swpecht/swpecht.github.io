@@ -1013,7 +1013,7 @@ mod tests {
                 .iter()
                 .map(|x| EAction::from(*x).to_string())
                 .collect_vec(),
-            vec!["QH", "KH", "AH", "9D", "TD", "QD"]
+            vec!["Qh", "Kh", "Ah", "9d", "Td", "Qd"]
         );
         assert_eq!(gs.phase(), EPhase::Discard);
         gs.apply_action(EAction::Discard { c: Card::QH }.into());
@@ -1025,7 +1025,7 @@ mod tests {
                 .iter()
                 .map(|x| EAction::from(*x).to_string())
                 .collect_vec(),
-            vec!["9C", "TC", "JC", "QC", "KC"]
+            vec!["9c", "Tc", "Jc", "Qc", "Kc"]
         );
 
         gs.apply_action(EAction::Play { c: Card::NC }.into());
@@ -1035,7 +1035,7 @@ mod tests {
                 .iter()
                 .map(|x| EAction::from(*x).to_string())
                 .collect_vec(),
-            vec!["AC"]
+            vec!["Ac"]
         );
     }
 
@@ -1071,35 +1071,35 @@ mod tests {
             gs.apply_action(EAction::DealPlayer { c: i.into() }.into());
         }
 
-        assert_eq!(gs.istate_string(0), "9CTCJCQCKC");
-        assert_eq!(gs.istate_string(1), "AC9STSJSQS");
-        assert_eq!(gs.istate_string(2), "KSAS9HTHJH");
-        assert_eq!(gs.istate_string(3), "QHKHAH9DTD");
+        assert_eq!(gs.istate_string(0), "9cTcJcQcKc");
+        assert_eq!(gs.istate_string(1), "Ac9sTsJsQs");
+        assert_eq!(gs.istate_string(2), "KsAs9hThJh");
+        assert_eq!(gs.istate_string(3), "QhKhAh9dTd");
 
         gs.apply_action(EAction::DealFaceUp { c: 20.into() }.into());
-        assert_eq!(gs.istate_string(0), "9CTCJCQCKC|JD|");
-        assert_eq!(gs.istate_string(1), "AC9STSJSQS|JD|");
-        assert_eq!(gs.istate_string(2), "KSAS9HTHJH|JD|");
-        assert_eq!(gs.istate_string(3), "QHKHAH9DTD|JD|");
+        assert_eq!(gs.istate_string(0), "9cTcJcQcKc|Jd|");
+        assert_eq!(gs.istate_string(1), "Ac9sTsJsQs|Jd|");
+        assert_eq!(gs.istate_string(2), "KsAs9hThJh|Jd|");
+        assert_eq!(gs.istate_string(3), "QhKhAh9dTd|Jd|");
 
         let mut new_s = gs.clone(); // for alternative pickup parsing
 
         gs.apply_action(EAction::Pickup.into());
-        assert_eq!(gs.istate_string(0), "9CTCJCQCKC|JD|T|0D");
+        assert_eq!(gs.istate_string(0), "9cTcJcQcKc|Jd|T|0D");
 
         // Dealer discards the QH
-        assert_eq!(gs.istate_string(3), "QHKHAH9DTD|JD|T|0D");
+        assert_eq!(gs.istate_string(3), "QhKhAh9dTd|Jd|T|0D");
         gs.apply_action(EAction::Discard { c: Card::QH }.into());
-        assert_eq!(gs.istate_string(3), "QHKHAH9DTD|JD|T|0D|QH");
+        assert_eq!(gs.istate_string(3), "QhKhAh9dTd|Jd|T|0D|Qh");
 
         for _ in 0..4 {
             let a = actions!(gs)[0];
             gs.apply_action(a);
         }
-        assert_eq!(gs.istate_string(0), "9CTCJCQCKC|JD|T|0D|9CACKSKH");
-        assert_eq!(gs.istate_string(1), "AC9STSJSQS|JD|T|0D|9CACKSKH");
-        assert_eq!(gs.istate_string(2), "KSAS9HTHJH|JD|T|0D|9CACKSKH");
-        assert_eq!(gs.istate_string(3), "QHKHAH9DTD|JD|T|0D|QH|9CACKSKH");
+        assert_eq!(gs.istate_string(0), "9cTcJcQcKc|Jd|T|0D|9cAcKsKh");
+        assert_eq!(gs.istate_string(1), "Ac9sTsJsQs|Jd|T|0D|9cAcKsKh");
+        assert_eq!(gs.istate_string(2), "KsAs9hThJh|Jd|T|0D|9cAcKsKh");
+        assert_eq!(gs.istate_string(3), "QhKhAh9dTd|Jd|T|0D|Qh|9cAcKsKh");
         assert_eq!(gs.cur_player(), 1);
 
         while !gs.is_terminal() {
@@ -1117,7 +1117,7 @@ mod tests {
             new_s.apply_action(EAction::Pass.into());
         }
         new_s.apply_action(EAction::Hearts.into());
-        assert_eq!(new_s.istate_string(0), "9CTCJCQCKC|JD|PPPPPH|1H");
+        assert_eq!(new_s.istate_string(0), "9cTcJcQcKc|Jd|PPPPPH|1H");
     }
 
     #[test]
