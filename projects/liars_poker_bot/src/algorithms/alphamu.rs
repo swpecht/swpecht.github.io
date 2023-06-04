@@ -14,7 +14,7 @@ use crate::{
     cfragent::cfrnode::ActionVec,
     game::{Action, GameState, Player},
     istate::IStateKey,
-    policy::Policy,
+    policy::{self, Policy},
 };
 
 use self::front::AMFront;
@@ -67,22 +67,17 @@ pub struct AlphaMuBot<G, E> {
     num_worlds: usize,
     m: usize,
     _phantom_data: PhantomData<G>,
-    nodes: HashMap<IStateKey, ChildNode>,
     rng: StdRng,
 }
 
 impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
     pub fn new(evaluator: E, num_worlds: usize, m: usize) -> Self {
-        if m == 0 {
-            todo!("implement support for m=0, should be the same as PIMCTS")
-        }
         Self {
             evaluator,
             team: Team::Team1,
             _phantom_data: PhantomData,
             num_worlds,
             m,
-            nodes: HashMap::default(),
             rng: SeedableRng::seed_from_u64(42),
         }
     }
@@ -90,6 +85,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
     pub fn run_search(&mut self, root_node: &G) -> ActionVec<f64> {
         self.reset();
 
+        let root_node = root_node.clone();
         let mut rng = thread_rng();
         let player = root_node.cur_player();
         self.team = match player {
@@ -103,36 +99,33 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             worlds.push(Some(root_node.resample_from_istate(player, &mut rng)))
         }
 
-        self.alphamu(self.m, worlds);
-        self.get_final_policy(root_node)
-    }
-
-    /// Returns the policy normalized to the win rates per action
-    fn get_final_policy(&self, root_node: &G) -> ActionVec<f64> {
-        let key = root_node.istate_key(root_node.cur_player());
-        let node = self.nodes.get(&key).unwrap();
-        debug!("{}, node: {:?}", root_node, node);
-
-        let v_sum: f64 = node.win_sum.values().sum();
         let actions = actions!(root_node);
         let mut policy = ActionVec::new(&actions);
 
-        if v_sum == 0.0 {
-            // no wins to play randomly
-            let prob = 1.0 / actions.len() as f64;
-            for a in actions {
-                policy[a] = prob;
-            }
-            return policy;
-        } else {
-            for (a, v) in &node.win_sum {
-                policy[*a] = v / v_sum;
+        // todo, implement other methods for choosing action than just best option
+        let mut max_wins = 0.0;
+        let mut max_action = actions[0];
+        for a in actions {
+            let a_worlds = self.filter_and_progress_worlds(&worlds, a);
+            let front = self.alphamu(self.m, a_worlds.clone());
+            let wins = front.avg_wins();
+            debug!(
+                "evaluated {} to avg wins of {} with front: {:?}",
+                a_worlds.iter().flatten().next().unwrap(),
+                wins,
+                front
+            );
+            if wins > max_wins {
+                max_action = a;
+                max_wins = wins;
             }
         }
 
+        policy[max_action] = 1.0;
         policy
     }
 
+    /// Runs alphamu search returning the new front and optionally the actions to achieve it
     fn alphamu(&mut self, m: usize, worlds: Vec<Option<G>>) -> AMFront {
         trace!(
             "alpha mu call: istate: {:?}\tm: {}\tworlds: {:?}",
@@ -166,8 +159,6 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
                 let worlds_1 = self.filter_and_progress_worlds(&worlds, a);
 
                 let f = self.alphamu(m, worlds_1);
-                let key = self.cur_istate(&worlds);
-                self.save_node(key, a, &f);
                 front = front.min(f);
             }
         } else {
@@ -175,19 +166,12 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             for a in self.all_moves(&worlds) {
                 let worlds_1 = self.filter_and_progress_worlds(&worlds, a);
                 let f = self.alphamu(m - 1, worlds_1);
-                let key = self.cur_istate(&worlds);
-                self.save_node(key, a, &f);
                 front = front.max(f);
             }
         }
 
         assert!(!front.is_empty());
         front
-    }
-
-    fn save_node(&mut self, key: IStateKey, a: Action, f: &AMFront) {
-        let node = self.nodes.entry(key).or_insert(ChildNode::default());
-        node.update_action_value(a, f);
     }
 
     fn all_moves(&self, worlds: &[Option<G>]) -> HashSet<Action> {
@@ -298,9 +282,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         false
     }
 
-    fn reset(&mut self) {
-        self.nodes.clear();
-    }
+    fn reset(&mut self) {}
 
     fn get_team(&self, worlds: &[Option<G>]) -> Team {
         let player = worlds

@@ -122,10 +122,11 @@ impl Debug for AMVector {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "[").unwrap();
 
-        for w in self.is_win.iter().take(self.len) {
-            match w {
-                true => write!(f, "1").unwrap(),
-                false => write!(f, "0").unwrap(),
+        for (w, v) in self.is_win.iter().zip(self.is_valid.iter()).take(self.len) {
+            match (v, w) {
+                (true, true) => write!(f, "1").unwrap(),
+                (true, false) => write!(f, "0").unwrap(),
+                (false, _) => write!(f, "-").unwrap(),
             }
         }
 
