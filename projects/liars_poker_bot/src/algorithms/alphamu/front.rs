@@ -3,21 +3,23 @@ use std::{
     ops::{Index, IndexMut},
 };
 
+use bitvec::prelude::*;
+
 /// An alphamu vector
 ///
 /// True means the game is won, false means it is lost
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub(super) struct AMVector {
-    is_win: [bool; 32],
-    is_valid: [bool; 32],
+    is_win: BitArr!(for 32, in u32),
+    is_valid: BitArr!(for 32, in u32),
     len: usize,
 }
 
 impl AMVector {
     fn new(size: usize) -> Self {
         Self {
-            is_win: [false; 32],
-            is_valid: [false; 32],
+            is_win: bitarr!(u32, Lsb0; 0, 32),
+            is_valid: bitarr!(u32, Lsb0; 0, 32),
             len: size,
         }
     }
@@ -31,39 +33,40 @@ impl AMVector {
             if v == -1 {
                 continue;
             } else {
-                vec.is_valid[i] = true;
-                vec.is_win[i] = v == 1;
+                vec.is_valid.set(i, true);
+                vec.is_win.set(i, v == 1);
             }
         }
         vec
     }
 
     pub fn from_worlds<T>(worlds: &Vec<Option<T>>) -> Self {
-        let mut is_valid = [false; 32];
+        let mut is_valid = bitarr!(u32, Lsb0; 0, 32);
         for (i, w) in worlds.iter().enumerate() {
             if w.is_some() {
-                is_valid[i] = true;
+                is_valid.set(i, true);
             }
         }
 
         Self {
-            is_win: [false; 32],
+            is_win: bitarr!(u32, Lsb0; 0, 32),
             is_valid,
             len: worlds.len(),
         }
     }
 
     fn _push(&mut self, is_win: bool) {
-        self.is_valid[self.len] = true;
-        self.is_win[self.len] = is_win;
+        self.is_valid.set(self.len, true);
+        self.is_win.set(self.len, is_win);
         self.len += 1;
     }
 
     fn _min(mut self, other: Self) -> Self {
         assert_eq!(self.len, other.len);
 
-        for (i, w) in self.is_win.iter_mut().enumerate() {
-            *w = *w && other.is_win[i];
+        for i in 0..self.is_win.len() {
+            let is_win = self.is_win[i];
+            self.is_win.set(i, is_win && other.is_win[i]);
         }
 
         self
@@ -72,8 +75,9 @@ impl AMVector {
     fn _max(mut self, other: Self) -> Self {
         assert_eq!(self.len, other.len);
 
-        for (i, w) in self.is_win.iter_mut().enumerate() {
-            *w = *w || other.is_win[i];
+        for i in 0..self.len {
+            let is_win = self.is_win[i];
+            self.is_win.set(i, is_win || other.is_win[i]);
         }
 
         self
@@ -116,14 +120,19 @@ impl AMVector {
 
         is_greater_or_equal
     }
+
+    pub fn set(&mut self, index: usize, value: bool) {
+        self.is_valid.set(index, true);
+        self.is_win.set(index, value);
+    }
 }
 
 impl Debug for AMVector {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "[").unwrap();
 
-        for (w, v) in self.is_win.iter().zip(self.is_valid.iter()).take(self.len) {
-            match (v, w) {
+        for i in 0..self.len {
+            match (self.is_valid[i], self.is_win[i]) {
                 (true, true) => write!(f, "1").unwrap(),
                 (true, false) => write!(f, "0").unwrap(),
                 (false, _) => write!(f, "-").unwrap(),
@@ -142,14 +151,6 @@ impl Index<usize> for AMVector {
             panic!("accessing data for invalid world");
         }
         &self.is_win[index]
-    }
-}
-
-impl IndexMut<usize> for AMVector {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        self.len = self.len.max(index + 1);
-        self.is_valid[index] = true;
-        &mut self.is_win[index]
     }
 }
 
@@ -175,7 +176,7 @@ impl AMFront {
                 // vectors they take for each index the minimum between the two values
                 // at this index of the two vectors.
                 for w in 0..s.len() {
-                    r[w] = match (s.is_valid[w], o.is_valid[w]) {
+                    let v = match (s.is_valid[w], o.is_valid[w]) {
                         (false, false) => continue,
                         (true, false) => s[w],
                         (false, true) => o[w],
@@ -189,6 +190,7 @@ impl AMFront {
                             }
                         }
                     };
+                    r.set(w, v);
                 }
                 result.push(r);
             }
@@ -208,8 +210,8 @@ impl AMFront {
 
     pub fn set(&mut self, idx: usize, is_win: bool) {
         for v in self.vectors.iter_mut() {
-            v.is_win[idx] = is_win;
-            v.is_valid[idx] = true;
+            v.is_win.set(idx, is_win);
+            v.is_valid.set(idx, true);
         }
     }
 

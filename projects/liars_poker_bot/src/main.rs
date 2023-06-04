@@ -7,6 +7,7 @@ use clap::clap_derive::ArgEnum;
 use liars_poker_bot::actions;
 use liars_poker_bot::agents::{Agent, RandomAgent};
 
+use liars_poker_bot::algorithms::alphamu::AlphaMuBot;
 use liars_poker_bot::algorithms::exploitability::{self};
 use liars_poker_bot::algorithms::ismcts::Evaluator;
 
@@ -15,7 +16,7 @@ use liars_poker_bot::cfragent::cfrnode::CFRNode;
 use liars_poker_bot::cfragent::{CFRAgent, CFRAlgorithm};
 use liars_poker_bot::database::memory_node_store::MemoryNodeStore;
 use liars_poker_bot::database::Storage;
-use liars_poker_bot::game::bluff::{Bluff, BluffGameState};
+use liars_poker_bot::game::bluff::{Bluff, BluffActions, BluffGameState, Dice};
 
 use liars_poker_bot::game::euchre::actions::EAction;
 use liars_poker_bot::game::euchre::{Euchre, EuchreGameState};
@@ -108,34 +109,13 @@ fn run_scratch(_args: Args) {
     println!("kuhn poker size: {}", mem::size_of::<KPGameState>());
     println!("euchre size: {}", mem::size_of::<EuchreGameState>());
 
-    let mut game = "TCQCQHAHTD|9HKHJDKDAD|AC9SQSTHJH|9CJCKCJSQD|AS|PPPP|H".to_string();
-    let gs1 = EuchreGameState::from(game.as_str());
-    game = game.replace("AS", "KS");
-    let gs2 = EuchreGameState::from(game.as_str());
+    let gs = EuchreGameState::from("TCQCQHAHTD|9HKHJDKDAD|AC9SQSTHJH|9CJCKCJSQD|AS|");
+    // let mut gs = Bluff::new_state(1, 1);
+    // gs.apply_action(BluffActions::Roll(Dice::Two).into());
+    // gs.apply_action(BluffActions::Roll(Dice::Wild).into());
 
-    for mut gs in vec![gs1, gs2] {
-        let mut evaluator = OpenHandSolver::new_without_cache();
-
-        info!(
-            "Evaluator for {}: {:?}",
-            gs.istate_string(gs.cur_player()),
-            evaluator.evaluate(&gs)
-        );
-        while !gs.is_terminal() {
-            let cur_player = gs.cur_player();
-            let (v, a) = alpha_beta_search(gs.clone(), cur_player);
-            info!(
-                "{}: {}: value: {}, action: {}",
-                gs,
-                cur_player,
-                v,
-                EAction::from(a.unwrap())
-            );
-            gs.apply_action(a.unwrap());
-        }
-
-        info!("p0, p1 value: {}, {}", gs.evaluate(0), gs.evaluate(1));
-    }
+    let mut agent = AlphaMuBot::new(OpenHandSolver::new(), 10, 10);
+    agent.run_search(&gs);
 }
 
 fn run_analyze(args: Args) {
