@@ -1,7 +1,9 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use liars_poker_bot::{
     actions,
-    algorithms::{ismcts::Evaluator, open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot},
+    algorithms::{
+        alphamu::AlphaMuBot, ismcts::Evaluator, open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot,
+    },
     game::{
         euchre::{Euchre, EuchreGameState},
         GameState,
@@ -23,6 +25,11 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("open hand evaluator 100", |b| {
         b.iter(|| evaluate_games(&mut evaluator, &mut rng))
     });
+
+    let mut evaluator = AlphaMuBot::new(OpenHandSolver::new(), 10, 5);
+    c.bench_function("alpha mu evaluator m=5", |b| {
+        b.iter(|| alpha_mu_benchmark(&mut evaluator, &mut rng))
+    });
 }
 
 fn rotate_array(array: &mut [u8]) {
@@ -34,6 +41,14 @@ fn bit_shift(v: &mut u32) {
     *v >>= 4;
     *v &= !(0b1111);
     *v |= x;
+}
+
+fn alpha_mu_benchmark(
+    evaluator: &mut AlphaMuBot<EuchreGameState, OpenHandSolver>,
+    rng: &mut StdRng,
+) {
+    let gs = &get_game(rng);
+    evaluator.run_search(gs);
 }
 
 fn evaluate_games(evaluator: &mut PIMCTSBot<EuchreGameState, OpenHandSolver>, rng: &mut StdRng) {

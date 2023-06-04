@@ -101,7 +101,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         let mut max_action = actions[0];
         for a in actions {
             let a_worlds = self.filter_and_progress_worlds(&worlds, a);
-            let front = self.alphamu(self.m - 1, a_worlds.clone());
+            let front = self.alphamu(self.m - 1, a_worlds.clone(), None);
             let wins = front.avg_wins();
             debug!(
                 "evaluated {} to avg wins of {} with front: {:?}",
@@ -125,7 +125,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
     }
 
     /// Runs alphamu search returning the new front and optionally the actions to achieve it
-    fn alphamu(&mut self, m: usize, worlds: Vec<Option<G>>) -> AMFront {
+    fn alphamu(&mut self, m: usize, worlds: Vec<Option<G>>, alpha: Option<AMFront>) -> AMFront {
         let w = worlds.iter().flatten().next().unwrap();
         trace!(
             "alpha mu call: istate: {}\tm: {}",
@@ -157,14 +157,15 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             for a in self.all_moves(&worlds) {
                 let worlds_1 = self.filter_and_progress_worlds(&worlds, a);
 
-                let f = self.alphamu(m, worlds_1);
+                let f = self.alphamu(m, worlds_1, None);
                 front = front.min(f);
             }
         } else {
             // max node
             for a in self.all_moves(&worlds) {
                 let worlds_1 = self.filter_and_progress_worlds(&worlds, a);
-                let f = self.alphamu(m - 1, worlds_1);
+                // let f = self.alphamu(m - 1, worlds_1, Some(front.clone()));
+                let f = self.alphamu(m - 1, worlds_1, None);
                 front = front.max(f);
             }
         }
