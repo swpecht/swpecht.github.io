@@ -77,6 +77,8 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
     }
 
     pub fn run_search(&mut self, root_node: &G) -> ActionVec<f64> {
+        // Shouldn't be needed since we store for the maximizing team, cur player, and istate
+        // Although but removing this increases our run time by ~10%
         self.reset();
 
         let root_node = root_node.clone();
@@ -338,7 +340,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Policy<G> for AlphaM
 
 struct AlphaMuCache<G> {
     world_vector_pool: Pool<Vec<Option<G>>>,
-    transposition_table: HashMap<(Team, IStateKey), AMFront>,
+    transposition_table: HashMap<(Player, Team, IStateKey), AMFront>,
 }
 
 impl<G> Default for AlphaMuCache<G> {
@@ -352,25 +354,22 @@ impl<G> Default for AlphaMuCache<G> {
 
 impl<G: GameState> AlphaMuCache<G> {
     fn get(&self, worlds: &[Option<G>], maximizing_team: Team) -> Option<&AMFront> {
-        let key = worlds
-            .iter()
-            .flatten()
-            .next()
-            .unwrap()
-            .istate_key(maximizing_team.into());
+        let w = worlds.iter().flatten().next().unwrap();
+        let key = w.istate_key(maximizing_team.into());
+        let cur_team = w.cur_player() % 2;
 
-        self.transposition_table.get(&(maximizing_team, key))
+        self.transposition_table
+            .get(&(cur_team, maximizing_team, key))
     }
 
     pub fn insert(&mut self, worlds: &[Option<G>], v: AMFront, maximizing_team: Team) {
         // // Check if the game wants to store this state
-        let key = worlds
-            .iter()
-            .flatten()
-            .next()
-            .unwrap()
-            .istate_key(maximizing_team.into());
-        self.transposition_table.insert((maximizing_team, key), v);
+        let w = worlds.iter().flatten().next().unwrap();
+        let key = w.istate_key(maximizing_team.into());
+        let cur_team = w.cur_player() % 2;
+
+        self.transposition_table
+            .insert((cur_team, maximizing_team, key), v);
     }
 
     pub fn reset(&mut self) {
