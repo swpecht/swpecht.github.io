@@ -79,11 +79,6 @@ impl AMVector {
             return false;
         }
 
-        // // the two are equal
-        // if self.values == other.values {
-        //     return true;
-        // }
-
         let mut all_greater_or_equal = true;
         assert_eq!(self.len, other.len);
         for i in 0..self.len {
@@ -152,15 +147,7 @@ impl AMFront {
                         (false, false) => continue,
                         (true, false) => s.get(w),
                         (false, true) => o.get(w),
-                        (true, true) => {
-                            // Like this to match paper
-                            #[allow(clippy::bool_comparison)]
-                            if s.get(w) < o.get(w) {
-                                s.get(w)
-                            } else {
-                                o.get(w)
-                            }
-                        }
+                        (true, true) => s.get(w).min(o.get(w)),
                     };
                     r.set(w, v);
                 }
@@ -168,12 +155,12 @@ impl AMFront {
             }
         }
 
-        // debug!(
-        //     "min called on vectos of sizes: {} and {}, new size: {}",
-        //     self.len(),
-        //     other.len(),
-        //     result.len()
-        // );
+        debug!(
+            "min called on vectos of sizes: {} and {}, new size: {}",
+            self.len(),
+            other.len(),
+            result.len()
+        );
 
         result
     }
@@ -208,12 +195,8 @@ impl AMFront {
         }
 
         // If no vector from result >= r
-        let mut is_v_dominated = false;
-        for sv in &self.vectors {
-            if v.is_dominated(sv) {
-                is_v_dominated = true;
-            }
-        }
+        let is_v_dominated = self.vectors.iter().any(|sv| v.is_dominated(sv));
+
         if !is_v_dominated {
             self.vectors.push(v);
         }

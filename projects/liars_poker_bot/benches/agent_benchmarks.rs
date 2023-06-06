@@ -36,8 +36,8 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     });
 
     let mut rng: StdRng = SeedableRng::seed_from_u64(42);
-    let mut evaluator = AlphaMuBot::new(OpenHandSolver::new(), 20, 5);
-    group.bench_function("alpha mu 20 worlds, m=5", |b| {
+    let mut evaluator = AlphaMuBot::new(OpenHandSolver::new(), 20, 2);
+    group.bench_function("alpha mu 20 worlds, m=2", |b| {
         b.iter(|| alpha_mu_benchmark(&mut evaluator, &mut rng))
     });
 }

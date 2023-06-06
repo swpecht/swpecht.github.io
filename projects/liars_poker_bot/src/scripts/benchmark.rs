@@ -11,7 +11,7 @@ use liars_poker_bot::{
     },
     game::{bluff::Bluff, euchre::Euchre, kuhn_poker::KuhnPoker, run_game, Game, GameState},
 };
-use log::debug;
+use log::{debug, info};
 use rand::{rngs::StdRng, thread_rng, SeedableRng};
 
 use crate::{Args, GameType};
@@ -28,19 +28,19 @@ pub fn run_benchmark(args: Args) {
 
 fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Args, game: Game<G>) {
     let mut agents: HashMap<String, &mut dyn Agent<G>> = HashMap::new();
-    let ra: &mut dyn Agent<G> = &mut RandomAgent::new();
-    agents.insert(ra.get_name(), ra);
+    // let ra: &mut dyn Agent<G> = &mut RandomAgent::new();
+    // agents.insert(ra.get_name(), ra);
 
     let a = &mut PolicyAgent::new(PIMCTSBot::new(10, OpenHandSolver::new(), rng()), rng());
     agents.insert("pimcts, 10 worlds, open hand".to_string(), a);
 
-    let a = &mut PolicyAgent::new(
-        PIMCTSBot::new(10, RandomRolloutEvaluator::new(10), rng()),
-        rng(),
-    );
-    agents.insert("pimcts, 10 worlds, random".to_string(), a);
+    // let a = &mut PolicyAgent::new(
+    //     PIMCTSBot::new(10, RandomRolloutEvaluator::new(10), rng()),
+    //     rng(),
+    // );
+    // agents.insert("pimcts, 10 worlds, random".to_string(), a);
 
-    let alphamu = &mut AlphaMuBot::new(OpenHandSolver::new(), 10, 5);
+    let alphamu = &mut AlphaMuBot::new(OpenHandSolver::new(), 20, 2);
     agents.insert("alphamu, open hand".to_string(), alphamu);
 
     let agent_names = agents.keys().cloned().collect_vec();
@@ -56,11 +56,15 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
 
             debug!("starting play for {} vs {}", a1_name, a2_name);
             let mut returns = vec![0.0; 4];
+
+            // all agents play the same games
+            let mut game_rng: StdRng = SeedableRng::seed_from_u64(42);
             for _ in 0..args.num_games {
-                let r = run_game(&mut (game.new)(), a1, &mut a2, &mut rng());
+                let r = run_game(&mut (game.new)(), a1, &mut a2, &mut game_rng);
                 for (i, v) in r.iter().enumerate() {
                     returns[i] += v;
                 }
+                info!("{}\t{}\t{}", a1_name, a2_name, r[0]);
             }
             println!(
                 "{:?}\t{:?}\t{}\t{}",
