@@ -29,7 +29,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     let mut rng: StdRng = SeedableRng::seed_from_u64(42);
     let mut evaluator = AlphaMuBot::new(OpenHandSolver::new(), 10, 5);
     let mut group = c.benchmark_group("agents");
-    group.sample_size(20);
+    group.sample_size(50);
     group.bench_function("alpha mu evaluator m=5", |b| {
         b.iter(|| alpha_mu_benchmark(&mut evaluator, &mut rng))
     });

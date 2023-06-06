@@ -1,6 +1,6 @@
 #[derive(Default, Clone, Copy, PartialEq, Hash, Eq)]
 pub struct BitArray {
-    pub values: u128,
+    pub values: u32,
 }
 
 impl BitArray {

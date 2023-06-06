@@ -123,6 +123,10 @@ impl AMVector {
 
         self.is_win.get(index)
     }
+
+    pub fn less_than_or_equal(&self, other: AMVector) -> bool {
+        todo!()
+    }
 }
 
 impl Debug for AMVector {
@@ -207,35 +211,22 @@ impl AMFront {
     /// This method does nothing if the vector is dominated by an existing vector.
     /// And it removes any vectors that are dominated by the new one
     pub fn push(&mut self, v: AMVector) {
-        if self.vectors.contains(&v) {
-            return; // nothing to do if already contained
+        // Remove vectors from result <= r
+        for i in (0..self.vectors.len()).rev() {
+            if self.vectors[i] == v || self.vectors[i].is_dominated(&v) {
+                self.vectors.remove(i);
+            }
         }
-
-        let mut is_dominated = false;
+        // If no vector from result >= r
+        let mut is_v_dominated = false;
         for sv in &self.vectors {
             if v.is_dominated(sv) {
-                is_dominated = true;
+                is_v_dominated = true;
             }
         }
-
-        if !is_dominated {
-            let domainted = self.get_dominated_vectors(v);
-            // iterate in reverse order to preserve indexes when removing
-            for d in domainted.iter().rev() {
-                self.vectors.remove(*d);
-            }
+        if !is_v_dominated {
             self.vectors.push(v);
         }
-    }
-
-    fn get_dominated_vectors(&self, v: AMVector) -> Vec<usize> {
-        let mut dominated = Vec::new();
-        for (i, s) in self.vectors.iter().enumerate() {
-            if s.is_dominated(&v) {
-                dominated.push(i);
-            }
-        }
-        dominated
     }
 
     /// Returns the average wins across all vectors in a front
