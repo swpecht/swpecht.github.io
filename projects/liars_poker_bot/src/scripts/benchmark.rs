@@ -31,16 +31,16 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
     let ra: &mut dyn Agent<G> = &mut RandomAgent::new();
     agents.insert(ra.get_name(), ra);
 
-    let a = &mut PolicyAgent::new(PIMCTSBot::new(20, OpenHandSolver::new(), rng()), rng());
-    agents.insert("pimcts, 20 worlds, open hand".to_string(), a);
+    let a = &mut PolicyAgent::new(PIMCTSBot::new(10, OpenHandSolver::new(), rng()), rng());
+    agents.insert("pimcts, 10 worlds, open hand".to_string(), a);
 
     let a = &mut PolicyAgent::new(
-        PIMCTSBot::new(20, RandomRolloutEvaluator::new(10), rng()),
+        PIMCTSBot::new(10, RandomRolloutEvaluator::new(10), rng()),
         rng(),
     );
-    agents.insert("pimcts, 20 worlds, random".to_string(), a);
+    agents.insert("pimcts, 10 worlds, random".to_string(), a);
 
-    let alphamu = &mut AlphaMuBot::new(OpenHandSolver::new(), 20, 2);
+    let alphamu = &mut AlphaMuBot::new(OpenHandSolver::new(), 10, 5);
     agents.insert("alphamu, open hand".to_string(), alphamu);
 
     let agent_names = agents.keys().cloned().collect_vec();

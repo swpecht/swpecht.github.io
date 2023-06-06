@@ -1,5 +1,7 @@
 use std::fmt::Debug;
 
+use log::info;
+
 use crate::collections::bitarray::BitArray;
 
 /// An alphamu vector
@@ -102,7 +104,7 @@ impl AMVector {
 
         // the two are equal
         if self.is_win == other.is_win {
-            return false;
+            return true;
         }
 
         let s_wins = self.is_win.values & self.is_valid.values;
@@ -122,10 +124,6 @@ impl AMVector {
         }
 
         self.is_win.get(index)
-    }
-
-    pub fn less_than_or_equal(&self, other: AMVector) -> bool {
-        todo!()
     }
 }
 
@@ -187,6 +185,13 @@ impl AMFront {
             }
         }
 
+        info!(
+            "min called on vectos of sizes: {} and {}, new size: {}",
+            self.len(),
+            other.len(),
+            result.len()
+        );
+
         result
     }
 
@@ -196,6 +201,7 @@ impl AMFront {
                 self.push(v);
             }
         }
+
         self
     }
 
@@ -213,7 +219,7 @@ impl AMFront {
     pub fn push(&mut self, v: AMVector) {
         // Remove vectors from result <= r
         for i in (0..self.vectors.len()).rev() {
-            if self.vectors[i] == v || self.vectors[i].is_dominated(&v) {
+            if self.vectors[i].is_dominated(&v) {
                 self.vectors.remove(i);
             }
         }
@@ -300,7 +306,8 @@ mod tests {
         let v4 = amvec![1, 1, 0];
         assert!(!v3.is_dominated(&v4));
         assert!(!v4.is_dominated(&v3));
-        assert!(!v3.is_dominated(&v3));
+        // an equal vector dominates another vector
+        assert!(v3.is_dominated(&v3));
     }
 
     #[test]
