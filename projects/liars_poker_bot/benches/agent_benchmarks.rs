@@ -6,7 +6,7 @@ use liars_poker_bot::{
     },
     game::{
         euchre::{Euchre, EuchreGameState},
-        GameState,
+        run_game, GameState,
     },
 };
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
@@ -26,8 +26,11 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         b.iter(|| evaluate_games(&mut evaluator, &mut rng))
     });
 
+    let mut rng: StdRng = SeedableRng::seed_from_u64(42);
     let mut evaluator = AlphaMuBot::new(OpenHandSolver::new(), 10, 5);
-    c.bench_function("alpha mu evaluator m=5", |b| {
+    let mut group = c.benchmark_group("agents");
+    group.sample_size(10);
+    group.bench_function("alpha mu evaluator m=5", |b| {
         b.iter(|| alpha_mu_benchmark(&mut evaluator, &mut rng))
     });
 }
@@ -47,8 +50,8 @@ fn alpha_mu_benchmark(
     evaluator: &mut AlphaMuBot<EuchreGameState, OpenHandSolver>,
     rng: &mut StdRng,
 ) {
-    let gs = &get_game(rng);
-    evaluator.run_search(gs);
+    let mut gs = get_game(rng);
+    run_game(&mut gs, evaluator, &mut None, rng);
 }
 
 fn evaluate_games(evaluator: &mut PIMCTSBot<EuchreGameState, OpenHandSolver>, rng: &mut StdRng) {

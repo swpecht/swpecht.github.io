@@ -36,5 +36,5 @@ name = "game_benchmarks"
 harness = false
 
 [[bench]]
-name = "open_hand_solver_benchmarks"
+name = "agent_benchmarks"
 harness = false
