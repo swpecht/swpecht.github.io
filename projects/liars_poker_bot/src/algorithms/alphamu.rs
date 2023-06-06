@@ -267,7 +267,16 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             return true;
         }
 
-        if m == 0 {
+        // Add the valid world cut from the optimizing alpha mu paper:
+        //
+        // Search can also be cut if there is only one useful world
+        // left. The reason for this is that all of the useless worlds will
+        // eventually evaluate to zero at the root, and so we only need
+        // to compute the DDS result associated to the single useful
+        // world and we can return a single vector containing the result
+        // for the useful world.
+        let valid_worlds = worlds.iter().flatten().count();
+        if m == 0 || valid_worlds == 1 {
             for (i, w) in worlds.iter().enumerate().filter(|(_, w)| w.is_some()) {
                 let w = w.as_ref().unwrap();
                 let v = self.evaluator.evaluate_player(w, self.team.into());
