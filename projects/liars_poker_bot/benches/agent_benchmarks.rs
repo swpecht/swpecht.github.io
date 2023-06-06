@@ -26,11 +26,18 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         b.iter(|| evaluate_games(&mut evaluator, &mut rng))
     });
 
-    let mut rng: StdRng = SeedableRng::seed_from_u64(42);
-    let mut evaluator = AlphaMuBot::new(OpenHandSolver::new(), 10, 5);
     let mut group = c.benchmark_group("agents");
     group.sample_size(50);
-    group.bench_function("alpha mu evaluator m=5", |b| {
+
+    let mut rng: StdRng = SeedableRng::seed_from_u64(42);
+    let mut evaluator = AlphaMuBot::new(OpenHandSolver::new(), 10, 5);
+    group.bench_function("alpha mu 10 worlds, m=5", |b| {
+        b.iter(|| alpha_mu_benchmark(&mut evaluator, &mut rng))
+    });
+
+    let mut rng: StdRng = SeedableRng::seed_from_u64(42);
+    let mut evaluator = AlphaMuBot::new(OpenHandSolver::new(), 20, 5);
+    group.bench_function("alpha mu 20 worlds, m=5", |b| {
         b.iter(|| alpha_mu_benchmark(&mut evaluator, &mut rng))
     });
 }

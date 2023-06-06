@@ -5,7 +5,6 @@ use std::{
 
 use log::{debug, trace};
 use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
-use rayon::prelude::*;
 
 use crate::{
     actions,

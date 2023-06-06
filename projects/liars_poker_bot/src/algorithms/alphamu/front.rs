@@ -1,6 +1,8 @@
 use std::fmt::Debug;
 
-use log::info;
+use log::debug;
+
+use rayon::prelude::*;
 
 use crate::collections::bitarray::BitArray;
 
@@ -92,13 +94,12 @@ impl AMVector {
 
     /// Returns if self is dominated by other
     fn is_dominated(&self, other: &AMVector) -> bool {
-        assert_eq!(self.len, other.len);
+        // assert_eq!(self.len, other.len);
 
         // A vector is greater or equal to another vector if for all indices it
         // contains a value greater or equal to the value contained at this index
         // in the other vector and if the valid worlds are the same for the two
-        let same_valid_worlds = self.is_valid == other.is_valid;
-        if !same_valid_worlds {
+        if self.is_valid != other.is_valid {
             return false;
         }
 
@@ -185,7 +186,7 @@ impl AMFront {
             }
         }
 
-        info!(
+        debug!(
             "min called on vectos of sizes: {} and {}, new size: {}",
             self.len(),
             other.len(),
@@ -223,6 +224,7 @@ impl AMFront {
                 self.vectors.remove(i);
             }
         }
+
         // If no vector from result >= r
         let mut is_v_dominated = false;
         for sv in &self.vectors {
