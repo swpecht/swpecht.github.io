@@ -106,10 +106,10 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
 
             // Do the iterative deepening to guide the search
             for i in 0..self.m - 1 {
-                self.alphamu(i, a_worlds.clone(), None);
+                self.alphamu(i, a_worlds.clone(), None, true);
             }
 
-            let front = self.alphamu(self.m - 1, a_worlds.clone(), None);
+            let front = self.alphamu(self.m - 1, a_worlds.clone(), None, true);
             let wins = front.avg_wins();
             debug!(
                 "evaluated {} to avg wins of {} with front: {:?}",
@@ -133,7 +133,13 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
     }
 
     /// Runs alphamu search returning the new front and optionally the actions to achieve it
-    fn alphamu(&mut self, m: usize, worlds: Vec<Option<G>>, alpha: Option<AMFront>) -> AMFront {
+    fn alphamu(
+        &mut self,
+        m: usize,
+        worlds: Vec<Option<G>>,
+        alpha: Option<AMFront>,
+        is_root: bool,
+    ) -> AMFront {
         let w = worlds.iter().flatten().next().unwrap();
         trace!(
             "alpha mu call: istate: {}\tm: {}",
@@ -155,13 +161,12 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             return result;
         }
 
-        let t = self.cache.get(&worlds, self.team);
-
         let mut front = AMFront::default();
 
         if self.team != self.get_team(&worlds) {
             // min node
 
+            let t = self.cache.get(&worlds, self.team);
             if t.is_some() && alpha.is_some() && t.unwrap().less_than_or_equal(alpha.unwrap()) {
                 return front;
             }
@@ -169,15 +174,33 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             for a in self.all_moves(&worlds) {
                 let worlds_1 = self.filter_and_progress_worlds(&worlds, a);
 
-                let f = self.alphamu(m, worlds_1, None);
+                let f = self.alphamu(m, worlds_1, None, false);
                 front = front.min(f);
             }
         } else {
             // max node
             for a in self.all_moves(&worlds) {
                 let worlds_1 = self.filter_and_progress_worlds(&worlds, a);
-                let f = self.alphamu(m - 1, worlds_1, Some(front.clone()));
+                let f = self.alphamu(m - 1, worlds_1, Some(front.clone()), false);
                 front = front.max(f);
+
+                // Root cut optimization from the optimizing alpha mu paper:
+                //
+                // If a move at the root of αµ for M Max moves gives the same proba-
+                // bility of winning than the best move of the previous iteration of iter-
+                // ative deepening for M − 1 Max moves, the search can be safely be
+                // stopped since it is not possible to find a better move. A deeper search
+                // will always return a worse probability than the previous search be-
+                // cause of strategy fusion. Therefore if the probability is equal to the
+                // one of the best move of the previous shallower search the probability
+                // cannot be improved and a better move cannot be found so it is safe
+                // to cut.
+                if is_root {
+                    let t = self.cache.get(&worlds, self.team);
+                    if t.is_some() && front.avg_wins() == t.unwrap().avg_wins() {
+                        break;
+                    }
+                }
             }
         }
 
