@@ -109,21 +109,21 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             }
 
             let front = self.alphamu(self.m - 1, a_worlds.clone(), None, true);
-            let wins = front.avg_wins();
+            let score = front.score();
             debug!(
-                "evaluated {} to avg wins of {} with front: {:?}",
+                "evaluated {} to avg score of {} with front: {:?}",
                 a_worlds
                     .iter()
                     .flatten()
                     .next()
                     .unwrap()
                     .istate_string(player),
-                wins,
+                score,
                 front
             );
-            if wins > max_wins {
+            if score > max_wins {
                 max_action = a;
-                max_wins = wins;
+                max_wins = score;
             }
         }
 
@@ -196,7 +196,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
                 // to cut.
                 if is_root {
                     let t = self.cache.get(&worlds, self.team);
-                    if t.is_some() && front.avg_wins() == t.unwrap().avg_wins() {
+                    if t.is_some() && front.score() == t.unwrap().score() {
                         break;
                     }
                 }
@@ -282,11 +282,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
                 }
                 let w = w.as_ref().unwrap();
                 let v = w.evaluate(self.team.into());
-                if v > 0.0 {
-                    result.set(i, true);
-                } else {
-                    result.set(i, false);
-                }
+                result.set(i, v as i8);
             }
             return true;
         }
@@ -304,12 +300,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             for (i, w) in worlds.iter().enumerate().filter(|(_, w)| w.is_some()) {
                 let w = w.as_ref().unwrap();
                 let v = self.evaluator.evaluate_player(w, self.team.into());
-                if v > 0.0 {
-                    // win most times
-                    result.set(i, true);
-                } else {
-                    result.set(i, false);
-                }
+                result.set(i, v as i8);
             }
             return true;
         }

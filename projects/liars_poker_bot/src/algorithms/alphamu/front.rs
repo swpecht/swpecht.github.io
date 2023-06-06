@@ -11,7 +11,7 @@ use crate::collections::bitarray::BitArray;
 /// True means the game is won, false means it is lost
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub(super) struct AMVector {
-    is_win: BitArray,
+    values: [i8; 32],
     is_valid: BitArray,
     len: usize,
 }
@@ -19,7 +19,7 @@ pub(super) struct AMVector {
 impl AMVector {
     fn new(size: usize) -> Self {
         Self {
-            is_win: BitArray::default(),
+            values: [0; 32],
             is_valid: BitArray::default(),
             len: size,
         }
@@ -35,7 +35,7 @@ impl AMVector {
                 continue;
             } else {
                 vec.is_valid.set(i, true);
-                vec.is_win.set(i, v == 1);
+                vec.values[i] = values[i];
             }
         }
         vec
@@ -50,38 +50,16 @@ impl AMVector {
         }
 
         Self {
-            is_win: BitArray::default(),
+            values: [0; 32],
             is_valid,
             len: worlds.len(),
         }
     }
 
-    fn _push(&mut self, is_win: bool) {
+    fn _push(&mut self, value: i8) {
         self.is_valid.set(self.len, true);
-        self.is_win.set(self.len, is_win);
+        self.values[self.len] = value;
         self.len += 1;
-    }
-
-    fn _min(mut self, other: Self) -> Self {
-        assert_eq!(self.len, other.len);
-
-        for i in 0..self.len() {
-            let is_win = self.is_win.get(i);
-            self.is_win.set(i, is_win && other.is_win.get(i));
-        }
-
-        self
-    }
-
-    fn _max(mut self, other: Self) -> Self {
-        assert_eq!(self.len, other.len);
-
-        for i in 0..self.len {
-            let is_win = self.is_win.get(i);
-            self.is_win.set(i, is_win || other.is_win.get(i));
-        }
-
-        self
     }
 
     fn len(&self) -> usize {
@@ -94,8 +72,6 @@ impl AMVector {
 
     /// Returns if self is dominated by other
     fn is_dominated(&self, other: &AMVector) -> bool {
-        // assert_eq!(self.len, other.len);
-
         // A vector is greater or equal to another vector if for all indices it
         // contains a value greater or equal to the value contained at this index
         // in the other vector and if the valid worlds are the same for the two
@@ -103,28 +79,35 @@ impl AMVector {
             return false;
         }
 
-        // the two are equal
-        if self.is_win == other.is_win {
-            return true;
+        // // the two are equal
+        // if self.values == other.values {
+        //     return true;
+        // }
+
+        let mut all_greater_or_equal = true;
+        assert_eq!(self.len, other.len);
+        for i in 0..self.len {
+            // only check valid fields
+            if !self.is_valid.get(i) {
+                continue;
+            }
+
+            all_greater_or_equal &= other.values[i] >= self.values[i];
         }
-
-        let s_wins = self.is_win.values & self.is_valid.values;
-        let o_wins = other.is_win.values & other.is_valid.values;
-        // we check if o gives us any other wins, if not, self is dominated by other
-        (s_wins | o_wins) == o_wins
+        all_greater_or_equal
     }
 
-    pub fn set(&mut self, index: usize, value: bool) {
+    pub fn set(&mut self, index: usize, value: i8) {
         self.is_valid.set(index, true);
-        self.is_win.set(index, value);
+        self.values[index] = value;
     }
 
-    pub fn get(&self, index: usize) -> bool {
+    pub fn get(&self, index: usize) -> i8 {
         if !self.is_valid.get(index) {
             panic!("accessing invalid world index")
         }
 
-        self.is_win.get(index)
+        self.values[index]
     }
 }
 
@@ -133,10 +116,9 @@ impl Debug for AMVector {
         write!(f, "[").unwrap();
 
         for i in 0..self.len {
-            match (self.is_valid.get(i), self.is_win.get(i)) {
-                (true, true) => write!(f, "1").unwrap(),
-                (true, false) => write!(f, "0").unwrap(),
-                (false, _) => write!(f, "-").unwrap(),
+            match self.is_valid.get(i) {
+                true => write!(f, "{}", self.values[i]).unwrap(),
+                false => write!(f, "x").unwrap(),
             }
         }
 
@@ -186,12 +168,12 @@ impl AMFront {
             }
         }
 
-        debug!(
-            "min called on vectos of sizes: {} and {}, new size: {}",
-            self.len(),
-            other.len(),
-            result.len()
-        );
+        // debug!(
+        //     "min called on vectos of sizes: {} and {}, new size: {}",
+        //     self.len(),
+        //     other.len(),
+        //     result.len()
+        // );
 
         result
     }
@@ -206,9 +188,9 @@ impl AMFront {
         self
     }
 
-    pub fn set(&mut self, idx: usize, is_win: bool) {
+    pub fn set(&mut self, idx: usize, value: i8) {
         for v in self.vectors.iter_mut() {
-            v.is_win.set(idx, is_win);
+            v.values[idx] = value;
             v.is_valid.set(idx, true);
         }
     }
@@ -238,15 +220,19 @@ impl AMFront {
     }
 
     /// Returns the average wins across all vectors in a front
-    pub fn avg_wins(&self) -> f64 {
+    pub fn score(&self) -> f64 {
         assert!(!self.vectors.is_empty());
 
         let mut total = 0;
         for v in &self.vectors {
-            total += (v.is_valid.values & v.is_win.values).count_ones()
+            for i in 0..v.len {
+                if v.is_valid.get(i) {
+                    total += v.get(i);
+                }
+            }
         }
 
-        total as f64 / self.vectors.len() as f64
+        total as f64 / self.vectors.len() as f64 / self.vectors[0].len as f64
     }
 
     pub fn len(&self) -> usize {
@@ -310,15 +296,6 @@ mod tests {
         assert!(!v4.is_dominated(&v3));
         // an equal vector dominates another vector
         assert!(v3.is_dominated(&v3));
-    }
-
-    #[test]
-    fn test_am_vector_min_max() {
-        let v1 = amvec!(1, 0, 1);
-        let v2 = amvec!(1, 1, 0);
-
-        assert_eq!(v1._min(v2), amvec!(1, 0, 0));
-        assert_eq!(v1._max(v2), amvec!(1, 1, 1));
     }
 
     /// Test based on Fig 2 in alphamu paper
