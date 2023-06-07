@@ -5,7 +5,7 @@ use std::{
 };
 
 use itertools::Itertools;
-use log::{debug, info, trace};
+use log::trace;
 use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
 
 use crate::{
@@ -15,7 +15,6 @@ use crate::{
     alloc::Pool,
     cfragent::cfrnode::ActionVec,
     game::{Action, GameState, Player},
-    istate::IStateKey,
     policy::Policy,
 };
 
@@ -133,7 +132,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         let mut result = AMFront::default();
         result.push(AMVector::from_worlds(&worlds));
         if self.stop(m, &worlds, &mut result) {
-            self.cache.insert(&s, (result.clone(), None));
+            self.cache.insert(s, (result.clone(), None));
             assert!(!result.is_empty());
             return (result, None);
         }
@@ -146,7 +145,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
 
             let mut min_score = f64::INFINITY;
 
-            let t = self.cache.get(&s);
+            let t = self.cache.get(s);
             if t.is_some() && alpha.is_some() && t.unwrap().0.less_than_or_equal(alpha.unwrap()) {
                 return (front, None);
             }
@@ -179,7 +178,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             let mut max_score = f64::NEG_INFINITY;
 
             // sort the moves
-            let t = self.cache.get(&s);
+            let t = self.cache.get(s);
             let mut moves: Vec<Action> = self.all_moves(&worlds).iter().copied().collect_vec();
             if let Some(t) = t {
                 if let Some(a) = t.1 {
@@ -214,7 +213,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
                 // cannot be improved and a better move cannot be found so it is safe
                 // to cut.
                 if s.is_empty() {
-                    let t = self.cache.get(&s);
+                    let t = self.cache.get(s);
                     if t.is_some() && front.score() == t.unwrap().0.score() {
                         break;
                     }
@@ -230,7 +229,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             m,
             front
         );
-        self.cache.insert(&s, (front.clone(), best_action));
+        self.cache.insert(s, (front.clone(), best_action));
         self.cache.world_vector_pool.attach(worlds);
         (front, best_action)
     }
