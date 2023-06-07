@@ -174,7 +174,9 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
                 let worlds_1 = self.filter_and_progress_worlds(&worlds, a);
 
                 let f = self.alphamu(m, worlds_1, None, false);
+
                 front = front.min(f);
+                trace!("iterating on min nodes, front size: {}: {}", m, front.len());
             }
         } else {
             // max node

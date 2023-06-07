@@ -31,8 +31,8 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
     // let ra: &mut dyn Agent<G> = &mut RandomAgent::new();
     // agents.insert(ra.get_name(), ra);
 
-    let a = &mut PolicyAgent::new(PIMCTSBot::new(10, OpenHandSolver::new(), rng()), rng());
-    agents.insert("pimcts, 10 worlds, open hand".to_string(), a);
+    // let a = &mut PolicyAgent::new(PIMCTSBot::new(10, OpenHandSolver::new(), rng()), rng());
+    // agents.insert("pimcts, 10 worlds, open hand".to_string(), a);
 
     // let a = &mut PolicyAgent::new(
     //     PIMCTSBot::new(10, RandomRolloutEvaluator::new(10), rng()),
