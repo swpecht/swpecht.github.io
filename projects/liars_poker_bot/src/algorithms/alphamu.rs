@@ -3,6 +3,7 @@ use std::{
     marker::PhantomData,
 };
 
+use itertools::Itertools;
 use log::{debug, info, trace};
 use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
 
@@ -148,7 +149,15 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
                 return (front, None);
             }
 
-            for a in self.all_moves(&worlds) {
+            let mut moves: Vec<Action> = self.all_moves(&worlds).iter().copied().collect_vec();
+            if let Some(t) = t {
+                if let Some(a) = t.1 {
+                    let guess_move = moves.iter().position(|&x| x == a).unwrap();
+                    moves.swap(0, guess_move);
+                }
+            }
+
+            for a in moves {
                 let worlds_1 = self.filter_and_progress_worlds(&worlds, a);
 
                 let (f, _) = self.alphamu(m, worlds_1, None, false);
