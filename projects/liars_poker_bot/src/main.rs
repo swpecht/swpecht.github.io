@@ -9,16 +9,14 @@ use liars_poker_bot::agents::{Agent, RandomAgent};
 
 use liars_poker_bot::algorithms::alphamu::AlphaMuBot;
 use liars_poker_bot::algorithms::exploitability::{self};
-use liars_poker_bot::algorithms::ismcts::Evaluator;
 
-use liars_poker_bot::algorithms::open_hand_solver::{alpha_beta_search, OpenHandSolver};
+use liars_poker_bot::algorithms::open_hand_solver::OpenHandSolver;
 use liars_poker_bot::cfragent::cfrnode::CFRNode;
 use liars_poker_bot::cfragent::{CFRAgent, CFRAlgorithm};
 use liars_poker_bot::database::memory_node_store::MemoryNodeStore;
 use liars_poker_bot::database::Storage;
-use liars_poker_bot::game::bluff::{Bluff, BluffActions, BluffGameState, Dice};
+use liars_poker_bot::game::bluff::{Bluff, BluffGameState};
 
-use liars_poker_bot::game::euchre::actions::EAction;
 use liars_poker_bot::game::euchre::{Euchre, EuchreGameState};
 use liars_poker_bot::game::kuhn_poker::{KPGameState, KuhnPoker};
 use liars_poker_bot::game::{Action, GameState};
@@ -31,6 +29,7 @@ use scripts::agent_exploitability::calcualte_agent_exploitability;
 use scripts::benchmark::run_benchmark;
 use scripts::estimate_euchre_game_tree::estimate_euchre_game_tree;
 use scripts::pass_on_bower::calculate_open_hand_solver_convergence;
+use scripts::pass_on_bower_alpha::benchmark_pass_on_bower;
 
 pub mod scripts;
 
@@ -52,6 +51,7 @@ enum Mode {
     Scratch,
     Exploitability,
     PassOnBowerOpenHand,
+    PassOnBowerAlpha,
 }
 
 /// Simple program to greet a person
@@ -100,6 +100,7 @@ fn main() {
         Mode::Scratch => run_scratch(args),
         Mode::PassOnBowerOpenHand => calculate_open_hand_solver_convergence(args),
         Mode::Exploitability => calcualte_agent_exploitability(args),
+        Mode::PassOnBowerAlpha => benchmark_pass_on_bower(args),
         // Mode::PassOnBowerOpenHand => open_hand_score_pass_on_bower(args),
     }
 }

@@ -1,11 +1,6 @@
-use std::{
-    collections::{BinaryHeap, HashMap},
-    fmt::Debug,
-};
+use std::{collections::HashMap, fmt::Debug};
 
 use log::debug;
-
-use rayon::prelude::*;
 
 use crate::collections::bitarray::BitArray;
 
@@ -158,10 +153,11 @@ impl AMFront {
         }
 
         debug!(
-            "min called on vectors of sizes: {} and {}, new size: {}",
+            "min called on vectors of sizes: {} and {}, new size: {}, {} buckets",
             self.len(),
             other.len(),
-            result.len()
+            result.len(),
+            result.vectors.len()
         );
 
         result

@@ -121,7 +121,7 @@ pub struct PassOnBowerIterator {
 }
 
 impl PassOnBowerIterator {
-    fn new() -> Self {
+    pub fn new() -> Self {
         let mut hands = Vec::new();
         // todo: rewrite with combination function?
         for a in 0..20 {
@@ -151,6 +151,12 @@ impl PassOnBowerIterator {
         }
         hands.reverse();
         Self { hands }
+    }
+}
+
+impl Default for PassOnBowerIterator {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

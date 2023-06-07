@@ -14,7 +14,7 @@ use crate::{
     cfragent::cfrnode::ActionVec,
     game::{Action, GameState, Player},
     istate::IStateKey,
-    policy::{self, Policy},
+    policy::Policy,
 };
 
 use self::front::AMFront;

@@ -2,11 +2,9 @@ use std::collections::HashMap;
 
 use itertools::Itertools;
 use liars_poker_bot::{
-    agents::{Agent, PolicyAgent, RandomAgent},
+    agents::{Agent, PolicyAgent},
     algorithms::{
-        alphamu::AlphaMuBot,
-        ismcts::{RandomRolloutEvaluator, ResampleFromInfoState},
-        open_hand_solver::OpenHandSolver,
+        alphamu::AlphaMuBot, ismcts::ResampleFromInfoState, open_hand_solver::OpenHandSolver,
         pimcts::PIMCTSBot,
     },
     game::{bluff::Bluff, euchre::Euchre, kuhn_poker::KuhnPoker, run_game, Game, GameState},
@@ -31,8 +29,8 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
     // let ra: &mut dyn Agent<G> = &mut RandomAgent::new();
     // agents.insert(ra.get_name(), ra);
 
-    // let a = &mut PolicyAgent::new(PIMCTSBot::new(10, OpenHandSolver::new(), rng()), rng());
-    // agents.insert("pimcts, 10 worlds, open hand".to_string(), a);
+    let a = &mut PolicyAgent::new(PIMCTSBot::new(20, OpenHandSolver::new(), rng()), rng());
+    agents.insert("pimcts, 20 worlds, open hand".to_string(), a);
 
     // let a = &mut PolicyAgent::new(
     //     PIMCTSBot::new(10, RandomRolloutEvaluator::new(10), rng()),
