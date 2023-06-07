@@ -1,5 +1,6 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{hash_map::DefaultHasher, HashMap, HashSet},
+    hash::{Hash, Hasher},
     marker::PhantomData,
 };
 
@@ -96,11 +97,12 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
 
         let actions = actions!(root_node);
         let mut policy = ActionVec::new(&actions);
+        let mut s = Vec::new();
 
         for i in 1..self.m {
-            self.alphamu(Vec::new(), i, worlds.clone(), None);
+            self.alphamu(&mut s, i, worlds.clone(), None);
         }
-        let (_, a) = self.alphamu(Vec::new(), self.m, worlds.clone(), None);
+        let (_, a) = self.alphamu(&mut s, self.m, worlds.clone(), None);
 
         policy[a.unwrap()] = 1.0;
         policy
@@ -109,7 +111,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
     /// Runs alphamu search returning the new front and optionally the actions to achieve it
     fn alphamu(
         &mut self,
-        s: Vec<Action>,
+        s: &mut Vec<Action>,
         m: usize,
         worlds: Vec<Option<G>>,
         alpha: Option<AMFront>,
@@ -131,7 +133,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         let mut result = AMFront::default();
         result.push(AMVector::from_worlds(&worlds));
         if self.stop(m, &worlds, &mut result) {
-            self.cache.insert(s, (result.clone(), None), self.team);
+            self.cache.insert(&s, (result.clone(), None));
             assert!(!result.is_empty());
             return (result, None);
         }
@@ -144,7 +146,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
 
             let mut min_score = f64::INFINITY;
 
-            let t = self.cache.get(&s, self.team);
+            let t = self.cache.get(&s);
             if t.is_some() && alpha.is_some() && t.unwrap().0.less_than_or_equal(alpha.unwrap()) {
                 return (front, None);
             }
@@ -160,9 +162,9 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
 
             for a in moves {
                 let worlds_1 = self.filter_and_progress_worlds(&worlds, a);
-                let mut new_s = s.clone();
-                new_s.push(a);
-                let (f, _) = self.alphamu(new_s, m, worlds_1, None);
+                s.push(a);
+                let (f, _) = self.alphamu(s, m, worlds_1, None);
+                s.pop();
 
                 if f.score() < min_score {
                     min_score = f.score();
@@ -177,7 +179,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             let mut max_score = f64::NEG_INFINITY;
 
             // sort the moves
-            let t = self.cache.get(&s, self.team);
+            let t = self.cache.get(&s);
             let mut moves: Vec<Action> = self.all_moves(&worlds).iter().copied().collect_vec();
             if let Some(t) = t {
                 if let Some(a) = t.1 {
@@ -188,10 +190,9 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
 
             for a in moves {
                 let worlds_1 = self.filter_and_progress_worlds(&worlds, a);
-                let mut new_s = s.clone();
-                new_s.push(a);
-
-                let (f, _) = self.alphamu(new_s, m - 1, worlds_1, Some(front.clone()));
+                s.push(a);
+                let (f, _) = self.alphamu(s, m - 1, worlds_1, Some(front.clone()));
+                s.pop();
 
                 // Need to check if we have an empty front because the search was cut short
                 if !f.is_empty() && f.score() > max_score {
@@ -213,7 +214,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
                 // cannot be improved and a better move cannot be found so it is safe
                 // to cut.
                 if s.is_empty() {
-                    let t = self.cache.get(&s, self.team);
+                    let t = self.cache.get(&s);
                     if t.is_some() && front.score() == t.unwrap().0.score() {
                         break;
                     }
@@ -229,8 +230,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             m,
             front
         );
-        self.cache
-            .insert(s, (front.clone(), best_action), self.team);
+        self.cache.insert(&s, (front.clone(), best_action));
         self.cache.world_vector_pool.attach(worlds);
         (front, best_action)
     }
@@ -372,7 +372,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Policy<G> for AlphaM
 
 struct AlphaMuCache<G> {
     world_vector_pool: Pool<Vec<Option<G>>>,
-    transposition_table: HashMap<Vec<Action>, (AMFront, Option<Action>)>,
+    transposition_table: HashMap<u64, (AMFront, Option<Action>)>,
 }
 
 impl<G> Default for AlphaMuCache<G> {
@@ -385,12 +385,16 @@ impl<G> Default for AlphaMuCache<G> {
 }
 
 impl<G: GameState> AlphaMuCache<G> {
-    fn get(&self, s: &[Action], maximizing_team: Team) -> Option<&(AMFront, Option<Action>)> {
-        self.transposition_table.get(s)
+    fn get(&self, s: &[Action]) -> Option<&(AMFront, Option<Action>)> {
+        let mut hasher = DefaultHasher::default();
+        s.hash(&mut hasher);
+        self.transposition_table.get(&hasher.finish())
     }
 
-    pub fn insert(&mut self, s: Vec<Action>, v: (AMFront, Option<Action>), maximizing_team: Team) {
-        self.transposition_table.insert(s, v);
+    pub fn insert(&mut self, s: &[Action], v: (AMFront, Option<Action>)) {
+        let mut hasher = DefaultHasher::default();
+        s.hash(&mut hasher);
+        self.transposition_table.insert(hasher.finish(), v);
     }
 
     pub fn reset(&mut self) {
