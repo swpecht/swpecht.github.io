@@ -128,6 +128,12 @@ pub(super) struct AMFront {
 
 impl AMFront {
     pub fn min(self, other: Self) -> Self {
+        debug!(
+            "min call started on vectors of sizes: {} and {}",
+            self.len(),
+            other.len(),
+        );
+
         if self.is_empty() {
             return other;
         }
@@ -156,7 +162,7 @@ impl AMFront {
         }
 
         debug!(
-            "min called on vectos of sizes: {} and {}, new size: {}",
+            "min called on vectors of sizes: {} and {}, new size: {}",
             self.len(),
             other.len(),
             result.len()
@@ -188,15 +194,10 @@ impl AMFront {
     /// And it removes any vectors that are dominated by the new one
     pub fn push(&mut self, v: AMVector) {
         // Remove vectors from result <= r
-        for i in (0..self.vectors.len()).rev() {
-            if self.vectors[i].is_dominated(&v) {
-                self.vectors.remove(i);
-            }
-        }
-
+        self.vectors.retain(|sv| !sv.is_dominated(&v));
         // If no vector from result >= r
+        // should we create a method that operates on sv? seems to make fisrt call faster?
         let is_v_dominated = self.vectors.iter().any(|sv| v.is_dominated(sv));
-
         if !is_v_dominated {
             self.vectors.push(v);
         }
