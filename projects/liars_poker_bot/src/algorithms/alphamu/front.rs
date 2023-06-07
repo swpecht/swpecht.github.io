@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt::Debug};
 
-use log::{debug, trace};
+use log::trace;
 
 use crate::collections::bitarray::BitArray;
 
