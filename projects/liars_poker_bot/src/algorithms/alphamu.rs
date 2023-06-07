@@ -139,20 +139,23 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         }
 
         let mut front = AMFront::default();
-        let mut max_action = None;
+        let mut best_action = None;
 
         if self.team != self.get_team(&worlds) {
             // min node
+
+            let mut min_score = f64::INFINITY;
 
             let t = self.cache.get(&worlds, self.team);
             if t.is_some() && alpha.is_some() && t.unwrap().0.less_than_or_equal(alpha.unwrap()) {
                 return (front, None);
             }
 
+            // sort the moves
             let mut moves: Vec<Action> = self.all_moves(&worlds).iter().copied().collect_vec();
             if let Some(t) = t {
                 if let Some(a) = t.1 {
-                    let guess_move = moves.iter().position(|&x| x == a).unwrap();
+                    let guess_move = moves.iter().position(|&x| x == a).unwrap_or(0);
                     moves.swap(0, guess_move);
                 }
             }
@@ -162,20 +165,36 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
 
                 let (f, _) = self.alphamu(m, worlds_1, None, false);
 
+                if f.score() < min_score {
+                    min_score = f.score();
+                    best_action = Some(a);
+                }
+
                 front = front.min(f);
                 trace!("iterating on min nodes, front size: {}: {}", m, front.len());
             }
         } else {
             // max node
-            let mut max_score: Option<f64> = None;
-            for a in self.all_moves(&worlds) {
+            let mut max_score = f64::NEG_INFINITY;
+
+            // sort the moves
+            let t = self.cache.get(&worlds, self.team);
+            let mut moves: Vec<Action> = self.all_moves(&worlds).iter().copied().collect_vec();
+            if let Some(t) = t {
+                if let Some(a) = t.1 {
+                    let guess_move = moves.iter().position(|&x| x == a).unwrap_or(0);
+                    moves.swap(0, guess_move);
+                }
+            }
+
+            for a in moves {
                 let worlds_1 = self.filter_and_progress_worlds(&worlds, a);
                 let (f, _) = self.alphamu(m - 1, worlds_1, Some(front.clone()), false);
 
                 // Need to check if we have an empty front because the search was cut short
-                if !f.is_empty() && (max_score.is_none() || f.score() > max_score.unwrap()) {
-                    max_score = Some(f.score());
-                    max_action = Some(a);
+                if !f.is_empty() && f.score() > max_score {
+                    max_score = f.score();
+                    best_action = Some(a);
                 }
 
                 front = front.max(f);
@@ -209,9 +228,9 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             front
         );
         self.cache
-            .insert(&worlds, (front.clone(), max_action), self.team);
+            .insert(&worlds, (front.clone(), best_action), self.team);
         self.cache.world_vector_pool.attach(worlds);
-        (front, max_action)
+        (front, best_action)
     }
 
     fn all_moves(&self, worlds: &[Option<G>]) -> HashSet<Action> {
@@ -371,10 +390,10 @@ impl<G: GameState> AlphaMuCache<G> {
     ) -> Option<&(AMFront, Option<Action>)> {
         let w = worlds.iter().flatten().next().unwrap();
         let key = w.istate_key(maximizing_team.into());
-        let cur_team = w.cur_player() % 2;
+        let cur_player = w.cur_player();
 
         self.transposition_table
-            .get(&(cur_team, maximizing_team, key))
+            .get(&(cur_player, maximizing_team, key))
     }
 
     pub fn insert(
@@ -386,10 +405,10 @@ impl<G: GameState> AlphaMuCache<G> {
         // // Check if the game wants to store this state
         let w = worlds.iter().flatten().next().unwrap();
         let key = w.istate_key(maximizing_team.into());
-        let cur_team = w.cur_player() % 2;
+        let cur_player = w.cur_player();
 
         self.transposition_table
-            .insert((cur_team, maximizing_team, key), v);
+            .insert((cur_player, maximizing_team, key), v);
     }
 
     pub fn reset(&mut self) {
