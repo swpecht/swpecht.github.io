@@ -34,7 +34,7 @@ pub fn benchmark_pass_on_bower(args: Args) {
     );
     agents.insert("pimcts, 10 worlds, random".to_string(), a);
 
-    let alphamu = &mut AlphaMuBot::new(OpenHandSolver::new(), 10, 2);
+    let alphamu = &mut AlphaMuBot::new(OpenHandSolver::new(), 10, 5);
     agents.insert("alphamu, open hand".to_string(), alphamu);
 
     let agent_names = agents.keys().cloned().collect_vec();
@@ -43,13 +43,13 @@ pub fn benchmark_pass_on_bower(args: Args) {
     let mut worlds = generator.collect_vec();
     worlds.shuffle(&mut rng());
 
-    info!("starting benchmark, defended by: {}", "PIMCTS, n=20");
+    info!("starting benchmark, defended by: {}", "PIMCTS, n=100");
 
     for a2_name in agent_names {
         // this is the agent all oponents will play against in the 0 and 2 spot (team 0)
         // We re-initialize to ensure everyone is playing against the same agent
         let agent1 = &mut PolicyAgent::new(
-            PIMCTSBot::new(20, OpenHandSolver::new(), SeedableRng::seed_from_u64(100)),
+            PIMCTSBot::new(100, OpenHandSolver::new(), SeedableRng::seed_from_u64(100)),
             SeedableRng::seed_from_u64(101),
         );
 
