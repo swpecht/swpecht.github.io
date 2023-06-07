@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use itertools::Itertools;
 use liars_poker_bot::{
     agents::{Agent, PolicyAgent, RandomAgent},
@@ -7,9 +5,12 @@ use liars_poker_bot::{
         alphamu::AlphaMuBot, ismcts::RandomRolloutEvaluator, open_hand_solver::OpenHandSolver,
         pimcts::PIMCTSBot,
     },
-    game::{euchre::EuchreGameState, run_game},
+    game::{
+        euchre::{actions::EAction, EuchreGameState},
+        GameState,
+    },
 };
-use log::info;
+use log::{debug, info};
 use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
 
 use crate::Args;
@@ -17,27 +18,25 @@ use crate::Args;
 use super::pass_on_bower::PassOnBowerIterator;
 
 pub fn benchmark_pass_on_bower(args: Args) {
-    let mut agents: HashMap<String, &mut dyn Agent<EuchreGameState>> = HashMap::new();
+    let mut agents: Vec<(&str, &mut dyn Agent<EuchreGameState>)> = Vec::new();
 
     let ra: &mut dyn Agent<EuchreGameState> = &mut RandomAgent::new();
-    agents.insert(ra.get_name(), ra);
-
-    let a = &mut PolicyAgent::new(PIMCTSBot::new(20, OpenHandSolver::new(), rng()), rng());
-    agents.insert("pimcts, 20 worlds, open hand".to_string(), a);
-
-    let a = &mut PolicyAgent::new(PIMCTSBot::new(10, OpenHandSolver::new(), rng()), rng());
-    agents.insert("pimcts, 10 worlds, open hand".to_string(), a);
+    agents.push(("Random agent", ra));
 
     let a = &mut PolicyAgent::new(
         PIMCTSBot::new(10, RandomRolloutEvaluator::new(10), rng()),
         rng(),
     );
-    agents.insert("pimcts, 10 worlds, random".to_string(), a);
+    agents.push(("pimcts, 10 worlds, random", a));
+
+    let a = &mut PolicyAgent::new(PIMCTSBot::new(10, OpenHandSolver::new(), rng()), rng());
+    agents.push(("pimcts, 10 worlds, open hand", a));
+
+    let a = &mut PolicyAgent::new(PIMCTSBot::new(20, OpenHandSolver::new(), rng()), rng());
+    agents.push(("pimcts, 100 worlds, open hand", a));
 
     let alphamu = &mut AlphaMuBot::new(OpenHandSolver::new(), 10, 5);
-    agents.insert("alphamu, open hand".to_string(), alphamu);
-
-    let agent_names = agents.keys().cloned().collect_vec();
+    agents.push(("alphamu, open hand", alphamu));
 
     let generator = PassOnBowerIterator::new();
     let mut worlds = generator.collect_vec();
@@ -45,7 +44,7 @@ pub fn benchmark_pass_on_bower(args: Args) {
 
     info!("starting benchmark, defended by: {}", "PIMCTS, n=100");
 
-    for a2_name in agent_names {
+    for (name, agent) in agents.into_iter() {
         // this is the agent all oponents will play against in the 0 and 2 spot (team 0)
         // We re-initialize to ensure everyone is playing against the same agent
         let agent1 = &mut PolicyAgent::new(
@@ -53,21 +52,25 @@ pub fn benchmark_pass_on_bower(args: Args) {
             SeedableRng::seed_from_u64(101),
         );
 
-        let a2 = agents.remove(&a2_name).unwrap();
-
         let mut returns = vec![0.0; 4];
 
         // all agents play the same games
-        let mut game_rng: StdRng = SeedableRng::seed_from_u64(42);
         for gs in worlds.clone().iter_mut().take(args.num_games) {
-            let r = run_game(gs, agent1, &mut Some(a2), &mut game_rng);
-            for (i, v) in r.iter().enumerate() {
-                returns[i] += v;
+            while !gs.is_terminal() {
+                let a = if gs.cur_player() % 2 == 0 {
+                    agent1.step(gs)
+                } else {
+                    agent.step(gs)
+                };
+
+                debug!("{}: {}: {}", name, gs, EAction::from(a));
+                gs.apply_action(a);
+            }
+            for (p, r) in returns.iter_mut().enumerate() {
+                *r += gs.evaluate(p);
             }
         }
-        info!("{:?}\t{}", a2_name, returns[1] / args.num_games as f64);
-
-        agents.insert(a2_name.clone(), a2);
+        info!("{:?}\t{}", name, returns[1] / args.num_games as f64);
     }
 }
 

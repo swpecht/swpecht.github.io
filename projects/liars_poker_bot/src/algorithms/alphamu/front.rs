@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt::Debug};
 
-use log::debug;
+use log::{debug, trace};
 
 use crate::collections::bitarray::BitArray;
 
@@ -119,7 +119,7 @@ pub(super) struct AMFront {
 
 impl AMFront {
     pub fn min(self, other: Self) -> Self {
-        debug!(
+        trace!(
             "min call started on vectors of sizes: {} and {}",
             self.len(),
             other.len(),
@@ -152,7 +152,7 @@ impl AMFront {
             }
         }
 
-        debug!(
+        trace!(
             "min called on vectors of sizes: {} and {}, new size: {}, {} buckets",
             self.len(),
             other.len(),
