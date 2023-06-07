@@ -3,7 +3,7 @@ use std::{
     marker::PhantomData,
 };
 
-use log::{debug, trace};
+use log::{debug, info, trace};
 use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
 
 use crate::{
@@ -97,37 +97,12 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         let actions = actions!(root_node);
         let mut policy = ActionVec::new(&actions);
 
-        // todo, implement other methods for choosing action than just best option
-        let mut max_wins = 0.0;
-        let mut max_action = actions[0];
-        for a in actions {
-            let a_worlds = self.filter_and_progress_worlds(&worlds, a);
-
-            // Do the iterative deepening to guide the search
-            for i in 0..self.m - 1 {
-                self.alphamu(i, a_worlds.clone(), None, true);
-            }
-
-            let front = self.alphamu(self.m - 1, a_worlds.clone(), None, true);
-            let score = front.score();
-            debug!(
-                "evaluated {} to avg score of {} with front: {:?}",
-                a_worlds
-                    .iter()
-                    .flatten()
-                    .next()
-                    .unwrap()
-                    .istate_string(player),
-                score,
-                front
-            );
-            if score > max_wins {
-                max_action = a;
-                max_wins = score;
-            }
+        for i in 1..self.m {
+            self.alphamu(i, worlds.clone(), None, true);
         }
+        let (_, a) = self.alphamu(self.m, worlds.clone(), None, true);
 
-        policy[max_action] = 1.0;
+        policy[a.unwrap()] = 1.0;
         policy
     }
 
@@ -138,7 +113,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         worlds: Vec<Option<G>>,
         alpha: Option<AMFront>,
         is_root: bool,
-    ) -> AMFront {
+    ) -> (AMFront, Option<Action>) {
         let w = worlds.iter().flatten().next().unwrap();
         trace!(
             "alpha mu call: istate: {}\tm: {}",
@@ -156,33 +131,44 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         let mut result = AMFront::default();
         result.push(AMVector::from_worlds(&worlds));
         if self.stop(m, &worlds, &mut result) {
-            self.cache.insert(&worlds, result.clone(), self.team);
-            return result;
+            self.cache
+                .insert(&worlds, (result.clone(), None), self.team);
+            assert!(!result.is_empty());
+            return (result, None);
         }
 
         let mut front = AMFront::default();
+        let mut max_action = None;
 
         if self.team != self.get_team(&worlds) {
             // min node
 
             let t = self.cache.get(&worlds, self.team);
-            if t.is_some() && alpha.is_some() && t.unwrap().less_than_or_equal(alpha.unwrap()) {
-                return front;
+            if t.is_some() && alpha.is_some() && t.unwrap().0.less_than_or_equal(alpha.unwrap()) {
+                return (front, None);
             }
 
             for a in self.all_moves(&worlds) {
                 let worlds_1 = self.filter_and_progress_worlds(&worlds, a);
 
-                let f = self.alphamu(m, worlds_1, None, false);
+                let (f, _) = self.alphamu(m, worlds_1, None, false);
 
                 front = front.min(f);
                 trace!("iterating on min nodes, front size: {}: {}", m, front.len());
             }
         } else {
             // max node
+            let mut max_score: Option<f64> = None;
             for a in self.all_moves(&worlds) {
                 let worlds_1 = self.filter_and_progress_worlds(&worlds, a);
-                let f = self.alphamu(m - 1, worlds_1, Some(front.clone()), false);
+                let (f, _) = self.alphamu(m - 1, worlds_1, Some(front.clone()), false);
+
+                // Need to check if we have an empty front because the search was cut short
+                if !f.is_empty() && (max_score.is_none() || f.score() > max_score.unwrap()) {
+                    max_score = Some(f.score());
+                    max_action = Some(a);
+                }
+
                 front = front.max(f);
 
                 // Root cut optimization from the optimizing alpha mu paper:
@@ -198,7 +184,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
                 // to cut.
                 if is_root {
                     let t = self.cache.get(&worlds, self.team);
-                    if t.is_some() && front.score() == t.unwrap().score() {
+                    if t.is_some() && front.score() == t.unwrap().0.score() {
                         break;
                     }
                 }
@@ -213,9 +199,10 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             m,
             front
         );
-        self.cache.insert(&worlds, front.clone(), self.team);
+        self.cache
+            .insert(&worlds, (front.clone(), max_action), self.team);
         self.cache.world_vector_pool.attach(worlds);
-        front
+        (front, max_action)
     }
 
     fn all_moves(&self, worlds: &[Option<G>]) -> HashSet<Action> {
@@ -355,7 +342,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Policy<G> for AlphaM
 
 struct AlphaMuCache<G> {
     world_vector_pool: Pool<Vec<Option<G>>>,
-    transposition_table: HashMap<(Player, Team, IStateKey), AMFront>,
+    transposition_table: HashMap<(Player, Team, IStateKey), (AMFront, Option<Action>)>,
 }
 
 impl<G> Default for AlphaMuCache<G> {
@@ -368,7 +355,11 @@ impl<G> Default for AlphaMuCache<G> {
 }
 
 impl<G: GameState> AlphaMuCache<G> {
-    fn get(&self, worlds: &[Option<G>], maximizing_team: Team) -> Option<&AMFront> {
+    fn get(
+        &self,
+        worlds: &[Option<G>],
+        maximizing_team: Team,
+    ) -> Option<&(AMFront, Option<Action>)> {
         let w = worlds.iter().flatten().next().unwrap();
         let key = w.istate_key(maximizing_team.into());
         let cur_team = w.cur_player() % 2;
@@ -377,7 +368,12 @@ impl<G: GameState> AlphaMuCache<G> {
             .get(&(cur_team, maximizing_team, key))
     }
 
-    pub fn insert(&mut self, worlds: &[Option<G>], v: AMFront, maximizing_team: Team) {
+    pub fn insert(
+        &mut self,
+        worlds: &[Option<G>],
+        v: (AMFront, Option<Action>),
+        maximizing_team: Team,
+    ) {
         // // Check if the game wants to store this state
         let w = worlds.iter().flatten().next().unwrap();
         let key = w.istate_key(maximizing_team.into());
