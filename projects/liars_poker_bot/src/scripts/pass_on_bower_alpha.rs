@@ -42,8 +42,8 @@ pub fn benchmark_pass_on_bower(args: Args) {
     );
     agents.push(("pimcts, 100 worlds, open hand", a));
 
-    let alphamu = &mut AlphaMuBot::new(OpenHandSolver::new(), 20, 1, policy_rng.clone());
-    agents.push(("alphamu, open hand, m=1, 20 worlds", alphamu));
+    let alphamu = &mut AlphaMuBot::new(OpenHandSolver::new(), 10, 1, policy_rng.clone());
+    agents.push(("alphamu, open hand, m=1, 10 worlds", alphamu));
 
     let alphamu = &mut AlphaMuBot::new(OpenHandSolver::new(), 10, 2, policy_rng.clone());
     agents.push(("alphamu, open hand", alphamu));

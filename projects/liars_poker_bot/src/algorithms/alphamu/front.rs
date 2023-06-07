@@ -95,6 +95,21 @@ impl AMVector {
 
         self.values[index]
     }
+
+    /// The score of a vector is the average among all possible
+    // worlds of the values contained in the vector.
+    pub fn score(&self) -> f64 {
+        let mut valid_worlds = 0;
+        let mut total_score = 0;
+
+        for i in 0..self.len {
+            if self.is_valid.get(i) {
+                valid_worlds += 1;
+                total_score += self.values[i];
+            }
+        }
+        total_score as f64 / valid_worlds as f64
+    }
 }
 
 impl Debug for AMVector {
@@ -202,22 +217,20 @@ impl AMFront {
         }
     }
 
-    /// Returns the average wins across all vectors in a front
+    /// Score of a front
+    ///
+    /// From alpha mu paper:
+    /// The score of a move for the declarer is the score of
+    /// the vector that has the best score among the vectors in the Pareto front
+    /// of the move.
     pub fn score(&self) -> f64 {
         assert!(!self.vectors.is_empty());
 
-        let mut total = 0;
+        let mut max_score = f64::NEG_INFINITY;
         for v in self.vectors.values().flatten() {
-            for i in 0..v.len {
-                if v.is_valid.get(i) {
-                    total += v.get(i);
-                }
-            }
+            max_score = max_score.max(v.score());
         }
-
-        total as f64
-            / self.vectors.values().map(|x| x.len() as f64).sum::<f64>()
-            / self.vectors.values().next().unwrap()[0].len as f64
+        max_score
     }
 
     pub fn len(&self) -> usize {

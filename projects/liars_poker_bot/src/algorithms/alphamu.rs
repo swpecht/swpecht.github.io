@@ -97,9 +97,11 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         let mut policy = ActionVec::new(&actions);
         let mut s = Vec::new();
 
-        for i in 1..self.m {
-            self.alphamu(&mut s, i, worlds.clone(), None);
-        }
+        // Iterative deepening
+        // For now this is commented out as it doesn't seem to improve performance
+        // for i in 1..self.m {
+        //     self.alphamu(&mut s, i, worlds.clone(), None);
+        // }
         let (_, a) = self.alphamu(&mut s, self.m, worlds.clone(), None);
 
         policy[a.unwrap()] = 1.0;
