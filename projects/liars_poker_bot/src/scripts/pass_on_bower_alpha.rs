@@ -29,13 +29,23 @@ pub fn benchmark_pass_on_bower(args: Args) {
     );
     agents.push(("pimcts, 10 worlds, random", a));
 
-    let a = &mut PolicyAgent::new(PIMCTSBot::new(10, OpenHandSolver::new(), rng()), rng());
+    let policy_rng: StdRng = SeedableRng::seed_from_u64(200);
+    let a = &mut PolicyAgent::new(
+        PIMCTSBot::new(10, OpenHandSolver::new(), policy_rng.clone()),
+        rng(),
+    );
     agents.push(("pimcts, 10 worlds, open hand", a));
 
-    let a = &mut PolicyAgent::new(PIMCTSBot::new(20, OpenHandSolver::new(), rng()), rng());
+    let a = &mut PolicyAgent::new(
+        PIMCTSBot::new(20, OpenHandSolver::new(), policy_rng.clone()),
+        rng(),
+    );
     agents.push(("pimcts, 100 worlds, open hand", a));
 
-    let alphamu = &mut AlphaMuBot::new(OpenHandSolver::new(), 10, 5);
+    let alphamu = &mut AlphaMuBot::new(OpenHandSolver::new(), 20, 1, policy_rng.clone());
+    agents.push(("alphamu, open hand, m=1, 20 worlds", alphamu));
+
+    let alphamu = &mut AlphaMuBot::new(OpenHandSolver::new(), 10, 2, policy_rng.clone());
     agents.push(("alphamu, open hand", alphamu));
 
     let generator = PassOnBowerIterator::new();

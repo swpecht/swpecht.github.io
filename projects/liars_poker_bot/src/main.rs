@@ -7,10 +7,8 @@ use clap::clap_derive::ArgEnum;
 use liars_poker_bot::actions;
 use liars_poker_bot::agents::{Agent, RandomAgent};
 
-use liars_poker_bot::algorithms::alphamu::AlphaMuBot;
 use liars_poker_bot::algorithms::exploitability::{self};
 
-use liars_poker_bot::algorithms::open_hand_solver::OpenHandSolver;
 use liars_poker_bot::cfragent::cfrnode::CFRNode;
 use liars_poker_bot::cfragent::{CFRAgent, CFRAlgorithm};
 use liars_poker_bot::database::memory_node_store::MemoryNodeStore;
@@ -110,13 +108,13 @@ fn run_scratch(_args: Args) {
     println!("kuhn poker size: {}", mem::size_of::<KPGameState>());
     println!("euchre size: {}", mem::size_of::<EuchreGameState>());
 
-    let gs = EuchreGameState::from("TCQCQHAHTD|9HKHJDKDAD|AC9SQSTHJH|9CJCKCJSQD|AS|");
+    // let gs = EuchreGameState::from("TCQCQHAHTD|9HKHJDKDAD|AC9SQSTHJH|9CJCKCJSQD|AS|");
     // let mut gs = Bluff::new_state(1, 1);
     // gs.apply_action(BluffActions::Roll(Dice::Two).into());
     // gs.apply_action(BluffActions::Roll(Dice::Wild).into());
 
-    let mut agent = AlphaMuBot::new(OpenHandSolver::new(), 10, 10);
-    agent.run_search(&gs);
+    // let mut agent = AlphaMuBot::new(OpenHandSolver::new(), 10, 10);
+    // agent.run_search(&gs);
 }
 
 fn run_analyze(args: Args) {

@@ -6,7 +6,7 @@ use std::{
 
 use itertools::Itertools;
 use log::trace;
-use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
+use rand::{rngs::StdRng, seq::SliceRandom};
 
 use crate::{
     actions,
@@ -60,7 +60,7 @@ pub struct AlphaMuBot<G, E> {
 }
 
 impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
-    pub fn new(evaluator: E, num_worlds: usize, m: usize) -> Self {
+    pub fn new(evaluator: E, num_worlds: usize, m: usize, rng: StdRng) -> Self {
         if m < 1 {
             panic!("m must be at least 1, m=1 is PIMCTS")
         }
@@ -72,7 +72,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             num_worlds,
             m,
             cache: AlphaMuCache::default(),
-            rng: SeedableRng::seed_from_u64(42),
+            rng,
         }
     }
 
@@ -81,7 +81,6 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         self.reset();
 
         let root_node = root_node.clone();
-        let mut rng = thread_rng();
         let player = root_node.cur_player();
         self.team = match player {
             0 | 2 => Team::Team1,
@@ -91,7 +90,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
 
         let mut worlds = Vec::new();
         for _ in 0..self.num_worlds {
-            worlds.push(Some(root_node.resample_from_istate(player, &mut rng)))
+            worlds.push(Some(root_node.resample_from_istate(player, &mut self.rng)))
         }
 
         let actions = actions!(root_node);
@@ -403,7 +402,7 @@ impl<G: GameState> AlphaMuCache<G> {
 
 #[cfg(test)]
 mod tests {
-    use rand::{seq::SliceRandom, thread_rng};
+    use rand::{seq::SliceRandom, thread_rng, SeedableRng};
 
     use crate::{
         actions,
@@ -416,7 +415,12 @@ mod tests {
 
     #[test]
     fn test_alpha_mu_is_agent() {
-        let mut alphamu = AlphaMuBot::new(RandomRolloutEvaluator::new(100), 20, 10);
+        let mut alphamu = AlphaMuBot::new(
+            RandomRolloutEvaluator::new(100),
+            20,
+            10,
+            SeedableRng::seed_from_u64(42),
+        );
         let mut opponent = RandomAgent::default();
 
         for _ in 0..10 {
