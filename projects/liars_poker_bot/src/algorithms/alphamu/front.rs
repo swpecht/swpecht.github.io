@@ -82,17 +82,10 @@ impl AMVector {
             return false;
         }
 
-        let mut all_greater_or_equal = true;
         assert_eq!(self.len, other.len);
-        for i in 0..self.len {
-            // only check valid fields
-            if !self.is_valid.get(i) {
-                continue;
-            }
-
-            all_greater_or_equal &= other.values[i] >= self.values[i];
-        }
-        all_greater_or_equal
+        (0..self.len)
+            .filter(|i| self.is_valid.get(*i))
+            .all(|i| other.values[i] >= self.values[i])
     }
 
     pub fn set(&mut self, index: usize, value: i8) {
@@ -232,7 +225,7 @@ impl AMFront {
     }
 
     pub fn len(&self) -> usize {
-        self.vectors.len()
+        self.vectors.values().map(|x| x.len()).sum()
     }
 
     pub fn is_empty(&self) -> bool {
