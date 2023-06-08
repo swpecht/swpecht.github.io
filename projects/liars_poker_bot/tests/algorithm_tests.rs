@@ -1,14 +1,57 @@
 use approx::assert_relative_eq;
 use liars_poker_bot::{
+    agents::{Agent, PolicyAgent},
     algorithms::{
+        alphamu::AlphaMuBot,
         exploitability::exploitability,
         ismcts::{ISMCTBotConfig, ISMCTSBot, ISMCTSFinalPolicyType, RandomRolloutEvaluator},
+        open_hand_solver::OpenHandSolver,
+        pimcts::PIMCTSBot,
     },
     cfragent::{CFRAgent, CFRAlgorithm},
     database::memory_node_store::MemoryNodeStore,
-    game::kuhn_poker::KuhnPoker,
+    game::{
+        euchre::{Euchre, EuchreGameState},
+        kuhn_poker::KuhnPoker,
+        GameState,
+    },
 };
+use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
+/// AlphaMu with M=1 should be equivalent to PIMCTS
+#[test]
+fn alpha_mu_pimcts_equivalent() {
+    let policy_rng: StdRng = SeedableRng::seed_from_u64(56);
+    let agent_rng: StdRng = SeedableRng::seed_from_u64(57);
+    let rollouts = 10;
+    let mut alpha = PolicyAgent::new(
+        AlphaMuBot::new(OpenHandSolver::new(), rollouts, 1, policy_rng.clone()),
+        agent_rng.clone(),
+    );
+    let mut pimcts = PolicyAgent::new(
+        PIMCTSBot::new(rollouts, OpenHandSolver::new(), policy_rng),
+        agent_rng,
+    );
+    let mut actions = Vec::new();
+
+    let mut game_rng: StdRng = SeedableRng::seed_from_u64(54);
+    for _ in 0..100 {
+        let mut gs = Euchre::new_state();
+
+        while !gs.is_terminal() {
+            if gs.is_chance_node() {
+                gs.legal_actions(&mut actions);
+                let a = actions.choose(&mut game_rng).unwrap();
+                gs.apply_action(*a);
+            } else {
+                let alpha_action = alpha.step(&gs);
+                let pimcts_action = pimcts.step(&gs);
+                assert_eq!(alpha_action, pimcts_action);
+                gs.apply_action(pimcts_action);
+            }
+        }
+    }
+}
 
 #[test]
 fn test_ismcts_exploitability() {

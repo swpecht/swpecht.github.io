@@ -45,7 +45,7 @@ pub fn benchmark_pass_on_bower(args: Args) {
     let alphamu = &mut AlphaMuBot::new(OpenHandSolver::new(), 10, 1, policy_rng.clone());
     agents.push(("alphamu, open hand, m=1, 10 worlds", alphamu));
 
-    let alphamu = &mut AlphaMuBot::new(OpenHandSolver::new(), 10, 2, policy_rng.clone());
+    let alphamu = &mut AlphaMuBot::new(OpenHandSolver::new(), 10, 5, policy_rng.clone());
     agents.push(("alphamu, open hand", alphamu));
 
     let generator = PassOnBowerIterator::new();
@@ -66,6 +66,7 @@ pub fn benchmark_pass_on_bower(args: Args) {
 
         // all agents play the same games
         for gs in worlds.clone().iter_mut().take(args.num_games) {
+            todo!("this should re-sample the state");
             while !gs.is_terminal() {
                 let a = if gs.cur_player() % 2 == 0 {
                     agent1.step(gs)
