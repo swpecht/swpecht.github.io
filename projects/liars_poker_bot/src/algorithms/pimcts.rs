@@ -97,10 +97,12 @@ impl<G: GameState + ResampleFromInfoState + Send, E: Evaluator<G> + Clone + Sync
         }
 
         let mut probs = ActionVec::new(&actions);
-
         let index_of_max = values
             .iter()
             .enumerate()
+            // since our other algorithms take the first max element, we reverse the order so max by
+            // also returns the first element
+            .rev()
             .max_by(|(_, a), (_, b)| a.total_cmp(b))
             .map(|(index, _)| index)
             .unwrap();
