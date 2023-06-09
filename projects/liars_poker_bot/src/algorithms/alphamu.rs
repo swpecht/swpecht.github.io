@@ -11,7 +11,7 @@ use rand::{rngs::StdRng, seq::SliceRandom};
 use crate::{
     actions,
     agents::Agent,
-    algorithms::alphamu::front::AMVector,
+    algorithms::{alphamu::front::AMVector, pimcts::get_worlds},
     alloc::Pool,
     cfragent::cfrnode::ActionVec,
     game::{Action, GameState, Player},
@@ -80,7 +80,6 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         // Since the cache is only keyed off the move history, we need to reset between every call
         self.reset();
 
-        let root_node = root_node.clone();
         let player = root_node.cur_player();
         self.team = match player {
             0 | 2 => Team::Team1,
@@ -88,10 +87,10 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             _ => panic!("invalid player"),
         };
 
-        let mut worlds = Vec::new();
-        for _ in 0..self.num_worlds {
-            worlds.push(Some(root_node.resample_from_istate(player, &mut self.rng)))
-        }
+        let worlds = get_worlds(root_node, self.num_worlds, &mut self.rng);
+        let worlds = worlds.into_iter().map(|w| Some(w)).collect_vec();
+
+        trace!("running search with wolrds: {:?}", worlds);
 
         let actions = actions!(root_node);
         let mut policy = ActionVec::new(&actions);

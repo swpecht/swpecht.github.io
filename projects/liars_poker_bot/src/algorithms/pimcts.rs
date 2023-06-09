@@ -38,14 +38,6 @@ impl<G: GameState + ResampleFromInfoState + Send, E: Evaluator<G> + Clone + Sync
 
         sum / self.n_rollouts as f64
     }
-
-    fn get_worlds(&mut self, gs: &G) -> Vec<G> {
-        let mut worlds = Vec::with_capacity(self.n_rollouts);
-        for _ in 0..self.n_rollouts {
-            worlds.push(gs.resample_from_istate(gs.cur_player(), &mut self.rng));
-        }
-        worlds
-    }
 }
 
 fn evaluate_with_solver<G: GameState + Send, E: Evaluator<G>>(
@@ -60,14 +52,14 @@ impl<G: GameState + ResampleFromInfoState + Send, E: Evaluator<G> + Clone + Sync
     for PIMCTSBot<G, E>
 {
     fn evaluate_player(&mut self, gs: &G, maximizing_player: Player) -> f64 {
-        let worlds = self.get_worlds(gs);
+        let worlds = get_worlds(gs, self.n_rollouts, &mut self.rng);
         self.evaluate_with_worlds(maximizing_player, worlds)
     }
 
     fn evaluate(&mut self, gs: &G) -> Vec<f64> {
         let mut result = vec![0.0; gs.num_players()];
 
-        let worlds = self.get_worlds(gs);
+        let worlds = get_worlds(gs, self.n_rollouts, &mut self.rng);
 
         for (i, r) in result.iter_mut().enumerate().take(2) {
             *r = self.evaluate_with_worlds(i, worlds.clone());
@@ -94,9 +86,12 @@ impl<G: GameState + ResampleFromInfoState + Send, E: Evaluator<G> + Clone + Sync
         let mut gs = gs.clone();
         let player = gs.cur_player();
 
+        // Use the same set of worlds for all evaluations
+        let worlds = get_worlds(&gs, self.n_rollouts, &mut self.rng);
+
         for a in actions.clone() {
             gs.apply_action(a);
-            let v = self.evaluate_player(&gs, player);
+            let v = self.evaluate_with_worlds(player, worlds.clone());
             values.push(v);
             gs.undo();
         }
@@ -114,6 +109,18 @@ impl<G: GameState + ResampleFromInfoState + Send, E: Evaluator<G> + Clone + Sync
 
         probs
     }
+}
+
+pub(super) fn get_worlds<G: GameState + ResampleFromInfoState>(
+    gs: &G,
+    n: usize,
+    rng: &mut StdRng,
+) -> Vec<G> {
+    let mut worlds = Vec::with_capacity(n);
+    for _ in 0..n {
+        worlds.push(gs.resample_from_istate(gs.cur_player(), rng));
+    }
+    worlds
 }
 
 #[cfg(test)]
