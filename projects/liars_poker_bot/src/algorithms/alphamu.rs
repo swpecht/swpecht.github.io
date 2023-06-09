@@ -451,7 +451,9 @@ mod tests {
 
     #[test]
     fn alpha_mu_consistency() {
-        let gs = EuchreGameState::from("9cJcQcTsTd|KcKsQhKh9d|TcAcQsAsTh|Js9hAhQdAd|Kd|PT|Js|");
+        let gs = EuchreGameState::from(
+            "JsQs9hKhAh|TcQcKcThAd|9cJc9sAsQh|KsJh9dJdQd|Kd|PPPT|Ks|JsThAsJh|JdQsAd9c|Qd",
+        );
 
         let mut alphamu =
             AlphaMuBot::new(OpenHandSolver::new(), 2, 1, SeedableRng::seed_from_u64(42));

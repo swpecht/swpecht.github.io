@@ -3,15 +3,12 @@ use liars_poker_bot::{
     agents::{Agent, PolicyAgent, RandomAgent},
     algorithms::{
         alphamu::AlphaMuBot,
-        ismcts::{
-            ISMCTBotConfig, ISMCTSBot, ISMCTSFinalPolicyType, RandomRolloutEvaluator,
-            ResampleFromInfoState,
-        },
+        ismcts::{RandomRolloutEvaluator, ResampleFromInfoState},
         open_hand_solver::OpenHandSolver,
         pimcts::PIMCTSBot,
     },
     game::{
-        euchre::{actions::EAction, Euchre, EuchreGameState},
+        euchre::{actions::EAction, EuchreGameState},
         GameState,
     },
 };
@@ -47,18 +44,17 @@ pub fn benchmark_pass_on_bower(args: Args) {
     );
     agents.push(("pimcts, 100 worlds, open hand", a));
 
-    let config = ISMCTBotConfig {
-        final_policy_type: ISMCTSFinalPolicyType::NormalizedVisitedCount,
-        ..Default::default()
-    };
-
+    // let config = ISMCTBotConfig {
+    //     final_policy_type: ISMCTSFinalPolicyType::NormalizedVisitedCount,
+    //     ..Default::default()
+    // };
     // let ismcts = &mut ISMCTSBot::new(Euchre::game(), 1.5, 100, OpenHandSolver::new(), config);
     // agents.push(("ismcts, 100 simulations", ismcts));
 
     let alphamu = &mut AlphaMuBot::new(OpenHandSolver::new(), 10, 1, policy_rng.clone());
     agents.push(("alphamu, open hand, m=1, 10 worlds", alphamu));
 
-    let alphamu = &mut AlphaMuBot::new(OpenHandSolver::new(), 10, 5, policy_rng.clone());
+    let alphamu = &mut AlphaMuBot::new(OpenHandSolver::new(), 10, 5, policy_rng);
     agents.push(("alphamu, open hand", alphamu));
 
     let generator = PassOnBowerIterator::new();

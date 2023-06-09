@@ -36,7 +36,7 @@ fn alpha_mu_pimcts_equivalent() {
     );
     let mut actions = Vec::new();
 
-    let mut game_rng: StdRng = SeedableRng::seed_from_u64(55);
+    let mut game_rng: StdRng = SeedableRng::seed_from_u64(23);
     for i in 0..100 {
         let mut gs = Euchre::new_state();
 

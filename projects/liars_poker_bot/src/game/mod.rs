@@ -9,7 +9,7 @@ pub mod kuhn_poker;
 pub mod updownriver;
 
 use log::trace;
-use rand::{seq::SliceRandom, thread_rng, Rng};
+use rand::{seq::SliceRandom, Rng};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::{

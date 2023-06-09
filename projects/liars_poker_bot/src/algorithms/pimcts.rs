@@ -132,7 +132,11 @@ mod tests {
 
     use crate::{
         algorithms::{ismcts::Evaluator, open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot},
-        game::kuhn_poker::{KPAction, KuhnPoker},
+        game::{
+            euchre::EuchreGameState,
+            kuhn_poker::{KPAction, KuhnPoker},
+        },
+        policy::Policy,
     };
 
     #[test]
@@ -148,5 +152,21 @@ mod tests {
         let mut agent = PIMCTSBot::new(100, OpenHandSolver::new(), SeedableRng::seed_from_u64(109));
         let gs = KuhnPoker::from_actions(&[KPAction::King, KPAction::Jack]);
         assert_eq!(agent.evaluate(&gs), vec![1.0, -1.0]);
+    }
+
+    #[test]
+    fn pimcts_consistency() {
+        let gs = EuchreGameState::from(
+            "JsQs9hKhAh|TcQcKcThAd|9cJc9sAsQh|KsJh9dJdQd|Kd|PPPT|Ks|JsThAsJh|JdQsAd9c|Qd",
+        );
+
+        let mut policy = PIMCTSBot::new(10, OpenHandSolver::new(), SeedableRng::seed_from_u64(42));
+        let result = policy.action_probabilities(&gs);
+
+        for _ in 0..100 {
+            let mut policy =
+                PIMCTSBot::new(10, OpenHandSolver::new(), SeedableRng::seed_from_u64(42));
+            assert_eq!(policy.action_probabilities(&gs), result);
+        }
     }
 }
