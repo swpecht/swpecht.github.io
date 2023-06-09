@@ -101,7 +101,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         for i in 1..self.m {
             self.alphamu(&mut s, i, worlds.clone(), None);
         }
-        let (_, a) = self.alphamu(&mut s, self.m, worlds.clone(), None);
+        let (_, a) = self.alphamu(&mut s, self.m, worlds, None);
 
         policy[a.unwrap()] = 1.0;
         policy

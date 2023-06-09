@@ -10,11 +10,7 @@ use liars_poker_bot::{
     },
     cfragent::{CFRAgent, CFRAlgorithm},
     database::memory_node_store::MemoryNodeStore,
-    game::{
-        euchre::{Euchre, EuchreGameState},
-        kuhn_poker::KuhnPoker,
-        GameState,
-    },
+    game::{euchre::Euchre, kuhn_poker::KuhnPoker, GameState},
 };
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
