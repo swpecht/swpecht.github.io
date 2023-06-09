@@ -4,13 +4,19 @@ use liars_poker_bot::{
     algorithms::{
         alphamu::AlphaMuBot,
         exploitability::exploitability,
-        ismcts::{ISMCTBotConfig, ISMCTSBot, ISMCTSFinalPolicyType, RandomRolloutEvaluator},
+        ismcts::{
+            Evaluator, ISMCTBotConfig, ISMCTSBot, ISMCTSFinalPolicyType, RandomRolloutEvaluator,
+        },
         open_hand_solver::OpenHandSolver,
         pimcts::PIMCTSBot,
     },
     cfragent::{CFRAgent, CFRAlgorithm},
     database::memory_node_store::MemoryNodeStore,
-    game::{euchre::Euchre, kuhn_poker::KuhnPoker, GameState},
+    game::{
+        euchre::{actions::EAction, Euchre},
+        kuhn_poker::KuhnPoker,
+        GameState,
+    },
 };
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
@@ -30,8 +36,8 @@ fn alpha_mu_pimcts_equivalent() {
     );
     let mut actions = Vec::new();
 
-    let mut game_rng: StdRng = SeedableRng::seed_from_u64(54);
-    for _ in 0..100 {
+    let mut game_rng: StdRng = SeedableRng::seed_from_u64(55);
+    for i in 0..100 {
         let mut gs = Euchre::new_state();
 
         while !gs.is_terminal() {
@@ -42,6 +48,24 @@ fn alpha_mu_pimcts_equivalent() {
             } else {
                 let alpha_action = alpha.step(&gs);
                 let pimcts_action = pimcts.step(&gs);
+                if alpha_action != pimcts_action {
+                    println!("{}: {}", i, gs);
+                    println!("alpha action: {}", EAction::from(alpha_action));
+                    println!("pimcts action: {}", EAction::from(pimcts_action));
+                    gs.apply_action(alpha_action);
+                    println!(
+                        "alpha action value by pimcts: {}",
+                        pimcts.policy.evaluate_player(&gs, gs.cur_player())
+                    );
+                    gs.undo();
+                    gs.apply_action(pimcts_action);
+                    println!(
+                        "pimcts action value by pimcts: {}",
+                        pimcts.policy.evaluate_player(&gs, gs.cur_player())
+                    );
+                    gs.undo();
+                }
+
                 assert_eq!(alpha_action, pimcts_action);
                 gs.apply_action(pimcts_action);
             }

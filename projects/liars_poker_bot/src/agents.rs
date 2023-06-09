@@ -90,7 +90,7 @@ impl<T: GameState> Agent<T> for RecordedAgent {
 }
 
 pub struct PolicyAgent<T> {
-    policy: T,
+    pub policy: T,
     rng: StdRng,
 }
 
