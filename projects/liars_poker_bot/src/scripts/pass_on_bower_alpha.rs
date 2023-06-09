@@ -2,11 +2,16 @@ use itertools::Itertools;
 use liars_poker_bot::{
     agents::{Agent, PolicyAgent, RandomAgent},
     algorithms::{
-        alphamu::AlphaMuBot, ismcts::RandomRolloutEvaluator, open_hand_solver::OpenHandSolver,
+        alphamu::AlphaMuBot,
+        ismcts::{
+            ISMCTBotConfig, ISMCTSBot, ISMCTSFinalPolicyType, RandomRolloutEvaluator,
+            ResampleFromInfoState,
+        },
+        open_hand_solver::OpenHandSolver,
         pimcts::PIMCTSBot,
     },
     game::{
-        euchre::{actions::EAction, EuchreGameState},
+        euchre::{actions::EAction, Euchre, EuchreGameState},
         GameState,
     },
 };
@@ -42,6 +47,14 @@ pub fn benchmark_pass_on_bower(args: Args) {
     );
     agents.push(("pimcts, 100 worlds, open hand", a));
 
+    let config = ISMCTBotConfig {
+        final_policy_type: ISMCTSFinalPolicyType::NormalizedVisitedCount,
+        ..Default::default()
+    };
+
+    let ismcts = &mut ISMCTSBot::new(Euchre::game(), 1.5, 100, OpenHandSolver::new(), config);
+    agents.push(("ismcts, 100 simulations", ismcts));
+
     let alphamu = &mut AlphaMuBot::new(OpenHandSolver::new(), 10, 1, policy_rng.clone());
     agents.push(("alphamu, open hand, m=1, 10 worlds", alphamu));
 
@@ -51,6 +64,11 @@ pub fn benchmark_pass_on_bower(args: Args) {
     let generator = PassOnBowerIterator::new();
     let mut worlds = generator.collect_vec();
     worlds.shuffle(&mut rng());
+    let worlds = worlds
+        .iter()
+        .take(args.num_games)
+        .map(|w| w.resample_from_istate(w.cur_player(), &mut rng()))
+        .collect_vec();
 
     info!("starting benchmark, defended by: {}", "PIMCTS, n=100");
 
@@ -65,8 +83,7 @@ pub fn benchmark_pass_on_bower(args: Args) {
         let mut returns = vec![0.0; 4];
 
         // all agents play the same games
-        for gs in worlds.clone().iter_mut().take(args.num_games) {
-            todo!("this should re-sample the state");
+        for gs in worlds.clone().iter_mut() {
             while !gs.is_terminal() {
                 let a = if gs.cur_player() % 2 == 0 {
                     agent1.step(gs)
