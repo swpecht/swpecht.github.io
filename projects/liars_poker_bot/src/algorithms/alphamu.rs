@@ -1,7 +1,6 @@
 use std::{
     collections::{hash_map::DefaultHasher, HashMap, HashSet},
     hash::{Hash, Hasher},
-    marker::PhantomData,
 };
 
 use itertools::Itertools;
@@ -55,7 +54,6 @@ pub struct AlphaMuBot<G, E> {
     team: Team,
     num_worlds: usize,
     m: usize,
-    _phantom_data: PhantomData<G>,
     rng: StdRng,
 }
 
@@ -68,7 +66,6 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         Self {
             evaluator,
             team: Team::Team1,
-            _phantom_data: PhantomData,
             num_worlds,
             m,
             cache: AlphaMuCache::default(),
@@ -151,7 +148,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             }
 
             // sort the moves
-            let mut moves: Vec<Action> = self.all_moves(&worlds).iter().copied().collect_vec();
+            let mut moves: Vec<Action> = self.all_moves(&worlds);
             if let Some(t) = t {
                 if let Some(a) = t.1 {
                     let guess_move = moves.iter().position(|&x| x == a).unwrap();
@@ -234,7 +231,11 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         (front, best_action)
     }
 
-    fn all_moves(&self, worlds: &[Option<G>]) -> HashSet<Action> {
+    /// Returns a sorted list of moves to ensure deterministic move selection
+    ///
+    /// It's critical that moves are always returned in the same order or the recommended
+    /// move will change if there are equally scored moves
+    fn all_moves(&self, worlds: &[Option<G>]) -> Vec<Action> {
         let mut all_moves = HashSet::new();
         let mut actions = Vec::new();
         for w in worlds.iter().flatten() {
@@ -243,7 +244,9 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
                 all_moves.insert(*a);
             }
         }
-        all_moves
+        let mut sorted_moves = all_moves.into_iter().collect_vec();
+        sorted_moves.sort();
+        sorted_moves
     }
 
     /// Returns the progressed worlds where `a` was a valid action. Otherwise it
@@ -403,13 +406,15 @@ impl<G: GameState> AlphaMuCache<G> {
 
 #[cfg(test)]
 mod tests {
+
     use rand::{seq::SliceRandom, thread_rng, SeedableRng};
 
     use crate::{
         actions,
         agents::{Agent, RandomAgent},
-        algorithms::ismcts::RandomRolloutEvaluator,
-        game::{kuhn_poker::KuhnPoker, GameState},
+        algorithms::{ismcts::RandomRolloutEvaluator, open_hand_solver::OpenHandSolver},
+        game::{euchre::EuchreGameState, kuhn_poker::KuhnPoker, GameState},
+        policy::Policy,
     };
 
     use super::AlphaMuBot;
@@ -441,6 +446,21 @@ mod tests {
             }
 
             gs.evaluate(0);
+        }
+    }
+
+    #[test]
+    fn alpha_mu_consistency() {
+        let gs = EuchreGameState::from("9cJcQcTsTd|KcKsQhKh9d|TcAcQsAsTh|Js9hAhQdAd|Kd|PT|Js|");
+
+        let mut alphamu =
+            AlphaMuBot::new(OpenHandSolver::new(), 2, 1, SeedableRng::seed_from_u64(42));
+        let policy = alphamu.action_probabilities(&gs);
+
+        for _ in 0..100 {
+            let mut alphamu =
+                AlphaMuBot::new(OpenHandSolver::new(), 2, 1, SeedableRng::seed_from_u64(42));
+            assert_eq!(alphamu.action_probabilities(&gs), policy);
         }
     }
 }

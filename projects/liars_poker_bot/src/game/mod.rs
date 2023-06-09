@@ -9,7 +9,7 @@ pub mod kuhn_poker;
 pub mod updownriver;
 
 use log::trace;
-use rand::{seq::SliceRandom, Rng};
+use rand::{seq::SliceRandom, thread_rng, Rng};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::{
@@ -126,4 +126,36 @@ macro_rules! actions {
         $x.legal_actions(&mut temp_vec);
         temp_vec
     }};
+}
+
+#[cfg(test)]
+mod tests {
+    use rand::{seq::SliceRandom, thread_rng};
+
+    use super::{bluff::Bluff, euchre::Euchre, kuhn_poker::KuhnPoker, Game, GameState};
+
+    #[test]
+    fn test_actions_sorted() {
+        _test_actions_sorted(Euchre::game());
+        _test_actions_sorted(Bluff::game(2, 2));
+        _test_actions_sorted(KuhnPoker::game());
+    }
+
+    /// Helper function to ensure games always return actions in a sorted order.
+    /// This is necessary to ensure agents are deterministic
+    fn _test_actions_sorted<G: GameState>(game: Game<G>) {
+        let mut rng = thread_rng();
+        let mut actions = Vec::new();
+        for _ in 0..100 {
+            let mut gs = (game.new)();
+            while !gs.is_terminal() {
+                gs.legal_actions(&mut actions);
+                let mut sorted_actions = actions.clone();
+                sorted_actions.sort();
+                assert_eq!(actions, sorted_actions);
+                let a = actions.choose(&mut rng).unwrap();
+                gs.apply_action(*a);
+            }
+        }
+    }
 }

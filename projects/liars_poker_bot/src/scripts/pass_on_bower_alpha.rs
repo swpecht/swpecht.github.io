@@ -52,8 +52,8 @@ pub fn benchmark_pass_on_bower(args: Args) {
         ..Default::default()
     };
 
-    let ismcts = &mut ISMCTSBot::new(Euchre::game(), 1.5, 100, OpenHandSolver::new(), config);
-    agents.push(("ismcts, 100 simulations", ismcts));
+    // let ismcts = &mut ISMCTSBot::new(Euchre::game(), 1.5, 100, OpenHandSolver::new(), config);
+    // agents.push(("ismcts, 100 simulations", ismcts));
 
     let alphamu = &mut AlphaMuBot::new(OpenHandSolver::new(), 10, 1, policy_rng.clone());
     agents.push(("alphamu, open hand, m=1, 10 worlds", alphamu));

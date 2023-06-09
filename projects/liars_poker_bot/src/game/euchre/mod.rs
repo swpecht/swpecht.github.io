@@ -543,7 +543,8 @@ impl GameState for EuchreGameState {
             EPhase::DealHands => self.legal_actions_dealing(actions),
             EPhase::DealFaceUp => self.legal_actions_deal_face_up(actions),
             EPhase::Pickup => {
-                actions.append(&mut vec![EAction::Pass.into(), EAction::Pickup.into()])
+                // Sorted in order of lowest action to hightest
+                actions.append(&mut vec![EAction::Pickup.into(), EAction::Pass.into()])
             }
             EPhase::Discard => {
                 // Dealer can discard any card
@@ -929,7 +930,7 @@ mod tests {
         game::euchre::{actions::Card, EAction, EPhase, Euchre, Suit},
     };
 
-    use super::GameState;
+    use super::{EuchreGameState, GameState};
 
     #[test]
     fn euchre_test_phases_choose_trump() {
@@ -1003,7 +1004,7 @@ mod tests {
 
         assert_eq!(
             actions!(gs),
-            vec![EAction::Pass.into(), EAction::Pickup.into()]
+            vec![EAction::Pickup.into(), EAction::Pass.into()]
         );
 
         gs.apply_action(EAction::Pickup.into());
@@ -1188,6 +1189,20 @@ mod tests {
                 assert_eq!(ngs, gs);
                 gs.apply_action(*a);
             }
+        }
+    }
+
+    #[test]
+    fn test_euchre_resample_from_istate_deterministic() {
+        let gs = EuchreGameState::from("9cJcQcTsTd|KcKsQhKh9d|TcAcQsAsTh|Js9hAhQdAd|Kd|PT|Js|");
+        let rng: StdRng = SeedableRng::seed_from_u64(42);
+        let sampled = gs.resample_from_istate(gs.cur_player(), &mut rng.clone());
+
+        for _ in 0..100 {
+            assert_eq!(
+                gs.resample_from_istate(gs.cur_player(), &mut rng.clone()),
+                sampled
+            )
         }
     }
 }
