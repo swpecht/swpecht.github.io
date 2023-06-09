@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
 
+use itertools::Itertools;
 use rand::rngs::StdRng;
 
 use crate::{
@@ -83,17 +84,16 @@ impl<G: GameState + ResampleFromInfoState + Send, E: Evaluator<G> + Clone + Sync
     fn action_probabilities(&mut self, gs: &G) -> ActionVec<f64> {
         let mut values = Vec::new();
         let actions = actions!(gs);
-        let mut gs = gs.clone();
         let player = gs.cur_player();
 
         // Use the same set of worlds for all evaluations
-        let worlds = get_worlds(&gs, self.n_rollouts, &mut self.rng);
+        let mut worlds = get_worlds(gs, self.n_rollouts, &mut self.rng);
 
         for a in actions.clone() {
-            gs.apply_action(a);
+            worlds.iter_mut().map(|w| w.apply_action(a)).collect_vec();
             let v = self.evaluate_with_worlds(player, worlds.clone());
             values.push(v);
-            gs.undo();
+            worlds.iter_mut().map(|w| w.undo()).collect_vec();
         }
 
         let mut probs = ActionVec::new(&actions);
