@@ -13,6 +13,7 @@ use liars_poker_bot::{
     cfragent::{CFRAgent, CFRAlgorithm},
     database::memory_node_store::MemoryNodeStore,
     game::{
+        bluff::Bluff,
         euchre::{actions::EAction, Euchre},
         kuhn_poker::KuhnPoker,
         GameState,
@@ -20,12 +21,47 @@ use liars_poker_bot::{
 };
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
+/// Confirm that the open hand solver with and without the cache gives the same results.
+///
+/// This is critical not only for ensuring proper results but also for determinism of agents
+#[test]
+fn test_alg_open_hand_solver_euchre() {
+    let mut rng: StdRng = SeedableRng::seed_from_u64(51);
+    let mut actions = Vec::new();
+
+    let mut cached = OpenHandSolver::new();
+    let mut no_cache = OpenHandSolver::new_without_cache();
+
+    for i in 0..1000 {
+        let mut gs = Euchre::new_state();
+        // let mut gs = Bluff::new_state(1, 1);
+        while gs.is_chance_node() {
+            gs.legal_actions(&mut actions);
+            let a = actions.choose(&mut rng).unwrap();
+            gs.apply_action(*a);
+        }
+
+        while !gs.is_terminal() {
+            let c = cached.evaluate_player(&gs, 0);
+            let no_c = no_cache.evaluate_player(&gs, 0);
+            if c != no_c {
+                println!("{}: {}", i, gs);
+            }
+            assert_eq!(c, no_c);
+            // assert_eq!(c[1], no_c[1]);
+            gs.legal_actions(&mut actions);
+            let a = actions.choose(&mut rng).unwrap();
+            gs.apply_action(*a);
+        }
+    }
+}
+
 /// AlphaMu with M=1 should be equivalent to PIMCTS
 #[test]
 fn alpha_mu_pimcts_equivalent() {
     let policy_rng: StdRng = SeedableRng::seed_from_u64(56);
     let agent_rng: StdRng = SeedableRng::seed_from_u64(57);
-    let rollouts = 10;
+    let rollouts = 5;
     let mut alpha = PolicyAgent::new(
         AlphaMuBot::new(OpenHandSolver::new(), rollouts, 1, policy_rng.clone()),
         agent_rng.clone(),
@@ -70,6 +106,7 @@ fn alpha_mu_pimcts_equivalent() {
                 gs.apply_action(pimcts_action);
             }
         }
+        println!("{}", gs);
     }
 }
 

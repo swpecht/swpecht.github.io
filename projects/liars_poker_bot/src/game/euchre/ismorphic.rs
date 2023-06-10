@@ -42,7 +42,7 @@ pub(super) fn iso_deck(deck: Deck, trump: Option<Suit>) -> [Locations; 4] {
             }
         }
     } else {
-        // todo: could do this in a single path if needed for performance reasons
+        // todo: could do this in a single pass if needed for performance reasons
         // if no trump, we load everything and then swap around the jacks
         for s in SUITS {
             for c in get_cards(*s, trump) {

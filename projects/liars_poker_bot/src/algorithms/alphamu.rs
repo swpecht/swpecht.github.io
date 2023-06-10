@@ -451,15 +451,14 @@ mod tests {
 
     #[test]
     fn alpha_mu_consistency() {
-        let gs = EuchreGameState::from(
-            "JsQs9hKhAh|TcQcKcThAd|9cJc9sAsQh|KsJh9dJdQd|Kd|PPPT|Ks|JsThAsJh|JdQsAd9c|Qd",
-        );
+        let gs =
+            EuchreGameState::from("9cQc9sThKh|TcKs9hQhAh|TsTdJdQdAd|KcAcJh9dKd|As|PPPPC|9cTcTsKc|");
 
         let mut alphamu =
             AlphaMuBot::new(OpenHandSolver::new(), 2, 1, SeedableRng::seed_from_u64(42));
         let policy = alphamu.action_probabilities(&gs);
 
-        for _ in 0..100 {
+        for _ in 0..1000 {
             let mut alphamu =
                 AlphaMuBot::new(OpenHandSolver::new(), 2, 1, SeedableRng::seed_from_u64(42));
             assert_eq!(alphamu.action_probabilities(&gs), policy);

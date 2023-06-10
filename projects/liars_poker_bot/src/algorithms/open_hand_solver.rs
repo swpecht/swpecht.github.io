@@ -7,7 +7,7 @@ use crate::{
     alloc::Pool,
     cfragent::cfrnode::ActionVec,
     game::{Action, GameState, Player},
-    istate::IsomorphicHash,
+    istate::{IStateKey, IsomorphicHash},
 };
 
 use super::{alphamu::Team, ismcts::Evaluator};
@@ -32,6 +32,10 @@ impl OpenHandSolver {
         Self {
             cache: AlphaBetaCache::new(false),
         }
+    }
+
+    pub fn reset(&mut self) {
+        self.cache.reset();
     }
 }
 
@@ -119,8 +123,13 @@ fn alpha_beta_search_cached<G: GameState>(
     )
 }
 
-type AlphaBetaResult = (f64, Option<Action>);
-type TranspositionKey = (Team, IsomorphicHash);
+#[derive(Clone, Copy)]
+struct AlphaBetaResult {
+    lower_bound: f64,
+    upper_bound: f64,
+    action: Option<Action>,
+}
+type TranspositionKey = (Team, u64);
 /// Helper struct to speeding up alpha_beta search
 #[derive(Clone)]
 struct AlphaBetaCache {
@@ -146,11 +155,7 @@ impl Default for AlphaBetaCache {
 }
 
 impl AlphaBetaCache {
-    pub fn get<G: GameState>(
-        &self,
-        gs: &G,
-        maximizing_team: Team,
-    ) -> Option<(f64, Option<Action>)> {
+    pub fn get<G: GameState>(&self, gs: &G, maximizing_team: Team) -> Option<AlphaBetaResult> {
         if !self.use_tt {
             return None;
         }
@@ -166,7 +171,7 @@ impl AlphaBetaCache {
         }
     }
 
-    pub fn insert<G: GameState>(&self, gs: &G, v: (f64, Option<Action>), maximizing_team: Team) {
+    pub fn insert<G: GameState>(&self, gs: &G, v: AlphaBetaResult, maximizing_team: Team) {
         if !self.use_tt {
             return;
         }
@@ -176,6 +181,10 @@ impl AlphaBetaCache {
         if let Some(k) = k {
             self.transposition_table.insert((maximizing_team, k), v);
         }
+    }
+
+    pub fn reset(&mut self) {
+        self.transposition_table.clear();
     }
 }
 
@@ -197,8 +206,16 @@ fn alpha_beta<G: GameState>(
         return (v, None);
     }
 
+    // We can only return the value if we have the right bound
+    // http://people.csail.mit.edu/plaat/mtdf.html#abmem
     if let Some(v) = cache.get(gs, maximizing_team) {
-        return v;
+        if v.lower_bound >= beta {
+            return (v.lower_bound, v.action);
+        } else if v.upper_bound <= alpha {
+            return (v.upper_bound, v.action);
+        }
+        alpha = alpha.max(v.lower_bound);
+        beta = beta.min(v.upper_bound);
     }
 
     let mut actions = cache.vec_pool.detach();
@@ -223,7 +240,7 @@ fn alpha_beta<G: GameState>(
                 best_action = Some(*a);
             }
             alpha = alpha.max(value);
-            if alpha >= beta {
+            if value >= beta {
                 break; // Beta cut-off
             }
         }
@@ -239,14 +256,31 @@ fn alpha_beta<G: GameState>(
                 best_action = Some(*a);
             }
             beta = beta.min(value);
-            if alpha >= beta {
+            if value <= alpha {
                 break;
             }
         }
         result = (value, best_action);
     }
 
-    cache.insert(gs, result, maximizing_team);
+    // Store the bounds in the transposition table
+    // http://people.csail.mit.edu/plaat/mtdf.html#abmem
+    let mut cache_value = AlphaBetaResult {
+        lower_bound: f64::NEG_INFINITY,
+        upper_bound: f64::INFINITY,
+        action: result.1,
+    };
+
+    if result.0 <= alpha {
+        cache_value.upper_bound = result.0;
+    } else if result.0 > alpha && result.0 < beta {
+        cache_value.upper_bound = result.0;
+        cache_value.lower_bound = result.0;
+    } else if result.0 >= beta {
+        cache_value.lower_bound = result.0;
+    }
+
+    cache.insert(gs, cache_value, maximizing_team);
     actions.clear();
     cache.vec_pool.attach(actions);
     result
@@ -255,19 +289,17 @@ fn alpha_beta<G: GameState>(
 #[cfg(test)]
 mod tests {
 
-    use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
-
     use crate::{
-        algorithms::{ismcts::Evaluator, open_hand_solver::OpenHandSolver},
+        algorithms::ismcts::Evaluator,
         game::{
-            bluff::{Bluff, BluffActions, Dice},
-            euchre::Euchre,
+            bluff::{Bluff, BluffActions, BluffGameState, Dice},
+            euchre::EuchreGameState,
             kuhn_poker::{KPAction, KuhnPoker},
             GameState,
         },
     };
 
-    use super::alpha_beta_search;
+    use super::{alpha_beta_search, OpenHandSolver};
 
     #[test]
     fn test_min_max_kuhn_poker() {
@@ -323,26 +355,43 @@ mod tests {
     }
 
     #[test]
-    fn test_alg_open_hand_solver_euchre() {
-        let mut rng: StdRng = SeedableRng::seed_from_u64(51);
-        let mut actions = Vec::new();
+    fn spot_test_euchre_solutions() {
+        let games: Vec<&str> = vec![
+            "TsJhAhJdQd|KcJsQsKsAd|JcQcAcKhTd|9cTc9sTh9d|Kd|",
+            "TsJhAhJdQd|KcJsQsKsAd|JcQcAcKhTd|9cTc9sTh9d|Kd|P",
+            "TsJhAhJdQd|KcJsQsKsAd|JcQcAcKhTd|9cTc9sTh9d|Kd|PP",
+            "TsJhAhJdQd|KcJsQsKsAd|JcQcAcKhTd|9cTc9sTh9d|Kd|PPT|",
+        ];
+        let mut cache = OpenHandSolver::new();
 
-        let mut cached = OpenHandSolver::new();
-        let mut no_cache = OpenHandSolver::new_without_cache();
+        for s in games {
+            let gs = EuchreGameState::from(s);
+            println!("Evaluated {}: {}", gs, cache.evaluate_player(&gs, 0));
+        }
 
-        for _ in 0..10 {
-            let mut gs = Euchre::new_state();
-            while gs.is_chance_node() {
-                gs.legal_actions(&mut actions);
-                let a = actions.choose(&mut rng).unwrap();
-                gs.apply_action(*a);
-            }
+        let gs = EuchreGameState::from("TsJhAhJdQd|KcJsQsKsAd|JcQcAcKhTd|9cTc9sTh9d|Kd|PPT|Th|");
+        let key = gs.key();
+        let child_hash = gs.transposition_table_hash();
 
-            println!("{}", gs);
-            let c = cached.evaluate(&gs);
-            let no_c = no_cache.evaluate(&gs);
-            assert_eq!(c[0], no_c[0]);
-            assert_eq!(c[1], no_c[1]);
+        let cached = cache.evaluate_player(&gs, 0);
+        // cache.reset();
+        // let no_cached = cache.evaluate_player(&gs, 0);
+        // assert_eq!(no_cached, 2.0);
+        assert_eq!(cached, 2.0);
+    }
+
+    #[test]
+    fn open_hand_solver_deterministic() {
+        let mut gs = Bluff::new_state(1, 1);
+        gs.apply_action(BluffActions::Roll(Dice::Wild).into());
+        gs.apply_action(BluffActions::Roll(Dice::One).into());
+        gs.apply_action(BluffActions::Bid(1, Dice::Five).into());
+
+        let mut cache = OpenHandSolver::new();
+        let first = cache.evaluate_player(&gs, 0);
+
+        for _ in 0..1000 {
+            assert_eq!(cache.evaluate_player(&gs, 0), first);
         }
     }
 }

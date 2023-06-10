@@ -1,6 +1,7 @@
 use std::{
+    collections::hash_map::DefaultHasher,
     fmt::{Debug, Display},
-    hash::Hash,
+    hash::{Hash, Hasher},
 };
 
 pub mod bluff;
@@ -66,7 +67,9 @@ pub trait GameState: Display + Clone + Debug + Serialize + DeserializeOwned + Ha
     fn key(&self) -> IStateKey;
     /// Returns an isomorphic hash of the current gamestate
     fn transposition_table_hash(&self) -> Option<IsomorphicHash> {
-        None
+        let mut hasher = DefaultHasher::default();
+        self.hash(&mut hasher);
+        Some(hasher.finish())
     }
     /// Undo the last played actions
     fn undo(&mut self);
