@@ -7,7 +7,6 @@ use crate::{
     alloc::Pool,
     cfragent::cfrnode::ActionVec,
     game::{Action, GameState, Player},
-    istate::{IStateKey, IsomorphicHash},
 };
 
 use super::{alphamu::Team, ismcts::Evaluator};
@@ -48,7 +47,10 @@ impl Default for OpenHandSolver {
 impl<G: GameState> Evaluator<G> for OpenHandSolver {
     /// Evaluates the gamestate for a maximizing player using alpha-beta search
     fn evaluate_player(&mut self, gs: &G, maximizing_player: Player) -> f64 {
-        alpha_beta_search_cached(gs.clone(), maximizing_player, self.cache.clone()).0
+        // We reset the cache to avoid search instability
+        self.reset();
+        mtd_search(gs.clone(), maximizing_player, 0, self.cache.clone()).0
+        // alpha_beta_search_cached(gs.clone(), maximizing_player, self.cache.clone()).0
     }
 
     fn evaluate(&mut self, gs: &G) -> Vec<f64> {
@@ -108,19 +110,43 @@ pub fn alpha_beta_search<G: GameState>(
     )
 }
 
-fn alpha_beta_search_cached<G: GameState>(
-    mut gs: G,
+/// Returns the value of a given state and optionally the best move
+///
+/// http://people.csail.mit.edu/plaat/mtdf.html#abmem
+fn mtd_search<G: GameState>(
+    mut root: G,
     maximizing_player: Player,
+    first_guess: i8,
     mut cache: AlphaBetaCache,
 ) -> (f64, Option<Action>) {
-    let maximizing_team = Team::from(maximizing_player);
-    alpha_beta(
-        &mut gs,
-        maximizing_team,
-        f64::NEG_INFINITY,
-        f64::INFINITY,
-        &mut cache,
-    )
+    let mut g = first_guess;
+    let mut best_action;
+    let mut upperbound = i8::MAX;
+    let mut lowerbound = i8::MIN;
+
+    loop {
+        let beta = if g == lowerbound { g + 1 } else { g };
+        let result = alpha_beta(
+            &mut root,
+            Team::from(maximizing_player),
+            (beta - 1) as f64,
+            beta as f64,
+            &mut cache,
+        );
+        g = result.0 as i8;
+        best_action = result.1;
+        if g < beta {
+            upperbound = g;
+        } else {
+            lowerbound = g;
+        }
+
+        if lowerbound >= upperbound {
+            break;
+        }
+    }
+
+    (g as f64, best_action)
 }
 
 #[derive(Clone, Copy)]
@@ -206,6 +232,8 @@ fn alpha_beta<G: GameState>(
         return (v, None);
     }
 
+    let alpha_orig = alpha;
+    let beta_orig = beta;
     // We can only return the value if we have the right bound
     // http://people.csail.mit.edu/plaat/mtdf.html#abmem
     if let Some(v) = cache.get(gs, maximizing_team) {
@@ -271,12 +299,15 @@ fn alpha_beta<G: GameState>(
         action: result.1,
     };
 
-    if result.0 <= alpha {
+    // maybe should compare to alpha orig
+    // https://en.wikipedia.org/wiki/Negamax#cite_note-Breuker-1
+
+    if result.0 <= alpha_orig {
         cache_value.upper_bound = result.0;
-    } else if result.0 > alpha && result.0 < beta {
+    } else if result.0 > alpha_orig && result.0 < beta_orig {
         cache_value.upper_bound = result.0;
         cache_value.lower_bound = result.0;
-    } else if result.0 >= beta {
+    } else if result.0 >= beta_orig {
         cache_value.lower_bound = result.0;
     }
 
@@ -292,7 +323,7 @@ mod tests {
     use crate::{
         algorithms::ismcts::Evaluator,
         game::{
-            bluff::{Bluff, BluffActions, BluffGameState, Dice},
+            bluff::{Bluff, BluffActions, Dice},
             euchre::EuchreGameState,
             kuhn_poker::{KPAction, KuhnPoker},
             GameState,
