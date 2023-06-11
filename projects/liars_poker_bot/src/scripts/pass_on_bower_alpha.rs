@@ -22,25 +22,27 @@ use super::pass_on_bower::PassOnBowerIterator;
 pub fn benchmark_pass_on_bower(args: Args) {
     let mut agents: Vec<(&str, &mut dyn Agent<EuchreGameState>)> = Vec::new();
 
+    let policy_rng: StdRng = SeedableRng::seed_from_u64(56);
+    let agent_rng: StdRng = SeedableRng::seed_from_u64(57);
+
     let ra: &mut dyn Agent<EuchreGameState> = &mut RandomAgent::new();
     agents.push(("Random agent", ra));
 
     let a = &mut PolicyAgent::new(
-        PIMCTSBot::new(10, RandomRolloutEvaluator::new(10), rng()),
-        rng(),
+        PIMCTSBot::new(10, RandomRolloutEvaluator::new(10), policy_rng.clone()),
+        agent_rng.clone(),
     );
     agents.push(("pimcts, 10 worlds, random", a));
 
-    let policy_rng: StdRng = SeedableRng::seed_from_u64(200);
     let a = &mut PolicyAgent::new(
         PIMCTSBot::new(10, OpenHandSolver::new(), policy_rng.clone()),
-        rng(),
+        agent_rng.clone(),
     );
     agents.push(("pimcts, 10 worlds, open hand", a));
 
     let a = &mut PolicyAgent::new(
         PIMCTSBot::new(20, OpenHandSolver::new(), policy_rng.clone()),
-        rng(),
+        agent_rng.clone(),
     );
     agents.push(("pimcts, 100 worlds, open hand", a));
 
@@ -51,10 +53,16 @@ pub fn benchmark_pass_on_bower(args: Args) {
     // let ismcts = &mut ISMCTSBot::new(Euchre::game(), 1.5, 100, OpenHandSolver::new(), config);
     // agents.push(("ismcts, 100 simulations", ismcts));
 
-    let alphamu = &mut AlphaMuBot::new(OpenHandSolver::new(), 10, 1, policy_rng.clone());
+    let alphamu = &mut PolicyAgent::new(
+        AlphaMuBot::new(OpenHandSolver::new(), 10, 1, policy_rng.clone()),
+        agent_rng.clone(),
+    );
     agents.push(("alphamu, open hand, m=1, 10 worlds", alphamu));
 
-    let alphamu = &mut AlphaMuBot::new(OpenHandSolver::new(), 10, 5, policy_rng);
+    let alphamu = &mut PolicyAgent::new(
+        AlphaMuBot::new(OpenHandSolver::new(), 10, 5, policy_rng),
+        agent_rng,
+    );
     agents.push(("alphamu, open hand", alphamu));
 
     let generator = PassOnBowerIterator::new();

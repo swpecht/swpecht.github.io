@@ -104,7 +104,7 @@ fn alpha_mu_pimcts_equivalent() {
                 gs.apply_action(pimcts_action);
             }
         }
-        println!("{}", gs);
+        // println!("{}", gs);
     }
 }
 

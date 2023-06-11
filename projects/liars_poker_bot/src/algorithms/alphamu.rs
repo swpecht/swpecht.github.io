@@ -349,23 +349,6 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
     }
 }
 
-impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Agent<G> for AlphaMuBot<G, E> {
-    fn step(&mut self, s: &G) -> Action {
-        let action_weights = self.run_search(s).to_vec();
-        action_weights
-            .choose_weighted(&mut self.rng, |item| item.1)
-            .unwrap()
-            .0
-    }
-
-    fn get_name(&self) -> String {
-        format!(
-            "AlphaMu, worlds: {}, m: {}, evaluator: todo",
-            self.num_worlds, self.m
-        )
-    }
-}
-
 impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Policy<G> for AlphaMuBot<G, E> {
     fn action_probabilities(&mut self, gs: &G) -> ActionVec<f64> {
         self.run_search(gs)
@@ -411,7 +394,7 @@ mod tests {
 
     use crate::{
         actions,
-        agents::{Agent, RandomAgent},
+        agents::{Agent, PolicyAgent, RandomAgent},
         algorithms::{ismcts::RandomRolloutEvaluator, open_hand_solver::OpenHandSolver},
         game::{euchre::EuchreGameState, kuhn_poker::KuhnPoker, GameState},
         policy::Policy,
@@ -421,11 +404,14 @@ mod tests {
 
     #[test]
     fn test_alpha_mu_is_agent() {
-        let mut alphamu = AlphaMuBot::new(
-            RandomRolloutEvaluator::new(100),
-            20,
-            10,
-            SeedableRng::seed_from_u64(42),
+        let mut alphamu = PolicyAgent::new(
+            AlphaMuBot::new(
+                RandomRolloutEvaluator::new(100),
+                20,
+                10,
+                SeedableRng::seed_from_u64(42),
+            ),
+            SeedableRng::seed_from_u64(43),
         );
         let mut opponent = RandomAgent::default();
 

@@ -1,6 +1,7 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use liars_poker_bot::{
     actions,
+    agents::PolicyAgent,
     algorithms::{
         alphamu::AlphaMuBot, ismcts::Evaluator, open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot,
     },
@@ -30,14 +31,20 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     group.sample_size(50);
 
     let rng: StdRng = SeedableRng::seed_from_u64(42);
-    let mut evaluator = AlphaMuBot::new(OpenHandSolver::new(), 10, 5, rng);
+    let mut evaluator = PolicyAgent::new(
+        AlphaMuBot::new(OpenHandSolver::new(), 10, 5, rng.clone()),
+        rng,
+    );
     let mut rng: StdRng = SeedableRng::seed_from_u64(45);
     group.bench_function("alpha mu 10 worlds, m=5", |b| {
         b.iter(|| alpha_mu_benchmark(&mut evaluator, &mut rng))
     });
 
     let rng: StdRng = SeedableRng::seed_from_u64(42);
-    let mut evaluator = AlphaMuBot::new(OpenHandSolver::new(), 20, 2, rng);
+    let mut evaluator = PolicyAgent::new(
+        AlphaMuBot::new(OpenHandSolver::new(), 20, 2, rng.clone()),
+        rng,
+    );
     let mut rng: StdRng = SeedableRng::seed_from_u64(45);
     group.bench_function("alpha mu 20 worlds, m=2", |b| {
         b.iter(|| alpha_mu_benchmark(&mut evaluator, &mut rng))
@@ -56,7 +63,7 @@ fn bit_shift(v: &mut u32) {
 }
 
 fn alpha_mu_benchmark(
-    evaluator: &mut AlphaMuBot<EuchreGameState, OpenHandSolver>,
+    evaluator: &mut PolicyAgent<AlphaMuBot<EuchreGameState, OpenHandSolver>>,
     rng: &mut StdRng,
 ) {
     let mut gs = get_game(rng);
