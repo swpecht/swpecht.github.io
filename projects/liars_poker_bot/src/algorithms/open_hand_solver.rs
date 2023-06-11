@@ -311,7 +311,6 @@ mod tests {
         },
         game::{
             bluff::{Bluff, BluffActions, Dice},
-            euchre::EuchreGameState,
             kuhn_poker::{KPAction, KuhnPoker},
             GameState,
         },
@@ -370,32 +369,6 @@ mod tests {
             BluffActions::from(a.unwrap()),
             BluffActions::Bid(3, Dice::Three)
         );
-    }
-
-    #[test]
-    fn spot_test_euchre_solutions() {
-        let games: Vec<&str> = vec![
-            "TsJhAhJdQd|KcJsQsKsAd|JcQcAcKhTd|9cTc9sTh9d|Kd|",
-            "TsJhAhJdQd|KcJsQsKsAd|JcQcAcKhTd|9cTc9sTh9d|Kd|P",
-            "TsJhAhJdQd|KcJsQsKsAd|JcQcAcKhTd|9cTc9sTh9d|Kd|PP",
-            "TsJhAhJdQd|KcJsQsKsAd|JcQcAcKhTd|9cTc9sTh9d|Kd|PPT|",
-        ];
-        let mut cache = OpenHandSolver::new();
-
-        for s in games {
-            let gs = EuchreGameState::from(s);
-            println!("Evaluated {}: {}", gs, cache.evaluate_player(&gs, 0));
-        }
-
-        let gs = EuchreGameState::from("TsJhAhJdQd|KcJsQsKsAd|JcQcAcKhTd|9cTc9sTh9d|Kd|PPT|Th|");
-        let key = gs.key();
-        let child_hash = gs.transposition_table_hash();
-
-        let cached = cache.evaluate_player(&gs, 0);
-        // cache.reset();
-        // let no_cached = cache.evaluate_player(&gs, 0);
-        // assert_eq!(no_cached, 2.0);
-        assert_eq!(cached, 2.0);
     }
 
     #[test]

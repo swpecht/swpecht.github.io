@@ -5,11 +5,10 @@ use std::{
 
 use itertools::Itertools;
 use log::trace;
-use rand::{rngs::StdRng, seq::SliceRandom};
+use rand::rngs::StdRng;
 
 use crate::{
     actions,
-    agents::Agent,
     algorithms::{alphamu::front::AMVector, pimcts::get_worlds},
     alloc::Pool,
     cfragent::cfrnode::ActionVec,
