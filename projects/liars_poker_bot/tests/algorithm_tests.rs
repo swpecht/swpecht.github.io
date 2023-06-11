@@ -48,7 +48,6 @@ fn test_alg_open_hand_solver_euchre() {
                 println!("{}: {}", i, gs);
             }
             assert_eq!(c, no_c);
-            // assert_eq!(c[1], no_c[1]);
             gs.legal_actions(&mut actions);
             let a = actions.choose(&mut rng).unwrap();
             gs.apply_action(*a);

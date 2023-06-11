@@ -832,6 +832,10 @@ impl GameState for EuchreGameState {
         let calling_team = self.trump_caller % 2;
         calling_team.hash(&mut hasher);
 
+        // testing isomorphic hash
+        self.cur_player.hash(&mut hasher);
+        // self.key.hash(&mut hasher);
+
         Some(hasher.finish())
     }
 }

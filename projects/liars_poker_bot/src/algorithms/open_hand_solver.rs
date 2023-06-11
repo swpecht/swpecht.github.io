@@ -96,20 +96,6 @@ impl<G: GameState> Evaluator<G> for OpenHandSolver {
     }
 }
 
-pub fn alpha_beta_search<G: GameState>(
-    mut gs: G,
-    maximizing_player: Player,
-) -> (f64, Option<Action>) {
-    let maximizing_team = Team::from(maximizing_player);
-    alpha_beta(
-        &mut gs,
-        maximizing_team,
-        f64::NEG_INFINITY,
-        f64::INFINITY,
-        &mut AlphaBetaCache::default(),
-    )
-}
-
 /// Returns the value of a given state and optionally the best move
 ///
 /// http://people.csail.mit.edu/plaat/mtdf.html#abmem
@@ -319,7 +305,10 @@ fn alpha_beta<G: GameState>(
 mod tests {
 
     use crate::{
-        algorithms::ismcts::Evaluator,
+        algorithms::{
+            ismcts::Evaluator,
+            open_hand_solver::{mtd_search, AlphaBetaCache},
+        },
         game::{
             bluff::{Bluff, BluffActions, Dice},
             euchre::EuchreGameState,
@@ -328,17 +317,17 @@ mod tests {
         },
     };
 
-    use super::{alpha_beta_search, OpenHandSolver};
+    use super::OpenHandSolver;
 
     #[test]
-    fn test_min_max_kuhn_poker() {
+    fn test_mtd_kuhn_poker() {
         let gs = KuhnPoker::from_actions(&[KPAction::Jack, KPAction::Queen]);
-        let (v, a) = alpha_beta_search(gs, 0);
+        let (v, a) = mtd_search(gs, 0, 0, AlphaBetaCache::new(true));
         assert_eq!(v, -1.0);
         assert_eq!(a.unwrap(), KPAction::Pass.into());
 
         let gs = KuhnPoker::from_actions(&[KPAction::King, KPAction::Queen]);
-        let (v, a) = alpha_beta_search(gs, 0);
+        let (v, a) = mtd_search(gs, 0, 0, AlphaBetaCache::new(true));
         assert_eq!(v, 1.0);
         assert_eq!(a.unwrap(), KPAction::Bet.into());
 
@@ -348,20 +337,20 @@ mod tests {
             KPAction::Pass,
             KPAction::Bet,
         ]);
-        let (v, a) = alpha_beta_search(gs, 0);
+        let (v, a) = mtd_search(gs, 0, 0, AlphaBetaCache::new(true));
         assert_eq!(v, 2.0);
         assert_eq!(a.unwrap(), KPAction::Bet.into());
     }
 
     #[test]
-    fn test_min_max_bluff_2_2() {
+    fn test_mtd_bluff_2_2() {
         let mut gs = Bluff::new_state(2, 2);
         gs.apply_action(BluffActions::Roll(Dice::Two).into());
         gs.apply_action(BluffActions::Roll(Dice::Three).into());
         gs.apply_action(BluffActions::Roll(Dice::Two).into());
         gs.apply_action(BluffActions::Roll(Dice::Three).into());
 
-        let (v, a) = alpha_beta_search(gs, 0);
+        let (v, a) = mtd_search(gs, 0, 0, AlphaBetaCache::new(true));
         assert_eq!(v, 1.0);
         assert_eq!(
             BluffActions::from(a.unwrap()),
@@ -374,7 +363,7 @@ mod tests {
         gs.apply_action(BluffActions::Roll(Dice::Three).into());
         gs.apply_action(BluffActions::Roll(Dice::Three).into());
 
-        let (v, a) = alpha_beta_search(gs, 0);
+        let (v, a) = mtd_search(gs, 0, 0, AlphaBetaCache::new(true));
         assert_eq!(v, 1.0);
 
         assert_eq!(
