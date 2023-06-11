@@ -47,8 +47,6 @@ impl Default for OpenHandSolver {
 impl<G: GameState> Evaluator<G> for OpenHandSolver {
     /// Evaluates the gamestate for a maximizing player using alpha-beta search
     fn evaluate_player(&mut self, gs: &G, maximizing_player: Player) -> f64 {
-        // We reset the cache to avoid search instability
-        // self.reset();
         mtd_search(gs.clone(), maximizing_player, 0, self.cache.clone()).0
         // alpha_beta_search_cached(gs.clone(), maximizing_player, self.cache.clone()).0
     }

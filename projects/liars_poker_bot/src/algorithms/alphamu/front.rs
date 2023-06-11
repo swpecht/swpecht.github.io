@@ -78,9 +78,13 @@ impl AMVector {
         }
 
         assert_eq!(self.len, other.len);
-        (0..self.len)
-            .filter(|i| self.is_valid.get(*i))
-            .all(|i| other.values[i] >= self.values[i])
+        // as an optimization, we don't only check values for valid worlds. This should be ok if invalid values are
+        // always 0. But care should be take to ensure this invariant holds in the future.
+        other
+            .values
+            .into_iter()
+            .zip(self.values)
+            .all(|(o, s)| o >= s)
     }
 
     pub fn set(&mut self, index: usize, value: i8) {

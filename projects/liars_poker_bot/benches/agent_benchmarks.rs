@@ -28,7 +28,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     });
 
     let mut group = c.benchmark_group("agents");
-    group.sample_size(50);
+    group.sample_size(10);
 
     let rng: StdRng = SeedableRng::seed_from_u64(42);
     let mut evaluator = PolicyAgent::new(
@@ -41,13 +41,10 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     });
 
     let rng: StdRng = SeedableRng::seed_from_u64(42);
-    let mut evaluator = PolicyAgent::new(
-        AlphaMuBot::new(OpenHandSolver::new(), 20, 2, rng.clone()),
-        rng,
-    );
+    let mut evaluator = AlphaMuBot::new(OpenHandSolver::new(), 20, 5, rng.clone());
     let mut rng: StdRng = SeedableRng::seed_from_u64(45);
-    group.bench_function("alpha mu 20 worlds, m=2", |b| {
-        b.iter(|| alpha_mu_benchmark(&mut evaluator, &mut rng))
+    group.bench_function("alpha mu 20 worlds, m=5", |b| {
+        b.iter(|| alpha_mu_eval_benchmark(&mut evaluator, &mut rng))
     });
 }
 
@@ -68,6 +65,14 @@ fn alpha_mu_benchmark(
 ) {
     let mut gs = get_game(rng);
     run_game(&mut gs, evaluator, &mut None, rng);
+}
+
+fn alpha_mu_eval_benchmark(
+    evaluator: &mut AlphaMuBot<EuchreGameState, OpenHandSolver>,
+    rng: &mut StdRng,
+) {
+    let gs = get_game(rng);
+    evaluator.run_search(&gs);
 }
 
 fn evaluate_games(evaluator: &mut PIMCTSBot<EuchreGameState, OpenHandSolver>, rng: &mut StdRng) {
