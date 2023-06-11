@@ -48,7 +48,7 @@ impl<G: GameState> Evaluator<G> for OpenHandSolver {
     /// Evaluates the gamestate for a maximizing player using alpha-beta search
     fn evaluate_player(&mut self, gs: &G, maximizing_player: Player) -> f64 {
         // We reset the cache to avoid search instability
-        self.reset();
+        // self.reset();
         mtd_search(gs.clone(), maximizing_player, 0, self.cache.clone()).0
         // alpha_beta_search_cached(gs.clone(), maximizing_player, self.cache.clone()).0
     }
@@ -299,9 +299,7 @@ fn alpha_beta<G: GameState>(
         action: result.1,
     };
 
-    // maybe should compare to alpha orig
-    // https://en.wikipedia.org/wiki/Negamax#cite_note-Breuker-1
-
+    // transposition table scoring agains the original alpha and beta
     if result.0 <= alpha_orig {
         cache_value.upper_bound = result.0;
     } else if result.0 > alpha_orig && result.0 < beta_orig {
