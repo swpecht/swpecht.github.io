@@ -825,16 +825,16 @@ impl GameState for EuchreGameState {
         let mut hasher = DefaultHasher::new();
         let iso_deck = iso_deck(self.deck, self.trump);
         iso_deck.hash(&mut hasher);
-        let cur_team = self.cur_player % 2;
-        cur_team.hash(&mut hasher);
 
         self.tricks_won.hash(&mut hasher);
         let calling_team = self.trump_caller % 2;
         calling_team.hash(&mut hasher);
 
-        // testing isomorphic hash
+        // Necessary for search stability of the open hand solver
+        // Previous attempts with just the team being hashed don't work.
+        // This is because when we hash hands at the start of tricks, it is not
+        // clear from any other state who should be the first to act
         self.cur_player.hash(&mut hasher);
-        // self.key.hash(&mut hasher);
 
         Some(hasher.finish())
     }

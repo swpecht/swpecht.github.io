@@ -13,7 +13,6 @@ use liars_poker_bot::{
     cfragent::{CFRAgent, CFRAlgorithm},
     database::memory_node_store::MemoryNodeStore,
     game::{
-        bluff::Bluff,
         euchre::{actions::EAction, Euchre},
         kuhn_poker::KuhnPoker,
         GameState,
@@ -42,8 +41,8 @@ fn test_alg_open_hand_solver_euchre() {
         }
 
         while !gs.is_terminal() {
-            let c = cached.evaluate_player(&gs, 0);
-            let no_c = no_cache.evaluate_player(&gs, 0);
+            let c = cached.evaluate_player(&gs, gs.cur_player());
+            let no_c = no_cache.evaluate_player(&gs, gs.cur_player());
             if c != no_c {
                 println!("{}: {}", i, gs);
             }
