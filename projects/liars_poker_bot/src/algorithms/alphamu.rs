@@ -44,6 +44,49 @@ impl From<Player> for Team {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum WorldState<G> {
+    Useful(G),
+    Useless(G),
+    Invalid,
+}
+
+impl<G> WorldState<G> {
+    pub fn is_some(&self) -> bool {
+        match self {
+            WorldState::Useful(_) => true,
+            WorldState::Useless(_) => true,
+            WorldState::Invalid => false,
+        }
+    }
+
+    pub fn is_none(&self) -> bool {
+        !self.is_some()
+    }
+
+    pub fn unwrap(&self) -> &G {
+        match self {
+            WorldState::Useful(gs) => gs,
+            WorldState::Useless(gs) => gs,
+            WorldState::Invalid => panic!("called unwrap on invalid world"),
+        }
+    }
+}
+
+impl<'a, G> IntoIterator for &'a WorldState<G> {
+    type Item = &'a G;
+    type IntoIter = <Option<&'a G> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        use WorldState::*;
+        match self {
+            Useful(g) | Useless(g) => Some(g),
+            Invalid => None,
+        }
+        .into_iter()
+    }
+}
+
 /// Implementation for AlphaMu from "The αµ Search Algorithm for the Game of Bridge"
 ///
 /// https://arxiv.org/pdf/1911.07960.pdf
@@ -84,7 +127,10 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         };
 
         let worlds = get_worlds(root_node, self.num_worlds, &mut self.rng);
-        let worlds = worlds.into_iter().map(|w| Some(w)).collect_vec();
+        let worlds = worlds
+            .into_iter()
+            .map(|w| WorldState::Useful(w))
+            .collect_vec();
 
         trace!("running search with wolrds: {:?}", worlds);
 
@@ -108,7 +154,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         &mut self,
         s: &mut Vec<Action>,
         m: usize,
-        worlds: Vec<Option<G>>,
+        worlds: Vec<WorldState<G>>,
         alpha: Option<AMFront>,
     ) -> (AMFront, Option<Action>) {
         let w = worlds.iter().flatten().next().unwrap();
@@ -234,7 +280,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
     ///
     /// It's critical that moves are always returned in the same order or the recommended
     /// move will change if there are equally scored moves
-    fn all_moves(&self, worlds: &[Option<G>]) -> Vec<Action> {
+    fn all_moves(&self, worlds: &[WorldState<G>]) -> Vec<Action> {
         let mut all_moves = HashSet::new();
         let mut actions = Vec::new();
         for w in worlds.iter().flatten() {
@@ -250,22 +296,26 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
 
     /// Returns the progressed worlds where `a` was a valid action. Otherwise it
     /// marks that spot as None
-    fn filter_and_progress_worlds(&mut self, worlds: &Vec<Option<G>>, a: Action) -> Vec<Option<G>> {
+    fn filter_and_progress_worlds(
+        &mut self,
+        worlds: &Vec<WorldState<G>>,
+        a: Action,
+    ) -> Vec<WorldState<G>> {
         let mut worlds_1 = self.cache.world_vector_pool.detach();
         worlds_1.clear();
         let mut actions = Vec::new();
         for w in worlds.iter() {
             if w.is_none() {
-                worlds_1.push(None);
+                worlds_1.push(WorldState::Invalid);
                 continue;
             }
-            let w = w.as_ref().unwrap();
+            let w = w.unwrap();
             w.legal_actions(&mut actions);
             if actions.contains(&a) {
                 let nw = self.play(w, a);
-                worlds_1.push(Some(nw));
+                worlds_1.push(WorldState::Useful(nw));
             } else {
-                worlds_1.push(None)
+                worlds_1.push(WorldState::Invalid)
             }
         }
 
@@ -279,7 +329,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         ngs
     }
 
-    fn stop(&mut self, m: usize, worlds: &[Option<G>], result: &mut AMFront) -> bool {
+    fn stop(&mut self, m: usize, worlds: &[WorldState<G>], result: &mut AMFront) -> bool {
         let mut all_states_terminal = true;
         for w in worlds.iter().flatten() {
             all_states_terminal &= w.is_terminal();
@@ -297,10 +347,10 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             // Unlike in bridge, we can't determin who won only from the public information at the gamestate
             // instead we need to evaluate each world individually
             for (i, w) in worlds.iter().enumerate() {
-                if w.is_none() {
+                if !w.is_some() {
                     continue;
                 }
-                let w = w.as_ref().unwrap();
+                let w = w.unwrap();
                 let v = w.evaluate(self.team.into());
                 result.set(i, v as i8);
             }
@@ -318,7 +368,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         let valid_worlds = worlds.iter().flatten().count();
         if m == 0 || valid_worlds == 1 {
             for (i, w) in worlds.iter().enumerate().filter(|(_, w)| w.is_some()) {
-                let w = w.as_ref().unwrap();
+                let w = w.unwrap();
                 let v = self.evaluator.evaluate_player(w, self.team.into());
                 result.set(i, v as i8);
             }
@@ -332,7 +382,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         self.cache.reset();
     }
 
-    fn get_team(&self, worlds: &[Option<G>]) -> Team {
+    fn get_team(&self, worlds: &[WorldState<G>]) -> Team {
         let player = worlds
             .iter()
             .flatten()
@@ -355,7 +405,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Policy<G> for AlphaM
 }
 
 struct AlphaMuCache<G> {
-    world_vector_pool: Pool<Vec<Option<G>>>,
+    world_vector_pool: Pool<Vec<WorldState<G>>>,
     transposition_table: HashMap<u64, (AMFront, Option<Action>)>,
 }
 

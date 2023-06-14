@@ -4,6 +4,8 @@ use log::trace;
 
 use crate::collections::bitarray::BitArray;
 
+use super::WorldState;
+
 /// An alphamu vector
 ///
 /// True means the game is won, false means it is lost
@@ -39,7 +41,7 @@ impl AMVector {
         vec
     }
 
-    pub fn from_worlds<T>(worlds: &Vec<Option<T>>) -> Self {
+    pub fn from_worlds<T>(worlds: &Vec<WorldState<T>>) -> Self {
         let mut is_valid = BitArray::default();
         for (i, w) in worlds.iter().enumerate() {
             if w.is_some() {
