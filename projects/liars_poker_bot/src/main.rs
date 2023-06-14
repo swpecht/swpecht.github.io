@@ -1,8 +1,6 @@
 use std::{io, mem};
 
-use clap::Parser;
-
-use clap::clap_derive::ArgEnum;
+use clap::{command, Parser, Subcommand, ValueEnum};
 
 use liars_poker_bot::actions;
 use liars_poker_bot::agents::{Agent, RandomAgent};
@@ -29,11 +27,11 @@ use scripts::estimate_euchre_game_tree::estimate_euchre_game_tree;
 use scripts::pass_on_bower::{
     calculate_open_hand_solver_convergence, open_hand_score_pass_on_bower,
 };
-use scripts::pass_on_bower_alpha::benchmark_pass_on_bower;
+use scripts::pass_on_bower_alpha::{benchmark_pass_on_bower, tune_alpha_mu};
 
 pub mod scripts;
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ArgEnum, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, ValueEnum)]
 enum GameType {
     KuhnPoker,
     Euchre,
@@ -42,8 +40,8 @@ enum GameType {
     Bluff22,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ArgEnum, Debug)]
-enum Mode {
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Subcommand)]
+enum Command {
     Run,
     Benchmark,
     Analyze,
@@ -52,33 +50,34 @@ enum Mode {
     Exploitability,
     PassOnBowerOpenHand,
     PassOnBowerAlpha,
+    TuneAlphaMu { num_games: usize },
 }
 
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 pub struct Args {
-    #[clap(short, long, value_parser, default_value_t = 1)]
+    #[clap(short, long, default_value_t = 1)]
     num_games: usize,
 
-    #[clap(short, long, action, default_value_t = 0)]
+    #[clap(short = 'v', long, action, default_value_t = 0)]
     verbosity: usize,
 
-    #[clap(arg_enum, long, value_parser, default_value_t = Mode::Run)]
-    mode: Mode,
-
-    #[clap(arg_enum, value_parser, default_value_t = GameType::Bluff11)]
+    #[clap(long, value_enum, default_value_t=GameType::Euchre)]
     game: GameType,
 
-    #[clap(short, long, action, default_value = "")]
-    file: String,
+    #[clap(short)]
+    file: Option<String>,
 
-    #[clap(arg_enum, long, value_parser, default_value_t = CFRAlgorithm::CFRCS)]
+    #[clap(long, value_enum, default_value_t=CFRAlgorithm::CFRCS)]
     alg: CFRAlgorithm,
 
     /// Allow module to log
     #[structopt(long = "module")]
     modules: Vec<String>,
+
+    #[command(subcommand)]
+    command: Option<Command>,
 }
 
 fn main() {
@@ -92,16 +91,17 @@ fn main() {
         .init()
         .unwrap();
 
-    match args.mode {
-        Mode::Run => run(args),
-        Mode::Benchmark => run_benchmark(args),
-        Mode::Analyze => run_analyze(args),
-        Mode::Play => run_play(args),
-        Mode::Scratch => run_scratch(args),
+    match args.command.unwrap() {
+        Command::Run => run(args),
+        Command::Benchmark => run_benchmark(args),
+        Command::Analyze => run_analyze(args),
+        Command::Play => run_play(args),
+        Command::Scratch => run_scratch(args),
         // Mode::PassOnBowerOpenHand => calculate_open_hand_solver_convergence(args),
-        Mode::PassOnBowerOpenHand => open_hand_score_pass_on_bower(args),
-        Mode::Exploitability => calcualte_agent_exploitability(args),
-        Mode::PassOnBowerAlpha => benchmark_pass_on_bower(args),
+        Command::PassOnBowerOpenHand => open_hand_score_pass_on_bower(args),
+        Command::Exploitability => calcualte_agent_exploitability(args),
+        Command::PassOnBowerAlpha => benchmark_pass_on_bower(args),
+        Command::TuneAlphaMu { num_games: n } => tune_alpha_mu(n),
     }
 }
 
@@ -130,7 +130,7 @@ fn run_analyze(args: Args) {
 }
 
 fn run(args: Args) {
-    let _storage = match args.file.as_str() {
+    let _storage = match args.file.unwrap_or("".to_string()).as_str() {
         "" => Storage::Temp,
         _ => panic!("need to add support to create named files"), // Storage::Named(args.file),
     };

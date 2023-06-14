@@ -15,7 +15,7 @@ use liars_poker_bot::{
 use log::{debug, info};
 use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
 
-use crate::Args;
+use crate::{scripts::benchmark::rng, Args};
 
 use super::pass_on_bower::PassOnBowerIterator;
 
@@ -65,14 +65,7 @@ pub fn benchmark_pass_on_bower(args: Args) {
     );
     agents.push(("alphamu, open hand", alphamu));
 
-    let generator = PassOnBowerIterator::new();
-    let mut worlds = generator.collect_vec();
-    worlds.shuffle(&mut rng());
-    let worlds = worlds
-        .iter()
-        .take(args.num_games)
-        .map(|w| w.resample_from_istate(w.cur_player(), &mut rng()))
-        .collect_vec();
+    let worlds = get_bower_deals(args.num_games, &mut rng());
 
     info!("starting benchmark, defended by: {}", "PIMCTS, n=100");
 
@@ -106,6 +99,57 @@ pub fn benchmark_pass_on_bower(args: Args) {
     }
 }
 
-pub fn rng() -> StdRng {
+/// Compare alpha mu performance for different world sizes
+pub fn tune_alpha_mu(num_games: usize) {
+    info!("starting alpha mu tune run for {} games", num_games);
+    info!("m\tnum worlds\tavg score");
+    let ms = vec![1, 2, 3];
+    let world_counts = vec![5, 10, 15, 20];
+    let worlds = get_bower_deals(num_games, &mut rng());
+
+    for m in ms {
+        for count in world_counts.clone() {
+            let mut alphamu = PolicyAgent::new(
+                AlphaMuBot::new(OpenHandSolver::new(), count, m, rng()),
+                rng(),
+            );
+            // Opponent always starts with same seed
+            let opponent = &mut PolicyAgent::new(
+                PIMCTSBot::new(100, OpenHandSolver::new(), SeedableRng::seed_from_u64(100)),
+                SeedableRng::seed_from_u64(101),
+            );
+            let mut returns = 0.0;
+
+            // all agents play the same games
+            for (i, gs) in worlds.clone().iter_mut().enumerate() {
+                while !gs.is_terminal() {
+                    // if it's an even number game, alpha mu is player 0, if odd number, player 1
+                    let a = if gs.cur_player() % 2 == 1 {
+                        alphamu.step(gs)
+                    } else {
+                        opponent.step(gs)
+                    };
+                    gs.apply_action(a);
+                }
+                // get the returns for alpha mu's team
+                returns += gs.evaluate(1);
+            }
+            info!("{}\t{}\t{:?}", m, count, returns / num_games as f64);
+        }
+    }
+}
+
+fn get_bower_deals(n: usize, rng: &mut StdRng) -> Vec<EuchreGameState> {
+    let generator = PassOnBowerIterator::new();
+    let mut worlds = generator.collect_vec();
+    worlds.shuffle(rng);
+    worlds
+        .iter()
+        .take(n)
+        .map(|w| w.resample_from_istate(w.cur_player(), rng))
+        .collect_vec()
+}
+
+pub fn get_rng() -> StdRng {
     StdRng::from_rng(thread_rng()).unwrap()
 }

@@ -2,7 +2,7 @@ pub mod cfr;
 pub mod cfrcs;
 pub mod cfrnode;
 
-use clap::clap_derive::ArgEnum;
+use clap::ValueEnum;
 use log::{debug, trace};
 use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
 
@@ -21,7 +21,7 @@ use crate::{
 
 use self::cfrnode::{ActionVec, CFRNode};
 
-#[derive(ArgEnum, Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, ValueEnum)]
 pub enum CFRAlgorithm {
     CFR,
     CFRCS,
