@@ -213,8 +213,8 @@ impl AMFront {
 
         // Remove vectors from result <= r
         svectors.retain(|sv| !sv.is_dominated(&v));
+
         // If no vector from result >= r
-        // should we create a method that operates on sv? seems to make fisrt call faster?
         let is_v_dominated = svectors.iter().any(|sv| v.is_dominated(sv));
         if !is_v_dominated {
             svectors.push(v);

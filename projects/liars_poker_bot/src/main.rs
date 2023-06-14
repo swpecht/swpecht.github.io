@@ -24,9 +24,7 @@ use rand::SeedableRng;
 use scripts::agent_exploitability::calcualte_agent_exploitability;
 use scripts::benchmark::run_benchmark;
 use scripts::estimate_euchre_game_tree::estimate_euchre_game_tree;
-use scripts::pass_on_bower::{
-    calculate_open_hand_solver_convergence, open_hand_score_pass_on_bower,
-};
+use scripts::pass_on_bower::open_hand_score_pass_on_bower;
 use scripts::pass_on_bower_alpha::{benchmark_pass_on_bower, tune_alpha_mu};
 
 pub mod scripts;

@@ -99,7 +99,8 @@ pub fn benchmark_pass_on_bower(args: Args) {
     }
 }
 
-/// Compare alpha mu performance for different world sizes
+/// Compare alpha mu performance for different world sizes and m on deals where
+/// the dealer has a face up jack
 pub fn tune_alpha_mu(num_games: usize) {
     info!("starting alpha mu tune run for {} games", num_games);
     info!("m\tnum worlds\tavg score");
@@ -121,9 +122,9 @@ pub fn tune_alpha_mu(num_games: usize) {
             let mut returns = 0.0;
 
             // all agents play the same games
-            for (i, gs) in worlds.clone().iter_mut().enumerate() {
+            for gs in worlds.clone().iter_mut() {
                 while !gs.is_terminal() {
-                    // if it's an even number game, alpha mu is player 0, if odd number, player 1
+                    // Alphamu is the dealer team
                     let a = if gs.cur_player() % 2 == 1 {
                         alphamu.step(gs)
                     } else {
