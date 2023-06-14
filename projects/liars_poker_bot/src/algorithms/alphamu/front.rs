@@ -44,7 +44,7 @@ impl AMVector {
     pub fn from_worlds<T>(worlds: &Vec<WorldState<T>>) -> Self {
         let mut is_valid = BitArray::default();
         for (i, w) in worlds.iter().enumerate() {
-            if w.is_some() {
+            if w.is_useful() || w.is_useless() {
                 is_valid.set(i, true);
             }
         }
