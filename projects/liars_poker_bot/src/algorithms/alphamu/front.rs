@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Debug};
+use std::fmt::Debug;
 
 use log::trace;
 
@@ -141,7 +141,7 @@ impl Debug for AMVector {
 
 #[derive(Default, PartialEq, Clone)]
 pub(super) struct AMFront {
-    vectors: HashMap<BitArray, Vec<AMVector>>,
+    vectors: Vec<AMVector>,
 }
 
 impl AMFront {
@@ -161,8 +161,8 @@ impl AMFront {
         }
 
         let mut result = AMFront::default();
-        for s in self.vectors.values().flatten() {
-            for o in other.vectors.values().flatten() {
+        for s in &self.vectors {
+            for o in &other.vectors {
                 let mut r = AMVector::new(s.len);
 
                 // The Min players can choose different moves in different possible
@@ -195,12 +195,9 @@ impl AMFront {
     }
 
     pub fn max(mut self, other: Self) -> Self {
-        for (is_valid, vectors) in other.vectors {
-            let svectors = self.vectors.entry(is_valid).or_insert(Vec::new()).clone();
-            for v in vectors {
-                if !svectors.contains(&v) {
-                    self.push(v);
-                }
+        for v in other.vectors {
+            if !self.vectors.contains(&v) {
+                self.push(v);
             }
         }
 
@@ -208,7 +205,7 @@ impl AMFront {
     }
 
     pub fn set(&mut self, idx: usize, value: i8) {
-        for v in self.vectors.values_mut().flatten() {
+        for v in self.vectors.iter_mut() {
             v.values[idx] = value;
             v.is_valid.set(idx, true);
         }
@@ -219,17 +216,13 @@ impl AMFront {
     /// This method does nothing if the vector is dominated by an existing vector.
     /// And it removes any vectors that are dominated by the new one
     pub fn push(&mut self, v: AMVector) {
-        // we only need to compare things with the same set of valid world since
-        // a vector will never be dominated by a vector with a different set of valid worlds
-        let svectors = self.vectors.entry(v.is_valid).or_default();
-
         // Remove vectors from result <= r
-        svectors.retain(|sv| !sv.is_dominated(&v));
+        self.vectors.retain(|sv| !sv.is_dominated(&v));
 
         // If no vector from result >= r
-        let is_v_dominated = svectors.iter().any(|sv| v.is_dominated(sv));
+        let is_v_dominated = self.vectors.iter().any(|sv| v.is_dominated(sv));
         if !is_v_dominated {
-            svectors.push(v);
+            self.vectors.push(v);
         }
     }
 
@@ -243,14 +236,14 @@ impl AMFront {
         assert!(!self.vectors.is_empty());
 
         let mut max_score = f64::NEG_INFINITY;
-        for v in self.vectors.values().flatten() {
+        for v in &self.vectors {
             max_score = max_score.max(v.score());
         }
         max_score
     }
 
     pub fn len(&self) -> usize {
-        self.vectors.values().map(|x| x.len()).sum()
+        self.vectors.len()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -258,9 +251,9 @@ impl AMFront {
     }
 
     pub fn less_than_or_equal(&self, other: AMFront) -> bool {
-        for s in self.vectors.values().flatten() {
+        for s in &self.vectors {
             let mut one_greater_or_equal = false;
-            for v in other.vectors.values().flatten() {
+            for v in &other.vectors {
                 if s.is_dominated(v) {
                     one_greater_or_equal = true;
                     break;
@@ -276,7 +269,7 @@ impl AMFront {
     /// returns the maximum value of a given world if there is atleast one useful world remaining
     pub fn world_max(&self, i: usize) -> Option<i8> {
         let mut max = None;
-        for v in self.vectors.values().flatten() {
+        for v in &self.vectors {
             if v.is_valid.get(i) {
                 max = Some(max.unwrap_or(i8::MIN).max(v.get(i)))
             }
@@ -289,7 +282,7 @@ impl Debug for AMFront {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{{").unwrap();
 
-        for v in self.vectors.values().flatten() {
+        for v in &self.vectors {
             write!(f, "{:?}", v).unwrap();
         }
 
@@ -337,7 +330,7 @@ mod tests {
         assert!(f1 != f2);
 
         let b = f1.max(f2);
-        assert_eq!(b.vectors.values().map(|x| x.len()).sum::<usize>(), 2);
+        assert_eq!(b.vectors.len(), 2);
         assert_eq!(b, front!(amvec![0, 1, 1], amvec![1, 1, 0]));
 
         let c1 = f3.max(f4);
