@@ -235,7 +235,8 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             let mut moves: Vec<Action> = self.all_moves(&worlds).iter().copied().collect_vec();
             if let Some(t) = t {
                 if let Some(a) = t.1 {
-                    let guess_move = moves.iter().position(|&x| x == a).unwrap();
+                    // action may not be available due to useless worlds cuts
+                    let guess_move = moves.iter().position(|&x| x == a).unwrap_or(0);
                     moves.swap(0, guess_move);
                 }
             }
