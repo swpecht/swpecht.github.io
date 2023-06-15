@@ -12,6 +12,8 @@ use super::WorldState;
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub(super) struct AMVector {
     values: [i8; 32],
+    is_big: BitArray,
+    is_win: BitArray,
     is_valid: BitArray,
     len: usize,
 }
@@ -21,6 +23,8 @@ impl AMVector {
         Self {
             values: [0; 32],
             is_valid: BitArray::default(),
+            is_win: BitArray::default(),
+            is_big: BitArray::default(),
             len: size,
         }
     }
@@ -44,7 +48,7 @@ impl AMVector {
     pub fn from_worlds<T>(worlds: &Vec<WorldState<T>>) -> Self {
         let mut is_valid = BitArray::default();
         for (i, w) in worlds.iter().enumerate() {
-            if w.is_useful() || w.is_useless() {
+            if !w.is_invalid() {
                 is_valid.set(i, true);
             }
         }
@@ -53,6 +57,8 @@ impl AMVector {
             values: [0; 32],
             is_valid,
             len: worlds.len(),
+            is_big: BitArray::default(),
+            is_win: BitArray::default(),
         }
     }
 
@@ -148,6 +154,10 @@ impl AMFront {
 
         if self.is_empty() {
             return other;
+        }
+
+        if other.is_empty() {
+            return self;
         }
 
         let mut result = AMFront::default();
@@ -262,6 +272,17 @@ impl AMFront {
         }
         true
     }
+
+    /// returns the maximum value of a given world if there is atleast one useful world remaining
+    pub fn world_max(&self, i: usize) -> Option<i8> {
+        let mut max = None;
+        for v in self.vectors.values().flatten() {
+            if v.is_valid.get(i) {
+                max = Some(max.unwrap_or(i8::MIN).max(v.get(i)))
+            }
+        }
+        max
+    }
 }
 
 impl Debug for AMFront {
@@ -342,6 +363,12 @@ mod tests {
         let f1 = AMFront::default();
         let f2 = front!(amvec![1, 1, 1]);
         let f3 = f1.min(f2);
+        assert_eq!(f3, front!(amvec![1, 1, 1]));
+
+        // And reverse order for min
+        let f1 = AMFront::default();
+        let f2 = front!(amvec![1, 1, 1]);
+        let f3 = f2.min(f1);
         assert_eq!(f3, front!(amvec![1, 1, 1]));
 
         // test min and max with all zeros

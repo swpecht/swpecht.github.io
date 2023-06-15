@@ -116,7 +116,7 @@ pub fn tune_alpha_mu(num_games: usize) {
             );
             // Opponent always starts with same seed
             let opponent = &mut PolicyAgent::new(
-                PIMCTSBot::new(100, OpenHandSolver::new(), SeedableRng::seed_from_u64(100)),
+                PIMCTSBot::new(20, OpenHandSolver::new(), SeedableRng::seed_from_u64(100)),
                 SeedableRng::seed_from_u64(101),
             );
             let mut returns = 0.0;

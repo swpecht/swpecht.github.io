@@ -22,6 +22,8 @@ use super::ismcts::{Evaluator, ResampleFromInfoState};
 
 mod front;
 
+const USELESS_WORLD_VALUE: i8 = -2;
+
 #[derive(PartialEq, Eq, Clone, Copy, Hash)]
 pub enum Team {
     Team1,
@@ -156,13 +158,6 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         mut worlds: Vec<WorldState<G>>,
         alpha: Option<AMFront>,
     ) -> (AMFront, Option<Action>) {
-        let w = worlds.iter().flatten().next().unwrap();
-        trace!(
-            "alpha mu call: istate: {}\tm: {}",
-            w.istate_string(self.team.into()),
-            m
-        );
-
         // ensure we have no chance nodes, not yet implemented
         worlds
             .iter()
@@ -170,12 +165,14 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             .map(|w| assert!(!w.is_chance_node()))
             .count();
 
-        let mut result = AMFront::default();
-        result.push(AMVector::from_worlds(&worlds));
-        if self.stop(m, &worlds, &mut result) {
-            self.cache.insert(s, (result.clone(), None));
-            assert!(!result.is_empty());
-            return (result, None);
+        {
+            let mut result = AMFront::default();
+            result.push(AMVector::from_worlds(&worlds));
+            if self.stop(m, &worlds, &mut result) {
+                self.cache.insert(s, (result.clone(), None));
+                assert!(!result.is_empty());
+                return (result, None);
+            }
         }
 
         let mut front = AMFront::default();
@@ -199,7 +196,8 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             let mut moves: Vec<Action> = self.all_moves(&worlds);
             if let Some(t) = t {
                 if let Some(a) = t.1 {
-                    let guess_move = moves.iter().position(|&x| x == a).unwrap();
+                    // This move may not be possible any more due to useless worlds
+                    let guess_move = moves.iter().position(|&x| x == a).unwrap_or(0);
                     moves.swap(0, guess_move);
                 }
             }
@@ -218,6 +216,15 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
                 front = front.min(f);
                 self.update_useful_worlds(&front, &mut worlds);
                 trace!("iterating on min nodes, front size: {}: {}", m, front.len());
+            }
+
+            // the worlds are useless, set the proper front to return
+            if worlds.iter().filter(|w| w.is_useful()).count() == 0 {
+                front.push(AMVector::from_worlds(&worlds));
+                for (i, w) in worlds.iter().enumerate().filter(|(_, w)| !w.is_invalid()) {
+                    assert!(!w.is_useful());
+                    front.set(i, USELESS_WORLD_VALUE);
+                }
             }
         } else {
             // max node
@@ -268,14 +275,6 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         }
 
         assert!(!front.is_empty());
-
-        let w = worlds.iter().flatten().next().unwrap();
-        trace!(
-            "alpha mu found: istate: {}\tm: {}\t{:?}",
-            w.istate_string(self.team.into()),
-            m,
-            front
-        );
         self.cache.insert(s, (front.clone(), best_action));
         self.cache.world_vector_pool.attach(worlds);
         (front, best_action)
@@ -340,6 +339,28 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
     }
 
     fn stop(&mut self, m: usize, worlds: &[WorldState<G>], result: &mut AMFront) -> bool {
+        // Add the valid world cut from the optimizing alpha mu paper:
+        //
+        // Search can also be cut if there is only one useful world
+        // left. The reason for this is that all of the useless worlds will
+        // eventually evaluate to zero at the root, and so we only need
+        // to compute the DDS result associated to the single useful
+        // world and we can return a single vector containing the result
+        // for the useful world.
+        let useful_worlds = worlds.iter().filter(|x| x.is_useful()).count();
+        if m == 0 || useful_worlds <= 1 {
+            for (i, w) in worlds.iter().enumerate().filter(|(_, w)| !w.is_invalid()) {
+                if w.is_useful() {
+                    let w = w.unwrap();
+                    let v = self.evaluator.evaluate_player(w, self.team.into());
+                    result.set(i, v as i8);
+                } else if w.is_useless() {
+                    result.set(i, USELESS_WORLD_VALUE);
+                }
+            }
+            return true;
+        }
+
         let mut all_states_terminal = true;
         for w in worlds.iter().flatten() {
             all_states_terminal &= w.is_terminal();
@@ -356,31 +377,14 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         if any_states_terminal {
             // Unlike in bridge, we can't determin who won only from the public information at the gamestate
             // instead we need to evaluate each world individually
-            for (i, w) in worlds.iter().enumerate() {
-                if !w.is_useful() {
-                    continue;
+            for (i, w) in worlds.iter().enumerate().filter(|(_, w)| !w.is_invalid()) {
+                if w.is_useful() {
+                    let w = w.unwrap();
+                    let v = w.evaluate(self.team.into());
+                    result.set(i, v as i8);
+                } else if w.is_useless() {
+                    result.set(i, USELESS_WORLD_VALUE);
                 }
-                let w = w.unwrap();
-                let v = w.evaluate(self.team.into());
-                result.set(i, v as i8);
-            }
-            return true;
-        }
-
-        // Add the valid world cut from the optimizing alpha mu paper:
-        //
-        // Search can also be cut if there is only one useful world
-        // left. The reason for this is that all of the useless worlds will
-        // eventually evaluate to zero at the root, and so we only need
-        // to compute the DDS result associated to the single useful
-        // world and we can return a single vector containing the result
-        // for the useful world.
-        let useful_worlds = worlds.iter().filter(|x| x.is_useful()).flatten().count();
-        if m == 0 || useful_worlds == 1 {
-            for (i, w) in worlds.iter().enumerate().filter(|(_, w)| w.is_useful()) {
-                let w = w.unwrap();
-                let v = self.evaluator.evaluate_player(w, self.team.into());
-                result.set(i, v as i8);
             }
             return true;
         }
@@ -413,8 +417,13 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
     /// current Pareto front is zero, the world can be marked as use-
     /// less as it will always have a zero value in the Pareto front
     /// returned by the node.
-    fn update_useful_worlds(&self, _front: &AMFront, _worlds: &mut [WorldState<G>]) {
-        // todo: figure out how to adapt this to supporting multiple values
+    fn update_useful_worlds(&self, front: &AMFront, worlds: &mut [WorldState<G>]) {
+        for (i, w) in worlds.iter_mut().enumerate().filter(|(_, w)| w.is_useful()) {
+            let max = front.world_max(i);
+            if max.is_some() && max.unwrap() <= USELESS_WORLD_VALUE {
+                *w = WorldState::Useless;
+            }
+        }
     }
 }
 
