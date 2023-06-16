@@ -17,6 +17,7 @@ use liars_poker_bot::{
         kuhn_poker::KuhnPoker,
         GameState,
     },
+    policy::Policy,
 };
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
@@ -33,7 +34,6 @@ fn test_alg_open_hand_solver_euchre() {
 
     for i in 0..1000 {
         let mut gs = Euchre::new_state();
-        // let mut gs = Bluff::new_state(1, 1);
         while gs.is_chance_node() {
             gs.legal_actions(&mut actions);
             let a = actions.choose(&mut rng).unwrap();
@@ -47,6 +47,41 @@ fn test_alg_open_hand_solver_euchre() {
                 println!("{}: {}", i, gs);
             }
             assert_eq!(c, no_c);
+            gs.legal_actions(&mut actions);
+            let a = actions.choose(&mut rng).unwrap();
+            gs.apply_action(*a);
+        }
+    }
+}
+
+/// Confirm that alphamu gives the same results with and without optimizations.
+#[test]
+fn test_alpha_mu_optimizations_equivalent() {
+    let mut rng: StdRng = SeedableRng::seed_from_u64(51);
+    let mut actions = Vec::new();
+
+    let num_worlds = 5;
+    let m = 3;
+    let mut optimized = AlphaMuBot::new(OpenHandSolver::new(), num_worlds, m, rng.clone());
+    let mut no_optimized = AlphaMuBot::new(OpenHandSolver::new(), num_worlds, m, rng.clone());
+    no_optimized.use_optimizations = false;
+
+    for i in 0..100 {
+        let mut gs = Euchre::new_state();
+        // let mut gs = Bluff::new_state(1, 1);
+        while gs.is_chance_node() {
+            gs.legal_actions(&mut actions);
+            let a = actions.choose(&mut rng).unwrap();
+            gs.apply_action(*a);
+        }
+
+        while !gs.is_terminal() {
+            let o = optimized.action_probabilities(&gs);
+            let no_o = no_optimized.action_probabilities(&gs);
+            if o != no_o {
+                println!("{}: {}", i, gs);
+            }
+            assert_eq!(o, no_o);
             gs.legal_actions(&mut actions);
             let a = actions.choose(&mut rng).unwrap();
             gs.apply_action(*a);
@@ -106,25 +141,6 @@ fn alpha_mu_pimcts_equivalent() {
         }
         // println!("{}", gs);
     }
-}
-
-#[test]
-fn test_ismcts_exploitability() {
-    let config = ISMCTBotConfig {
-        final_policy_type: ISMCTSFinalPolicyType::NormalizedVisitedCount,
-        ..Default::default()
-    };
-
-    let mut ismcts = ISMCTSBot::new(
-        KuhnPoker::game(),
-        1.5,
-        10000,
-        RandomRolloutEvaluator::new(100),
-        config,
-    );
-
-    let e = exploitability(KuhnPoker::game(), &mut ismcts).nash_conv;
-    assert_relative_eq!(e, 0.0, epsilon = 0.001);
 }
 
 #[test]

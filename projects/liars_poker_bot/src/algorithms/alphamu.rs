@@ -92,6 +92,7 @@ impl<'a, G> IntoIterator for &'a WorldState<G> {
 ///
 /// https://arxiv.org/pdf/1911.07960.pdf
 pub struct AlphaMuBot<G, E> {
+    pub use_optimizations: bool,
     evaluator: E,
     cache: AlphaMuCache<G>,
     team: Team,
@@ -107,6 +108,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         }
 
         Self {
+            use_optimizations: true,
             evaluator,
             team: Team::Team1,
             num_worlds,
@@ -169,7 +171,14 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             let mut result = AMFront::default();
             result.push(AMVector::from_worlds(&worlds));
             if self.stop(m, &worlds, &mut result) {
-                self.cache.insert(s, (result.clone(), None));
+                if self.use_optimizations {
+                    let value = TableValue {
+                        front: result.clone(),
+                        action: None,
+                        is_max_node: false,
+                    };
+                    self.cache.insert(s, value);
+                }
                 assert!(!result.is_empty());
                 return (result, None);
             }
@@ -177,28 +186,36 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
 
         let mut front = AMFront::default();
         let mut best_action = None;
+        let is_max_node = self.team == self.get_team(&worlds);
 
-        if self.team != self.get_team(&worlds) {
+        if !is_max_node {
             // min node
-
             let mut min_score = f64::INFINITY;
 
             let t = self.cache.get(s);
-            if t.is_some() && alpha.is_some() && t.unwrap().0.less_than_or_equal(alpha.unwrap()) {
+
+            if t.is_some()
+                && alpha.is_some()
+                && t.unwrap().front.less_than_or_equal(&alpha.unwrap())
+            {
                 return (front, None);
             }
 
             if let Some(t) = t {
-                self.update_useful_worlds(&t.0, &mut worlds);
+                self.update_useful_worlds(&t.front, &mut worlds);
             }
 
             // sort the moves
             let mut moves: Vec<Action> = self.all_moves(&worlds);
-            if let Some(t) = t {
-                if let Some(a) = t.1 {
-                    // This move may not be possible any more due to useless worlds
-                    let guess_move = moves.iter().position(|&x| x == a).unwrap_or(0);
-                    moves.swap(0, guess_move);
+            // there may be no possible moves because we've filtered out all remaining worlds
+            // as useless
+            if !moves.is_empty() {
+                if let Some(t) = t {
+                    if let Some(a) = t.action {
+                        // This move may not be possible any more due to useless worlds
+                        let guess_move = moves.iter().position(|&x| x == a).unwrap_or(0);
+                        moves.swap(0, guess_move);
+                    }
                 }
             }
 
@@ -214,6 +231,14 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
                 }
 
                 front = front.min(f);
+
+                // The results for this min node will only get worse as we search more
+                // If this node is already  dominated by an upper max node, we'll never choose the
+                // results of this search. So we can cut the search early
+                if self.is_dominated_by_upper_max(s, &front) {
+                    break;
+                }
+
                 self.update_useful_worlds(&front, &mut worlds);
                 trace!("iterating on min nodes, front size: {}: {}", m, front.len());
             }
@@ -234,7 +259,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             let t = self.cache.get(s);
             let mut moves: Vec<Action> = self.all_moves(&worlds).iter().copied().collect_vec();
             if let Some(t) = t {
-                if let Some(a) = t.1 {
+                if let Some(a) = t.action {
                     // action may not be available due to useless worlds cuts
                     let guess_move = moves.iter().position(|&x| x == a).unwrap_or(0);
                     moves.swap(0, guess_move);
@@ -247,7 +272,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
                 let (f, _) = self.alphamu(s, m - 1, worlds_1, Some(front.clone()));
                 s.pop();
 
-                // Need to check if we have an empty front because the search was cut short
+                // Could have an empty front returned by a min node where we do an alpha cut
                 if !f.is_empty() && f.score() > max_score {
                     max_score = f.score();
                     best_action = Some(a);
@@ -266,9 +291,9 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
                 // one of the best move of the previous shallower search the probability
                 // cannot be improved and a better move cannot be found so it is safe
                 // to cut.
-                if s.is_empty() {
+                if s.is_empty() && self.use_optimizations {
                     let t = self.cache.get(s);
-                    if t.is_some() && front.score() == t.unwrap().0.score() {
+                    if t.is_some() && front.score() == t.unwrap().front.score() {
                         break;
                     }
                 }
@@ -276,7 +301,15 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         }
 
         assert!(!front.is_empty());
-        self.cache.insert(s, (front.clone(), best_action));
+
+        if self.use_optimizations {
+            let cache_value = TableValue {
+                front: front.clone(),
+                action: best_action,
+                is_max_node,
+            };
+            self.cache.insert(s, cache_value);
+        }
         self.cache.world_vector_pool.attach(worlds);
         (front, best_action)
     }
@@ -419,10 +452,43 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
     /// less as it will always have a zero value in the Pareto front
     /// returned by the node.
     fn update_useful_worlds(&self, front: &AMFront, worlds: &mut [WorldState<G>]) {
+        if !self.use_optimizations {
+            return;
+        }
+
         for (i, w) in worlds.iter_mut().enumerate().filter(|(_, w)| w.is_useful()) {
             let max = front.world_max(i);
             if max.is_some() && max.unwrap() <= USELESS_WORLD_VALUE {
                 *w = WorldState::Useless;
+            }
+        }
+    }
+
+    /// Determine if a deep alpha cut is possible
+    ///
+    /// From alpha mu optimization paper
+    fn is_dominated_by_upper_max(&self, s: &[Action], front: &AMFront) -> bool {
+        if !self.use_optimizations {
+            return false;
+        }
+
+        let mut node = s.to_owned();
+
+        loop {
+            node.pop();
+            let value = self.cache.get(&node);
+
+            if value.is_none() || !value.unwrap().is_max_node {
+                continue;
+            } else if let Some(v) = value {
+                if front.less_than_or_equal(&v.front) {
+                    return true;
+                }
+            }
+
+            // didn't find a dominating value before the root node
+            if node.is_empty() {
+                return false;
             }
         }
     }
@@ -436,7 +502,13 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Policy<G> for AlphaM
 
 struct AlphaMuCache<G> {
     world_vector_pool: Pool<Vec<WorldState<G>>>,
-    transposition_table: HashMap<u64, (AMFront, Option<Action>)>,
+    transposition_table: HashMap<u64, TableValue>,
+}
+
+struct TableValue {
+    front: AMFront,
+    action: Option<Action>,
+    is_max_node: bool,
 }
 
 impl<G> Default for AlphaMuCache<G> {
@@ -449,13 +521,15 @@ impl<G> Default for AlphaMuCache<G> {
 }
 
 impl<G: GameState> AlphaMuCache<G> {
-    fn get(&self, s: &[Action]) -> Option<&(AMFront, Option<Action>)> {
+    fn get(&self, s: &[Action]) -> Option<&TableValue> {
         let mut hasher = DefaultHasher::default();
         s.hash(&mut hasher);
         self.transposition_table.get(&hasher.finish())
     }
 
-    pub fn insert(&mut self, s: &[Action], v: (AMFront, Option<Action>)) {
+    pub fn insert(&mut self, s: &[Action], v: TableValue) {
+        // shouldn't be storing empty fronts
+        assert!(!v.front.is_empty());
         let mut hasher = DefaultHasher::default();
         s.hash(&mut hasher);
         self.transposition_table.insert(hasher.finish(), v);

@@ -6,14 +6,19 @@ use crate::collections::bitarray::BitArray;
 
 use super::WorldState;
 
+pub enum VectorValue {
+    BigLoss,
+    Loss,
+    Win,
+    BigWin,
+}
+
 /// An alphamu vector
 ///
 /// True means the game is won, false means it is lost
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub(super) struct AMVector {
     values: [i8; 32],
-    is_big: BitArray,
-    is_win: BitArray,
     is_valid: BitArray,
     len: usize,
 }
@@ -23,8 +28,6 @@ impl AMVector {
         Self {
             values: [0; 32],
             is_valid: BitArray::default(),
-            is_win: BitArray::default(),
-            is_big: BitArray::default(),
             len: size,
         }
     }
@@ -57,8 +60,6 @@ impl AMVector {
             values: [0; 32],
             is_valid,
             len: worlds.len(),
-            is_big: BitArray::default(),
-            is_win: BitArray::default(),
         }
     }
 
@@ -250,7 +251,7 @@ impl AMFront {
         self.len() == 0
     }
 
-    pub fn less_than_or_equal(&self, other: AMFront) -> bool {
+    pub fn less_than_or_equal(&self, other: &AMFront) -> bool {
         for s in &self.vectors {
             let mut one_greater_or_equal = false;
             for v in &other.vectors {
