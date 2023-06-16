@@ -248,6 +248,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             let mut max_score = f64::NEG_INFINITY;
 
             let moves: Vec<Action> = self.all_moves(&worlds, &table_value);
+            let table_score = table_value.map(|t| t.front.score());
 
             for a in moves {
                 let worlds_1 = self.filter_and_progress_worlds(&worlds, a);
@@ -274,11 +275,12 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
                 // one of the best move of the previous shallower search the probability
                 // cannot be improved and a better move cannot be found so it is safe
                 // to cut.
-                if s.is_empty() && self.use_optimizations {
-                    let t = self.cache.get(s);
-                    if t.is_some() && front.score() == t.unwrap().front.score() {
-                        break;
-                    }
+                if s.is_empty()
+                    && self.use_optimizations
+                    && table_score.is_some()
+                    && front.score() == table_score.unwrap()
+                {
+                    break;
                 }
             }
         }
@@ -506,7 +508,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Policy<G> for AlphaM
 }
 
 impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Evaluator<G> for AlphaMuBot<G, E> {
-    fn evaluate(&mut self, gs: &G) -> Vec<f64> {
+    fn evaluate(&mut self, _gs: &G) -> Vec<f64> {
         todo!()
     }
 
@@ -515,7 +517,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Evaluator<G> for Alp
         score
     }
 
-    fn prior(&mut self, gs: &G) -> ActionVec<f64> {
+    fn prior(&mut self, _gs: &G) -> ActionVec<f64> {
         todo!()
     }
 }

@@ -12,7 +12,6 @@ use liars_poker_bot::{
         kuhn_poker::KuhnPoker,
         GameState,
     },
-    policy::Policy,
 };
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
