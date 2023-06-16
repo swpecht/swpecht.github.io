@@ -72,7 +72,7 @@ fn alpha_mu_eval_benchmark(
     rng: &mut StdRng,
 ) {
     let gs = get_game(rng);
-    evaluator.run_search(&gs);
+    evaluator.run_search(&gs, gs.cur_player());
 }
 
 fn evaluate_games(evaluator: &mut PIMCTSBot<EuchreGameState, OpenHandSolver>, rng: &mut StdRng) {

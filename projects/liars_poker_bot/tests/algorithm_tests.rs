@@ -2,13 +2,8 @@ use approx::assert_relative_eq;
 use liars_poker_bot::{
     agents::{Agent, PolicyAgent},
     algorithms::{
-        alphamu::AlphaMuBot,
-        exploitability::exploitability,
-        ismcts::{
-            Evaluator, ISMCTBotConfig, ISMCTSBot, ISMCTSFinalPolicyType, RandomRolloutEvaluator,
-        },
-        open_hand_solver::OpenHandSolver,
-        pimcts::PIMCTSBot,
+        alphamu::AlphaMuBot, exploitability::exploitability, ismcts::Evaluator,
+        open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot,
     },
     cfragent::{CFRAgent, CFRAlgorithm},
     database::memory_node_store::MemoryNodeStore,
@@ -76,8 +71,8 @@ fn test_alpha_mu_optimizations_equivalent() {
         }
 
         while !gs.is_terminal() {
-            let o = optimized.action_probabilities(&gs);
-            let no_o = no_optimized.action_probabilities(&gs);
+            let o = optimized.evaluate_player(&gs, gs.cur_player());
+            let no_o = no_optimized.evaluate_player(&gs, gs.cur_player());
             if o != no_o {
                 println!("{}: {}", i, gs);
             }

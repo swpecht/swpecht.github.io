@@ -118,11 +118,15 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         }
     }
 
-    pub fn run_search(&mut self, root_node: &G) -> ActionVec<f64> {
+    pub fn run_search(
+        &mut self,
+        root_node: &G,
+        maximizing_player: Player,
+    ) -> (f64, Option<Action>) {
         // Since the cache is only keyed off the move history, we need to reset between every call
         self.reset();
 
-        let player = root_node.cur_player();
+        let player = maximizing_player;
         self.team = match player {
             0 | 2 => Team::Team1,
             1 | 3 => Team::Team2,
@@ -136,9 +140,6 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             .collect_vec();
 
         trace!("running search with wolrds: {:?}", worlds);
-
-        let actions = actions!(root_node);
-        let mut policy = ActionVec::new(&actions);
         let mut s = Vec::new();
 
         // Iterative deepening
@@ -146,10 +147,9 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         for i in 1..self.m {
             self.alphamu(&mut s, i, worlds.clone(), None);
         }
-        let (_, a) = self.alphamu(&mut s, self.m, worlds, None);
+        let (front, a) = self.alphamu(&mut s, self.m, worlds, None);
 
-        policy[a.unwrap()] = 1.0;
-        policy
+        (front.score(), a)
     }
 
     /// Runs alphamu search returning the new front and optionally the actions to achieve it
@@ -496,7 +496,28 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
 
 impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Policy<G> for AlphaMuBot<G, E> {
     fn action_probabilities(&mut self, gs: &G) -> ActionVec<f64> {
-        self.run_search(gs)
+        let actions = actions!(gs);
+        let mut policy = ActionVec::new(&actions);
+
+        let (_, action) = self.run_search(gs, gs.cur_player());
+
+        policy[action.unwrap()] = 1.0;
+        policy
+    }
+}
+
+impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Evaluator<G> for AlphaMuBot<G, E> {
+    fn evaluate(&mut self, gs: &G) -> Vec<f64> {
+        todo!()
+    }
+
+    fn evaluate_player(&mut self, gs: &G, p: Player) -> f64 {
+        let (score, _) = self.run_search(gs, p);
+        score
+    }
+
+    fn prior(&mut self, gs: &G) -> ActionVec<f64> {
+        todo!()
     }
 }
 
