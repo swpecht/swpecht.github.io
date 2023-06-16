@@ -188,36 +188,28 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         let mut best_action = None;
         let is_max_node = self.team == self.get_team(&worlds);
 
+        let table_value = self.cache.get(s);
+
         if !is_max_node {
             // min node
             let mut min_score = f64::INFINITY;
 
-            let t = self.cache.get(s);
-
-            if t.is_some()
+            if table_value.is_some()
+                && self.use_optimizations
                 && alpha.is_some()
-                && t.unwrap().front.less_than_or_equal(&alpha.unwrap())
+                && table_value
+                    .unwrap()
+                    .front
+                    .less_than_or_equal(&alpha.unwrap())
             {
                 return (front, None);
             }
 
-            if let Some(t) = t {
+            if let Some(t) = table_value {
                 self.update_useful_worlds(&t.front, &mut worlds);
             }
 
-            // sort the moves
-            let mut moves: Vec<Action> = self.all_moves(&worlds);
-            // there may be no possible moves because we've filtered out all remaining worlds
-            // as useless
-            if !moves.is_empty() {
-                if let Some(t) = t {
-                    if let Some(a) = t.action {
-                        // This move may not be possible any more due to useless worlds
-                        let guess_move = moves.iter().position(|&x| x == a).unwrap_or(0);
-                        moves.swap(0, guess_move);
-                    }
-                }
-            }
+            let moves: Vec<Action> = self.all_moves(&worlds, &table_value);
 
             for a in moves {
                 let worlds_1 = self.filter_and_progress_worlds(&worlds, a);
@@ -255,16 +247,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             // max node
             let mut max_score = f64::NEG_INFINITY;
 
-            // sort the moves
-            let t = self.cache.get(s);
-            let mut moves: Vec<Action> = self.all_moves(&worlds).iter().copied().collect_vec();
-            if let Some(t) = t {
-                if let Some(a) = t.action {
-                    // action may not be available due to useless worlds cuts
-                    let guess_move = moves.iter().position(|&x| x == a).unwrap_or(0);
-                    moves.swap(0, guess_move);
-                }
-            }
+            let moves: Vec<Action> = self.all_moves(&worlds, &table_value);
 
             for a in moves {
                 let worlds_1 = self.filter_and_progress_worlds(&worlds, a);
@@ -314,11 +297,12 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         (front, best_action)
     }
 
-    /// Returns a sorted list of moves to ensure deterministic move selection
+    /// Returns a sorted list of moves to ensure deterministic move selection. If m > 1, it will return
+    /// the previous best move in the first position if it is still viable.
     ///
     /// It's critical that moves are always returned in the same order or the recommended
     /// move will change if there are equally scored moves
-    fn all_moves(&self, worlds: &[WorldState<G>]) -> Vec<Action> {
+    fn all_moves(&self, worlds: &[WorldState<G>], t: &Option<&TableValue>) -> Vec<Action> {
         let mut all_moves = HashSet::new();
         let mut actions = Vec::new();
 
@@ -331,6 +315,21 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         }
         let mut sorted_moves = all_moves.into_iter().collect_vec();
         sorted_moves.sort();
+
+        // Add the best move from previous, shallower searches to the front. This
+        // won't happen in m=1 scenarios, so it doesn't impact matching the PIMCTS results
+        // there may be no possible moves because we've filtered out all remaining worlds
+        // as useless
+        if !sorted_moves.is_empty() {
+            if let Some(t) = t {
+                if let Some(a) = t.action {
+                    // This move may not be possible any more due to useless worlds
+                    let guess_move = sorted_moves.iter().position(|&x| x == a).unwrap_or(0);
+                    sorted_moves.swap(0, guess_move);
+                }
+            }
+        }
+
         sorted_moves
     }
 

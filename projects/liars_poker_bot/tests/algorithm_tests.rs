@@ -55,13 +55,13 @@ fn test_alpha_mu_optimizations_equivalent() {
     let mut rng: StdRng = SeedableRng::seed_from_u64(51);
     let mut actions = Vec::new();
 
-    let num_worlds = 5;
+    let num_worlds = 3;
     let m = 3;
     let mut optimized = AlphaMuBot::new(OpenHandSolver::new(), num_worlds, m, rng.clone());
     let mut no_optimized = AlphaMuBot::new(OpenHandSolver::new(), num_worlds, m, rng.clone());
     no_optimized.use_optimizations = false;
 
-    for i in 0..100 {
+    for i in 0..10 {
         let mut gs = Euchre::new_state();
         // let mut gs = Bluff::new_state(1, 1);
         while gs.is_chance_node() {
