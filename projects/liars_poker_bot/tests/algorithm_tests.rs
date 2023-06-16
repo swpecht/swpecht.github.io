@@ -57,6 +57,7 @@ fn test_alpha_mu_optimizations_equivalent() {
     let num_worlds = 3;
     let m = 3;
     let mut optimized = AlphaMuBot::new(OpenHandSolver::new(), num_worlds, m, rng.clone());
+    // optimized.use_optimizations = false;
     let mut no_optimized = AlphaMuBot::new(OpenHandSolver::new(), num_worlds, m, rng.clone());
     no_optimized.use_optimizations = false;
 

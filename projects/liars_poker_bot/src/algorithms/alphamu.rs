@@ -479,7 +479,9 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             node.pop();
             let value = self.cache.get(&node);
 
-            if value.is_none() || !value.unwrap().is_max_node {
+            if value.is_none() {
+                return false;
+            } else if !value.unwrap().is_max_node {
                 continue;
             } else if let Some(v) = value {
                 if front.less_than_or_equal(&v.front) {
