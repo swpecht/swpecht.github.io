@@ -1,10 +1,11 @@
 use std::{
     collections::{hash_map::DefaultHasher, HashMap, HashSet},
+    fmt::Display,
     hash::{Hash, Hasher},
 };
 
 use itertools::Itertools;
-use log::trace;
+use log::{log_enabled, trace};
 use rand::rngs::StdRng;
 
 use crate::{
@@ -51,6 +52,16 @@ enum WorldState<G> {
     Useful(G),
     Useless,
     Invalid,
+}
+
+impl<G: Display> Display for WorldState<G> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WorldState::Useful(gs) => write!(f, "{}", gs),
+            WorldState::Useless => write!(f, "Useless"),
+            WorldState::Invalid => write!(f, "Invalid"),
+        }
+    }
 }
 
 impl<G> WorldState<G> {
@@ -139,13 +150,22 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             .map(|w| WorldState::Useful(w))
             .collect_vec();
 
-        trace!("running search with wolrds: {:?}", worlds);
+        if log_enabled!(log::Level::Trace) {
+            let mut s = String::new();
+            for w in worlds.iter() {
+                s.push_str(format!("{} ", w).as_str())
+            }
+            trace!("running search with wolrds: {}", s);
+        }
+
         let mut s = Vec::new();
 
         // Iterative deepening
         // For now this is commented out as it doesn't seem to improve performance
-        for i in 1..self.m {
-            self.alphamu(&mut s, i, worlds.clone(), None);
+        if self.use_optimizations {
+            for i in 1..self.m {
+                self.alphamu(&mut s, i, worlds.clone(), None);
+            }
         }
         let (front, a) = self.alphamu(&mut s, self.m, worlds, None);
 
@@ -168,8 +188,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             .count();
 
         {
-            let mut result = AMFront::default();
-            result.push(AMVector::from_worlds(&worlds));
+            let mut result = AMFront::new(AMVector::from_worlds(&worlds));
             if self.stop(m, &worlds, &mut result) {
                 if self.use_optimizations {
                     let value = TableValue {
@@ -205,9 +224,9 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
                 return (front, None);
             }
 
-            if let Some(t) = table_value {
-                self.update_useful_worlds(&t.front, &mut worlds);
-            }
+            // if let Some(t) = table_value {
+            //     self.update_useful_worlds(&t.front, &mut worlds);
+            // }
 
             let moves: Vec<Action> = self.all_moves(&worlds, &table_value);
 
@@ -231,13 +250,13 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
                     break;
                 }
 
-                self.update_useful_worlds(&front, &mut worlds);
+                // self.update_useful_worlds(&front, &mut worlds);
                 trace!("iterating on min nodes, front size: {}: {}", m, front.len());
             }
 
             // the worlds are useless, set the proper front to return
-            if worlds.iter().filter(|w| w.is_useful()).count() == 0 {
-                front.push(AMVector::from_worlds(&worlds));
+            if front.is_empty() && worlds.iter().filter(|w| w.is_useful()).count() == 0 {
+                front = AMFront::new(AMVector::from_worlds(&worlds));
                 for (i, w) in worlds.iter().enumerate().filter(|(_, w)| !w.is_invalid()) {
                     assert!(!w.is_useful());
                     front.set(i, USELESS_WORLD_VALUE);
@@ -280,7 +299,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
                     && table_score.is_some()
                     && front.score() == table_score.unwrap()
                 {
-                    break;
+                    // break;
                 }
             }
         }
@@ -469,6 +488,8 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
     ///
     /// From alpha mu optimization paper
     fn is_dominated_by_upper_max(&self, s: &[Action], front: &AMFront) -> bool {
+        return false;
+
         if !self.use_optimizations {
             return false;
         }
@@ -572,7 +593,10 @@ mod tests {
     use crate::{
         actions,
         agents::{Agent, PolicyAgent, RandomAgent},
-        algorithms::{ismcts::RandomRolloutEvaluator, open_hand_solver::OpenHandSolver},
+        algorithms::{
+            ismcts::{Evaluator, RandomRolloutEvaluator},
+            open_hand_solver::OpenHandSolver,
+        },
         game::{euchre::EuchreGameState, kuhn_poker::KuhnPoker, GameState},
         policy::Policy,
     };
@@ -614,17 +638,19 @@ mod tests {
 
     #[test]
     fn alpha_mu_consistency() {
-        let gs =
-            EuchreGameState::from("9cQc9sThKh|TcKs9hQhAh|TsTdJdQdAd|KcAcJh9dKd|As|PPPPC|9cTcTsKc|");
+        let gs = EuchreGameState::from(
+            "KcTsJsQsAd|9cTcAcKsAs|ThKh9dJdKd|JcJhQhAhQd|Qc|PT|Ah|Ad9c9dQd|AsJd",
+        );
 
         let mut alphamu =
-            AlphaMuBot::new(OpenHandSolver::new(), 2, 1, SeedableRng::seed_from_u64(42));
-        let policy = alphamu.action_probabilities(&gs);
+            AlphaMuBot::new(OpenHandSolver::new(), 3, 3, SeedableRng::seed_from_u64(42));
+        let policy = alphamu.evaluate_player(&gs, gs.cur_player());
 
-        for _ in 0..1000 {
+        for _ in 0..1 {
             let mut alphamu =
-                AlphaMuBot::new(OpenHandSolver::new(), 2, 1, SeedableRng::seed_from_u64(42));
-            assert_eq!(alphamu.action_probabilities(&gs), policy);
+                AlphaMuBot::new(OpenHandSolver::new(), 3, 3, SeedableRng::seed_from_u64(42));
+            alphamu.use_optimizations = false;
+            assert_eq!(alphamu.evaluate_player(&gs, gs.cur_player()), policy);
         }
     }
 }

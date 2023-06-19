@@ -5,8 +5,11 @@ use clap::{command, Parser, Subcommand, ValueEnum};
 use liars_poker_bot::actions;
 use liars_poker_bot::agents::{Agent, RandomAgent};
 
+use liars_poker_bot::algorithms::alphamu::AlphaMuBot;
 use liars_poker_bot::algorithms::exploitability::{self};
 
+use liars_poker_bot::algorithms::ismcts::Evaluator;
+use liars_poker_bot::algorithms::open_hand_solver::OpenHandSolver;
 use liars_poker_bot::cfragent::cfrnode::CFRNode;
 use liars_poker_bot::cfragent::{CFRAgent, CFRAlgorithm};
 use liars_poker_bot::database::memory_node_store::MemoryNodeStore;
@@ -108,13 +111,18 @@ fn run_scratch(_args: Args) {
     println!("kuhn poker size: {}", mem::size_of::<KPGameState>());
     println!("euchre size: {}", mem::size_of::<EuchreGameState>());
 
-    // let gs = EuchreGameState::from("TCQCQHAHTD|9HKHJDKDAD|AC9SQSTHJH|9CJCKCJSQD|AS|");
-    // let mut gs = Bluff::new_state(1, 1);
-    // gs.apply_action(BluffActions::Roll(Dice::Two).into());
-    // gs.apply_action(BluffActions::Roll(Dice::Wild).into());
+    let gs =
+        EuchreGameState::from("KcTsJsQsAd|9cTcAcKsAs|ThKh9dJdKd|JcJhQhAhQd|Qc|PT|Ah|Ad9c9dQd|AsJd");
 
-    // let mut agent = AlphaMuBot::new(OpenHandSolver::new(), 10, 10);
-    // agent.run_search(&gs);
+    let mut alphamu = AlphaMuBot::new(OpenHandSolver::new(), 3, 3, SeedableRng::seed_from_u64(42));
+    let policy = alphamu.evaluate_player(&gs, gs.cur_player());
+
+    for _ in 0..1 {
+        let mut alphamu =
+            AlphaMuBot::new(OpenHandSolver::new(), 3, 3, SeedableRng::seed_from_u64(42));
+        alphamu.use_optimizations = false;
+        assert_eq!(alphamu.evaluate_player(&gs, gs.cur_player()), policy);
+    }
 }
 
 fn run_analyze(args: Args) {

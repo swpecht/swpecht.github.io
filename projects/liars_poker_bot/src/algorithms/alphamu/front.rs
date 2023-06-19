@@ -93,6 +93,7 @@ impl AMVector {
             .values
             .into_iter()
             .zip(self.values)
+            .take(self.len)
             .all(|(o, s)| o >= s)
     }
 
@@ -146,6 +147,10 @@ pub(super) struct AMFront {
 }
 
 impl AMFront {
+    pub fn new(v: AMVector) -> Self {
+        Self { vectors: vec![v] }
+    }
+
     pub fn min(self, other: Self) -> Self {
         trace!(
             "min call started on vectors of sizes: {} and {}",
@@ -180,7 +185,17 @@ impl AMFront {
                     };
                     r.set(w, v);
                 }
-                result.push(r);
+
+                // temporarily disable this
+                // Remove vectors from result <= r
+                // result.vectors.retain(|x| !x.is_dominated(&r));
+
+                // // If no vector from result >= r
+                // let is_r_dominated = result.vectors.iter().any(|x| r.is_dominated(x));
+                // if !is_r_dominated {
+                //     result.vectors.push(r);
+                // }
+                result.vectors.push(r);
             }
         }
 
@@ -197,11 +212,11 @@ impl AMFront {
 
     pub fn max(mut self, other: Self) -> Self {
         for v in other.vectors {
-            if !self.vectors.contains(&v) {
-                self.push(v);
+            if !self.vectors.contains(&v) && !self.vectors.iter().any(|x| v.is_dominated(x)) {
+                self.vectors.retain(|x| !x.is_dominated(&v));
+                self.vectors.push(v);
             }
         }
-
         self
     }
 
@@ -209,21 +224,6 @@ impl AMFront {
         for v in self.vectors.iter_mut() {
             v.values[idx] = value;
             v.is_valid.set(idx, true);
-        }
-    }
-
-    /// Adds a new vector to the front.
-    ///
-    /// This method does nothing if the vector is dominated by an existing vector.
-    /// And it removes any vectors that are dominated by the new one
-    pub fn push(&mut self, v: AMVector) {
-        // Remove vectors from result <= r
-        self.vectors.retain(|sv| !sv.is_dominated(&v));
-
-        // If no vector from result >= r
-        let is_v_dominated = self.vectors.iter().any(|sv| v.is_dominated(sv));
-        if !is_v_dominated {
-            self.vectors.push(v);
         }
     }
 
@@ -342,17 +342,6 @@ mod tests {
         let a = b.min(c);
         assert_eq!(a, front!(amvec![0, 0, 1], amvec![1, 1, 0]));
 
-        let mut x = front!(amvec![1, 0, 0], amvec![0, 1, 1]);
-        x.push(amvec!(0, 0, 1));
-        assert_eq!(x, front!(amvec![1, 0, 0], amvec![0, 1, 1])); //no change
-        x.push(amvec!(1, 1, 0));
-        assert_eq!(x, front!(amvec![0, 1, 1], amvec![1, 1, 0]));
-
-        let mut f = AMFront::default();
-        let v = AMVector::new(10);
-        f.push(v);
-        assert_eq!(f.vectors.len(), 1);
-
         // test min of an empty vec
         let f1 = AMFront::default();
         let f2 = front!(amvec![1, 1, 1]);
@@ -392,7 +381,7 @@ macro_rules! front {
         {
             let mut temp_front = AMFront::default();
             $(
-                temp_front.push($x);
+                temp_front.vectors.push($x);
             )*
             temp_front
         }
