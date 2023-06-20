@@ -194,7 +194,6 @@ impl AMFront {
                 if !is_r_dominated && !result.vectors.contains(&r) {
                     result.vectors.push(r);
                 }
-                result.vectors.push(r);
             }
         }
 
@@ -361,6 +360,20 @@ mod tests {
         let f1 = front!(amvec![0, 0, 0]);
         let f2 = front!(amvec![0, 0, 0]);
         assert_eq!(f1.max(f2), front!(amvec![0, 0, 0]));
+    }
+
+    #[test]
+    fn test_front_less_than_equal() {
+        let f1 = front!(amvec![0, 0, 0]);
+        assert!(f1.less_than_or_equal(&f1));
+
+        let f2 = front!(amvec![1, 0, 0]);
+        assert!(f1.less_than_or_equal(&f2));
+        assert!(!f2.less_than_or_equal(&f1));
+
+        let f3 = front!(amvec![1, 0, 0], amvec![0, 0, 1]);
+        assert!(f2.less_than_or_equal(&f3));
+        assert!(!f3.less_than_or_equal(&f2));
     }
 }
 
