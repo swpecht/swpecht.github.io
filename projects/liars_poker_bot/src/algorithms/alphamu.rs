@@ -5,7 +5,7 @@ use std::{
 };
 
 use itertools::Itertools;
-use log::{log_enabled, trace};
+use log::{debug, log_enabled, trace};
 use rand::rngs::StdRng;
 
 use crate::{
@@ -150,13 +150,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             .map(|w| WorldState::Useful(w))
             .collect_vec();
 
-        if log_enabled!(log::Level::Trace) {
-            let mut s = String::new();
-            for w in worlds.iter() {
-                s.push_str(format!("{} ", w).as_str())
-            }
-            trace!("running search with wolrds: {}", s);
-        }
+        trace!("running search with wolrds: {}", get_worlds_string(&worlds));
 
         let mut s = Vec::new();
 
@@ -180,6 +174,8 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         mut worlds: Vec<WorldState<G>>,
         alpha: Option<AMFront>,
     ) -> (AMFront, Option<Action>) {
+        trace!("alpha mu call for: s={:?}, m={}", s, m);
+
         // ensure we have no chance nodes, not yet implemented
         worlds
             .iter()
@@ -219,8 +215,14 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
                 && table_value
                     .unwrap()
                     .front
-                    .less_than_or_equal(&alpha.unwrap())
+                    .less_than_or_equal(&alpha.clone().unwrap())
             {
+                debug!(
+                    "early min cut: s: {:?}, t: {:?}, alpha: {:?}",
+                    s,
+                    table_value.unwrap().front,
+                    &alpha.unwrap()
+                );
                 return (front, None);
             }
 
@@ -251,7 +253,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
                 }
 
                 // self.update_useful_worlds(&front, &mut worlds);
-                trace!("iterating on min nodes, front size: {}: {}", m, front.len());
+                // trace!("iterating on min nodes, front size: {}: {}", m, front.len());
             }
 
             // the worlds are useless, set the proper front to return
@@ -314,7 +316,10 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             };
             self.cache.insert(s, cache_value);
         }
+        trace!("found front for alpha mu: {:?}, {:?}", s, front);
+        worlds.clear();
         self.cache.world_vector_pool.attach(worlds);
+
         (front, best_action)
     }
 
@@ -407,7 +412,13 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
                 if w.is_useful() {
                     let w = w.unwrap();
                     let v = self.evaluator.evaluate_player(w, self.team.into());
-                    result.set(i, v as i8);
+
+                    // result.set(i, v as i8);
+                    if v > 0.0 {
+                        result.set(i, 1);
+                    } else {
+                        result.set(i, 0);
+                    }
                 } else if w.is_useless() {
                     result.set(i, USELESS_WORLD_VALUE);
                 }
@@ -583,6 +594,15 @@ impl<G: GameState> AlphaMuCache<G> {
     pub fn reset(&mut self) {
         self.transposition_table.clear();
     }
+}
+
+/// Helper function for printing worlds
+fn get_worlds_string<G: Display>(worlds: &[WorldState<G>]) -> String {
+    let mut s = String::new();
+    for w in worlds.iter() {
+        s.push_str(format!("\n\t{} ", w).as_str())
+    }
+    s
 }
 
 #[cfg(test)]

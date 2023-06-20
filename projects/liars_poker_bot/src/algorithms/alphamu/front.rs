@@ -152,11 +152,11 @@ impl AMFront {
     }
 
     pub fn min(self, other: Self) -> Self {
-        trace!(
-            "min call started on vectors of sizes: {} and {}",
-            self.len(),
-            other.len(),
-        );
+        // trace!(
+        //     "min call started on vectors of sizes: {} and {}",
+        //     self.len(),
+        //     other.len(),
+        // );
 
         if self.is_empty() {
             return other;
@@ -186,26 +186,25 @@ impl AMFront {
                     r.set(w, v);
                 }
 
-                // temporarily disable this
                 // Remove vectors from result <= r
-                // result.vectors.retain(|x| !x.is_dominated(&r));
+                result.vectors.retain(|x| !x.is_dominated(&r));
 
-                // // If no vector from result >= r
-                // let is_r_dominated = result.vectors.iter().any(|x| r.is_dominated(x));
-                // if !is_r_dominated {
-                //     result.vectors.push(r);
-                // }
+                // If no vector from result >= r
+                let is_r_dominated = result.vectors.iter().any(|x| r.is_dominated(x));
+                if !is_r_dominated && !result.vectors.contains(&r) {
+                    result.vectors.push(r);
+                }
                 result.vectors.push(r);
             }
         }
 
-        trace!(
-            "min called on vectors of sizes: {} and {}, new size: {}, {} buckets",
-            self.len(),
-            other.len(),
-            result.len(),
-            result.vectors.len()
-        );
+        // trace!(
+        //     "min called on vectors of sizes: {} and {}, new size: {}, {} buckets",
+        //     self.len(),
+        //     other.len(),
+        //     result.len(),
+        //     result.vectors.len()
+        // );
 
         result
     }

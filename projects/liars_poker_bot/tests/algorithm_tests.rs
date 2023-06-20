@@ -8,6 +8,7 @@ use liars_poker_bot::{
     cfragent::{CFRAgent, CFRAlgorithm},
     database::memory_node_store::MemoryNodeStore,
     game::{
+        bluff::Bluff,
         euchre::{actions::EAction, Euchre},
         kuhn_poker::KuhnPoker,
         GameState,
@@ -61,7 +62,7 @@ fn test_alpha_mu_optimizations_equivalent() {
     let mut no_optimized = AlphaMuBot::new(OpenHandSolver::new(), num_worlds, m, rng.clone());
     no_optimized.use_optimizations = false;
 
-    for i in 0..10 {
+    for i in 0..100 {
         let mut gs = Euchre::new_state();
         // let mut gs = Bluff::new_state(1, 1);
         while gs.is_chance_node() {
@@ -82,6 +83,9 @@ fn test_alpha_mu_optimizations_equivalent() {
             gs.apply_action(*a);
         }
     }
+
+    todo!("re-enable optimizations");
+    todo!("re-enable min front pruning");
 }
 
 /// AlphaMu with M=1 should be equivalent to PIMCTS

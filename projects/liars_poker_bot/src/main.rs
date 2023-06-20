@@ -111,16 +111,16 @@ fn run_scratch(_args: Args) {
     println!("kuhn poker size: {}", mem::size_of::<KPGameState>());
     println!("euchre size: {}", mem::size_of::<EuchreGameState>());
 
-    let gs =
-        EuchreGameState::from("KcTsJsQsAd|9cTcAcKsAs|ThKh9dJdKd|JcJhQhAhQd|Qc|PT|Ah|Ad9c9dQd|AsJd");
+    let gs = EuchreGameState::from("9s9hTh9dKd|QcJsQsQhAh|KcAcTsAsJh|9cKhJdQdAd|Td|T|9c|");
 
-    let mut alphamu = AlphaMuBot::new(OpenHandSolver::new(), 3, 3, SeedableRng::seed_from_u64(42));
+    let mut alphamu = AlphaMuBot::new(OpenHandSolver::new(), 3, 2, SeedableRng::seed_from_u64(42));
     let policy = alphamu.evaluate_player(&gs, gs.cur_player());
 
     for _ in 0..1 {
         let mut alphamu =
-            AlphaMuBot::new(OpenHandSolver::new(), 3, 3, SeedableRng::seed_from_u64(42));
+            AlphaMuBot::new(OpenHandSolver::new(), 3, 2, SeedableRng::seed_from_u64(42));
         alphamu.use_optimizations = false;
+        info!("starting call for non-optimized alphamu");
         assert_eq!(alphamu.evaluate_player(&gs, gs.cur_player()), policy);
     }
 }
