@@ -375,6 +375,17 @@ mod tests {
         assert!(f2.less_than_or_equal(&f3));
         assert!(!f3.less_than_or_equal(&f2));
     }
+
+    #[test]
+    fn test_world_max() {
+        let f1 = front!(amvec![0, 0, 0]);
+        assert_eq!(f1.world_max(0), Some(0));
+
+        let f1 = front!(amvec![1, 0, 0], amvec![0, 0, 1]);
+        assert_eq!(f1.world_max(0), Some(1));
+        assert_eq!(f1.world_max(1), Some(0));
+        assert_eq!(f1.world_max(2), Some(1));
+    }
 }
 
 #[macro_export]
