@@ -10,7 +10,7 @@ use liars_poker_bot::{
     game::{bluff::Bluff, euchre::Euchre, kuhn_poker::KuhnPoker, run_game, Game, GameState},
 };
 use log::{debug, info};
-use rand::{rngs::StdRng, thread_rng, SeedableRng};
+use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
 
 use crate::{Args, GameType};
 
@@ -25,9 +25,15 @@ pub fn run_benchmark(args: Args) {
 }
 
 fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Args, game: Game<G>) {
+    // all agents play the same games
+    let mut game_rng = rng();
+    let games = get_games(game, args.num_games, &mut game_rng);
+
     let mut agents: HashMap<String, &mut dyn Agent<G>> = HashMap::new();
     // let ra: &mut dyn Agent<G> = &mut RandomAgent::new();
     // agents.insert(ra.get_name(), ra);
+
+    // todo: have all agents play the same games
 
     let a = &mut PolicyAgent::new(PIMCTSBot::new(20, OpenHandSolver::new(), rng()), rng());
     agents.insert("pimcts, 20 worlds, open hand".to_string(), a);
@@ -39,7 +45,7 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
     // agents.insert("pimcts, 10 worlds, random".to_string(), a);
 
     let alphamu =
-        &mut PolicyAgent::new(AlphaMuBot::new(OpenHandSolver::new(), 20, 3, rng()), rng());
+        &mut PolicyAgent::new(AlphaMuBot::new(OpenHandSolver::new(), 15, 3, rng()), rng());
     agents.insert("alphamu, open hand".to_string(), alphamu);
 
     let agent_names = agents.keys().cloned().collect_vec();
@@ -56,10 +62,8 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
             debug!("starting play for {} vs {}", a1_name, a2_name);
             let mut returns = vec![0.0; 4];
 
-            // all agents play the same games
-            let mut game_rng: StdRng = SeedableRng::seed_from_u64(42);
-            for _ in 0..args.num_games {
-                let r = run_game(&mut (game.new)(), a1, &mut a2, &mut game_rng);
+            for mut gs in games.clone() {
+                let r = run_game(&mut gs, a1, &mut a2, &mut game_rng);
                 for (i, v) in r.iter().enumerate() {
                     returns[i] += v;
                 }
@@ -79,6 +83,24 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
             }
         }
     }
+}
+
+fn get_games<T: GameState>(game: Game<T>, n: usize, rng: &mut StdRng) -> Vec<T> {
+    let mut games = Vec::new();
+    let mut actions = Vec::new();
+
+    for _ in 0..n {
+        let mut gs = (game.new)();
+        while gs.is_chance_node() {
+            gs.legal_actions(&mut actions);
+            let a = actions.choose(rng).unwrap();
+            gs.apply_action(*a);
+            actions.clear();
+        }
+
+        games.push(gs);
+    }
+    games
 }
 
 pub fn rng() -> StdRng {

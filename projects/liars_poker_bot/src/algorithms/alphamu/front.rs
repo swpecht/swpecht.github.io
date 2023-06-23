@@ -1,17 +1,10 @@
 use std::fmt::Debug;
 
-use log::trace;
+use rustc_hash::FxHashMap;
 
 use crate::collections::bitarray::BitArray;
 
 use super::WorldState;
-
-pub enum VectorValue {
-    BigLoss,
-    Loss,
-    Win,
-    BigWin,
-}
 
 /// An alphamu vector
 ///
@@ -143,12 +136,14 @@ impl Debug for AMVector {
 
 #[derive(Default, PartialEq, Clone)]
 pub(super) struct AMFront {
-    vectors: Vec<AMVector>,
+    vectors: FxHashMap<u32, Vec<AMVector>>,
 }
 
 impl AMFront {
     pub fn new(v: AMVector) -> Self {
-        Self { vectors: vec![v] }
+        let mut vectors = FxHashMap::default();
+        vectors.insert(v.is_valid.into(), vec![v]);
+        Self { vectors }
     }
 
     pub fn min(self, other: Self) -> Self {
@@ -167,8 +162,8 @@ impl AMFront {
         }
 
         let mut result = AMFront::default();
-        for s in &self.vectors {
-            for o in &other.vectors {
+        for s in self.vectors.values().flatten() {
+            for o in other.vectors.values().flatten() {
                 let mut r = AMVector::new(s.len);
 
                 // The Min players can choose different moves in different possible
@@ -187,12 +182,16 @@ impl AMFront {
                 }
 
                 // Remove vectors from result <= r
-                result.vectors.retain(|x| !x.is_dominated(&r));
+                let same_worlds = result
+                    .vectors
+                    .entry(r.is_valid.into())
+                    .or_insert(Vec::new());
+                same_worlds.retain(|x| !x.is_dominated(&r));
 
                 // If no vector from result >= r
-                let is_r_dominated = result.vectors.iter().any(|x| r.is_dominated(x));
-                if !is_r_dominated && !result.vectors.contains(&r) {
-                    result.vectors.push(r);
+                let is_r_dominated = same_worlds.iter().any(|x| r.is_dominated(x));
+                if !is_r_dominated && !same_worlds.contains(&r) {
+                    same_worlds.push(r);
                 }
             }
         }
@@ -209,17 +208,18 @@ impl AMFront {
     }
 
     pub fn max(mut self, other: Self) -> Self {
-        for v in other.vectors {
-            if !self.vectors.contains(&v) && !self.vectors.iter().any(|x| v.is_dominated(x)) {
-                self.vectors.retain(|x| !x.is_dominated(&v));
-                self.vectors.push(v);
+        for v in other.vectors.values().flatten() {
+            let same_worlds = self.vectors.entry(v.is_valid.into()).or_insert(Vec::new());
+            if !same_worlds.contains(v) && !same_worlds.iter().any(|x| v.is_dominated(x)) {
+                same_worlds.retain(|x| !x.is_dominated(v));
+                same_worlds.push(v.to_owned());
             }
         }
         self
     }
 
     pub fn set(&mut self, idx: usize, value: i8) {
-        for v in self.vectors.iter_mut() {
+        for v in self.vectors.values_mut().flatten() {
             v.values[idx] = value;
             v.is_valid.set(idx, true);
         }
@@ -235,14 +235,14 @@ impl AMFront {
         assert!(!self.vectors.is_empty());
 
         let mut max_score = f64::NEG_INFINITY;
-        for v in &self.vectors {
+        for v in self.vectors.values().flatten() {
             max_score = max_score.max(v.score());
         }
         max_score
     }
 
     pub fn len(&self) -> usize {
-        self.vectors.len()
+        self.vectors.values().map(|x| x.len()).sum()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -250,9 +250,9 @@ impl AMFront {
     }
 
     pub fn less_than_or_equal(&self, other: &AMFront) -> bool {
-        for s in &self.vectors {
+        for s in self.vectors.values().flatten() {
             let mut one_greater_or_equal = false;
-            for v in &other.vectors {
+            for v in other.vectors.values().flatten() {
                 if s.is_dominated(v) {
                     one_greater_or_equal = true;
                     break;
@@ -268,7 +268,7 @@ impl AMFront {
     /// returns the maximum value of a given world if there is atleast one useful world remaining
     pub fn world_max(&self, i: usize) -> Option<i8> {
         let mut max = None;
-        for v in &self.vectors {
+        for v in self.vectors.values().flatten() {
             if v.is_valid.get(i) {
                 max = Some(max.unwrap_or(i8::MIN).max(v.get(i)))
             }
@@ -329,7 +329,7 @@ mod tests {
         assert!(f1 != f2);
 
         let b = f1.max(f2);
-        assert_eq!(b.vectors.len(), 2);
+        assert_eq!(b.len(), 2);
         assert_eq!(b, front!(amvec![0, 1, 1], amvec![1, 1, 0]));
 
         let c1 = f3.max(f4);
@@ -393,7 +393,8 @@ macro_rules! front {
         {
             let mut temp_front = AMFront::default();
             $(
-                temp_front.vectors.push($x);
+                let w = temp_front.vectors.entry($x.is_valid.into()).or_insert(Vec::new());
+                w.push($x);
             )*
             temp_front
         }

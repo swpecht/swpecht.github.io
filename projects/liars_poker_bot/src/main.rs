@@ -8,7 +8,6 @@ use liars_poker_bot::agents::{Agent, RandomAgent};
 use liars_poker_bot::algorithms::alphamu::AlphaMuBot;
 use liars_poker_bot::algorithms::exploitability::{self};
 
-use liars_poker_bot::algorithms::ismcts::Evaluator;
 use liars_poker_bot::algorithms::open_hand_solver::OpenHandSolver;
 use liars_poker_bot::cfragent::cfrnode::CFRNode;
 use liars_poker_bot::cfragent::{CFRAgent, CFRAlgorithm};

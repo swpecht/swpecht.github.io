@@ -8,7 +8,6 @@ use liars_poker_bot::{
     cfragent::{CFRAgent, CFRAlgorithm},
     database::memory_node_store::MemoryNodeStore,
     game::{
-        bluff::Bluff,
         euchre::{actions::EAction, Euchre},
         kuhn_poker::KuhnPoker,
         GameState,
@@ -85,7 +84,6 @@ fn test_alpha_mu_optimizations_equivalent() {
     }
 
     todo!("re-enable optimizations");
-    todo!("re-enable min front pruning");
 }
 
 /// AlphaMu with M=1 should be equivalent to PIMCTS

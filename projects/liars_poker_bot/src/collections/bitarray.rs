@@ -1,6 +1,6 @@
 #[derive(Default, Clone, Copy, PartialEq, Hash, Eq)]
 pub struct BitArray {
-    pub values: u32,
+    values: u32,
 }
 
 impl BitArray {
@@ -13,5 +13,11 @@ impl BitArray {
             true => self.values |= 1 << index,
             false => self.values &= !(1 << index),
         }
+    }
+}
+
+impl From<BitArray> for u32 {
+    fn from(value: BitArray) -> Self {
+        value.values
     }
 }
