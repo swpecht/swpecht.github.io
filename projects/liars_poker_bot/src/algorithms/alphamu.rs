@@ -254,13 +254,20 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
 
                 self.update_useful_worlds(&front, &mut worlds);
                 // trace!("iterating on min nodes, front size: {}: {}", m, front.len());
+
+                // set everything in the front to be useless
+                for (i, _) in worlds.iter().enumerate().filter(|(_, w)| w.is_useless()) {
+                    front.set(i, USELESS_WORLD_VALUE);
+                }
             }
 
-            // the worlds are useless, set the proper front to return
-            if front.is_empty() && worlds.iter().filter(|w| w.is_useful()).count() == 0 {
+            // If the front is empty (due to useless worlds, set it to a default one)
+            // in the next step, we'll populate all values
+            if front.is_empty() {
+                // We should only be here if there are no useless worlds
+                assert_eq!(worlds.iter().filter(|w| w.is_useful()).count(), 0);
                 front = AMFront::new(AMVector::from_worlds(&worlds));
-                for (i, w) in worlds.iter().enumerate().filter(|(_, w)| !w.is_invalid()) {
-                    assert!(!w.is_useful());
+                for (i, _) in worlds.iter().enumerate().filter(|(_, w)| w.is_useless()) {
                     front.set(i, USELESS_WORLD_VALUE);
                 }
             }
