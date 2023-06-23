@@ -39,7 +39,7 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
     // agents.insert("pimcts, 10 worlds, random".to_string(), a);
 
     let alphamu =
-        &mut PolicyAgent::new(AlphaMuBot::new(OpenHandSolver::new(), 20, 2, rng()), rng());
+        &mut PolicyAgent::new(AlphaMuBot::new(OpenHandSolver::new(), 20, 3, rng()), rng());
     agents.insert("alphamu, open hand".to_string(), alphamu);
 
     let agent_names = agents.keys().cloned().collect_vec();

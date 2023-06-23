@@ -5,7 +5,7 @@ use std::{
 };
 
 use itertools::Itertools;
-use log::{debug, log_enabled, trace};
+use log::trace;
 use rand::rngs::StdRng;
 
 use crate::{
@@ -217,7 +217,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
                     .front
                     .less_than_or_equal(&alpha.clone().unwrap())
             {
-                debug!(
+                trace!(
                     "early min cut: s: {:?}, t: {:?}, alpha: {:?}",
                     s,
                     table_value.unwrap().front,
@@ -226,9 +226,9 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
                 return (front, None);
             }
 
-            // if let Some(t) = table_value {
-            //     self.update_useful_worlds(&t.front, &mut worlds);
-            // }
+            if let Some(t) = table_value {
+                self.update_useful_worlds(&t.front, &mut worlds);
+            }
 
             let moves: Vec<Action> = self.all_moves(&worlds, &table_value);
 
@@ -252,7 +252,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
                     break;
                 }
 
-                // self.update_useful_worlds(&front, &mut worlds);
+                self.update_useful_worlds(&front, &mut worlds);
                 // trace!("iterating on min nodes, front size: {}: {}", m, front.len());
             }
 
@@ -301,7 +301,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
                     && table_score.is_some()
                     && front.score() == table_score.unwrap()
                 {
-                    // break;
+                    break;
                 }
             }
         }
@@ -413,12 +413,12 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
                     let w = w.unwrap();
                     let v = self.evaluator.evaluate_player(w, self.team.into());
 
-                    // result.set(i, v as i8);
-                    if v > 0.0 {
-                        result.set(i, 1);
-                    } else {
-                        result.set(i, 0);
-                    }
+                    result.set(i, v as i8);
+                    // if v > 0.0 {
+                    //     result.set(i, 1);
+                    // } else {
+                    //     result.set(i, 0);
+                    // }
                 } else if w.is_useless() {
                     result.set(i, USELESS_WORLD_VALUE);
                 }

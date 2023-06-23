@@ -20,6 +20,7 @@ use liars_poker_bot::game::euchre::{Euchre, EuchreGameState};
 use liars_poker_bot::game::kuhn_poker::{KPGameState, KuhnPoker};
 use liars_poker_bot::game::{Action, GameState};
 
+use liars_poker_bot::policy::Policy;
 use log::{debug, info};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
@@ -114,14 +115,14 @@ fn run_scratch(_args: Args) {
     let gs = EuchreGameState::from("9s9hTh9dKd|QcJsQsQhAh|KcAcTsAsJh|9cKhJdQdAd|Td|T|9c|");
 
     let mut alphamu = AlphaMuBot::new(OpenHandSolver::new(), 3, 2, SeedableRng::seed_from_u64(42));
-    let policy = alphamu.evaluate_player(&gs, gs.cur_player());
+    let policy = alphamu.action_probabilities(&gs);
 
     for _ in 0..1 {
         let mut alphamu =
             AlphaMuBot::new(OpenHandSolver::new(), 3, 2, SeedableRng::seed_from_u64(42));
         alphamu.use_optimizations = false;
         info!("starting call for non-optimized alphamu");
-        assert_eq!(alphamu.evaluate_player(&gs, gs.cur_player()), policy);
+        assert_eq!(alphamu.action_probabilities(&gs), policy);
     }
 }
 
