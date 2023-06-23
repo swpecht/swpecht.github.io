@@ -7,7 +7,7 @@ use liars_poker_bot::{
         alphamu::AlphaMuBot, ismcts::ResampleFromInfoState, open_hand_solver::OpenHandSolver,
         pimcts::PIMCTSBot,
     },
-    game::{bluff::Bluff, euchre::Euchre, kuhn_poker::KuhnPoker, run_game, Game, GameState},
+    game::{bluff::Bluff, euchre::Euchre, kuhn_poker::KuhnPoker, Game, GameState},
 };
 use log::{debug, info};
 use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
@@ -24,10 +24,12 @@ pub fn run_benchmark(args: Args) {
     }
 }
 
+/// Calculate the win-rate of first to 10 for each agent
 fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Args, game: Game<G>) {
     // all agents play the same games
     let mut game_rng = rng();
-    let games = get_games(game, args.num_games, &mut game_rng);
+    // may need up to 20x the number fo full games to 10
+    let games = get_games(game, args.num_games * 20, &mut game_rng);
 
     let mut agents: HashMap<String, &mut dyn Agent<G>> = HashMap::new();
     // let ra: &mut dyn Agent<G> = &mut RandomAgent::new();
@@ -45,13 +47,18 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
     // agents.insert("pimcts, 10 worlds, random".to_string(), a);
 
     let alphamu =
-        &mut PolicyAgent::new(AlphaMuBot::new(OpenHandSolver::new(), 15, 3, rng()), rng());
+        &mut PolicyAgent::new(AlphaMuBot::new(OpenHandSolver::new(), 20, 3, rng()), rng());
     agents.insert("alphamu, open hand".to_string(), alphamu);
 
     let agent_names = agents.keys().cloned().collect_vec();
 
     for a1_name in agent_names.clone() {
         for a2_name in agent_names.clone() {
+            // disable self play for now
+            if a1_name == a2_name {
+                continue;
+            }
+
             let a1 = agents.remove(&a1_name).unwrap();
             let mut a2 = if a1_name != a2_name {
                 Some(agents.remove(&a2_name).unwrap())
@@ -60,21 +67,51 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
             };
 
             debug!("starting play for {} vs {}", a1_name, a2_name);
-            let mut returns = vec![0.0; 4];
+            let mut games_won = vec![0; 2];
+            let mut game_source = games.clone().into_iter();
 
-            for mut gs in games.clone() {
-                let r = run_game(&mut gs, a1, &mut a2, &mut game_rng);
-                for (i, v) in r.iter().enumerate() {
-                    returns[i] += v;
+            for i in 0..args.num_games {
+                let mut game_score = [0, 0];
+                // track the current game in the game of 10 for dealer tracking
+                let mut cur_game = 0;
+                while game_score[0] < 10 && game_score[1] < 10 {
+                    let mut gs = game_source.next().unwrap();
+
+                    while !gs.is_terminal() {
+                        // We alternate who starts as the dealer each game
+                        let a = match (cur_game % 2 == i % 2, a2.is_some()) {
+                            (true, true) => a1.step(&gs),
+                            (false, true) => a2.as_mut().unwrap().step(&gs),
+                            (_, false) => a1.step(&gs), // only agent a1
+                        };
+                        gs.apply_action(a);
+                    }
+
+                    let r = [gs.evaluate(0), gs.evaluate(1)];
+
+                    game_score[0] += r[0].max(0.0) as u8;
+                    game_score[1] += r[1].max(0.0) as u8;
+                    cur_game += 1;
                 }
-                info!("{}\t{}\t{}", a1_name, a2_name, r[0]);
+
+                info!(
+                    "{}\t{}\t{}\t{}",
+                    a1_name, a2_name, game_score[0], game_score[1]
+                );
+
+                let team_0_win = game_score[0] >= 10;
+                if team_0_win {
+                    games_won[0] += 1;
+                } else {
+                    games_won[1] += 1;
+                }
             }
+
             println!(
-                "{:?}\t{:?}\t{}\t{}",
+                "{:?}\t{:?}\t{}",
                 a1_name,
                 a2_name,
-                returns[0] / args.num_games as f64,
-                returns[1] / args.num_games as f64
+                games_won[0] as f64 / args.num_games as f64
             );
 
             agents.insert(a1_name.clone(), a1);
