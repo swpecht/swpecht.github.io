@@ -5,7 +5,7 @@ use std::{
 };
 
 use itertools::Itertools;
-use log::trace;
+use log::{debug, trace};
 use rand::rngs::StdRng;
 
 use crate::{
@@ -253,7 +253,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
                 }
 
                 self.update_useful_worlds(&front, &mut worlds);
-                // trace!("iterating on min nodes, front size: {}: {}", m, front.len());
+                debug!("iterating on min nodes, front size: {}: {}", m, front.len());
 
                 // set everything in the front to be useless
                 for (i, _) in worlds.iter().enumerate().filter(|(_, w)| w.is_useless()) {

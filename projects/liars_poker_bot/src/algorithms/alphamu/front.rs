@@ -208,11 +208,13 @@ impl AMFront {
     }
 
     pub fn max(mut self, other: Self) -> Self {
-        for v in other.vectors.values().flatten() {
-            let same_worlds = self.vectors.entry(v.is_valid.into()).or_insert(Vec::new());
-            if !same_worlds.contains(v) && !same_worlds.iter().any(|x| v.is_dominated(x)) {
-                same_worlds.retain(|x| !x.is_dominated(v));
-                same_worlds.push(v.to_owned());
+        for (valid, other_vecs) in other.vectors {
+            let same_worlds = self.vectors.entry(valid).or_insert(Vec::new());
+            for v in &other_vecs {
+                if !same_worlds.contains(v) && !same_worlds.iter().any(|x| v.is_dominated(x)) {
+                    same_worlds.retain(|x| !x.is_dominated(v));
+                    same_worlds.push(v.to_owned());
+                }
             }
         }
         self

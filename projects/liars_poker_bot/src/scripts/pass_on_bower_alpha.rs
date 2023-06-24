@@ -104,7 +104,7 @@ pub fn benchmark_pass_on_bower(args: Args) {
 pub fn tune_alpha_mu(num_games: usize) {
     info!("starting alpha mu tune run for {} games", num_games);
     info!("m\tnum worlds\tavg score");
-    let ms = vec![1, 2, 3];
+    let ms = vec![1, 2, 3, 5];
     let world_counts = vec![5, 10, 15, 20];
     let worlds = get_bower_deals(num_games, &mut rng());
 
