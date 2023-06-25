@@ -31,6 +31,7 @@ impl From<i8> for VectorValue {
         match value {
             2 => BigWin,
             1 => Win,
+            0 => Loss,
             -1 => Loss,
             -2 => BigLoss,
             _ => panic!("cannot convert value: {}", value),
