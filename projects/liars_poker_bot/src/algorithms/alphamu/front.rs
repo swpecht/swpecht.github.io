@@ -32,7 +32,6 @@ impl From<i8> for VectorValue {
         match value {
             2 => BigWin,
             1 => Win,
-            0 => Loss,
             -1 => Loss,
             -2 => BigLoss,
             _ => panic!("cannot convert value: {}", value),
@@ -58,9 +57,9 @@ pub(super) struct AMVector {
 }
 
 impl AMVector {
-    fn new(size: usize) -> Self {
+    fn new(size: usize, is_valid: BitArray) -> Self {
         Self {
-            is_valid: BitArray::default(),
+            is_valid,
             is_win: BitArray::default(),
             is_big: BitArray::default(),
             len: size,
@@ -71,7 +70,13 @@ impl AMVector {
     ///
     /// A value of -1 means the world is invalid
     fn _from_array(values: &[i8]) -> Self {
-        let mut vec = AMVector::new(values.len());
+        let mut is_valid: u32 = 0;
+        for _ in 0..values.len() {
+            is_valid <<= 1;
+            is_valid |= 1;
+        }
+
+        let mut vec = AMVector::new(values.len(), is_valid.into());
         for (i, &v) in values.iter().enumerate() {
             if v == -1 {
                 continue;
@@ -143,11 +148,20 @@ impl AMVector {
         // set all invalid wolrds to 1, they shouldn't impact the outcome
         o_gte_s |= !valid_mask;
 
-        !o_gte_s == 0
+        // check if every single world is 1 now
+        o_gte_s == !0
     }
 
+    /// Set a valid world value. Panics if try to set an invalid world value
     pub fn set(&mut self, index: usize, value: VectorValue) {
-        self.is_valid.set(index, true);
+        if !self.is_valid.get(index) {
+            panic!(
+                "attempting to set an invalid world: {}, valid worlds are: {}",
+                index, self.is_valid
+            )
+        }
+
+        assert!(self.is_valid.get(index));
 
         use VectorValue::*;
         if value == BigLoss || value == BigWin {
@@ -241,7 +255,7 @@ impl AMFront {
 
                 for s in s_vectors {
                     for o in o_vectors {
-                        let mut r = AMVector::new(s.len);
+                        let mut r = AMVector::new(s.len, valid_key.into());
 
                         // The Min players can choose different moves in different possible
                         // worlds. So they take the minimum outcome over all the possible
@@ -257,9 +271,6 @@ impl AMFront {
                             };
                             r.set(w, v);
                         }
-
-                        // Make sure we get the valid world key we expect
-                        assert_eq!(u32::from(r.is_valid), valid_key);
 
                         // Remove vectors from result <= r
                         same_worlds.retain(|x| !x.is_dominated(&r));
@@ -298,11 +309,23 @@ impl AMFront {
         self
     }
 
+    /// Set all vectors in the front to a given value. Does this even if previously the world was invalid
     pub fn set(&mut self, idx: usize, value: VectorValue) {
-        for v in self.vectors.values_mut().flatten() {
-            v.set(idx, value);
-            v.is_valid.set(idx, true);
+        let mut new_vectors = FxHashMap::default();
+
+        for mut vecs in self.vectors.clone().into_values() {
+            for v in vecs.iter_mut() {
+                v.is_valid.set(idx, true);
+                v.set(idx, value);
+            }
+
+            if !vecs.is_empty() {
+                let is_valid: u32 = vecs[0].is_valid.into();
+                new_vectors.insert(is_valid, vecs);
+            }
         }
+
+        self.vectors = new_vectors;
     }
 
     /// Score of a front
