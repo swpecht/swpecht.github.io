@@ -71,9 +71,11 @@ impl AMVector {
     /// A value of -1 means the world is invalid
     fn _from_array(values: &[i8]) -> Self {
         let mut is_valid: u32 = 0;
-        for _ in 0..values.len() {
+        for &v in values.iter().rev() {
             is_valid <<= 1;
-            is_valid |= 1;
+            if v != -1 {
+                is_valid |= 1;
+            }
         }
 
         let mut vec = AMVector::new(values.len(), is_valid.into());
@@ -81,7 +83,6 @@ impl AMVector {
             if v == -1 {
                 continue;
             } else {
-                vec.is_valid.set(i, true);
                 let value = match v {
                     0 => VectorValue::Loss,
                     1 => VectorValue::Win,
@@ -139,8 +140,7 @@ impl AMVector {
 
     /// Returns a bit array where 1 represents Other >= Self.
     ///
-    /// Invalid worlds are evaluated as Big Losses.
-    /// So if it's invalid for both, it will be 1. Otherwise the array with a value will be the greater or equal one
+    /// If both worlds aren't valid, returns a 0
     fn other_great_or_equal_mask(&self, other: &AMVector) -> BitArray {
         // We can use a truth table to do bit manipulation to check if each value on Other >= Self.
         // Truth table: https://docs.google.com/spreadsheets/d/1L1wcisMe_e0_dOrFLyEGl2AScWFEzfFzRABxT_HSXyE/edit#gid=0
@@ -148,16 +148,14 @@ impl AMVector {
         // Output: (a && b) || (a && ~d) || ( ~b && ~c) || ( ~c && d)
         //  a       b       c       d
         //  O_win	O_big	S_win	S_big
-        let self_valid = self.is_valid;
-        let other_valid = other.is_valid;
 
-        let a = other.is_win & other_valid;
-        let b = other.is_big & other_valid;
-        let c = self.is_win & self_valid;
-        let d = self.is_big & self_valid;
+        let a = other.is_win;
+        let b = other.is_big;
+        let c = self.is_win;
+        let d = self.is_big;
 
         // each bit will be 1 if greater than or equal to the value at the same index
-        (a & b) | (a & !d) | (!b & !c) | (!c & d)
+        (a & b) | (a & !d) | (!b & !c) | (!c & d) & self.is_valid & other.is_valid
     }
 
     /// Set a valid world value. Panics if try to set an invalid world value
@@ -217,14 +215,24 @@ impl AMVector {
         let is_valid = self.is_valid | other.is_valid;
         let mut r = AMVector::new(self.len(), is_valid);
 
-        let o_gte_s = self.other_great_or_equal_mask(other);
+        // Sets where only self is valid
+        r.is_win |= self.is_win & self.is_valid & !other.is_valid;
+        r.is_big |= self.is_big & self.is_valid & !other.is_valid;
+
+        // Sets where only other is valid
+        r.is_win |= other.is_win & !self.is_valid & other.is_valid;
+        r.is_big |= other.is_big & !self.is_valid & other.is_valid;
 
         // where self is < other, set the values to self
+        let o_gte_s = self.other_great_or_equal_mask(other);
         r.is_win |= self.is_win & o_gte_s;
         r.is_big |= self.is_big & o_gte_s;
 
-        r.is_win |= other.is_win & !o_gte_s;
-        r.is_big |= other.is_big & !o_gte_s;
+        // where other < self, set the values to other
+        // We can't just invert the mask to account for invalid worlds
+        let s_gte_o = other.other_great_or_equal_mask(&self);
+        r.is_win |= other.is_win & s_gte_o;
+        r.is_big |= other.is_big & s_gte_o;
 
         r
     }
@@ -493,6 +501,25 @@ mod tests {
         let f3 = front!(amvec![1, 0, 0], amvec![0, 0, 1]);
         assert!(f2.less_than_or_equal(&f3));
         assert!(!f3.less_than_or_equal(&f2));
+    }
+
+    #[test]
+    fn test_vector_min() {
+        let v1 = amvec![0, 0, 0, 0];
+        let v2 = amvec![0, 0, 0, 0];
+        assert_eq!(v1.min(&v2), amvec![0, 0, 0, 0]);
+
+        let v1 = amvec![1, 0, 1, 0];
+        let v2 = amvec![0, 1, 0, 1];
+        assert_eq!(v1.min(&v2), amvec![0, 0, 0, 0]);
+
+        let v1 = amvec![0, 0, 0, 1];
+        let v2 = amvec![1, 0, 1, 1];
+        assert_eq!(v1.min(&v2), amvec![0, 0, 0, 1]);
+
+        let v1 = amvec![1, 0, 1, -1];
+        let v2 = amvec![0, 1, 1, 1];
+        assert_eq!(v1.min(&v2), amvec![0, 0, 1, 1]);
     }
 
     #[test]
