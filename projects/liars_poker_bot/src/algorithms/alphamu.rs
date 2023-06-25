@@ -17,13 +17,13 @@ use crate::{
     policy::Policy,
 };
 
-use self::front::AMFront;
+use self::front::{AMFront, VectorValue};
 
 use super::ismcts::{Evaluator, ResampleFromInfoState};
 
 mod front;
 
-const USELESS_WORLD_VALUE: i8 = -2;
+const USELESS_WORLD_VALUE: VectorValue = VectorValue::BigLoss;
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash)]
 pub enum Team {
@@ -420,7 +420,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
                     let w = w.unwrap();
                     let v = self.evaluator.evaluate_player(w, self.team.into());
 
-                    result.set(i, v as i8);
+                    result.set(i, VectorValue::from(v as i8));
                 } else if w.is_useless() {
                     result.set(i, USELESS_WORLD_VALUE);
                 }
@@ -448,7 +448,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
                 if w.is_useful() {
                     let w = w.unwrap();
                     let v = w.evaluate(self.team.into());
-                    result.set(i, v as i8);
+                    result.set(i, VectorValue::from(v as i8));
                 } else if w.is_useless() {
                     result.set(i, USELESS_WORLD_VALUE);
                 }

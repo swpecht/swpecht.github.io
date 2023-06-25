@@ -6,28 +6,68 @@ use crate::collections::bitarray::BitArray;
 
 use super::WorldState;
 
+#[derive(PartialEq, Eq, Clone, Copy, PartialOrd, Ord)]
+pub enum VectorValue {
+    BigLoss,
+    Loss,
+    Win,
+    BigWin,
+}
+
+impl From<VectorValue> for i8 {
+    fn from(value: VectorValue) -> Self {
+        match value {
+            VectorValue::BigLoss => -2,
+            VectorValue::Loss => -1,
+            VectorValue::Win => 1,
+            VectorValue::BigWin => 2,
+        }
+    }
+}
+
+impl From<i8> for VectorValue {
+    fn from(value: i8) -> Self {
+        use VectorValue::*;
+        match value {
+            2 => BigWin,
+            1 => Win,
+            -1 => Loss,
+            -2 => BigLoss,
+            _ => panic!("cannot convert value: {}", value),
+        }
+    }
+}
+
+impl Debug for VectorValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", i8::from(*self))
+    }
+}
+
 /// An alphamu vector
 ///
 /// True means the game is won, false means it is lost
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub(super) struct AMVector {
-    values: [i8; 32],
     is_valid: BitArray,
+    is_win: BitArray,
+    is_big: BitArray,
     len: usize,
 }
 
 impl AMVector {
     fn new(size: usize) -> Self {
         Self {
-            values: [0; 32],
             is_valid: BitArray::default(),
+            is_win: BitArray::default(),
+            is_big: BitArray::default(),
             len: size,
         }
     }
 
     /// Creates a new vec with the given values.
     ///
-    /// A value of -1 means the world is invalids
+    /// A value of -1 means the world is invalid
     fn _from_array(values: &[i8]) -> Self {
         let mut vec = AMVector::new(values.len());
         for (i, &v) in values.iter().enumerate() {
@@ -35,7 +75,12 @@ impl AMVector {
                 continue;
             } else {
                 vec.is_valid.set(i, true);
-                vec.values[i] = values[i];
+                let value = match v {
+                    0 => VectorValue::Loss,
+                    1 => VectorValue::Win,
+                    _ => panic!("invalid value: {}", v),
+                };
+                vec.set(i, value)
             }
         }
         vec
@@ -50,16 +95,11 @@ impl AMVector {
         }
 
         Self {
-            values: [0; 32],
             is_valid,
+            is_big: BitArray::default(),
+            is_win: BitArray::default(),
             len: worlds.len(),
         }
-    }
-
-    fn _push(&mut self, value: i8) {
-        self.is_valid.set(self.len, true);
-        self.values[self.len] = value;
-        self.len += 1;
     }
 
     fn len(&self) -> usize {
@@ -82,25 +122,53 @@ impl AMVector {
         assert_eq!(self.len, other.len);
         // as an optimization, we don't only check values for valid worlds. This should be ok if invalid values are
         // always 0. But care should be take to ensure this invariant holds in the future.
-        other
-            .values
-            .into_iter()
-            .zip(self.values)
-            .take(self.len)
-            .all(|(o, s)| o >= s)
+
+        // We can use a truth table to do bit manipulation to check if each value on Other >= Self.
+        // Truth table: https://docs.google.com/spreadsheets/d/1L1wcisMe_e0_dOrFLyEGl2AScWFEzfFzRABxT_HSXyE/edit#gid=0
+        // Calculator: https://www.dcode.fr/boolean-truth-table
+        // Output: (a && b) || (a && ~d) || ( ~b && ~c) || ( ~c && d)
+        //  a       b       c       d
+        //  O_win	O_big	S_win	S_big
+        let a: u32 = other.is_win.into();
+        let b: u32 = other.is_big.into();
+        let c: u32 = self.is_win.into();
+        let d: u32 = self.is_big.into();
+        let valid_mask: u32 = self.is_valid.into();
+
+        // each bit will be 1 if greater than or equal to the value at the same index
+        let mut o_gte_s = (a & b) | (a & !d) | (!b & !c) | (!c & d);
+
+        // set all invalid wolrds to 1, they shouldn't impact the outcome
+        o_gte_s |= !valid_mask;
+
+        !o_gte_s == 0
     }
 
-    pub fn set(&mut self, index: usize, value: i8) {
+    pub fn set(&mut self, index: usize, value: VectorValue) {
         self.is_valid.set(index, true);
-        self.values[index] = value;
+
+        use VectorValue::*;
+        if value == BigLoss || value == BigWin {
+            self.is_big.set(index, true);
+        }
+
+        if value == BigWin || value == Win {
+            self.is_win.set(index, true);
+        }
     }
 
-    pub fn get(&self, index: usize) -> i8 {
+    pub fn get(&self, index: usize) -> VectorValue {
         if !self.is_valid.get(index) {
             panic!("accessing invalid world index")
         }
 
-        self.values[index]
+        use VectorValue::*;
+        match (self.is_win.get(index), self.is_big.get(index)) {
+            (true, true) => BigWin,
+            (true, false) => Win,
+            (false, true) => BigLoss,
+            (false, false) => Loss,
+        }
     }
 
     /// The score of a vector is the average among all possible
@@ -112,7 +180,7 @@ impl AMVector {
         for i in 0..self.len {
             if self.is_valid.get(i) {
                 valid_worlds += 1;
-                total_score += self.values[i];
+                total_score += i8::from(self.get(i)) as i32;
             }
         }
         total_score as f64 / valid_worlds as f64
@@ -125,7 +193,7 @@ impl Debug for AMVector {
 
         for i in 0..self.len {
             match self.is_valid.get(i) {
-                true => write!(f, "{}", self.values[i]).unwrap(),
+                true => write!(f, "{:?}", self.get(i)).unwrap(),
                 false => write!(f, "x").unwrap(),
             }
         }
@@ -220,9 +288,9 @@ impl AMFront {
         self
     }
 
-    pub fn set(&mut self, idx: usize, value: i8) {
+    pub fn set(&mut self, idx: usize, value: VectorValue) {
         for v in self.vectors.values_mut().flatten() {
-            v.values[idx] = value;
+            v.set(idx, value);
             v.is_valid.set(idx, true);
         }
     }
@@ -268,11 +336,11 @@ impl AMFront {
     }
 
     /// returns the maximum value of a given world if there is atleast one useful world remaining
-    pub fn world_max(&self, i: usize) -> Option<i8> {
+    pub fn world_max(&self, i: usize) -> Option<VectorValue> {
         let mut max = None;
         for v in self.vectors.values().flatten() {
             if v.is_valid.get(i) {
-                max = Some(max.unwrap_or(i8::MIN).max(v.get(i)))
+                max = Some(max.unwrap_or(VectorValue::BigLoss).max(v.get(i)))
             }
         }
         max
@@ -295,7 +363,10 @@ impl Debug for AMFront {
 mod tests {
 
     use crate::{
-        algorithms::alphamu::{front::AMVector, AMFront},
+        algorithms::alphamu::{
+            front::{AMVector, VectorValue},
+            AMFront,
+        },
         amvec, front,
     };
 
@@ -380,13 +451,14 @@ mod tests {
 
     #[test]
     fn test_world_max() {
+        use VectorValue::*;
         let f1 = front!(amvec![0, 0, 0]);
-        assert_eq!(f1.world_max(0), Some(0));
+        assert_eq!(f1.world_max(0), Some(Loss));
 
         let f1 = front!(amvec![1, 0, 0], amvec![0, 0, 1]);
-        assert_eq!(f1.world_max(0), Some(1));
-        assert_eq!(f1.world_max(1), Some(0));
-        assert_eq!(f1.world_max(2), Some(1));
+        assert_eq!(f1.world_max(0), Some(Win));
+        assert_eq!(f1.world_max(1), Some(Loss));
+        assert_eq!(f1.world_max(2), Some(Win));
     }
 }
 
