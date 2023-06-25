@@ -130,26 +130,34 @@ impl AMVector {
         // as an optimization, we don't only check values for valid worlds. This should be ok if invalid values are
         // always 0. But care should be take to ensure this invariant holds in the future.
 
+        let mut o_gte_s = self.other_great_or_equal_mask(other);
+        // set all invalid wolrds to 1, they shouldn't impact the outcome
+        o_gte_s |= !self.is_valid;
+        // check if every single world is 1 now
+        u32::from(o_gte_s) == !0
+    }
+
+    /// Returns a bit array where 1 represents Other >= Self.
+    ///
+    /// Invalid worlds are evaluated as Big Losses.
+    /// So if it's invalid for both, it will be 1. Otherwise the array with a value will be the greater or equal one
+    fn other_great_or_equal_mask(&self, other: &AMVector) -> BitArray {
         // We can use a truth table to do bit manipulation to check if each value on Other >= Self.
         // Truth table: https://docs.google.com/spreadsheets/d/1L1wcisMe_e0_dOrFLyEGl2AScWFEzfFzRABxT_HSXyE/edit#gid=0
         // Calculator: https://www.dcode.fr/boolean-truth-table
         // Output: (a && b) || (a && ~d) || ( ~b && ~c) || ( ~c && d)
         //  a       b       c       d
         //  O_win	O_big	S_win	S_big
-        let a: u32 = other.is_win.into();
-        let b: u32 = other.is_big.into();
-        let c: u32 = self.is_win.into();
-        let d: u32 = self.is_big.into();
-        let valid_mask: u32 = self.is_valid.into();
+        let self_valid = self.is_valid;
+        let other_valid = other.is_valid;
+
+        let a = other.is_win & other_valid;
+        let b = other.is_big & other_valid;
+        let c = self.is_win & self_valid;
+        let d = self.is_big & self_valid;
 
         // each bit will be 1 if greater than or equal to the value at the same index
-        let mut o_gte_s = (a & b) | (a & !d) | (!b & !c) | (!c & d);
-
-        // set all invalid wolrds to 1, they shouldn't impact the outcome
-        o_gte_s |= !valid_mask;
-
-        // check if every single world is 1 now
-        o_gte_s == !0
+        (a & b) | (a & !d) | (!b & !c) | (!c & d)
     }
 
     /// Set a valid world value. Panics if try to set an invalid world value
@@ -200,6 +208,25 @@ impl AMVector {
             }
         }
         total_score as f64 / valid_worlds as f64
+    }
+
+    /// Returns the element wise minimum of two vectors. The new
+    /// vector has a valid world if either of vectors has a valid world
+    pub fn min(self, other: &Self) -> Self {
+        assert_eq!(self.len(), other.len());
+        let is_valid = self.is_valid | other.is_valid;
+        let mut r = AMVector::new(self.len(), is_valid);
+
+        let o_gte_s = self.other_great_or_equal_mask(other);
+
+        // where self is < other, set the values to self
+        r.is_win |= self.is_win & o_gte_s;
+        r.is_big |= self.is_big & o_gte_s;
+
+        r.is_win |= other.is_win & !o_gte_s;
+        r.is_big |= other.is_big & !o_gte_s;
+
+        r
     }
 }
 
@@ -255,22 +282,8 @@ impl AMFront {
 
                 for s in s_vectors {
                     for o in o_vectors {
-                        let mut r = AMVector::new(s.len, valid_key.into());
-
-                        // The Min players can choose different moves in different possible
-                        // worlds. So they take the minimum outcome over all the possible
-                        // moves for a possible world. So when they can choose between two
-                        // vectors they take for each index the minimum between the two values
-                        // at this index of the two vectors.
-                        for w in 0..s.len() {
-                            let v = match (s.is_valid.get(w), o.is_valid.get(w)) {
-                                (false, false) => continue,
-                                (true, false) => s.get(w),
-                                (false, true) => o.get(w),
-                                (true, true) => s.get(w).min(o.get(w)),
-                            };
-                            r.set(w, v);
-                        }
+                        let r = s.min(o);
+                        assert_eq!(u32::from(r.is_valid), valid_key);
 
                         // Remove vectors from result <= r
                         same_worlds.retain(|x| !x.is_dominated(&r));

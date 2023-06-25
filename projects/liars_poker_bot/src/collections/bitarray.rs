@@ -1,6 +1,9 @@
-use std::fmt::Display;
+use std::{
+    fmt::Display,
+    ops::{BitAnd, BitOr, BitOrAssign, Not},
+};
 
-#[derive(Default, Clone, Copy, PartialEq, Hash, Eq)]
+#[derive(Default, Clone, Copy, PartialEq, Hash, Eq, Debug)]
 pub struct BitArray {
     values: u32,
 }
@@ -33,5 +36,38 @@ impl From<BitArray> for u32 {
 impl From<u32> for BitArray {
     fn from(value: u32) -> Self {
         BitArray { values: value }
+    }
+}
+
+impl BitOr for BitArray {
+    type Output = BitArray;
+
+    fn bitor(mut self, rhs: Self) -> Self::Output {
+        self.values |= rhs.values;
+        self
+    }
+}
+
+impl BitAnd for BitArray {
+    type Output = BitArray;
+
+    fn bitand(mut self, rhs: Self) -> Self::Output {
+        self.values &= rhs.values;
+        self
+    }
+}
+
+impl Not for BitArray {
+    type Output = BitArray;
+
+    fn not(mut self) -> Self::Output {
+        self.values = !self.values;
+        self
+    }
+}
+
+impl BitOrAssign for BitArray {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.values |= rhs.values
     }
 }
