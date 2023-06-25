@@ -419,7 +419,8 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
                 if w.is_useful() {
                     let w = w.unwrap();
                     let v = self.evaluator.evaluate_player(w, self.team.into());
-
+                    assert!(v != 0.0);
+                    assert!(v as i8 != 0);
                     result.set(i, VectorValue::from(v as i8));
                 } else if w.is_useless() {
                     result.set(i, USELESS_WORLD_VALUE);
@@ -623,7 +624,7 @@ mod tests {
     fn test_alpha_mu_is_agent() {
         let mut alphamu = PolicyAgent::new(
             AlphaMuBot::new(
-                RandomRolloutEvaluator::new(100),
+                RandomRolloutEvaluator::new(1),
                 20,
                 10,
                 SeedableRng::seed_from_u64(42),
