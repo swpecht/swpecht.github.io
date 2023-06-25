@@ -5,6 +5,7 @@ use rustc_hash::FxHashMap;
 use crate::collections::bitarray::BitArray;
 
 use super::WorldState;
+use rayon::prelude::*;
 
 #[derive(PartialEq, Eq, Clone, Copy, PartialOrd, Ord)]
 pub enum VectorValue {
@@ -231,36 +232,44 @@ impl AMFront {
         }
 
         let mut result = AMFront::default();
-        for s in self.vectors.values().flatten() {
-            for o in other.vectors.values().flatten() {
-                let mut r = AMVector::new(s.len);
 
-                // The Min players can choose different moves in different possible
-                // worlds. So they take the minimum outcome over all the possible
-                // moves for a possible world. So when they can choose between two
-                // vectors they take for each index the minimum between the two values
-                // at this index of the two vectors.
-                for w in 0..s.len() {
-                    let v = match (s.is_valid.get(w), o.is_valid.get(w)) {
-                        (false, false) => continue,
-                        (true, false) => s.get(w),
-                        (false, true) => o.get(w),
-                        (true, true) => s.get(w).min(o.get(w)),
-                    };
-                    r.set(w, v);
-                }
+        for (s_valid, s_vectors) in &self.vectors {
+            for (o_valid, o_vectors) in &other.vectors {
+                // the new worlds will be the combination of the two keys
+                let valid_key = s_valid | o_valid;
+                let same_worlds = result.vectors.entry(valid_key).or_insert(Vec::new());
 
-                // Remove vectors from result <= r
-                let same_worlds = result
-                    .vectors
-                    .entry(r.is_valid.into())
-                    .or_insert(Vec::new());
-                same_worlds.retain(|x| !x.is_dominated(&r));
+                for s in s_vectors {
+                    for o in o_vectors {
+                        let mut r = AMVector::new(s.len);
 
-                // If no vector from result >= r
-                let is_r_dominated = same_worlds.iter().any(|x| r.is_dominated(x));
-                if !is_r_dominated && !same_worlds.contains(&r) {
-                    same_worlds.push(r);
+                        // The Min players can choose different moves in different possible
+                        // worlds. So they take the minimum outcome over all the possible
+                        // moves for a possible world. So when they can choose between two
+                        // vectors they take for each index the minimum between the two values
+                        // at this index of the two vectors.
+                        for w in 0..s.len() {
+                            let v = match (s.is_valid.get(w), o.is_valid.get(w)) {
+                                (false, false) => continue,
+                                (true, false) => s.get(w),
+                                (false, true) => o.get(w),
+                                (true, true) => s.get(w).min(o.get(w)),
+                            };
+                            r.set(w, v);
+                        }
+
+                        // Make sure we get the valid world key we expect
+                        assert_eq!(u32::from(r.is_valid), valid_key);
+
+                        // Remove vectors from result <= r
+                        same_worlds.retain(|x| !x.is_dominated(&r));
+
+                        // If no vector from result >= r
+                        let is_r_dominated = same_worlds.iter().any(|x| r.is_dominated(x));
+                        if !is_r_dominated && !same_worlds.contains(&r) {
+                            same_worlds.push(r);
+                        }
+                    }
                 }
             }
         }
