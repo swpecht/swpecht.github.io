@@ -89,25 +89,42 @@ fn tune_alpha_mu(num_games: usize) {
 }
 
 fn tune_ismcts(num_games: usize) {
-    info!("uct_c\tmax_simulations\tavg score");
+    info!("fiinal_policy\tselection\tuct_c\tmax_simulations\tavg score");
 
     let uct_values = vec![0.001, 0.1, 0.5, 1.0, 3.0, 5.0];
     let simulation_counts = vec![5, 10, 15, 20, 50, 100];
+    let policy_types = vec![
+        ISMCTSFinalPolicyType::MaxVisitCount,
+        ISMCTSFinalPolicyType::NormalizedVisitedCount,
+        ISMCTSFinalPolicyType::MaxValue,
+    ];
+    let child_selection_types = vec![ChildSelectionPolicy::Uct, ChildSelectionPolicy::Puct];
     let worlds = get_bower_deals(num_games, &mut rng());
 
-    for uct_c in uct_values {
-        for count in simulation_counts.clone() {
-            let config = ISMCTBotConfig {
-                child_selection_policy: ChildSelectionPolicy::Uct,
-                final_policy_type: ISMCTSFinalPolicyType::NormalizedVisitedCount,
-                max_world_samples: -1,
-            };
-            let alphamu = PolicyAgent::new(
-                ISMCTSBot::new(uct_c, count, OpenHandSolver::new(), config),
-                rng(),
-            );
-            let returns = get_returns(alphamu, worlds.clone());
-            info!("{}\t{}\t{:?}", uct_c, count, returns / num_games as f64);
+    for p in policy_types {
+        for c in child_selection_types.clone() {
+            for uct_c in uct_values.clone() {
+                for count in simulation_counts.clone() {
+                    let config = ISMCTBotConfig {
+                        child_selection_policy: c.clone(),
+                        final_policy_type: p.clone(),
+                        max_world_samples: -1,
+                    };
+                    let alphamu = PolicyAgent::new(
+                        ISMCTSBot::new(uct_c, count, OpenHandSolver::new(), config),
+                        rng(),
+                    );
+                    let returns = get_returns(alphamu, worlds.clone());
+                    info!(
+                        "{:?}\t{:?}\t{}\t{}\t{:?}",
+                        p,
+                        c,
+                        uct_c,
+                        count,
+                        returns / num_games as f64
+                    );
+                }
+            }
         }
     }
 }
@@ -149,7 +166,7 @@ fn get_returns<T: Agent<EuchreGameState>>(mut test_agent: T, worlds: Vec<EuchreG
 
 fn get_opponent() -> PolicyAgent<PIMCTSBot<EuchreGameState, OpenHandSolver>> {
     PolicyAgent::new(
-        PIMCTSBot::new(20, OpenHandSolver::new(), SeedableRng::seed_from_u64(100)),
+        PIMCTSBot::new(50, OpenHandSolver::new(), SeedableRng::seed_from_u64(100)),
         SeedableRng::seed_from_u64(101),
     )
 }
