@@ -19,7 +19,7 @@ use crate::{scripts::benchmark::rng, Args};
 
 use super::pass_on_bower::PassOnBowerIterator;
 
-pub fn benchmark_pass_on_bower(args: Args) {
+pub fn benchmark_pass_on_bower(num_games: usize) {
     let mut agents: Vec<(&str, &mut dyn Agent<EuchreGameState>)> = Vec::new();
 
     let policy_rng: StdRng = SeedableRng::seed_from_u64(56);
@@ -65,7 +65,7 @@ pub fn benchmark_pass_on_bower(args: Args) {
     );
     agents.push(("alphamu, open hand", alphamu));
 
-    let worlds = get_bower_deals(args.num_games, &mut rng());
+    let worlds = get_bower_deals(num_games, &mut rng());
 
     info!("starting benchmark, defended by: {}", "PIMCTS, n=100");
 
@@ -95,7 +95,7 @@ pub fn benchmark_pass_on_bower(args: Args) {
                 *r += gs.evaluate(p);
             }
         }
-        info!("{:?}\t{}", name, returns[1] / args.num_games as f64);
+        info!("{:?}\t{}", name, returns[1] / num_games as f64);
     }
 }
 
@@ -142,13 +142,12 @@ pub fn tune_alpha_mu(num_games: usize) {
 
 fn get_bower_deals(n: usize, rng: &mut StdRng) -> Vec<EuchreGameState> {
     let generator = PassOnBowerIterator::new();
-    let mut worlds = generator.collect_vec();
-    worlds.shuffle(rng);
-    worlds
-        .iter()
+    let mut worlds = generator
         .take(n)
         .map(|w| w.resample_from_istate(w.cur_player(), rng))
-        .collect_vec()
+        .collect_vec();
+    worlds.shuffle(rng);
+    worlds
 }
 
 pub fn get_rng() -> StdRng {

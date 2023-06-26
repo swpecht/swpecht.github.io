@@ -35,8 +35,6 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
     // let ra: &mut dyn Agent<G> = &mut RandomAgent::new();
     // agents.insert(ra.get_name(), ra);
 
-    // todo: have all agents play the same games
-
     let a = &mut PolicyAgent::new(PIMCTSBot::new(20, OpenHandSolver::new(), rng()), rng());
     agents.insert("pimcts, 20 worlds, open hand".to_string(), a);
 
