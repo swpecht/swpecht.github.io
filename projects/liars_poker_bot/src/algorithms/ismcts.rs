@@ -199,13 +199,7 @@ pub struct ISMCTSBot<G: GameState, E> {
 }
 
 impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> ISMCTSBot<G, E> {
-    pub fn new(
-        _game: Game<G>,
-        uct_c: f64,
-        max_simulations: i32,
-        evaluator: E,
-        config: ISMCTBotConfig,
-    ) -> Self {
+    pub fn new(uct_c: f64, max_simulations: i32, evaluator: E, config: ISMCTBotConfig) -> Self {
         Self {
             uct_c,
             max_simulations,
@@ -492,7 +486,6 @@ mod tests {
     #[test]
     fn test_ismcts_is_agent() {
         let mut ismcts = ISMCTSBot::new(
-            KuhnPoker::game(),
             1.5,
             100,
             RandomRolloutEvaluator::new(100),
@@ -523,7 +516,6 @@ mod tests {
     #[test]
     fn test_ismcts_optimal_player() {
         let mut ismcts = ISMCTSBot::new(
-            KuhnPoker::game(),
             1.5,
             100,
             RandomRolloutEvaluator::new(100),

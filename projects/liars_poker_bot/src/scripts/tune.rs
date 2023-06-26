@@ -4,6 +4,7 @@ use liars_poker_bot::{
     agents::{Agent, PolicyAgent},
     algorithms::{
         alphamu::AlphaMuBot,
+        ismcts::{ChildSelectionPolicy, ISMCTBotConfig, ISMCTSBot, ISMCTSFinalPolicyType},
         open_hand_solver::OpenHandSolver,
         pimcts::{self, PIMCTSBot},
     },
@@ -54,7 +55,7 @@ pub fn run_tune(args: TuneArgs) {
             match algorithm {
                 AgentAlgorithm::AlphaMu => tune_alpha_mu(num_games),
                 AgentAlgorithm::PIMCTS => tune_pimcts(num_games),
-                AgentAlgorithm::ISMCTS => todo!(),
+                AgentAlgorithm::ISMCTS => tune_ismcts(num_games),
             }
         }
         TuneMode::Compare {
@@ -87,8 +88,30 @@ fn tune_alpha_mu(num_games: usize) {
     }
 }
 
-/// Compare alpha mu performance for different world sizes and m on deals where
-/// the dealer has a face up jack
+fn tune_ismcts(num_games: usize) {
+    info!("uct_c\tmax_simulations\tavg score");
+
+    let uct_values = vec![0.001, 0.1, 0.5, 1.0, 3.0, 5.0];
+    let simulation_counts = vec![5, 10, 15, 20, 50, 100];
+    let worlds = get_bower_deals(num_games, &mut rng());
+
+    for uct_c in uct_values {
+        for count in simulation_counts.clone() {
+            let config = ISMCTBotConfig {
+                child_selection_policy: ChildSelectionPolicy::Uct,
+                final_policy_type: ISMCTSFinalPolicyType::NormalizedVisitedCount,
+                max_world_samples: -1,
+            };
+            let alphamu = PolicyAgent::new(
+                ISMCTSBot::new(uct_c, count, OpenHandSolver::new(), config),
+                rng(),
+            );
+            let returns = get_returns(alphamu, worlds.clone());
+            info!("{}\t{}\t{:?}", uct_c, count, returns / num_games as f64);
+        }
+    }
+}
+
 fn tune_pimcts(num_games: usize) {
     info!("num worlds\tavg score");
     let world_counts = vec![5, 10, 15, 20, 50, 100, 200];
