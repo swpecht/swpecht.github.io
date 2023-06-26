@@ -5,7 +5,7 @@ use std::{
 };
 
 use itertools::Itertools;
-use log::{debug, trace};
+use log::trace;
 use rand::rngs::StdRng;
 
 use crate::{

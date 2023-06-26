@@ -28,8 +28,8 @@ use scripts::agent_exploitability::calcualte_agent_exploitability;
 use scripts::benchmark::run_benchmark;
 use scripts::estimate_euchre_game_tree::estimate_euchre_game_tree;
 use scripts::pass_on_bower::open_hand_score_pass_on_bower;
-use scripts::pass_on_bower_alpha::{benchmark_pass_on_bower, tune_alpha_mu};
-use scripts::tune::{run_tune, TuneMode};
+use scripts::pass_on_bower_alpha::benchmark_pass_on_bower;
+use scripts::tune::{run_tune, TuneArgs};
 
 pub mod scripts;
 
@@ -43,7 +43,7 @@ enum GameType {
 }
 
 #[derive(Debug, Subcommand, Copy, Clone)]
-enum Command {
+enum Commands {
     Run,
     Benchmark,
     Analyze,
@@ -52,8 +52,7 @@ enum Command {
     Exploitability,
     PassOnBowerOpenHand,
     PassOnBowerAlpha { num_games: usize },
-    TuneAlphaMu { num_games: usize },
-    Tune { mode: TuneMode },
+    Tune(TuneArgs),
 }
 
 /// Simple program to greet a person
@@ -77,7 +76,7 @@ pub struct Args {
     modules: Vec<String>,
 
     #[command(subcommand)]
-    command: Command,
+    command: Commands,
 
     #[clap(short = 'v', long, action, default_value_t = 0)]
     verbosity: usize,
@@ -95,17 +94,16 @@ fn main() {
         .unwrap();
 
     match args.command {
-        Command::Run => run(args),
-        Command::Benchmark => run_benchmark(args),
-        Command::Analyze => run_analyze(args),
-        Command::Play => run_play(args),
-        Command::Scratch => run_scratch(args),
+        Commands::Run => run(args),
+        Commands::Benchmark => run_benchmark(args),
+        Commands::Analyze => run_analyze(args),
+        Commands::Play => run_play(args),
+        Commands::Scratch => run_scratch(args),
         // Mode::PassOnBowerOpenHand => calculate_open_hand_solver_convergence(args),
-        Command::PassOnBowerOpenHand => open_hand_score_pass_on_bower(args),
-        Command::Exploitability => calcualte_agent_exploitability(args),
-        Command::PassOnBowerAlpha { num_games } => benchmark_pass_on_bower(num_games),
-        Command::TuneAlphaMu { num_games: n } => tune_alpha_mu(n),
-        Command::Tune { mode } => run_tune(mode),
+        Commands::PassOnBowerOpenHand => open_hand_score_pass_on_bower(args),
+        Commands::Exploitability => calcualte_agent_exploitability(args),
+        Commands::PassOnBowerAlpha { num_games } => benchmark_pass_on_bower(num_games),
+        Commands::Tune(tune) => run_tune(tune),
     }
 }
 

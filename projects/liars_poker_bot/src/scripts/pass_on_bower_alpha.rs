@@ -99,48 +99,7 @@ pub fn benchmark_pass_on_bower(num_games: usize) {
     }
 }
 
-/// Compare alpha mu performance for different world sizes and m on deals where
-/// the dealer has a face up jack
-pub fn tune_alpha_mu(num_games: usize) {
-    info!("starting alpha mu tune run for {} games", num_games);
-    info!("m\tnum worlds\tavg score");
-    let ms = vec![1, 2, 3, 5];
-    let world_counts = vec![5, 10, 15, 20];
-    let worlds = get_bower_deals(num_games, &mut rng());
-
-    for m in ms {
-        for count in world_counts.clone() {
-            let mut alphamu = PolicyAgent::new(
-                AlphaMuBot::new(OpenHandSolver::new(), count, m, rng()),
-                rng(),
-            );
-            // Opponent always starts with same seed
-            let opponent = &mut PolicyAgent::new(
-                PIMCTSBot::new(20, OpenHandSolver::new(), SeedableRng::seed_from_u64(100)),
-                SeedableRng::seed_from_u64(101),
-            );
-            let mut returns = 0.0;
-
-            // all agents play the same games
-            for gs in worlds.clone().iter_mut() {
-                while !gs.is_terminal() {
-                    // Alphamu is the dealer team
-                    let a = if gs.cur_player() % 2 == 1 {
-                        alphamu.step(gs)
-                    } else {
-                        opponent.step(gs)
-                    };
-                    gs.apply_action(a);
-                }
-                // get the returns for alpha mu's team
-                returns += gs.evaluate(1);
-            }
-            info!("{}\t{}\t{:?}", m, count, returns / num_games as f64);
-        }
-    }
-}
-
-fn get_bower_deals(n: usize, rng: &mut StdRng) -> Vec<EuchreGameState> {
+pub fn get_bower_deals(n: usize, rng: &mut StdRng) -> Vec<EuchreGameState> {
     let generator = PassOnBowerIterator::new();
     let mut worlds = generator
         .take(n)
