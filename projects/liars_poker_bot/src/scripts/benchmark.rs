@@ -4,13 +4,19 @@ use itertools::Itertools;
 use liars_poker_bot::{
     agents::{Agent, PolicyAgent},
     algorithms::{
-        alphamu::AlphaMuBot, ismcts::ResampleFromInfoState, open_hand_solver::OpenHandSolver,
+        alphamu::AlphaMuBot,
+        ismcts::{
+            ChildSelectionPolicy, ISMCTBotConfig, ISMCTSBot, ISMCTSFinalPolicyType,
+            ResampleFromInfoState,
+        },
+        open_hand_solver::OpenHandSolver,
         pimcts::PIMCTSBot,
     },
     game::{bluff::Bluff, euchre::Euchre, kuhn_poker::KuhnPoker, Game, GameState},
 };
 use log::{debug, info};
 use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
+use rmp_serde::config;
 
 use crate::{Args, GameType};
 
@@ -35,8 +41,8 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
     // let ra: &mut dyn Agent<G> = &mut RandomAgent::new();
     // agents.insert(ra.get_name(), ra);
 
-    let a = &mut PolicyAgent::new(PIMCTSBot::new(20, OpenHandSolver::new(), rng()), rng());
-    agents.insert("pimcts, 20 worlds, open hand".to_string(), a);
+    let a = &mut PolicyAgent::new(PIMCTSBot::new(50, OpenHandSolver::new(), rng()), rng());
+    agents.insert("pimcts, 50 worlds, open hand".to_string(), a);
 
     // let a = &mut PolicyAgent::new(
     //     PIMCTSBot::new(10, RandomRolloutEvaluator::new(10), rng()),
@@ -44,9 +50,22 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
     // );
     // agents.insert("pimcts, 10 worlds, random".to_string(), a);
 
-    let alphamu =
-        &mut PolicyAgent::new(AlphaMuBot::new(OpenHandSolver::new(), 20, 3, rng()), rng());
-    agents.insert("alphamu, open hand".to_string(), alphamu);
+    // Based on tuning run for 100 games
+    // https://docs.google.com/spreadsheets/d/1AGjEaqjCkuuWveUBqbOBOMH0SPHPQ_YhH1jRHij7ErY/edit#gid=1418816031
+    let config = ISMCTBotConfig {
+        child_selection_policy: ChildSelectionPolicy::Uct,
+        final_policy_type: ISMCTSFinalPolicyType::MaxVisitCount,
+        max_world_samples: -1, // unlimited samples
+    };
+    let ismcts = &mut PolicyAgent::new(
+        ISMCTSBot::new(3.0, 100, OpenHandSolver::new(), config),
+        rng(),
+    );
+    agents.insert("ismcts".to_string(), ismcts);
+
+    // let alphamu =
+    //     &mut PolicyAgent::new(AlphaMuBot::new(OpenHandSolver::new(), 20, 3, rng()), rng());
+    // agents.insert("alphamu, open hand".to_string(), alphamu);
 
     let agent_names = agents.keys().cloned().collect_vec();
 
@@ -74,13 +93,21 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
                 let mut cur_game = 0;
                 while game_score[0] < 10 && game_score[1] < 10 {
                     let mut gs = game_source.next().unwrap();
-
                     while !gs.is_terminal() {
                         // We alternate who starts as the dealer each game
-                        let a = match (cur_game % 2 == i % 2, a2.is_some()) {
+                        // todo: in future should have different player start deal for each game
+                        let agent_1_turn = gs.cur_player() % 2 == cur_game % 2;
+                        info!(
+                            "cur_game: {}, cur_player: {}, is agent 1 turn?: {}: {}",
+                            cur_game,
+                            gs.cur_player(),
+                            agent_1_turn,
+                            gs
+                        );
+                        let a = match (agent_1_turn, a2.is_some()) {
                             (true, true) => a1.step(&gs),
                             (false, true) => a2.as_mut().unwrap().step(&gs),
-                            (_, false) => a1.step(&gs), // only agent a1
+                            (_, false) => todo!(), // a1.step(&gs), // only agent a1
                         };
                         gs.apply_action(a);
                     }
@@ -93,7 +120,7 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
                 }
 
                 info!(
-                    "{}\t{}\t{}\t{}",
+                    "\t{}\t{}\t{}\t{}",
                     a1_name, a2_name, game_score[0], game_score[1]
                 );
 

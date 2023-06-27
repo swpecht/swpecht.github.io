@@ -15,21 +15,10 @@ use rand::SeedableRng;
 
 use crate::scripts::{benchmark::rng, pass_on_bower_alpha::get_bower_deals};
 
-#[derive(Debug, Subcommand, Clone, Copy)]
+#[derive(Debug, ValueEnum, Clone, Copy)]
 pub enum TuneMode {
-    Compare {
-        test_algorithm: AgentAlgorithm,
-        #[clap(short, long, default_value_t = 20)]
-        worlds: usize,
-        #[clap(short, long, default_value_t = 3)]
-        m: usize,
-        num_games: usize,
-    },
-    ParameterSearch {
-        num_games: usize,
-        #[clap(long, value_enum)]
-        algorithm: AgentAlgorithm,
-    },
+    Compare,
+    ParameterSearch,
 }
 
 #[derive(Debug, ValueEnum, Clone, Copy)]
@@ -41,29 +30,30 @@ pub enum AgentAlgorithm {
 
 #[derive(Debug, Args, Clone, Copy)]
 pub struct TuneArgs {
-    #[command(subcommand)]
     command: TuneMode,
+    algorithm: AgentAlgorithm,
+    #[clap(short, long, default_value_t = 20)]
+    num_games: usize,
+    #[clap(short, long, default_value_t = 20)]
+    worlds: usize,
+    #[clap(short, long, default_value_t = 3)]
+    m: usize,
 }
 
 pub fn run_tune(args: TuneArgs) {
     match args.command {
-        TuneMode::ParameterSearch {
-            num_games,
-            algorithm,
-        } => {
-            println!("starting tune rune for: {:?}, n={}", algorithm, num_games);
-            match algorithm {
-                AgentAlgorithm::AlphaMu => tune_alpha_mu(num_games),
-                AgentAlgorithm::PIMCTS => tune_pimcts(num_games),
-                AgentAlgorithm::ISMCTS => tune_ismcts(num_games),
+        TuneMode::ParameterSearch => {
+            println!(
+                "starting tune rune for: {:?}, n={}",
+                args.algorithm, args.num_games
+            );
+            match args.algorithm {
+                AgentAlgorithm::AlphaMu => tune_alpha_mu(args.num_games),
+                AgentAlgorithm::PIMCTS => tune_pimcts(args.num_games),
+                AgentAlgorithm::ISMCTS => tune_ismcts(args.num_games),
             }
         }
-        TuneMode::Compare {
-            test_algorithm,
-            worlds,
-            m,
-            num_games,
-        } => todo!(),
+        TuneMode::Compare => todo!(),
     }
 }
 
@@ -147,13 +137,13 @@ fn get_returns<T: Agent<EuchreGameState>>(mut test_agent: T, worlds: Vec<EuchreG
     let mut returns = 0.0;
 
     // all agents play the same games
-    for gs in worlds.clone().iter_mut() {
+    for mut gs in worlds.into_iter() {
         while !gs.is_terminal() {
             // Alphamu is the dealer team
             let a = if gs.cur_player() % 2 == 1 {
-                test_agent.step(gs)
+                test_agent.step(&gs)
             } else {
-                opponent.step(gs)
+                opponent.step(&gs)
             };
             gs.apply_action(a);
         }
