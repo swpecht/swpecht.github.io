@@ -16,7 +16,6 @@ use liars_poker_bot::{
 };
 use log::{debug, info};
 use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
-use rmp_serde::config;
 
 use crate::{Args, GameType};
 
@@ -97,13 +96,13 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
                         // We alternate who starts as the dealer each game
                         // todo: in future should have different player start deal for each game
                         let agent_1_turn = gs.cur_player() % 2 == cur_game % 2;
-                        info!(
-                            "cur_game: {}, cur_player: {}, is agent 1 turn?: {}: {}",
-                            cur_game,
-                            gs.cur_player(),
-                            agent_1_turn,
-                            gs
-                        );
+                        // info!(
+                        //     "cur_game: {}, cur_player: {}, is agent 1 turn?: {}: {}",
+                        //     cur_game,
+                        //     gs.cur_player(),
+                        //     agent_1_turn,
+                        //     gs
+                        // );
                         let a = match (agent_1_turn, a2.is_some()) {
                             (true, true) => a1.step(&gs),
                             (false, true) => a2.as_mut().unwrap().step(&gs),
@@ -147,7 +146,7 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
     }
 }
 
-fn get_games<T: GameState>(game: Game<T>, n: usize, rng: &mut StdRng) -> Vec<T> {
+pub fn get_games<T: GameState>(game: Game<T>, n: usize, rng: &mut StdRng) -> Vec<T> {
     let mut games = Vec::new();
     let mut actions = Vec::new();
 

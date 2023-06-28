@@ -15,6 +15,7 @@ use liars_poker_bot::database::memory_node_store::MemoryNodeStore;
 use liars_poker_bot::database::Storage;
 use liars_poker_bot::game::bluff::{Bluff, BluffGameState};
 
+use liars_poker_bot::game::euchre::actions::EAction;
 use liars_poker_bot::game::euchre::{Euchre, EuchreGameState};
 use liars_poker_bot::game::kuhn_poker::{KPGameState, KuhnPoker};
 use liars_poker_bot::game::{Action, GameState};
@@ -112,17 +113,13 @@ fn run_scratch(_args: Args) {
     println!("kuhn poker size: {}", mem::size_of::<KPGameState>());
     println!("euchre size: {}", mem::size_of::<EuchreGameState>());
 
-    let gs = EuchreGameState::from("9s9hTh9dKd|QcJsQsQhAh|KcAcTsAsJh|9cKhJdQdAd|Td|T|9c|");
+    let gs = EuchreGameState::from("9cAcJs9h9d|TcQcTsQsKs|JhKhJdQdKd|JcKc9sQhAh|Ad|P");
 
-    let mut alphamu = AlphaMuBot::new(OpenHandSolver::new(), 3, 2, SeedableRng::seed_from_u64(42));
+    let mut alphamu = AlphaMuBot::new(OpenHandSolver::new(), 3, 20, SeedableRng::seed_from_u64(42));
     let policy = alphamu.action_probabilities(&gs);
 
-    for _ in 0..1 {
-        let mut alphamu =
-            AlphaMuBot::new(OpenHandSolver::new(), 3, 2, SeedableRng::seed_from_u64(42));
-        alphamu.use_optimizations = false;
-        info!("starting call for non-optimized alphamu");
-        assert_eq!(alphamu.action_probabilities(&gs), policy);
+    for (a, p) in policy.to_vec() {
+        println!("{} ({}): {}", EAction::from(a), a, p);
     }
 }
 

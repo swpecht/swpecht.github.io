@@ -5,7 +5,6 @@ use rustc_hash::FxHashMap;
 use crate::collections::bitarray::BitArray;
 
 use super::WorldState;
-use rayon::prelude::*;
 
 #[derive(PartialEq, Eq, Clone, Copy, PartialOrd, Ord)]
 pub enum VectorValue {

@@ -4,16 +4,21 @@ use liars_poker_bot::{
     agents::{Agent, PolicyAgent},
     algorithms::{
         alphamu::AlphaMuBot,
-        ismcts::{ChildSelectionPolicy, ISMCTBotConfig, ISMCTSBot, ISMCTSFinalPolicyType},
+        ismcts::{self, ChildSelectionPolicy, ISMCTBotConfig, ISMCTSBot, ISMCTSFinalPolicyType},
         open_hand_solver::OpenHandSolver,
         pimcts::{self, PIMCTSBot},
     },
-    game::{euchre::EuchreGameState, GameState},
+    game::{
+        euchre::{actions::EAction, Euchre, EuchreGameState},
+        GameState,
+    },
 };
 use log::info;
 use rand::SeedableRng;
 
 use crate::scripts::{benchmark::rng, pass_on_bower_alpha::get_bower_deals};
+
+use super::benchmark::get_games;
 
 #[derive(Debug, ValueEnum, Clone, Copy)]
 pub enum TuneMode {
@@ -53,7 +58,7 @@ pub fn run_tune(args: TuneArgs) {
                 AgentAlgorithm::ISMCTS => tune_ismcts(args.num_games),
             }
         }
-        TuneMode::Compare => todo!(),
+        TuneMode::Compare => compare_agents(args),
     }
 }
 
@@ -161,4 +166,41 @@ fn get_opponent() -> PolicyAgent<PIMCTSBot<EuchreGameState, OpenHandSolver>> {
     )
 }
 
-fn compare_agents(args: TuneArgs) {}
+fn compare_agents(args: TuneArgs) {
+    let games = get_games(Euchre::game(), args.num_games, &mut rng());
+
+    let mut pimcts = get_opponent();
+    // Based on tuning run for 100 games
+    // https://docs.google.com/spreadsheets/d/1AGjEaqjCkuuWveUBqbOBOMH0SPHPQ_YhH1jRHij7ErY/edit#gid=1418816031
+    let config = ISMCTBotConfig {
+        child_selection_policy: ChildSelectionPolicy::Uct,
+        final_policy_type: ISMCTSFinalPolicyType::MaxVisitCount,
+        max_world_samples: -1, // unlimited samples
+    };
+    // let mut test_agent = PolicyAgent::new(
+    //     ISMCTSBot::new(3.0, 100, OpenHandSolver::new(), config),
+    //     rng(),
+    // );
+
+    let test_agent =
+        &mut PolicyAgent::new(AlphaMuBot::new(OpenHandSolver::new(), 20, 3, rng()), rng());
+
+    for mut gs in games {
+        while !gs.is_terminal() {
+            let baseline_a = pimcts.step(&gs);
+            let test_a = test_agent.step(&gs);
+
+            if baseline_a != test_a {
+                info!(
+                    "{}: {}: baseline: {}, test: {}",
+                    gs.cur_player(),
+                    gs,
+                    EAction::from(baseline_a),
+                    EAction::from(test_a)
+                );
+            }
+
+            gs.apply_action(baseline_a);
+        }
+    }
+}
