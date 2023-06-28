@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 
+use itertools::Itertools;
 use rustc_hash::FxHashMap;
 
 use crate::collections::bitarray::BitArray;
@@ -408,7 +409,13 @@ impl Debug for AMFront {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{{").unwrap();
 
-        for v in &self.vectors {
+        let mut vectors = self.vectors.values().flatten().collect_vec();
+        vectors.sort_by(|&a, &b| {
+            a.score()
+                .partial_cmp(&b.score())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        for v in vectors.iter().rev() {
             write!(f, "{:?}", v).unwrap();
         }
 

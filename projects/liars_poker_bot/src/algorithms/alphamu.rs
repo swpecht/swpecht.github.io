@@ -158,6 +158,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         // For now this is commented out as it doesn't seem to improve performance
         if self.use_optimizations {
             for i in 1..self.m {
+                trace!("starting alpha mu iterative deepening with m={}", i);
                 self.alphamu(&mut s, i, worlds.clone(), None);
             }
         }

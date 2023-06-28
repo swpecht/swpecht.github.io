@@ -115,7 +115,7 @@ fn run_scratch(_args: Args) {
 
     let gs = EuchreGameState::from("9cAcJs9h9d|TcQcTsQsKs|JhKhJdQdKd|JcKc9sQhAh|Ad|P");
 
-    let mut alphamu = AlphaMuBot::new(OpenHandSolver::new(), 3, 20, SeedableRng::seed_from_u64(42));
+    let mut alphamu = AlphaMuBot::new(OpenHandSolver::new(), 20, 3, SeedableRng::seed_from_u64(42));
     let policy = alphamu.action_probabilities(&gs);
 
     for (a, p) in policy.to_vec() {
