@@ -183,7 +183,7 @@ fn compare_agents(args: TuneArgs) {
     // );
 
     let test_agent =
-        &mut PolicyAgent::new(AlphaMuBot::new(OpenHandSolver::new(), 20, 3, rng()), rng());
+        &mut PolicyAgent::new(AlphaMuBot::new(OpenHandSolver::new(), 20, 25, rng()), rng());
 
     for mut gs in games {
         while !gs.is_terminal() {

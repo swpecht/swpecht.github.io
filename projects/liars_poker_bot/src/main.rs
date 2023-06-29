@@ -113,9 +113,14 @@ fn run_scratch(_args: Args) {
     println!("kuhn poker size: {}", mem::size_of::<KPGameState>());
     println!("euchre size: {}", mem::size_of::<EuchreGameState>());
 
-    let gs = EuchreGameState::from("9cAcJs9h9d|TcQcTsQsKs|JhKhJdQdKd|JcKc9sQhAh|Ad|P");
+    let gs = EuchreGameState::from("Jc9sTsKsJd|9cKh9dQdKd|QcJhQhTdAd|TcJsAs9hTh|Ac|P");
 
-    let mut alphamu = AlphaMuBot::new(OpenHandSolver::new(), 20, 3, SeedableRng::seed_from_u64(42));
+    let mut alphamu = AlphaMuBot::new(
+        OpenHandSolver::new(),
+        20,
+        25,
+        SeedableRng::seed_from_u64(42),
+    );
     let policy = alphamu.action_probabilities(&gs);
 
     for (a, p) in policy.to_vec() {

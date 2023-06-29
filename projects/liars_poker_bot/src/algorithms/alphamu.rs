@@ -293,24 +293,26 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
 
                 front = front.max(f);
 
-                // Root cut optimization from the optimizing alpha mu paper:
-                //
-                // If a move at the root of αµ for M Max moves gives the same proba-
-                // bility of winning than the best move of the previous iteration of iter-
-                // ative deepening for M − 1 Max moves, the search can be safely be
-                // stopped since it is not possible to find a better move. A deeper search
-                // will always return a worse probability than the previous search be-
-                // cause of strategy fusion. Therefore if the probability is equal to the
-                // one of the best move of the previous shallower search the probability
-                // cannot be improved and a better move cannot be found so it is safe
-                // to cut.
-                if s.is_empty()
-                    && self.use_optimizations
-                    && table_score.is_some()
-                    && front.score() == table_score.unwrap()
-                {
-                    break;
-                }
+                // Temporarily disabling this as deeper searchers can end up being better with impossible moves
+                // // Root cut optimization from the optimizing alpha mu paper:
+                // //
+                // // If a move at the root of αµ for M Max moves gives the same proba-
+                // // bility of winning than the best move of the previous iteration of iter-
+                // // ative deepening for M − 1 Max moves, the search can be safely be
+                // // stopped since it is not possible to find a better move. A deeper search
+                // // will always return a worse probability than the previous search be-
+                // // cause of strategy fusion. Therefore if the probability is equal to the
+                // // one of the best move of the previous shallower search the probability
+                // // cannot be improved and a better move cannot be found so it is safe
+                // // to cut.
+                // if s.is_empty()
+                //     && self.use_optimizations
+                //     && table_score.is_some()
+                //     && front.score() == table_score.unwrap()
+                // {
+                //     trace!("root cut optiminzation for: {:?} on action: {}", s, a);
+                //     break;
+                // }
             }
         }
 
@@ -324,7 +326,12 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
             };
             self.cache.insert(s, cache_value);
         }
-        trace!("found front for alpha mu: {:?}, {:?}", s, front);
+        trace!(
+            "found front for alpha mu: {:?}, score: {}, {:?}",
+            s,
+            front.score(),
+            front
+        );
         worlds.clear();
         self.cache.world_vector_pool.attach(worlds);
 

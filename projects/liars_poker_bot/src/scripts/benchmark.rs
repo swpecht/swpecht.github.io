@@ -19,6 +19,8 @@ use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
 
 use crate::{Args, GameType};
 
+pub struct BenchmarkArgs {}
+
 pub fn run_benchmark(args: Args) {
     match args.game {
         GameType::KuhnPoker => run_benchmark_for_game(args, KuhnPoker::game()),
@@ -145,6 +147,8 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
         }
     }
 }
+
+fn run_backmark_card_play_only() {}
 
 pub fn get_games<T: GameState>(game: Game<T>, n: usize, rng: &mut StdRng) -> Vec<T> {
     let mut games = Vec::new();

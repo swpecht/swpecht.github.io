@@ -375,19 +375,19 @@ impl AMFront {
 
     pub fn less_than_or_equal(&self, other: &AMFront) -> bool {
         for (valid_key, s_vecs) in self.vectors.iter() {
-            let mut one_greater_or_equal = false;
             if let Some(other_vecs) = other.vectors.get(valid_key) {
                 for s in s_vecs {
+                    let mut vector_dominated = false;
                     for v in other_vecs {
                         if s.is_dominated(v) {
-                            one_greater_or_equal = true;
+                            vector_dominated = true;
                             break;
                         }
                     }
+                    if !vector_dominated {
+                        return false;
+                    }
                 }
-            }
-            if !one_greater_or_equal {
-                return false;
             }
         }
         true
