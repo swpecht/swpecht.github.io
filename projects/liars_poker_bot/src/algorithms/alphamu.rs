@@ -224,7 +224,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
                     table_value.unwrap().front,
                     &alpha.unwrap()
                 );
-                return (front, None);
+                return (table_value.unwrap().front.clone(), None);
             }
 
             if let Some(t) = table_value {
