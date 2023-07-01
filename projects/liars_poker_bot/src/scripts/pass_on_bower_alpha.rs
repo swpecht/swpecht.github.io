@@ -15,7 +15,7 @@ use liars_poker_bot::{
 use log::{debug, info};
 use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
 
-use crate::{scripts::benchmark::rng, Args};
+use crate::{scripts::benchmark::get_rng, Args};
 
 use super::pass_on_bower::PassOnBowerIterator;
 
@@ -65,7 +65,7 @@ pub fn benchmark_pass_on_bower(num_games: usize) {
     );
     agents.push(("alphamu, open hand", alphamu));
 
-    let worlds = get_bower_deals(num_games, &mut rng());
+    let worlds = get_bower_deals(num_games, &mut get_rng());
 
     info!("starting benchmark, defended by: {}", "PIMCTS, n=100");
 
@@ -107,8 +107,4 @@ pub fn get_bower_deals(n: usize, rng: &mut StdRng) -> Vec<EuchreGameState> {
         .collect_vec();
     worlds.shuffle(rng);
     worlds
-}
-
-pub fn get_rng() -> StdRng {
-    StdRng::from_rng(thread_rng()).unwrap()
 }

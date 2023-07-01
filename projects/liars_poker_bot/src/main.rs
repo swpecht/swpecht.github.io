@@ -26,7 +26,7 @@ use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
 use scripts::agent_exploitability::calcualte_agent_exploitability;
-use scripts::benchmark::run_benchmark;
+use scripts::benchmark::{run_benchmark, BenchmarkArgs};
 use scripts::estimate_euchre_game_tree::estimate_euchre_game_tree;
 use scripts::pass_on_bower::open_hand_score_pass_on_bower;
 use scripts::pass_on_bower_alpha::benchmark_pass_on_bower;
@@ -46,7 +46,7 @@ enum GameType {
 #[derive(Debug, Subcommand, Copy, Clone)]
 enum Commands {
     Run,
-    Benchmark,
+    Benchmark(BenchmarkArgs),
     Analyze,
     Play,
     Scratch,
@@ -96,7 +96,7 @@ fn main() {
 
     match args.command {
         Commands::Run => run(args),
-        Commands::Benchmark => run_benchmark(args),
+        Commands::Benchmark(bench) => run_benchmark(bench),
         Commands::Analyze => run_analyze(args),
         Commands::Play => run_play(args),
         Commands::Scratch => run_scratch(args),

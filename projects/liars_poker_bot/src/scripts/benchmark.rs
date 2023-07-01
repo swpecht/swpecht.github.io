@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
+use clap::{Args, ValueEnum};
 use itertools::Itertools;
 use liars_poker_bot::{
-    agents::{Agent, PolicyAgent},
+    agents::{Agent, PolicyAgent, RandomAgent},
     algorithms::{
         alphamu::AlphaMuBot,
         ismcts::{
@@ -12,37 +13,64 @@ use liars_poker_bot::{
         open_hand_solver::OpenHandSolver,
         pimcts::PIMCTSBot,
     },
-    game::{bluff::Bluff, euchre::Euchre, kuhn_poker::KuhnPoker, Game, GameState},
+    game::{
+        bluff::Bluff,
+        euchre::{EPhase, Euchre, EuchreGameState},
+        kuhn_poker::KuhnPoker,
+        Game, GameState,
+    },
 };
 use log::{debug, info};
 use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
 
-use crate::{Args, GameType};
+use crate::GameType;
 
-pub struct BenchmarkArgs {}
+#[derive(ValueEnum, Clone, Copy, Debug)]
+pub enum BenchmarkMode {
+    FullGame,
+    CardPlay,
+}
 
-pub fn run_benchmark(args: Args) {
-    match args.game {
-        GameType::KuhnPoker => run_benchmark_for_game(args, KuhnPoker::game()),
-        GameType::Euchre => run_benchmark_for_game(args, Euchre::game()),
-        GameType::Bluff11 => run_benchmark_for_game(args, Bluff::game(1, 1)),
-        GameType::Bluff21 => run_benchmark_for_game(args, Bluff::game(2, 1)),
-        GameType::Bluff22 => run_benchmark_for_game(args, Bluff::game(2, 2)),
+#[derive(Args, Debug, Clone, Copy)]
+pub struct BenchmarkArgs {
+    #[clap(short, long, default_value_t = 20)]
+    num_games: usize,
+    #[clap(long, value_enum, default_value_t=GameType::Euchre)]
+    game: GameType,
+    mode: BenchmarkMode,
+}
+
+pub fn run_benchmark(args: BenchmarkArgs) {
+    match args.mode {
+        BenchmarkMode::FullGame => match args.game {
+            GameType::KuhnPoker => run_full_game_benchmark(args, KuhnPoker::game()),
+            GameType::Euchre => run_full_game_benchmark(args, Euchre::game()),
+            GameType::Bluff11 => run_full_game_benchmark(args, Bluff::game(1, 1)),
+            GameType::Bluff21 => run_full_game_benchmark(args, Bluff::game(2, 1)),
+            GameType::Bluff22 => run_full_game_benchmark(args, Bluff::game(2, 2)),
+        },
+        BenchmarkMode::CardPlay => run_card_play_benchmark(args),
     }
 }
 
 /// Calculate the win-rate of first to 10 for each agent
-fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Args, game: Game<G>) {
+fn run_full_game_benchmark<G: GameState + ResampleFromInfoState + Send>(
+    args: BenchmarkArgs,
+    game: Game<G>,
+) {
     // all agents play the same games
-    let mut game_rng = rng();
+    let mut game_rng = get_rng();
     // may need up to 20x the number fo full games to 10
     let games = get_games(game, args.num_games * 20, &mut game_rng);
 
     let mut agents: HashMap<String, &mut dyn Agent<G>> = HashMap::new();
-    // let ra: &mut dyn Agent<G> = &mut RandomAgent::new();
-    // agents.insert(ra.get_name(), ra);
+    let ra: &mut dyn Agent<G> = &mut RandomAgent::new();
+    agents.insert(ra.get_name(), ra);
 
-    let a = &mut PolicyAgent::new(PIMCTSBot::new(50, OpenHandSolver::new(), rng()), rng());
+    let a = &mut PolicyAgent::new(
+        PIMCTSBot::new(50, OpenHandSolver::new(), get_rng()),
+        get_rng(),
+    );
     agents.insert("pimcts, 50 worlds, open hand".to_string(), a);
 
     // let a = &mut PolicyAgent::new(
@@ -53,21 +81,32 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
 
     // Based on tuning run for 100 games
     // https://docs.google.com/spreadsheets/d/1AGjEaqjCkuuWveUBqbOBOMH0SPHPQ_YhH1jRHij7ErY/edit#gid=1418816031
-    let config = ISMCTBotConfig {
-        child_selection_policy: ChildSelectionPolicy::Uct,
-        final_policy_type: ISMCTSFinalPolicyType::MaxVisitCount,
-        max_world_samples: -1, // unlimited samples
-    };
-    let ismcts = &mut PolicyAgent::new(
-        ISMCTSBot::new(3.0, 100, OpenHandSolver::new(), config),
-        rng(),
+    // let config = ISMCTBotConfig {
+    //     child_selection_policy: ChildSelectionPolicy::Uct,
+    //     final_policy_type: ISMCTSFinalPolicyType::MaxVisitCount,
+    //     max_world_samples: -1, // unlimited samples
+    // };
+    // let ismcts = &mut PolicyAgent::new(
+    //     ISMCTSBot::new(3.0, 100, OpenHandSolver::new(), config),
+    //     rng(),
+    // );
+    // agents.insert("ismcts".to_string(), ismcts);
+
+    let alphamu = &mut PolicyAgent::new(
+        AlphaMuBot::new(OpenHandSolver::new(), 30, 20, get_rng()),
+        get_rng(),
     );
-    agents.insert("ismcts".to_string(), ismcts);
+    agents.insert("alphamu, open hand".to_string(), alphamu);
 
-    // let alphamu =
-    //     &mut PolicyAgent::new(AlphaMuBot::new(OpenHandSolver::new(), 20, 3, rng()), rng());
-    // agents.insert("alphamu, open hand".to_string(), alphamu);
+    score_games(args, agents, games);
+}
 
+/// Calculate the win-rate of first to 10 for each agent
+fn score_games<G: GameState + ResampleFromInfoState + Send>(
+    args: BenchmarkArgs,
+    mut agents: HashMap<String, &mut dyn Agent<G>>,
+    games: Vec<G>,
+) {
     let agent_names = agents.keys().cloned().collect_vec();
 
     for a1_name in agent_names.clone() {
@@ -86,14 +125,20 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
 
             debug!("starting play for {} vs {}", a1_name, a2_name);
             let mut games_won = vec![0; 2];
-            let mut game_source = games.clone().into_iter();
 
-            for i in 0..args.num_games {
+            // Make sure that each "game" to 10 is identical, we may need up to 20 games for this to happen
+            let mut chunked_games = Vec::new();
+            for g in &games.clone().into_iter().chunks(20) {
+                chunked_games.push(g.collect_vec());
+            }
+
+            for _ in 0..args.num_games {
+                let mut overall_games = chunked_games.pop().unwrap().into_iter();
                 let mut game_score = [0, 0];
                 // track the current game in the game of 10 for dealer tracking
                 let mut cur_game = 0;
                 while game_score[0] < 10 && game_score[1] < 10 {
-                    let mut gs = game_source.next().unwrap();
+                    let mut gs = overall_games.next().unwrap();
                     while !gs.is_terminal() {
                         // We alternate who starts as the dealer each game
                         // todo: in future should have different player start deal for each game
@@ -148,10 +193,67 @@ fn run_benchmark_for_game<G: GameState + ResampleFromInfoState + Send>(args: Arg
     }
 }
 
-fn run_backmark_card_play_only() {}
+/// Runs the benchmark for euchre, but only for the card play portion.
+///
+/// Uses PIMCTS to do the bidding for all players
+fn run_card_play_benchmark(args: BenchmarkArgs) {
+    assert!(matches!(args.game, GameType::Euchre));
+
+    // all agents play the same games
+    info!("generating games...");
+    let mut game_rng = get_rng();
+    let games = get_card_play_games(args.num_games * 20, &mut game_rng);
+    info!("finished generated {} games", games.len());
+
+    let mut agents: HashMap<String, &mut dyn Agent<EuchreGameState>> = HashMap::new();
+    // let ra: &mut dyn Agent<G> = &mut RandomAgent::new();
+    // agents.insert(ra.get_name(), ra);
+
+    let a = &mut PolicyAgent::new(
+        PIMCTSBot::new(50, OpenHandSolver::new(), get_rng()),
+        get_rng(),
+    );
+    agents.insert("pimcts, 50 worlds hand".to_string(), a);
+
+    let alphamu = &mut PolicyAgent::new(
+        AlphaMuBot::new(OpenHandSolver::new(), 50, 5, get_rng()),
+        get_rng(),
+    );
+    agents.insert("alphamu, 50 worlds, m=5".to_string(), alphamu);
+
+    score_games(args, agents, games);
+}
+
+pub fn get_card_play_games(n: usize, rng: &mut StdRng) -> Vec<EuchreGameState> {
+    let mut games = get_games(Euchre::game(), n, rng);
+
+    let mut agent = PolicyAgent::new(
+        PIMCTSBot::new(50, OpenHandSolver::new(), get_rng()),
+        get_rng(),
+    );
+
+    fn bid(
+        mut gs: EuchreGameState,
+        agent: &mut PolicyAgent<PIMCTSBot<EuchreGameState, OpenHandSolver>>,
+    ) -> EuchreGameState {
+        while gs.phase() != EPhase::Play {
+            let a = agent.step(&gs);
+            gs.apply_action(a);
+        }
+
+        gs
+    }
+
+    games = games
+        .into_iter()
+        .map(|gs| bid(gs, &mut agent))
+        .collect_vec();
+
+    games
+}
 
 pub fn get_games<T: GameState>(game: Game<T>, n: usize, rng: &mut StdRng) -> Vec<T> {
-    let mut games = Vec::new();
+    let mut games = Vec::with_capacity(n);
     let mut actions = Vec::new();
 
     for _ in 0..n {
@@ -168,6 +270,6 @@ pub fn get_games<T: GameState>(game: Game<T>, n: usize, rng: &mut StdRng) -> Vec
     games
 }
 
-pub fn rng() -> StdRng {
+pub fn get_rng() -> StdRng {
     StdRng::from_rng(thread_rng()).unwrap()
 }

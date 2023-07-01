@@ -224,6 +224,8 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
                     table_value.unwrap().front,
                     &alpha.unwrap()
                 );
+                // We return previous dominated result here since
+                // we don't want to return empty fronts
                 return (table_value.unwrap().front.clone(), None);
             }
 

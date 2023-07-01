@@ -16,7 +16,7 @@ use liars_poker_bot::{
 use log::info;
 use rand::SeedableRng;
 
-use crate::scripts::{benchmark::rng, pass_on_bower_alpha::get_bower_deals};
+use crate::scripts::{benchmark::get_rng, pass_on_bower_alpha::get_bower_deals};
 
 use super::benchmark::get_games;
 
@@ -67,15 +67,15 @@ pub fn run_tune(args: TuneArgs) {
 fn tune_alpha_mu(num_games: usize) {
     info!("m\tnum worlds\tavg score");
 
-    let ms = vec![1, 2, 3, 5];
-    let world_counts = vec![5, 10, 15, 20];
-    let worlds = get_bower_deals(num_games, &mut rng());
+    let ms = vec![1, 5, 10, 20];
+    let world_counts = vec![10, 15, 20, 30];
+    let worlds = get_bower_deals(num_games, &mut get_rng());
 
     for m in ms {
         for count in world_counts.clone() {
             let alphamu = PolicyAgent::new(
-                AlphaMuBot::new(OpenHandSolver::new(), count, m, rng()),
-                rng(),
+                AlphaMuBot::new(OpenHandSolver::new(), count, m, get_rng()),
+                get_rng(),
             );
             let returns = get_returns(alphamu, worlds.clone());
             info!("{}\t{}\t{:?}", m, count, returns / num_games as f64);
@@ -94,7 +94,7 @@ fn tune_ismcts(num_games: usize) {
         ISMCTSFinalPolicyType::MaxValue,
     ];
     let child_selection_types = vec![ChildSelectionPolicy::Uct, ChildSelectionPolicy::Puct];
-    let worlds = get_bower_deals(num_games, &mut rng());
+    let worlds = get_bower_deals(num_games, &mut get_rng());
 
     for p in policy_types {
         for c in child_selection_types.clone() {
@@ -107,7 +107,7 @@ fn tune_ismcts(num_games: usize) {
                     };
                     let alphamu = PolicyAgent::new(
                         ISMCTSBot::new(uct_c, count, OpenHandSolver::new(), config),
-                        rng(),
+                        get_rng(),
                     );
                     let returns = get_returns(alphamu, worlds.clone());
                     info!(
@@ -127,10 +127,13 @@ fn tune_ismcts(num_games: usize) {
 fn tune_pimcts(num_games: usize) {
     info!("num worlds\tavg score");
     let world_counts = vec![5, 10, 15, 20, 50, 100, 200];
-    let worlds = get_bower_deals(num_games, &mut rng());
+    let worlds = get_bower_deals(num_games, &mut get_rng());
 
     for count in world_counts {
-        let pimcts = PolicyAgent::new(PIMCTSBot::new(count, OpenHandSolver::new(), rng()), rng());
+        let pimcts = PolicyAgent::new(
+            PIMCTSBot::new(count, OpenHandSolver::new(), get_rng()),
+            get_rng(),
+        );
         let returns = get_returns(pimcts, worlds.clone());
         info!("{}\t{:?}", count, returns / num_games as f64);
     }
@@ -167,7 +170,7 @@ fn get_opponent() -> PolicyAgent<PIMCTSBot<EuchreGameState, OpenHandSolver>> {
 }
 
 fn compare_agents(args: TuneArgs) {
-    let games = get_games(Euchre::game(), args.num_games, &mut rng());
+    let games = get_games(Euchre::game(), args.num_games, &mut get_rng());
 
     let mut pimcts = get_opponent();
     // Based on tuning run for 100 games
@@ -182,8 +185,10 @@ fn compare_agents(args: TuneArgs) {
     //     rng(),
     // );
 
-    let test_agent =
-        &mut PolicyAgent::new(AlphaMuBot::new(OpenHandSolver::new(), 20, 25, rng()), rng());
+    let test_agent = &mut PolicyAgent::new(
+        AlphaMuBot::new(OpenHandSolver::new(), 20, 25, get_rng()),
+        get_rng(),
+    );
 
     for mut gs in games {
         while !gs.is_terminal() {

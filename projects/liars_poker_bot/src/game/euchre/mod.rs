@@ -72,7 +72,7 @@ pub struct EuchreGameState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy, Serialize, Deserialize, Hash)]
-enum EPhase {
+pub enum EPhase {
     DealHands,
     DealFaceUp,
     Pickup,
@@ -430,7 +430,7 @@ impl EuchreGameState {
         self.key.push(a);
     }
 
-    fn phase(&self) -> EPhase {
+    pub fn phase(&self) -> EPhase {
         self.phase
     }
 
