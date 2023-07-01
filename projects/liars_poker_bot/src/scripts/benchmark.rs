@@ -132,7 +132,7 @@ fn score_games<G: GameState + ResampleFromInfoState + Send>(
                 chunked_games.push(g.collect_vec());
             }
 
-            for _ in 0..args.num_games {
+            for i in 0..args.num_games {
                 let mut overall_games = chunked_games.pop().unwrap().into_iter();
                 let mut game_score = [0, 0];
                 // track the current game in the game of 10 for dealer tracking
@@ -142,7 +142,7 @@ fn score_games<G: GameState + ResampleFromInfoState + Send>(
                     while !gs.is_terminal() {
                         // We alternate who starts as the dealer each game
                         // todo: in future should have different player start deal for each game
-                        let agent_1_turn = gs.cur_player() % 2 == cur_game % 2;
+                        let agent_1_turn = gs.cur_player() % 2 == (cur_game % 2 + i % 2) % 2;
                         // info!(
                         //     "cur_game: {}, cur_player: {}, is agent 1 turn?: {}: {}",
                         //     cur_game,
@@ -208,6 +208,9 @@ fn run_card_play_benchmark(args: BenchmarkArgs) {
     let mut agents: HashMap<String, &mut dyn Agent<EuchreGameState>> = HashMap::new();
     // let ra: &mut dyn Agent<G> = &mut RandomAgent::new();
     // agents.insert(ra.get_name(), ra);
+
+    let ra: &mut dyn Agent<EuchreGameState> = &mut RandomAgent::new();
+    agents.insert(ra.get_name(), ra);
 
     let a = &mut PolicyAgent::new(
         PIMCTSBot::new(50, OpenHandSolver::new(), get_rng()),
