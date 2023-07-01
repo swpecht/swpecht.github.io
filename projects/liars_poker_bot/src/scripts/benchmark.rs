@@ -139,10 +139,11 @@ fn score_games<G: GameState + ResampleFromInfoState + Send>(
                 let mut cur_game = 0;
                 while game_score[0] < 10 && game_score[1] < 10 {
                     let mut gs = overall_games.next().unwrap();
+                    let agent_1_team = (cur_game % 2 + i % 2) % 2;
                     while !gs.is_terminal() {
                         // We alternate who starts as the dealer each game
                         // todo: in future should have different player start deal for each game
-                        let agent_1_turn = gs.cur_player() % 2 == (cur_game % 2 + i % 2) % 2;
+                        let agent_1_turn = gs.cur_player() % 2 == agent_1_team;
                         // info!(
                         //     "cur_game: {}, cur_player: {}, is agent 1 turn?: {}: {}",
                         //     cur_game,
@@ -158,7 +159,11 @@ fn score_games<G: GameState + ResampleFromInfoState + Send>(
                         gs.apply_action(a);
                     }
 
-                    let r = [gs.evaluate(0), gs.evaluate(1)];
+                    // Need to make sure the teams are consistent throughout
+                    let r = [
+                        gs.evaluate(agent_1_team),
+                        gs.evaluate((agent_1_team + 1) % 2),
+                    ];
 
                     game_score[0] += r[0].max(0.0) as u8;
                     game_score[1] += r[1].max(0.0) as u8;

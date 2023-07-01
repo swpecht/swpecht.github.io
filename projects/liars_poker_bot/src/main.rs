@@ -2,13 +2,15 @@ use std::{io, mem};
 
 use clap::{command, Parser, Subcommand, ValueEnum};
 
+use itertools::Itertools;
 use liars_poker_bot::actions;
-use liars_poker_bot::agents::{Agent, RandomAgent};
+use liars_poker_bot::agents::{Agent, PlayerAgent, PolicyAgent, RandomAgent};
 
 use liars_poker_bot::algorithms::alphamu::AlphaMuBot;
 use liars_poker_bot::algorithms::exploitability::{self};
 
 use liars_poker_bot::algorithms::open_hand_solver::OpenHandSolver;
+use liars_poker_bot::algorithms::pimcts::PIMCTSBot;
 use liars_poker_bot::cfragent::cfrnode::CFRNode;
 use liars_poker_bot::cfragent::{CFRAgent, CFRAlgorithm};
 use liars_poker_bot::database::memory_node_store::MemoryNodeStore;
@@ -26,7 +28,7 @@ use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
 use scripts::agent_exploitability::calcualte_agent_exploitability;
-use scripts::benchmark::{run_benchmark, BenchmarkArgs};
+use scripts::benchmark::{get_rng, run_benchmark, BenchmarkArgs};
 use scripts::estimate_euchre_game_tree::estimate_euchre_game_tree;
 use scripts::pass_on_bower::open_hand_score_pass_on_bower;
 use scripts::pass_on_bower_alpha::benchmark_pass_on_bower;
@@ -113,7 +115,12 @@ fn run_scratch(_args: Args) {
     println!("kuhn poker size: {}", mem::size_of::<KPGameState>());
     println!("euchre size: {}", mem::size_of::<EuchreGameState>());
 
-    let gs = EuchreGameState::from("Jc9sTsKsJd|9cKh9dQdKd|QcJhQhTdAd|TcJsAs9hTh|Ac|P");
+    let gs = EuchreGameState::from(
+        "KcQsQh9dAd|QcAcTs9hTd|TcJsThAhKd|Jc9sAsJhKh|9c|PPT|Jh|AdTdKdJc|KhQh9hAh|Js9cKcAc",
+    );
+
+    let actions = actions!(gs).into_iter().map(EAction::from).collect_vec();
+    println!("actions: {:?}", actions);
 
     let mut alphamu = AlphaMuBot::new(
         OpenHandSolver::new(),
@@ -206,44 +213,41 @@ fn train_cfr_agent<G: GameState>(mut agent: CFRAgent<G, MemoryNodeStore<CFRNode>
 }
 
 fn run_play(_args: Args) {
-    let mut gs = Euchre::new_state();
-    let mut rng: StdRng = SeedableRng::seed_from_u64(1);
+    let mut rng: StdRng = SeedableRng::seed_from_u64(2);
 
-    let mut agent = RandomAgent::new();
+    let mut agent = PolicyAgent::new(
+        PIMCTSBot::new(50, OpenHandSolver::new(), get_rng()),
+        get_rng(),
+    );
+    let mut player = PlayerAgent::default();
     let user = 0;
+    let mut score = [0; 2];
+    let mut i = 0;
 
-    while !gs.is_terminal() {
-        if gs.is_chance_node() {
-            let actions = actions!(gs);
-            let a = *actions.choose(&mut rng).unwrap();
+    loop {
+        let mut gs = Euchre::new_state();
+        while !gs.is_terminal() {
+            if gs.is_chance_node() {
+                let actions = actions!(gs);
+                let a = *actions.choose(&mut rng).unwrap();
+                gs.apply_action(a);
+                continue;
+            }
+
+            let a = if gs.cur_player() % 2 == (user + i % 2) % 2 {
+                player.step(&gs)
+            } else {
+                agent.step(&gs)
+            };
+
             gs.apply_action(a);
-            continue;
         }
+        println!("{}", gs.evaluate(user));
+        score[0] += 0.max(gs.evaluate(0) as i8);
+        score[1] += 0.max(gs.evaluate(1) as i8);
 
-        let a = if gs.cur_player() == user {
-            handle_player_turn(&mut gs)
-        } else {
-            agent.step(&gs)
-        };
-
-        let cur_player = gs.cur_player();
-        gs.apply_action(a);
-        println!("{}: {}", cur_player, gs.istate_string(user));
+        println!("{} to {}", score[0], score[1]);
+        println!("user is player: {}", user);
+        i += 1;
     }
-
-    todo!()
-}
-
-fn handle_player_turn<T: GameState>(gs: &mut T) -> Action {
-    let player = gs.cur_player();
-    println!("{}", gs.istate_string(player));
-    println!("{:?}", actions!(gs));
-
-    let mut buffer = String::new();
-    io::stdin()
-        .read_line(&mut buffer)
-        .expect("Failed to read input");
-
-    todo!()
-    // return buffer.trim().parse().expect("Failed to parse digits");
 }

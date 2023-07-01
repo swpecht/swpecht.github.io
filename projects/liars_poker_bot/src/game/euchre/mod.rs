@@ -707,6 +707,10 @@ impl GameState for EuchreGameState {
             i += 1;
         }
 
+        if turn % 4 == 0 {
+            r.push('|');
+        }
+
         r
     }
 
