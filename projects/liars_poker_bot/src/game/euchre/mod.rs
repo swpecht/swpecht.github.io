@@ -1099,16 +1099,16 @@ mod tests {
         // Dealer discards the QH
         assert_eq!(gs.istate_string(3), "QhKhAh9dTd|Jd|T|0D");
         gs.apply_action(EAction::Discard { c: Card::QH }.into());
-        assert_eq!(gs.istate_string(3), "QhKhAh9dTd|Jd|T|0D|Qh");
+        assert_eq!(gs.istate_string(3), "QhKhAh9dTd|Jd|T|0D|Qh|");
 
         for _ in 0..4 {
             let a = actions!(gs)[0];
             gs.apply_action(a);
         }
-        assert_eq!(gs.istate_string(0), "9cTcJcQcKc|Jd|T|0D|9cAcKsKh");
-        assert_eq!(gs.istate_string(1), "Ac9sTsJsQs|Jd|T|0D|9cAcKsKh");
-        assert_eq!(gs.istate_string(2), "KsAs9hThJh|Jd|T|0D|9cAcKsKh");
-        assert_eq!(gs.istate_string(3), "QhKhAh9dTd|Jd|T|0D|Qh|9cAcKsKh");
+        assert_eq!(gs.istate_string(0), "9cTcJcQcKc|Jd|T|0D|9cAcKsKh|");
+        assert_eq!(gs.istate_string(1), "Ac9sTsJsQs|Jd|T|0D|9cAcKsKh|");
+        assert_eq!(gs.istate_string(2), "KsAs9hThJh|Jd|T|0D|9cAcKsKh|");
+        assert_eq!(gs.istate_string(3), "QhKhAh9dTd|Jd|T|0D|Qh|9cAcKsKh|");
         assert_eq!(gs.cur_player(), 1);
 
         while !gs.is_terminal() {
@@ -1126,7 +1126,7 @@ mod tests {
             new_s.apply_action(EAction::Pass.into());
         }
         new_s.apply_action(EAction::Hearts.into());
-        assert_eq!(new_s.istate_string(0), "9cTcJcQcKc|Jd|PPPPPH|1H");
+        assert_eq!(new_s.istate_string(0), "9cTcJcQcKc|Jd|PPPPPH|1H|");
     }
 
     #[test]

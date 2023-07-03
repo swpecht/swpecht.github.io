@@ -68,7 +68,7 @@ fn tune_alpha_mu(num_games: usize) {
     info!("m\tnum worlds\tavg score");
 
     let ms = vec![1, 5, 10, 20];
-    let world_counts = vec![10, 15, 20, 30];
+    let world_counts = vec![8, 16, 32, 64];
     let worlds = get_bower_deals(num_games, &mut get_rng());
 
     for m in ms {

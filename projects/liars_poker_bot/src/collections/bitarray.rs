@@ -5,7 +5,7 @@ use std::{
 
 #[derive(Default, Clone, Copy, PartialEq, Hash, Eq, Debug)]
 pub struct BitArray {
-    values: u32,
+    values: u64,
 }
 
 impl BitArray {
@@ -27,14 +27,14 @@ impl Display for BitArray {
     }
 }
 
-impl From<BitArray> for u32 {
+impl From<BitArray> for u64 {
     fn from(value: BitArray) -> Self {
         value.values
     }
 }
 
-impl From<u32> for BitArray {
-    fn from(value: u32) -> Self {
+impl From<u64> for BitArray {
+    fn from(value: u64) -> Self {
         BitArray { values: value }
     }
 }

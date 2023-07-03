@@ -70,7 +70,7 @@ impl AMVector {
     ///
     /// A value of -1 means the world is invalid
     fn _from_array(values: &[i8]) -> Self {
-        let mut is_valid: u32 = 0;
+        let mut is_valid: u64 = 0;
         for &v in values.iter().rev() {
             is_valid <<= 1;
             if v != -1 {
@@ -135,7 +135,7 @@ impl AMVector {
         // set all invalid wolrds to 1, they shouldn't impact the outcome
         o_gte_s |= !self.is_valid;
         // check if every single world is 1 now
-        u32::from(o_gte_s) == !0
+        u64::from(o_gte_s) == !0
     }
 
     /// Returns a bit array where 1 represents Other >= Self.
@@ -255,7 +255,7 @@ impl Debug for AMVector {
 
 #[derive(Default, PartialEq, Clone)]
 pub(super) struct AMFront {
-    vectors: FxHashMap<u32, Vec<AMVector>>,
+    vectors: FxHashMap<u64, Vec<AMVector>>,
 }
 
 impl AMFront {
@@ -291,7 +291,7 @@ impl AMFront {
                 for s in s_vectors {
                     for o in o_vectors {
                         let r = s.min(o);
-                        assert_eq!(u32::from(r.is_valid), valid_key);
+                        assert_eq!(u64::from(r.is_valid), valid_key);
 
                         // Remove vectors from result <= r
                         same_worlds.retain(|x| !x.is_dominated(&r));
@@ -341,7 +341,7 @@ impl AMFront {
             }
 
             if !vecs.is_empty() {
-                let is_valid: u32 = vecs[0].is_valid.into();
+                let is_valid = vecs[0].is_valid.into();
                 new_vectors.insert(is_valid, vecs);
             }
         }

@@ -64,8 +64,8 @@ fn run_full_game_benchmark<G: GameState + ResampleFromInfoState + Send>(
     let games = get_games(game, args.num_games * 20, &mut game_rng);
 
     let mut agents: HashMap<String, &mut dyn Agent<G>> = HashMap::new();
-    let ra: &mut dyn Agent<G> = &mut RandomAgent::new();
-    agents.insert(ra.get_name(), ra);
+    // let ra: &mut dyn Agent<G> = &mut RandomAgent::new();
+    // agents.insert(ra.get_name(), ra);
 
     let a = &mut PolicyAgent::new(
         PIMCTSBot::new(50, OpenHandSolver::new(), get_rng()),
@@ -213,9 +213,6 @@ fn run_card_play_benchmark(args: BenchmarkArgs) {
     let mut agents: HashMap<String, &mut dyn Agent<EuchreGameState>> = HashMap::new();
     // let ra: &mut dyn Agent<G> = &mut RandomAgent::new();
     // agents.insert(ra.get_name(), ra);
-
-    let ra: &mut dyn Agent<EuchreGameState> = &mut RandomAgent::new();
-    agents.insert(ra.get_name(), ra);
 
     let a = &mut PolicyAgent::new(
         PIMCTSBot::new(50, OpenHandSolver::new(), get_rng()),
