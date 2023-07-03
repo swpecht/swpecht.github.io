@@ -27,6 +27,7 @@ rayon = "1.7"
 arc-swap = "1.6"
 dashmap = "5.4.0"
 wgpu = "0.16.1"
+indicatif = "0.17.5"
 
 
 [dev-dependencies]

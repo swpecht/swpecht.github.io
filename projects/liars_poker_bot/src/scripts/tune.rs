@@ -1,4 +1,5 @@
 use clap::{Args, Subcommand, ValueEnum};
+use indicatif::ProgressBar;
 use itertools::Itertools;
 use liars_poker_bot::{
     agents::{Agent, PolicyAgent},
@@ -144,6 +145,8 @@ fn get_returns<T: Agent<EuchreGameState>>(mut test_agent: T, worlds: Vec<EuchreG
     let opponent = &mut get_opponent();
     let mut returns = 0.0;
 
+    let pb = ProgressBar::new(worlds.len() as u64);
+
     // all agents play the same games
     for mut gs in worlds.into_iter() {
         while !gs.is_terminal() {
@@ -157,8 +160,10 @@ fn get_returns<T: Agent<EuchreGameState>>(mut test_agent: T, worlds: Vec<EuchreG
         }
         // get the returns for alpha mu's team
         returns += gs.evaluate(1);
+        pb.inc(1);
     }
 
+    pb.finish_and_clear();
     returns
 }
 
