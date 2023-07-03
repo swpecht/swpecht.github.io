@@ -1,13 +1,12 @@
-use clap::{Args, Subcommand, ValueEnum};
+use clap::{Args, ValueEnum};
 use indicatif::ProgressBar;
-use itertools::Itertools;
 use liars_poker_bot::{
     agents::{Agent, PolicyAgent},
     algorithms::{
         alphamu::AlphaMuBot,
-        ismcts::{self, ChildSelectionPolicy, ISMCTBotConfig, ISMCTSBot, ISMCTSFinalPolicyType},
+        ismcts::{ChildSelectionPolicy, ISMCTBotConfig, ISMCTSBot, ISMCTSFinalPolicyType},
         open_hand_solver::OpenHandSolver,
-        pimcts::{self, PIMCTSBot},
+        pimcts::PIMCTSBot,
     },
     game::{
         euchre::{actions::EAction, Euchre, EuchreGameState},
@@ -69,7 +68,7 @@ fn tune_alpha_mu(num_games: usize) {
     info!("m\tnum worlds\tavg score");
 
     let ms = vec![1, 5, 10, 20];
-    let world_counts = vec![8, 16, 32, 64];
+    let world_counts = vec![8, 16, 32];
     let worlds = get_bower_deals(num_games, &mut get_rng());
 
     for m in ms {

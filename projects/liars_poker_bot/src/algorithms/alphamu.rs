@@ -18,6 +18,7 @@ use crate::{
 };
 
 use self::front::{AMFront, VectorValue};
+use rayon::prelude::*;
 
 use super::ismcts::{Evaluator, ResampleFromInfoState};
 
@@ -112,7 +113,7 @@ pub struct AlphaMuBot<G, E> {
     rng: StdRng,
 }
 
-impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
+impl<G: GameState + ResampleFromInfoState + Send, E: Evaluator<G>> AlphaMuBot<G, E> {
     pub fn new(evaluator: E, num_worlds: usize, m: usize, rng: StdRng) -> Self {
         if m < 1 {
             panic!("m must be at least 1, m=1 is PIMCTS")
@@ -423,6 +424,15 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> AlphaMuBot<G, E> {
         // world and we can return a single vector containing the result
         // for the useful world.
         let useful_worlds = worlds.iter().filter(|x| x.is_useful()).count();
+        // let mut score = [0; 64];
+
+        // worlds
+        //     .par_iter()
+        //     .enumerate()
+        //     .filter(|w| !w.is_invalid())
+        //     .map(|w| self.evaluator.clone())
+        //     .collect_vec();
+
         if m == 0 || useful_worlds <= 1 {
             for (i, w) in worlds.iter().enumerate().filter(|(_, w)| !w.is_invalid()) {
                 if w.is_useful() {

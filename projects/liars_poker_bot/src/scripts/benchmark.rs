@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use clap::{Args, ValueEnum};
+use indicatif::ProgressBar;
 use itertools::Itertools;
 use liars_poker_bot::{
     agents::{Agent, PolicyAgent, RandomAgent},
@@ -93,7 +94,7 @@ fn run_full_game_benchmark<G: GameState + ResampleFromInfoState + Send>(
     // agents.insert("ismcts".to_string(), ismcts);
 
     let alphamu = &mut PolicyAgent::new(
-        AlphaMuBot::new(OpenHandSolver::new(), 30, 20, get_rng()),
+        AlphaMuBot::new(OpenHandSolver::new(), 32, 20, get_rng()),
         get_rng(),
     );
     agents.insert("alphamu, open hand".to_string(), alphamu);
@@ -132,6 +133,7 @@ fn score_games<G: GameState + ResampleFromInfoState + Send>(
                 chunked_games.push(g.collect_vec());
             }
 
+            let pb = ProgressBar::new(args.num_games as u64);
             for i in 0..args.num_games {
                 let mut overall_games = chunked_games.pop().unwrap().into_iter();
                 let mut game_score = [0, 0];
@@ -181,7 +183,10 @@ fn score_games<G: GameState + ResampleFromInfoState + Send>(
                 } else {
                     games_won[1] += 1;
                 }
+                pb.inc(1);
             }
+
+            pb.finish_and_clear();
 
             println!(
                 "{:?}\t{:?}\t{}",
@@ -215,13 +220,13 @@ fn run_card_play_benchmark(args: BenchmarkArgs) {
     // agents.insert(ra.get_name(), ra);
 
     let a = &mut PolicyAgent::new(
-        PIMCTSBot::new(50, OpenHandSolver::new(), get_rng()),
+        PIMCTSBot::new(64, OpenHandSolver::new(), get_rng()),
         get_rng(),
     );
     agents.insert("pimcts, 50 worlds hand".to_string(), a);
 
     let alphamu = &mut PolicyAgent::new(
-        AlphaMuBot::new(OpenHandSolver::new(), 50, 5, get_rng()),
+        AlphaMuBot::new(OpenHandSolver::new(), 64, 5, get_rng()),
         get_rng(),
     );
     agents.insert("alphamu, 50 worlds, m=5".to_string(), alphamu);
@@ -249,10 +254,15 @@ pub fn get_card_play_games(n: usize, rng: &mut StdRng) -> Vec<EuchreGameState> {
         gs
     }
 
+    let pb = ProgressBar::new(n as u64);
     games = games
         .into_iter()
-        .map(|gs| bid(gs, &mut agent))
+        .map(|gs| {
+            pb.inc(1);
+            bid(gs, &mut agent)
+        })
         .collect_vec();
+    pb.finish_and_clear();
 
     games
 }
