@@ -1,3 +1,5 @@
+use core::num;
+
 use clap::{Args, ValueEnum};
 use indicatif::ProgressBar;
 use liars_poker_bot::{
@@ -69,7 +71,8 @@ fn tune_alpha_mu(num_games: usize) {
 
     let ms = vec![1, 5, 10, 20];
     let world_counts = vec![8, 16, 32];
-    let worlds = get_bower_deals(num_games, &mut get_rng());
+    // let worlds = get_bower_deals(num_games, &mut get_rng());
+    let worlds = get_games(Euchre::game(), num_games, &mut get_rng());
 
     for m in ms {
         for count in world_counts.clone() {

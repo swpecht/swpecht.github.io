@@ -2,6 +2,7 @@ use std::{
     collections::{hash_map::DefaultHasher, HashMap, HashSet},
     fmt::Display,
     hash::{Hash, Hasher},
+    sync::{Arc, Mutex},
 };
 
 use itertools::Itertools;
@@ -113,7 +114,7 @@ pub struct AlphaMuBot<G, E> {
     rng: StdRng,
 }
 
-impl<G: GameState + ResampleFromInfoState + Send, E: Evaluator<G>> AlphaMuBot<G, E> {
+impl<G: GameState + ResampleFromInfoState, E: Evaluator<G> + Clone + Sync> AlphaMuBot<G, E> {
     pub fn new(evaluator: E, num_worlds: usize, m: usize, rng: StdRng) -> Self {
         if m < 1 {
             panic!("m must be at least 1, m=1 is PIMCTS")
@@ -424,27 +425,30 @@ impl<G: GameState + ResampleFromInfoState + Send, E: Evaluator<G>> AlphaMuBot<G,
         // world and we can return a single vector containing the result
         // for the useful world.
         let useful_worlds = worlds.iter().filter(|x| x.is_useful()).count();
-        // let mut score = [0; 64];
-
-        // worlds
-        //     .par_iter()
-        //     .enumerate()
-        //     .filter(|w| !w.is_invalid())
-        //     .map(|w| self.evaluator.clone())
-        //     .collect_vec();
 
         if m == 0 || useful_worlds <= 1 {
-            for (i, w) in worlds.iter().enumerate().filter(|(_, w)| !w.is_invalid()) {
-                if w.is_useful() {
-                    let w = w.unwrap();
-                    let v = self.evaluator.evaluate_player(w, self.team.into());
-                    assert!(v != 0.0);
-                    assert!(v as i8 != 0);
-                    result.set(i, VectorValue::from(v as i8));
-                } else if w.is_useless() {
-                    result.set(i, USELESS_WORLD_VALUE);
-                }
-            }
+            let sync_result = Arc::new(Mutex::new(result));
+            worlds
+                .to_owned()
+                .into_par_iter()
+                .enumerate()
+                .filter(|(_, w)| !w.is_invalid())
+                .map(|(i, w)| {
+                    if w.is_useful() {
+                        let w = w.unwrap();
+                        let v = self.evaluator.clone().evaluate_player(w, self.team.into());
+                        assert!(v != 0.0);
+                        assert!(v as i8 != 0);
+                        sync_result
+                            .lock()
+                            .unwrap()
+                            .set(i, VectorValue::from(v as i8));
+                    } else if w.is_useless() {
+                        sync_result.lock().unwrap().set(i, USELESS_WORLD_VALUE);
+                    }
+                })
+                .count();
+
             return true;
         }
 
@@ -549,7 +553,9 @@ impl<G: GameState + ResampleFromInfoState + Send, E: Evaluator<G>> AlphaMuBot<G,
     }
 }
 
-impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Policy<G> for AlphaMuBot<G, E> {
+impl<G: GameState + ResampleFromInfoState + Send, E: Evaluator<G> + Clone + Sync> Policy<G>
+    for AlphaMuBot<G, E>
+{
     fn action_probabilities(&mut self, gs: &G) -> ActionVec<f64> {
         let actions = actions!(gs);
         let mut policy = ActionVec::new(&actions);
@@ -561,7 +567,9 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Policy<G> for AlphaM
     }
 }
 
-impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Evaluator<G> for AlphaMuBot<G, E> {
+impl<G: GameState + ResampleFromInfoState + Send, E: Evaluator<G> + Clone + Sync> Evaluator<G>
+    for AlphaMuBot<G, E>
+{
     fn evaluate(&mut self, _gs: &G) -> Vec<f64> {
         todo!()
     }
