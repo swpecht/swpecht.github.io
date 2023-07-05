@@ -87,7 +87,7 @@ fn tune_ismcts(num_games: usize) {
     info!("fiinal_policy\tselection\tuct_c\tmax_simulations\tavg score");
 
     let uct_values = vec![0.001, 0.1, 0.5, 1.0, 3.0, 5.0];
-    let simulation_counts = vec![5, 10, 15, 20, 50, 100];
+    let simulation_counts = vec![5, 10, 15, 20, 50, 100, 1000];
     let policy_types = vec![
         ISMCTSFinalPolicyType::MaxVisitCount,
         ISMCTSFinalPolicyType::NormalizedVisitedCount,

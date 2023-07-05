@@ -61,12 +61,12 @@ fn run_full_game_benchmark<G: GameState + ResampleFromInfoState + Send>(
 ) {
     // all agents play the same games
     let mut game_rng = get_rng();
-    // may need up to 20x the number fo full games to 10
-    let games = get_games(game, args.num_games * 20, &mut game_rng);
+    // may need up to 19x the number fo full games to 10
+    let games = get_games(game, args.num_games * 19, &mut game_rng);
 
     let mut agents: HashMap<String, &mut dyn Agent<G>> = HashMap::new();
-    // let ra: &mut dyn Agent<G> = &mut RandomAgent::new();
-    // agents.insert(ra.get_name(), ra);
+    let ra: &mut dyn Agent<G> = &mut RandomAgent::new();
+    agents.insert(ra.get_name(), ra);
 
     let a = &mut PolicyAgent::new(
         PIMCTSBot::new(50, OpenHandSolver::new(), get_rng()),
@@ -82,22 +82,22 @@ fn run_full_game_benchmark<G: GameState + ResampleFromInfoState + Send>(
 
     // Based on tuning run for 100 games
     // https://docs.google.com/spreadsheets/d/1AGjEaqjCkuuWveUBqbOBOMH0SPHPQ_YhH1jRHij7ErY/edit#gid=1418816031
-    // let config = ISMCTBotConfig {
-    //     child_selection_policy: ChildSelectionPolicy::Uct,
-    //     final_policy_type: ISMCTSFinalPolicyType::MaxVisitCount,
-    //     max_world_samples: -1, // unlimited samples
-    // };
-    // let ismcts = &mut PolicyAgent::new(
-    //     ISMCTSBot::new(3.0, 100, OpenHandSolver::new(), config),
-    //     rng(),
-    // );
-    // agents.insert("ismcts".to_string(), ismcts);
-
-    let alphamu = &mut PolicyAgent::new(
-        AlphaMuBot::new(OpenHandSolver::new(), 32, 20, get_rng()),
+    let config = ISMCTBotConfig {
+        child_selection_policy: ChildSelectionPolicy::Uct,
+        final_policy_type: ISMCTSFinalPolicyType::MaxVisitCount,
+        max_world_samples: -1, // unlimited samples
+    };
+    let ismcts = &mut PolicyAgent::new(
+        ISMCTSBot::new(3.0, 1000, OpenHandSolver::new(), config),
         get_rng(),
     );
-    agents.insert("alphamu, open hand".to_string(), alphamu);
+    agents.insert("ismcts".to_string(), ismcts);
+
+    // let alphamu = &mut PolicyAgent::new(
+    //     AlphaMuBot::new(OpenHandSolver::new(), 32, 20, get_rng()),
+    //     get_rng(),
+    // );
+    // agents.insert("alphamu, open hand".to_string(), alphamu);
 
     score_games(args, agents, games);
 }
@@ -129,7 +129,7 @@ fn score_games<G: GameState + ResampleFromInfoState + Send>(
 
             // Make sure that each "game" to 10 is identical, we may need up to 20 games for this to happen
             let mut chunked_games = Vec::new();
-            for g in &games.clone().into_iter().chunks(20) {
+            for g in &games.clone().into_iter().chunks(19) {
                 chunked_games.push(g.collect_vec());
             }
 
@@ -212,7 +212,7 @@ fn run_card_play_benchmark(args: BenchmarkArgs) {
     // all agents play the same games
     info!("generating games...");
     let mut game_rng = get_rng();
-    let games = get_card_play_games(args.num_games * 20, &mut game_rng);
+    let games = get_card_play_games(args.num_games * 19, &mut game_rng);
     info!("finished generated {} games", games.len());
 
     let mut agents: HashMap<String, &mut dyn Agent<EuchreGameState>> = HashMap::new();
@@ -220,16 +220,16 @@ fn run_card_play_benchmark(args: BenchmarkArgs) {
     // agents.insert(ra.get_name(), ra);
 
     let a = &mut PolicyAgent::new(
-        PIMCTSBot::new(64, OpenHandSolver::new(), get_rng()),
+        PIMCTSBot::new(32, OpenHandSolver::new(), get_rng()),
         get_rng(),
     );
-    agents.insert("pimcts, 50 worlds hand".to_string(), a);
+    agents.insert("pimcts, 32 worlds hand".to_string(), a);
 
     let alphamu = &mut PolicyAgent::new(
-        AlphaMuBot::new(OpenHandSolver::new(), 64, 5, get_rng()),
+        AlphaMuBot::new(OpenHandSolver::new(), 32, 20, get_rng()),
         get_rng(),
     );
-    agents.insert("alphamu, 50 worlds, m=5".to_string(), alphamu);
+    agents.insert("alphamu, 32 worlds, m=20".to_string(), alphamu);
 
     score_games(args, agents, games);
 }
