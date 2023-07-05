@@ -332,21 +332,31 @@ impl AMFront {
 
     /// Set all vectors in the front to a given value. Does this even if previously the world was invalid
     pub fn set(&mut self, idx: usize, value: VectorValue) {
-        let mut new_vectors = FxHashMap::default();
+        // list of keys to move in the map since their valid worlds changed
+        let mut keys_to_move = Vec::new();
 
-        for mut vecs in self.vectors.clone().into_values() {
-            for v in vecs.iter_mut() {
-                v.is_valid.set(idx, true);
-                v.set(idx, value);
-            }
-
-            if !vecs.is_empty() {
-                let is_valid = vecs[0].is_valid.into();
-                new_vectors.insert(is_valid, vecs);
+        for (key, vecs) in self.vectors.iter_mut() {
+            let is_valid = BitArray::from(*key);
+            if is_valid.get(idx) {
+                for v in vecs {
+                    v.set(idx, value);
+                }
+            } else {
+                keys_to_move.push(*key);
+                for v in vecs {
+                    v.is_valid.set(idx, true);
+                    v.set(idx, value);
+                }
             }
         }
 
-        self.vectors = new_vectors;
+        // Move all the changed vecs to a new spot in the hashmap
+        for k in keys_to_move {
+            let mut vecs = self.vectors.remove(&k).unwrap();
+            let new_key = vecs[0].is_valid.into();
+            let new_vecs = self.vectors.entry(new_key).or_default();
+            new_vecs.append(&mut vecs);
+        }
     }
 
     /// Score of a front

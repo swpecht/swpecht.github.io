@@ -65,8 +65,8 @@ fn run_full_game_benchmark<G: GameState + ResampleFromInfoState + Send>(
     let games = get_games(game, args.num_games * 19, &mut game_rng);
 
     let mut agents: HashMap<String, &mut dyn Agent<G>> = HashMap::new();
-    let ra: &mut dyn Agent<G> = &mut RandomAgent::new();
-    agents.insert(ra.get_name(), ra);
+    // let ra: &mut dyn Agent<G> = &mut RandomAgent::new();
+    // agents.insert(ra.get_name(), ra);
 
     let a = &mut PolicyAgent::new(
         PIMCTSBot::new(50, OpenHandSolver::new(), get_rng()),
@@ -94,7 +94,7 @@ fn run_full_game_benchmark<G: GameState + ResampleFromInfoState + Send>(
     // agents.insert("ismcts".to_string(), ismcts);
 
     let alphamu = &mut PolicyAgent::new(
-        AlphaMuBot::new(OpenHandSolver::new(), 50, 20, get_rng()),
+        AlphaMuBot::new(OpenHandSolver::new(), 32, 10, get_rng()),
         get_rng(),
     );
     agents.insert("alphamu, open hand".to_string(), alphamu);
