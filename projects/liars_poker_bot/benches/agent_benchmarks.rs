@@ -14,7 +14,7 @@ use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
 pub fn criterion_benchmark(c: &mut Criterion) {
     let mut rng: StdRng = SeedableRng::seed_from_u64(42);
-    let mut evaluator = PIMCTSBot::new(100, OpenHandSolver::new(), SeedableRng::seed_from_u64(100));
+    let mut evaluator = PIMCTSBot::new(50, OpenHandSolver::new(), SeedableRng::seed_from_u64(100));
 
     let mut array = [1; 7];
     let mut v = 1;
@@ -23,7 +23,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     c.bench_function("shift bitshift", |b| b.iter(|| bit_shift(&mut v)));
 
-    c.bench_function("open hand evaluator 100", |b| {
+    c.bench_function("open hand evaluator 50", |b| {
         b.iter(|| evaluate_games(&mut evaluator, &mut rng))
     });
 
