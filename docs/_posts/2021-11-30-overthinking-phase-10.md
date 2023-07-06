@@ -103,29 +103,29 @@ fn hide_until_n(hand: &Vec<Card>, candidate_card: Card, target_n: i32) -> Action
 
 ## Initial results: Greedy pairs wins
 
-|Policy |Turns to win (median)  | Turns to win (average)  |
-|-------|-----------|-----------|
-Greedy pairs                |10 |10.1   |
-Greedy 5 of a kind after 4  |10 |10.3   |
-Greedy 5 of a kind after 3  |11 |11.1   |
-Hide until 4 of a kind      |14 |15.1   |
-Hide until 3 of a kind      |14 |14.7   |
+| Policy                     | Turns to win (median) | Turns to win (average) |
+| -------------------------- | --------------------- | ---------------------- |
+| Greedy pairs               | 10                    | 10.1                   |
+| Greedy 5 of a kind after 4 | 10                    | 10.3                   |
+| Greedy 5 of a kind after 3 | 11                    | 11.1                   |
+| Hide until 4 of a kind     | 14                    | 15.1                   |
+| Hide until 3 of a kind     | 14                    | 14.7                   |
 
 `Greedy pairs` seems to be the best approach. It has the lowest median and mean number of turns to win. But the main downside of this approach is that it gives information to other players for what cards you're going for. Right now, we model the discard cards as random.
 
 Do things change if we account for other player behavior? For example, if a player knows you're going for a set of 3s they may be less likely to discard a 3 for you to pick up.
 
-## Results with anatagonistic discard pile
+## Results with antagonistic discard pile
 
-To test this, we build an anatagonistic discard pile: we never let the discard pile show a card we've taken in the past. This would model the person next to you playing perfectly (a tough sell after a Thanksgiving of eating and drinking). With this constraint:
+To test this, we build an antagonistic discard pile: we never let the discard pile show a card we've taken in the past. This would model the person next to you playing perfectly (a tough sell after a Thanksgiving of eating and drinking). With this constraint:
 
-|Policy |Turns to win (median)  | Turns to win (average)  |
-|-------|-----------|-----------|
-Greedy pairs                |11     |11.7   |
-Greedy 5 of a kind after 4  |11     |11.9   |
-Greedy 5 of a kind after 3  |11     |12.3   |
-Hide until 4 of a kind      |14     |15.1   |
-Hide until 3 of a kind      |14     |14.7   |
+| Policy                     | Turns to win (median) | Turns to win (average) |
+| -------------------------- | --------------------- | ---------------------- |
+| Greedy pairs               | 11                    | 11.7                   |
+| Greedy 5 of a kind after 4 | 11                    | 11.9                   |
+| Greedy 5 of a kind after 3 | 11                    | 12.3                   |
+| Hide until 4 of a kind     | 14                    | 15.1                   |
+| Hide until 3 of a kind     | 14                    | 14.7                   |
 
 As expected, there isn't much impact on the `hide until n` strategies -- the whole point is to hide what cards we're going after.
 
