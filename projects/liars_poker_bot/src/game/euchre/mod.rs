@@ -596,6 +596,11 @@ impl GameState for EuchreGameState {
         }
         istate.sort_range(0, CARDS_PER_HAND.min(istate.len()));
 
+        // Push a bogus action to the end to show that this is a discard istate rather than player 1 going
+        if player == 3 && self.phase == EPhase::Discard {
+            istate.push(Action(255))
+        }
+
         istate
     }
 

@@ -82,22 +82,22 @@ fn run_full_game_benchmark<G: GameState + ResampleFromInfoState + Send>(
 
     // Based on tuning run for 100 games
     // https://docs.google.com/spreadsheets/d/1AGjEaqjCkuuWveUBqbOBOMH0SPHPQ_YhH1jRHij7ErY/edit#gid=1418816031
-    // let config = ISMCTBotConfig {
-    //     child_selection_policy: ChildSelectionPolicy::Uct,
-    //     final_policy_type: ISMCTSFinalPolicyType::MaxVisitCount,
-    //     max_world_samples: -1, // unlimited samples
-    // };
-    // let ismcts = &mut PolicyAgent::new(
-    //     ISMCTSBot::new(3.0, 1000, OpenHandSolver::new(), config),
-    //     get_rng(),
-    // );
-    // agents.insert("ismcts".to_string(), ismcts);
-
-    let alphamu = &mut PolicyAgent::new(
-        AlphaMuBot::new(OpenHandSolver::new(), 32, 10, get_rng()),
+    let config = ISMCTBotConfig {
+        child_selection_policy: ChildSelectionPolicy::Uct,
+        final_policy_type: ISMCTSFinalPolicyType::MaxVisitCount,
+        max_world_samples: -1, // unlimited samples
+    };
+    let ismcts = &mut PolicyAgent::new(
+        ISMCTSBot::new(3.0, 50, OpenHandSolver::new(), config),
         get_rng(),
     );
-    agents.insert("alphamu, open hand".to_string(), alphamu);
+    agents.insert("ismcts".to_string(), ismcts);
+
+    // let alphamu = &mut PolicyAgent::new(
+    //     AlphaMuBot::new(OpenHandSolver::new(), 32, 10, get_rng()),
+    //     get_rng(),
+    // );
+    // agents.insert("alphamu, open hand".to_string(), alphamu);
 
     score_games(args, agents, games);
 }

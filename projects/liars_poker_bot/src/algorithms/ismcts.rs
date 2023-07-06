@@ -353,7 +353,9 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> ISMCTSBot<G, E> {
             return self.evaluator.evaluate(gs);
         }
 
-        assert_eq!(node.prior_map.len(), actions!(gs).len());
+        if node.prior_map.len() != actions.len() {
+            panic!("found a node with incorrect previous actions:\nnode: {}\ncurrent actions: {:?}\nprevious actions: {:?}", gs, actions, node.prior_map.keys())
+        }
 
         let mut chosen_action = self.check_expand(&key, &actions);
         if let Some(inner_action) = chosen_action {
