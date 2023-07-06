@@ -88,7 +88,7 @@ fn run_full_game_benchmark<G: GameState + ResampleFromInfoState + Send>(
         max_world_samples: -1, // unlimited samples
     };
     let ismcts = &mut PolicyAgent::new(
-        ISMCTSBot::new(3.0, 50, OpenHandSolver::new(), config),
+        ISMCTSBot::new(3.0, 500, OpenHandSolver::new(), config),
         get_rng(),
     );
     agents.insert("ismcts".to_string(), ismcts);
