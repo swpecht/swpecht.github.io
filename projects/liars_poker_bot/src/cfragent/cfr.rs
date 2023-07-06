@@ -67,15 +67,15 @@ impl VanillaCFR {
         chance_reach: f64,
         mut phase: CFRPhase,
     ) -> f64 {
-        if self.nodes_touched % 1000000 == 0 {
-            debug!("cfr touched {} nodes", self.nodes_touched);
-        }
-        self.nodes_touched += 1;
-
         let cur_player = gs.cur_player();
         if gs.is_terminal() {
             return gs.evaluate(update_player);
         }
+
+        if self.nodes_touched % 1000000 == 0 {
+            debug!("cfr touched {} nodes", self.nodes_touched);
+        }
+        self.nodes_touched += 1;
 
         let actions = actions!(gs);
         if actions.len() == 1 {

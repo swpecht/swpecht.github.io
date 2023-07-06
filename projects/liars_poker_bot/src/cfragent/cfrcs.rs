@@ -68,14 +68,14 @@ impl CFRCS {
         reach1: f64,
         mut phase: CFRPhase,
     ) -> f64 {
+        if gs.is_terminal() {
+            return gs.evaluate(update_player);
+        }
+
         if self.nodes_touched % 10_000_000 == 0 {
             debug!("cfr touched {} nodes", self.nodes_touched);
         }
         self.nodes_touched += 1;
-
-        if gs.is_terminal() {
-            return gs.evaluate(update_player);
-        }
 
         let cur_player = gs.cur_player();
         let mut actions = self.vector_pool.detach();
