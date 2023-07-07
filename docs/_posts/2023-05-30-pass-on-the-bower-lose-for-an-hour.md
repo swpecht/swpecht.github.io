@@ -93,10 +93,12 @@ The next step would be to find a way to evaluate euchre hands that avoids the st
 
 # Appendix 1
 
-It's not possible to run the open-hand solver on all possible 618M worlds for a given deal. The open-hand solver can evaluate a single position in 50ms. Evaluating all hands would take over 8,000 years.
+It's not possible to run the open-hand solver on all possible 618M worlds for a given deal.
 $$
 \binom{18}{5} * \binom{13}{5} * \binom{8}{5} = 618M
 $$
+
+The open-hand solver can evaluate a single position in 50ms. Evaluating all hands would take over 8,000 years.
 
 Instead, I estimated the open-hand solver’s convergence by scoring 500 different deals for a variety of rollouts to see when we get close enough.
 
