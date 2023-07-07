@@ -170,7 +170,7 @@ fn get_returns<T: Agent<EuchreGameState>>(mut test_agent: T, worlds: Vec<EuchreG
     returns
 }
 
-fn get_opponent() -> PolicyAgent<PIMCTSBot<EuchreGameState, OpenHandSolver>> {
+fn get_opponent() -> PolicyAgent<PIMCTSBot<EuchreGameState, OpenHandSolver<EuchreGameState>>> {
     PolicyAgent::new(
         PIMCTSBot::new(50, OpenHandSolver::new(), SeedableRng::seed_from_u64(100)),
         SeedableRng::seed_from_u64(101),

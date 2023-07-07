@@ -67,7 +67,7 @@ fn bit_shift(v: &mut u32) {
 }
 
 fn alpha_mu_benchmark(
-    evaluator: &mut PolicyAgent<AlphaMuBot<EuchreGameState, OpenHandSolver>>,
+    evaluator: &mut PolicyAgent<AlphaMuBot<EuchreGameState, OpenHandSolver<EuchreGameState>>>,
     rng: &mut StdRng,
 ) {
     let mut gs = get_game(rng);
@@ -75,14 +75,17 @@ fn alpha_mu_benchmark(
 }
 
 fn alpha_mu_eval_benchmark(
-    evaluator: &mut AlphaMuBot<EuchreGameState, OpenHandSolver>,
+    evaluator: &mut AlphaMuBot<EuchreGameState, OpenHandSolver<EuchreGameState>>,
     rng: &mut StdRng,
 ) {
     let gs = get_game(rng);
     evaluator.run_search(&gs, gs.cur_player());
 }
 
-fn evaluate_games(evaluator: &mut PIMCTSBot<EuchreGameState, OpenHandSolver>, rng: &mut StdRng) {
+fn evaluate_games(
+    evaluator: &mut PIMCTSBot<EuchreGameState, OpenHandSolver<EuchreGameState>>,
+    rng: &mut StdRng,
+) {
     let gs = &get_game(rng);
     evaluator.evaluate_player(gs, 3);
 }

@@ -6,7 +6,10 @@ use crate::{
     actions,
     alloc::Pool,
     cfragent::cfrnode::ActionVec,
-    game::{Action, GameState, Player},
+    game::{
+        euchre::{processors::process_euchre_actions, EuchreGameState},
+        Action, GameState, Player,
+    },
 };
 
 use super::{alphamu::Team, ismcts::Evaluator};
@@ -16,20 +19,27 @@ use super::{alphamu::Team, ismcts::Evaluator};
 /// This is an adaption of a double dummy solver for bridge
 /// http://privat.bahnhof.se/wb758135/bridge/Alg-dds_x.pdf
 #[derive(Clone)]
-pub struct OpenHandSolver {
+pub struct OpenHandSolver<G> {
     cache: AlphaBetaCache,
+    /// Function that can filter or re-order moves for evaluation.
+    ///
+    /// For example, it could filter down to a single move, or it could
+    /// remove all but 1 move.
+    processors: Processors<G>,
 }
 
-impl OpenHandSolver {
+impl<G> OpenHandSolver<G> {
     pub fn new() -> Self {
         Self {
             cache: AlphaBetaCache::default(),
+            processors: Processors::default(),
         }
     }
 
     pub fn new_without_cache() -> Self {
         Self {
             cache: AlphaBetaCache::new(false),
+            processors: Processors::default(),
         }
     }
 
@@ -38,17 +48,32 @@ impl OpenHandSolver {
     }
 }
 
-impl Default for OpenHandSolver {
+impl OpenHandSolver<EuchreGameState> {
+    pub fn new_euchre() -> Self {
+        Self {
+            cache: AlphaBetaCache::default(),
+            processors: Processors::new_euchre(),
+        }
+    }
+}
+
+impl<G> Default for OpenHandSolver<G> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<G: GameState> Evaluator<G> for OpenHandSolver {
+impl<G: GameState> Evaluator<G> for OpenHandSolver<G> {
     /// Evaluates the gamestate for a maximizing player using alpha-beta search
     fn evaluate_player(&mut self, gs: &G, maximizing_player: Player) -> f64 {
-        mtd_search(gs.clone(), maximizing_player, 0, self.cache.clone()).0
-        // alpha_beta_search_cached(gs.clone(), maximizing_player, self.cache.clone()).0
+        mtd_search(
+            gs.clone(),
+            maximizing_player,
+            0,
+            self.cache.clone(),
+            &self.processors,
+        )
+        .0
     }
 
     fn evaluate(&mut self, gs: &G) -> Vec<f64> {
@@ -102,6 +127,7 @@ fn mtd_search<G: GameState>(
     maximizing_player: Player,
     first_guess: i8,
     mut cache: AlphaBetaCache,
+    processors: &Processors<G>,
 ) -> (f64, Option<Action>) {
     let mut g = first_guess;
     let mut best_action;
@@ -116,6 +142,7 @@ fn mtd_search<G: GameState>(
             (beta - 1) as f64,
             beta as f64,
             &mut cache,
+            processors,
         );
         g = result.0 as i8;
         best_action = result.1;
@@ -210,6 +237,7 @@ fn alpha_beta<G: GameState>(
     mut alpha: f64,
     mut beta: f64,
     cache: &mut AlphaBetaCache,
+    processors: &Processors<G>,
 ) -> (f64, Option<Action>) {
     if gs.is_terminal() {
         let v = gs.evaluate(maximizing_team as usize);
@@ -232,6 +260,7 @@ fn alpha_beta<G: GameState>(
 
     let mut actions = cache.vec_pool.detach();
     gs.legal_actions(&mut actions);
+    (processors.action)(gs, &mut actions);
     if gs.is_chance_node() {
         todo!("add support for chance nodes")
     }
@@ -245,7 +274,7 @@ fn alpha_beta<G: GameState>(
         let mut value = f64::NEG_INFINITY;
         for a in &actions {
             gs.apply_action(*a);
-            let (child_value, _) = alpha_beta(gs, maximizing_team, alpha, beta, cache);
+            let (child_value, _) = alpha_beta(gs, maximizing_team, alpha, beta, cache, processors);
             gs.undo();
             if child_value > value {
                 value = child_value;
@@ -261,7 +290,7 @@ fn alpha_beta<G: GameState>(
         let mut value = f64::INFINITY;
         for a in &actions {
             gs.apply_action(*a);
-            let (child_value, _) = alpha_beta(gs, maximizing_team, alpha, beta, cache);
+            let (child_value, _) = alpha_beta(gs, maximizing_team, alpha, beta, cache, processors);
             gs.undo();
             if child_value < value {
                 value = child_value;
@@ -299,13 +328,34 @@ fn alpha_beta<G: GameState>(
     result
 }
 
+#[derive(Clone, Copy)]
+pub(super) struct Processors<G> {
+    action: fn(gs: &G, actions: &mut Vec<Action>),
+}
+
+impl<G> Default for Processors<G> {
+    fn default() -> Self {
+        Self {
+            action: |_: &G, _: &mut Vec<Action>| {},
+        }
+    }
+}
+
+impl Processors<EuchreGameState> {
+    pub fn new_euchre() -> Self {
+        Self {
+            action: process_euchre_actions,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
     use crate::{
         algorithms::{
             ismcts::Evaluator,
-            open_hand_solver::{mtd_search, AlphaBetaCache},
+            open_hand_solver::{mtd_search, AlphaBetaCache, Processors},
         },
         game::{
             bluff::{Bluff, BluffActions, Dice},
@@ -319,12 +369,12 @@ mod tests {
     #[test]
     fn test_mtd_kuhn_poker() {
         let gs = KuhnPoker::from_actions(&[KPAction::Jack, KPAction::Queen]);
-        let (v, a) = mtd_search(gs, 0, 0, AlphaBetaCache::new(true));
+        let (v, a) = mtd_search(gs, 0, 0, AlphaBetaCache::new(true), &Processors::default());
         assert_eq!(v, -1.0);
         assert_eq!(a.unwrap(), KPAction::Pass.into());
 
         let gs = KuhnPoker::from_actions(&[KPAction::King, KPAction::Queen]);
-        let (v, a) = mtd_search(gs, 0, 0, AlphaBetaCache::new(true));
+        let (v, a) = mtd_search(gs, 0, 0, AlphaBetaCache::new(true), &Processors::default());
         assert_eq!(v, 1.0);
         assert_eq!(a.unwrap(), KPAction::Bet.into());
 
@@ -334,7 +384,7 @@ mod tests {
             KPAction::Pass,
             KPAction::Bet,
         ]);
-        let (v, a) = mtd_search(gs, 0, 0, AlphaBetaCache::new(true));
+        let (v, a) = mtd_search(gs, 0, 0, AlphaBetaCache::new(true), &Processors::default());
         assert_eq!(v, 2.0);
         assert_eq!(a.unwrap(), KPAction::Bet.into());
     }
@@ -347,7 +397,7 @@ mod tests {
         gs.apply_action(BluffActions::Roll(Dice::Two).into());
         gs.apply_action(BluffActions::Roll(Dice::Three).into());
 
-        let (v, a) = mtd_search(gs, 0, 0, AlphaBetaCache::new(true));
+        let (v, a) = mtd_search(gs, 0, 0, AlphaBetaCache::new(true), &Processors::default());
         assert_eq!(v, 1.0);
         assert_eq!(
             BluffActions::from(a.unwrap()),
@@ -360,7 +410,7 @@ mod tests {
         gs.apply_action(BluffActions::Roll(Dice::Three).into());
         gs.apply_action(BluffActions::Roll(Dice::Three).into());
 
-        let (v, a) = mtd_search(gs, 0, 0, AlphaBetaCache::new(true));
+        let (v, a) = mtd_search(gs, 0, 0, AlphaBetaCache::new(true), &Processors::default());
         assert_eq!(v, 1.0);
 
         assert_eq!(

@@ -244,7 +244,7 @@ pub fn get_card_play_games(n: usize, rng: &mut StdRng) -> Vec<EuchreGameState> {
 
     fn bid(
         mut gs: EuchreGameState,
-        agent: &mut PolicyAgent<PIMCTSBot<EuchreGameState, OpenHandSolver>>,
+        agent: &mut PolicyAgent<PIMCTSBot<EuchreGameState, OpenHandSolver<EuchreGameState>>>,
     ) -> EuchreGameState {
         while gs.phase() != EPhase::Play {
             let a = agent.step(&gs);
