@@ -1,5 +1,6 @@
 pub mod cfr;
 pub mod cfrcs;
+pub mod cfres;
 pub mod cfrnode;
 
 use clap::ValueEnum;
@@ -25,6 +26,7 @@ use self::cfrnode::{ActionVec, CFRNode};
 pub enum CFRAlgorithm {
     CFR,
     CFRCS,
+    CFRES,
 }
 
 pub struct CFRAgent<T: GameState, N: NodeStore<CFRNode>> {
@@ -60,6 +62,7 @@ impl<T: GameState, N: NodeStore<CFRNode> + Policy<T>> CFRAgent<T, N> {
         let nodes_touched = match self.alg {
             CFRAlgorithm::CFR => train(self, iterations, &mut VanillaCFR::new()),
             CFRAlgorithm::CFRCS => train(self, iterations, &mut CFRCS::new(seed)),
+            CFRAlgorithm::CFRES => todo!(),
         };
 
         self.nodes_touched += nodes_touched;
