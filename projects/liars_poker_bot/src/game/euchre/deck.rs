@@ -45,6 +45,18 @@ pub enum CardLocation {
     None,
 }
 
+impl CardLocation {
+    pub fn to_player(self) -> Option<Player> {
+        match self {
+            CardLocation::Player0 => Some(0),
+            CardLocation::Player1 => Some(1),
+            CardLocation::Player2 => Some(2),
+            CardLocation::Player3 => Some(3),
+            _ => None,
+        }
+    }
+}
+
 impl From<Player> for CardLocation {
     fn from(value: Player) -> Self {
         match value {

@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use criterion::{criterion_group, criterion_main, Criterion};
 use liars_poker_bot::{
     actions,
@@ -14,7 +16,11 @@ use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
 pub fn criterion_benchmark(c: &mut Criterion) {
     let mut rng: StdRng = SeedableRng::seed_from_u64(42);
-    let mut evaluator = PIMCTSBot::new(50, OpenHandSolver::new(), SeedableRng::seed_from_u64(100));
+    let mut evaluator = PIMCTSBot::new(
+        50,
+        OpenHandSolver::new_euchre(),
+        SeedableRng::seed_from_u64(100),
+    );
 
     let mut array = [1; 7];
     let mut v = 1;
@@ -23,16 +29,21 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     c.bench_function("shift bitshift", |b| b.iter(|| bit_shift(&mut v)));
 
-    c.bench_function("open hand evaluator 50", |b| {
+    let mut group = c.benchmark_group("open-hand");
+    group.throughput(criterion::Throughput::Elements(1));
+    group.sample_size(1000);
+    group.measurement_time(Duration::new(35, 0));
+    group.bench_function("open hand evaluator 50", |b| {
         b.iter(|| evaluate_games(&mut evaluator, &mut rng))
     });
+    group.finish();
 
     let mut group = c.benchmark_group("agents");
     group.sample_size(10);
 
     let rng: StdRng = SeedableRng::seed_from_u64(42);
     let mut evaluator = PolicyAgent::new(
-        AlphaMuBot::new(OpenHandSolver::new(), 10, 5, rng.clone()),
+        AlphaMuBot::new(OpenHandSolver::new_euchre(), 10, 5, rng.clone()),
         rng,
     );
     let mut rng: StdRng = SeedableRng::seed_from_u64(45);

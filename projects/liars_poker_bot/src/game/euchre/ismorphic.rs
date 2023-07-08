@@ -108,7 +108,7 @@ fn is_equal(l: &Locations, i: usize, loc: CardLocation) -> bool {
 }
 
 /// Return all cards, in order from lowest to highest of a suit for a given trump
-fn get_cards(suit: Suit, trump: Option<Suit>) -> &'static [C] {
+pub(super) fn get_cards(suit: Suit, trump: Option<Suit>) -> &'static [C] {
     match (suit, trump) {
         (Suit::Clubs, Some(Suit::Clubs)) => CLUBS_CLUBS,
         (Suit::Clubs, Some(Suit::Spades)) => CLUBS_SPADES,

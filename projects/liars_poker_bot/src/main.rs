@@ -9,6 +9,7 @@ use liars_poker_bot::agents::{Agent, PlayerAgent, PolicyAgent, RandomAgent};
 use liars_poker_bot::algorithms::alphamu::AlphaMuBot;
 use liars_poker_bot::algorithms::exploitability::{self};
 
+use liars_poker_bot::algorithms::ismcts::Evaluator;
 use liars_poker_bot::algorithms::open_hand_solver::OpenHandSolver;
 use liars_poker_bot::algorithms::pimcts::PIMCTSBot;
 use liars_poker_bot::cfragent::cfrnode::CFRNode;
@@ -115,24 +116,23 @@ fn run_scratch(_args: Args) {
     println!("kuhn poker size: {}", mem::size_of::<KPGameState>());
     println!("euchre size: {}", mem::size_of::<EuchreGameState>());
 
-    let gs = EuchreGameState::from(
-        "KcQsQh9dAd|QcAcTs9hTd|TcJsThAhKd|Jc9sAsJhKh|9c|PPT|Jh|AdTdKdJc|KhQh9hAh|Js9cKcAc",
-    );
+    let gs = EuchreGameState::from("QcKcKs9dTd|9cTcAc9sAh|JcTsJhJdKd|AsQhKhQdAd|Js|PT|");
 
     let actions = actions!(gs).into_iter().map(EAction::from).collect_vec();
     println!("actions: {:?}", actions);
 
-    let mut alphamu = AlphaMuBot::new(
-        OpenHandSolver::new(),
-        20,
-        25,
-        SeedableRng::seed_from_u64(42),
-    );
-    let policy = alphamu.action_probabilities(&gs);
+    let mut agent = PIMCTSBot::new(50, OpenHandSolver::new(), SeedableRng::seed_from_u64(43));
+    let policy = agent.action_probabilities(&gs);
 
     for (a, p) in policy.to_vec() {
         println!("{} ({}): {}", EAction::from(a), a, p);
     }
+
+    println!(
+        "euchre: {}",
+        OpenHandSolver::new_euchre().evaluate_player(&gs, 0)
+    );
+    println!("default: {}", OpenHandSolver::new().evaluate_player(&gs, 0));
 }
 
 fn run_analyze(args: Args) {
