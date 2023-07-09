@@ -1,4 +1,8 @@
-use std::sync::Arc;
+use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
 use dashmap::DashMap;
 
@@ -14,32 +18,69 @@ use crate::{
 
 use super::{alphamu::Team, ismcts::Evaluator};
 
+pub const DEFAULT_MAX_TT_DEPTH: u8 = 255;
+
+#[derive(Copy, Clone)]
+pub struct Optimizations<G> {
+    pub use_transposition_table: bool,
+    pub isometric_transposition: bool,
+    pub max_depth_for_tt: u8,
+    /// Function that can filter or re-order moves for evaluation.
+    ///
+    /// For example, it could filter down to a single move, or it could
+    /// remove all but 1 move.
+    pub action_processor: fn(gs: &G, actions: &mut Vec<Action>),
+}
+
+impl<G> Default for Optimizations<G> {
+    fn default() -> Self {
+        Self {
+            use_transposition_table: true,
+            isometric_transposition: true,
+            max_depth_for_tt: DEFAULT_MAX_TT_DEPTH,
+            action_processor: |_: &G, _: &mut Vec<Action>| {},
+        }
+    }
+}
+
+impl Optimizations<EuchreGameState> {
+    pub fn new_euchre() -> Self {
+        Optimizations {
+            use_transposition_table: true,
+            isometric_transposition: true,
+            max_depth_for_tt: DEFAULT_MAX_TT_DEPTH,
+            action_processor: process_euchre_actions,
+        }
+    }
+}
+
 /// Rollout solver that assumes perfect information by playing against open hands
 ///
 /// This is an adaption of a double dummy solver for bridge
 /// http://privat.bahnhof.se/wb758135/bridge/Alg-dds_x.pdf
 #[derive(Clone)]
 pub struct OpenHandSolver<G> {
-    cache: AlphaBetaCache,
-    /// Function that can filter or re-order moves for evaluation.
-    ///
-    /// For example, it could filter down to a single move, or it could
-    /// remove all but 1 move.
-    processors: Processors<G>,
+    cache: AlphaBetaCache<G>,
+    optimizations: Optimizations<G>,
 }
 
-impl<G> OpenHandSolver<G> {
+impl<G: Clone> OpenHandSolver<G> {
     pub fn new() -> Self {
         Self {
-            cache: AlphaBetaCache::default(),
-            processors: Processors::default(),
+            cache: AlphaBetaCache::new(Optimizations::default()),
+            optimizations: Optimizations::default(),
         }
     }
 
     pub fn new_without_cache() -> Self {
+        let optimizations = Optimizations {
+            use_transposition_table: false,
+            ..Default::default()
+        };
+
         Self {
-            cache: AlphaBetaCache::new(false),
-            processors: Processors::default(),
+            cache: AlphaBetaCache::new(optimizations.clone()),
+            optimizations,
         }
     }
 
@@ -49,15 +90,15 @@ impl<G> OpenHandSolver<G> {
 }
 
 impl OpenHandSolver<EuchreGameState> {
-    pub fn new_euchre() -> Self {
+    pub fn new_euchre(optimizations: Optimizations<EuchreGameState>) -> Self {
         Self {
-            cache: AlphaBetaCache::default(),
-            processors: Processors::new_euchre(),
+            cache: AlphaBetaCache::new(optimizations.clone()),
+            optimizations,
         }
     }
 }
 
-impl<G> Default for OpenHandSolver<G> {
+impl<G: Clone> Default for OpenHandSolver<G> {
     fn default() -> Self {
         Self::new()
     }
@@ -71,7 +112,7 @@ impl<G: GameState> Evaluator<G> for OpenHandSolver<G> {
             maximizing_player,
             0,
             self.cache.clone(),
-            &self.processors,
+            &self.optimizations,
         )
         .0
     }
@@ -126,8 +167,8 @@ fn mtd_search<G: GameState>(
     mut root: G,
     maximizing_player: Player,
     first_guess: i8,
-    mut cache: AlphaBetaCache,
-    processors: &Processors<G>,
+    mut cache: AlphaBetaCache<G>,
+    optimizations: &Optimizations<G>,
 ) -> (f64, Option<Action>) {
     let mut g = first_guess;
     let mut best_action;
@@ -141,8 +182,9 @@ fn mtd_search<G: GameState>(
             Team::from(maximizing_player),
             (beta - 1) as f64,
             beta as f64,
+            0,
             &mut cache,
-            processors,
+            optimizations,
         );
         g = result.0 as i8;
         best_action = result.1;
@@ -169,35 +211,29 @@ struct AlphaBetaResult {
 type TranspositionKey = (Team, u64);
 /// Helper struct to speeding up alpha_beta search
 #[derive(Clone)]
-struct AlphaBetaCache {
+struct AlphaBetaCache<G> {
     vec_pool: Pool<Vec<Action>>,
     transposition_table: Arc<DashMap<TranspositionKey, AlphaBetaResult>>,
-    use_tt: bool,
+    optimizations: Optimizations<G>,
 }
 
-impl AlphaBetaCache {
-    fn new(use_tt: bool) -> Self {
+impl<G> AlphaBetaCache<G> {
+    fn new(optimizations: Optimizations<G>) -> Self {
         Self {
             vec_pool: Pool::new(|| Vec::with_capacity(5)),
             transposition_table: Arc::new(DashMap::new()),
-            use_tt,
+            optimizations,
         }
     }
 }
 
-impl Default for AlphaBetaCache {
-    fn default() -> Self {
-        Self::new(true)
-    }
-}
-
-impl AlphaBetaCache {
-    pub fn get<G: GameState>(&self, gs: &G, maximizing_team: Team) -> Option<AlphaBetaResult> {
-        if !self.use_tt {
+impl<G: GameState> AlphaBetaCache<G> {
+    pub fn get(&self, gs: &G, maximizing_team: Team) -> Option<AlphaBetaResult> {
+        if !self.optimizations.use_transposition_table {
             return None;
         }
 
-        let k = gs.transposition_table_hash();
+        let k = self.get_game_key(gs);
         if let Some(k) = k {
             self.transposition_table
                 .get(&(maximizing_team, k))
@@ -208,18 +244,40 @@ impl AlphaBetaCache {
         }
     }
 
-    pub fn insert<G: GameState>(&self, gs: &G, v: AlphaBetaResult, maximizing_team: Team) {
-        if !self.use_tt {
+    pub fn insert(&self, gs: &G, v: AlphaBetaResult, maximizing_team: Team, depth: u8) {
+        if !self.optimizations.use_transposition_table
+            || depth > self.optimizations.max_depth_for_tt
+        {
             return;
         }
 
         // Check if the game wants to store this state
-        let k = gs.transposition_table_hash();
+        let k = self.get_game_key(gs);
         if let Some(k) = k {
             self.transposition_table.insert((maximizing_team, k), v);
         }
     }
 
+    fn get_game_key(&self, gs: &G) -> Option<u64> {
+        let k = gs.transposition_table_hash();
+
+        // Continue to use the game specific logic of when to put things in the table
+        if k.is_none() {
+            return k;
+        }
+
+        match self.optimizations.isometric_transposition {
+            true => k,
+            false => {
+                let mut hasher = DefaultHasher::default();
+                gs.istate_key(gs.cur_player()).hash(&mut hasher);
+                Some(hasher.finish())
+            }
+        }
+    }
+}
+
+impl<G> AlphaBetaCache<G> {
     pub fn reset(&mut self) {
         self.transposition_table.clear();
     }
@@ -236,8 +294,9 @@ fn alpha_beta<G: GameState>(
     maximizing_team: Team,
     mut alpha: f64,
     mut beta: f64,
-    cache: &mut AlphaBetaCache,
-    processors: &Processors<G>,
+    depth: u8,
+    cache: &mut AlphaBetaCache<G>,
+    optimizations: &Optimizations<G>,
 ) -> (f64, Option<Action>) {
     if gs.is_terminal() {
         let v = gs.evaluate(maximizing_team as usize);
@@ -260,7 +319,7 @@ fn alpha_beta<G: GameState>(
 
     let mut actions = cache.vec_pool.detach();
     gs.legal_actions(&mut actions);
-    (processors.action)(gs, &mut actions);
+    (optimizations.action_processor)(gs, &mut actions);
     if gs.is_chance_node() {
         todo!("add support for chance nodes")
     }
@@ -274,7 +333,15 @@ fn alpha_beta<G: GameState>(
         let mut value = f64::NEG_INFINITY;
         for a in &actions {
             gs.apply_action(*a);
-            let (child_value, _) = alpha_beta(gs, maximizing_team, alpha, beta, cache, processors);
+            let (child_value, _) = alpha_beta(
+                gs,
+                maximizing_team,
+                alpha,
+                beta,
+                depth + 1,
+                cache,
+                optimizations,
+            );
             gs.undo();
             if child_value > value {
                 value = child_value;
@@ -290,7 +357,15 @@ fn alpha_beta<G: GameState>(
         let mut value = f64::INFINITY;
         for a in &actions {
             gs.apply_action(*a);
-            let (child_value, _) = alpha_beta(gs, maximizing_team, alpha, beta, cache, processors);
+            let (child_value, _) = alpha_beta(
+                gs,
+                maximizing_team,
+                alpha,
+                beta,
+                depth + 1,
+                cache,
+                optimizations,
+            );
             gs.undo();
             if child_value < value {
                 value = child_value;
@@ -322,31 +397,10 @@ fn alpha_beta<G: GameState>(
         cache_value.lower_bound = result.0;
     }
 
-    cache.insert(gs, cache_value, maximizing_team);
+    cache.insert(gs, cache_value, maximizing_team, depth);
     actions.clear();
     cache.vec_pool.attach(actions);
     result
-}
-
-#[derive(Clone, Copy)]
-pub(super) struct Processors<G> {
-    action: fn(gs: &G, actions: &mut Vec<Action>),
-}
-
-impl<G> Default for Processors<G> {
-    fn default() -> Self {
-        Self {
-            action: |_: &G, _: &mut Vec<Action>| {},
-        }
-    }
-}
-
-impl Processors<EuchreGameState> {
-    pub fn new_euchre() -> Self {
-        Self {
-            action: process_euchre_actions,
-        }
-    }
 }
 
 #[cfg(test)]
@@ -355,7 +409,7 @@ mod tests {
     use crate::{
         algorithms::{
             ismcts::Evaluator,
-            open_hand_solver::{mtd_search, AlphaBetaCache, Processors},
+            open_hand_solver::{mtd_search, AlphaBetaCache, Optimizations},
         },
         game::{
             bluff::{Bluff, BluffActions, Dice},
@@ -369,12 +423,24 @@ mod tests {
     #[test]
     fn test_mtd_kuhn_poker() {
         let gs = KuhnPoker::from_actions(&[KPAction::Jack, KPAction::Queen]);
-        let (v, a) = mtd_search(gs, 0, 0, AlphaBetaCache::new(true), &Processors::default());
+        let (v, a) = mtd_search(
+            gs,
+            0,
+            0,
+            AlphaBetaCache::new(Optimizations::default()),
+            &Optimizations::default(),
+        );
         assert_eq!(v, -1.0);
         assert_eq!(a.unwrap(), KPAction::Pass.into());
 
         let gs = KuhnPoker::from_actions(&[KPAction::King, KPAction::Queen]);
-        let (v, a) = mtd_search(gs, 0, 0, AlphaBetaCache::new(true), &Processors::default());
+        let (v, a) = mtd_search(
+            gs,
+            0,
+            0,
+            AlphaBetaCache::new(Optimizations::default()),
+            &Optimizations::default(),
+        );
         assert_eq!(v, 1.0);
         assert_eq!(a.unwrap(), KPAction::Bet.into());
 
@@ -384,7 +450,13 @@ mod tests {
             KPAction::Pass,
             KPAction::Bet,
         ]);
-        let (v, a) = mtd_search(gs, 0, 0, AlphaBetaCache::new(true), &Processors::default());
+        let (v, a) = mtd_search(
+            gs,
+            0,
+            0,
+            AlphaBetaCache::new(Optimizations::default()),
+            &Optimizations::default(),
+        );
         assert_eq!(v, 2.0);
         assert_eq!(a.unwrap(), KPAction::Bet.into());
     }
@@ -397,7 +469,13 @@ mod tests {
         gs.apply_action(BluffActions::Roll(Dice::Two).into());
         gs.apply_action(BluffActions::Roll(Dice::Three).into());
 
-        let (v, a) = mtd_search(gs, 0, 0, AlphaBetaCache::new(true), &Processors::default());
+        let (v, a) = mtd_search(
+            gs,
+            0,
+            0,
+            AlphaBetaCache::new(Optimizations::default()),
+            &Optimizations::default(),
+        );
         assert_eq!(v, 1.0);
         assert_eq!(
             BluffActions::from(a.unwrap()),
@@ -410,7 +488,13 @@ mod tests {
         gs.apply_action(BluffActions::Roll(Dice::Three).into());
         gs.apply_action(BluffActions::Roll(Dice::Three).into());
 
-        let (v, a) = mtd_search(gs, 0, 0, AlphaBetaCache::new(true), &Processors::default());
+        let (v, a) = mtd_search(
+            gs,
+            0,
+            0,
+            AlphaBetaCache::new(Optimizations::default()),
+            &Optimizations::default(),
+        );
         assert_eq!(v, 1.0);
 
         assert_eq!(

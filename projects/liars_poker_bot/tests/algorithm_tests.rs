@@ -2,8 +2,11 @@ use approx::assert_relative_eq;
 use liars_poker_bot::{
     agents::{Agent, PolicyAgent},
     algorithms::{
-        alphamu::AlphaMuBot, exploitability::exploitability, ismcts::Evaluator,
-        open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot,
+        alphamu::AlphaMuBot,
+        exploitability::exploitability,
+        ismcts::Evaluator,
+        open_hand_solver::{OpenHandSolver, Optimizations},
+        pimcts::PIMCTSBot,
     },
     cfragent::{CFRAgent, CFRAlgorithm},
     database::memory_node_store::MemoryNodeStore,
@@ -26,7 +29,7 @@ fn test_alg_open_hand_solver_euchre() {
     let games = get_games(Euchre::game(), 1000, &mut rng);
 
     // Also use the euchre specific optimizations for the cached one
-    let cached = OpenHandSolver::new_euchre();
+    let cached = OpenHandSolver::new_euchre(Optimizations::default());
     let no_cache = OpenHandSolver::new_without_cache();
 
     // Change to a non parallel iterator to see the error message

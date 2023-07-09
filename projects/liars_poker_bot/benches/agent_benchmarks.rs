@@ -5,7 +5,10 @@ use liars_poker_bot::{
     actions,
     agents::PolicyAgent,
     algorithms::{
-        alphamu::AlphaMuBot, ismcts::Evaluator, open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot,
+        alphamu::AlphaMuBot,
+        ismcts::Evaluator,
+        open_hand_solver::{OpenHandSolver, Optimizations},
+        pimcts::PIMCTSBot,
     },
     game::{
         euchre::{Euchre, EuchreGameState},
@@ -15,10 +18,9 @@ use liars_poker_bot::{
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
 pub fn criterion_benchmark(c: &mut Criterion) {
-    let mut rng: StdRng = SeedableRng::seed_from_u64(42);
     let mut evaluator = PIMCTSBot::new(
         50,
-        OpenHandSolver::new_euchre(),
+        OpenHandSolver::new_euchre(Optimizations::default()),
         SeedableRng::seed_from_u64(100),
     );
 
@@ -32,7 +34,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("open-hand");
     let mut rng: StdRng = SeedableRng::seed_from_u64(101);
     group.throughput(criterion::Throughput::Elements(1));
-    group.sample_size(1000);
+    group.sample_size(2000);
     group.measurement_time(Duration::new(35, 0));
     group.bench_function("open hand evaluator 50", |b| {
         b.iter(|| evaluate_games(&mut evaluator, &mut rng))
@@ -44,7 +46,12 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     let rng: StdRng = SeedableRng::seed_from_u64(42);
     let mut evaluator = PolicyAgent::new(
-        AlphaMuBot::new(OpenHandSolver::new_euchre(), 10, 5, rng.clone()),
+        AlphaMuBot::new(
+            OpenHandSolver::new_euchre(Optimizations::default()),
+            10,
+            5,
+            rng.clone(),
+        ),
         rng,
     );
     let mut rng: StdRng = SeedableRng::seed_from_u64(45);

@@ -10,7 +10,7 @@ use liars_poker_bot::algorithms::alphamu::AlphaMuBot;
 use liars_poker_bot::algorithms::exploitability::{self};
 
 use liars_poker_bot::algorithms::ismcts::Evaluator;
-use liars_poker_bot::algorithms::open_hand_solver::OpenHandSolver;
+use liars_poker_bot::algorithms::open_hand_solver::{OpenHandSolver, Optimizations};
 use liars_poker_bot::algorithms::pimcts::PIMCTSBot;
 use liars_poker_bot::cfragent::cfrnode::CFRNode;
 use liars_poker_bot::cfragent::{CFRAgent, CFRAlgorithm};
@@ -130,7 +130,7 @@ fn run_scratch(_args: Args) {
 
     println!(
         "euchre: {}",
-        OpenHandSolver::new_euchre().evaluate_player(&gs, 0)
+        OpenHandSolver::new_euchre(Optimizations::default()).evaluate_player(&gs, 0)
     );
     println!("default: {}", OpenHandSolver::new().evaluate_player(&gs, 0));
 }
