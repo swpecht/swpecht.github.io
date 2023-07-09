@@ -391,8 +391,8 @@ impl EuchreGameState {
             return suit;
         }
 
-        // Correct the jack if in play phase
-        if self.phase() == EPhase::Play {
+        // Correct the jack if in play or discard phase
+        if self.phase() == EPhase::Play || self.phase() == EPhase::Discard {
             suit = match (c, self.trump.unwrap()) {
                 (Card::JC, Suit::Spades) => Suit::Spades,
                 (Card::JS, Suit::Clubs) => Suit::Clubs,
