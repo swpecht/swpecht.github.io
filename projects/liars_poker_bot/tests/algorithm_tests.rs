@@ -29,6 +29,7 @@ fn test_alg_open_hand_solver_euchre() {
     let cached = OpenHandSolver::new_euchre();
     let no_cache = OpenHandSolver::new_without_cache();
 
+    // Change to a non parallel iterator to see the error message
     games.into_par_iter().enumerate().for_each(|(i, mut gs)| {
         let mut actions = Vec::new();
         while !gs.is_terminal() {
@@ -40,24 +41,6 @@ fn test_alg_open_hand_solver_euchre() {
             gs.apply_action(*a);
         }
     });
-
-    // for i in 0..1000 {
-    //     let mut gs = Euchre::new_state();
-    //     while gs.is_chance_node() {
-    //         gs.legal_actions(&mut actions);
-    //         let a = actions.choose(&mut rng).unwrap();
-    //         gs.apply_action(*a);
-    //     }
-
-    //     while !gs.is_terminal() {
-    //         let c = cached.evaluate_player(&gs, gs.cur_player());
-    //         let no_c = no_cache.evaluate_player(&gs, gs.cur_player());
-    //         assert_eq!(c, no_c, "Different evaluations: {}: {}", i, gs);
-    //         gs.legal_actions(&mut actions);
-    //         let a = actions.choose(&mut rng).unwrap();
-    //         gs.apply_action(*a);
-    //     }
-    // }
 }
 
 // /// Confirm that alphamu gives the same results with and without optimizations.

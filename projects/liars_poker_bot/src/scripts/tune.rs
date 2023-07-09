@@ -12,15 +12,13 @@ use liars_poker_bot::{
     },
     game::{
         euchre::{actions::EAction, Euchre, EuchreGameState},
-        GameState,
+        get_games, GameState,
     },
 };
 use log::info;
 use rand::SeedableRng;
 
 use crate::scripts::{benchmark::get_rng, pass_on_bower_alpha::get_bower_deals};
-
-use super::benchmark::get_games;
 
 #[derive(Debug, ValueEnum, Clone, Copy)]
 pub enum TuneMode {

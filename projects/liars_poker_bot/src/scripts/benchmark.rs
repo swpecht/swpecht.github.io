@@ -17,6 +17,7 @@ use liars_poker_bot::{
     game::{
         bluff::Bluff,
         euchre::{EPhase, Euchre, EuchreGameState},
+        get_games,
         kuhn_poker::KuhnPoker,
         Game, GameState,
     },
@@ -264,24 +265,6 @@ pub fn get_card_play_games(n: usize, rng: &mut StdRng) -> Vec<EuchreGameState> {
         .collect_vec();
     pb.finish_and_clear();
 
-    games
-}
-
-pub fn get_games<T: GameState>(game: Game<T>, n: usize, rng: &mut StdRng) -> Vec<T> {
-    let mut games = Vec::with_capacity(n);
-    let mut actions = Vec::new();
-
-    for _ in 0..n {
-        let mut gs = (game.new)();
-        while gs.is_chance_node() {
-            gs.legal_actions(&mut actions);
-            let a = actions.choose(rng).unwrap();
-            gs.apply_action(*a);
-            actions.clear();
-        }
-
-        games.push(gs);
-    }
     games
 }
 

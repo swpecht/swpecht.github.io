@@ -30,6 +30,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("shift bitshift", |b| b.iter(|| bit_shift(&mut v)));
 
     let mut group = c.benchmark_group("open-hand");
+    let mut rng: StdRng = SeedableRng::seed_from_u64(101);
     group.throughput(criterion::Throughput::Elements(1));
     group.sample_size(1000);
     group.measurement_time(Duration::new(35, 0));
