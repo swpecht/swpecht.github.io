@@ -9,11 +9,13 @@ use liars_poker_bot::{
     database::memory_node_store::MemoryNodeStore,
     game::{
         euchre::{actions::EAction, Euchre},
+        get_games,
         kuhn_poker::KuhnPoker,
         GameState,
     },
 };
-use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
+use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
+use rayon::prelude::*;
 
 /// Confirm that the open hand solver with and without the cache gives the same results.
 ///
@@ -21,29 +23,41 @@ use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 #[test]
 fn test_alg_open_hand_solver_euchre() {
     let mut rng: StdRng = SeedableRng::seed_from_u64(51);
-    let mut actions = Vec::new();
+    let games = get_games(Euchre::game(), 1000, &mut rng);
 
     // Also use the euchre specific optimizations for the cached one
-    let mut cached = OpenHandSolver::new_euchre();
-    let mut no_cache = OpenHandSolver::new_without_cache();
+    let cached = OpenHandSolver::new_euchre();
+    let no_cache = OpenHandSolver::new_without_cache();
 
-    for i in 0..1000 {
-        let mut gs = Euchre::new_state();
-        while gs.is_chance_node() {
-            gs.legal_actions(&mut actions);
-            let a = actions.choose(&mut rng).unwrap();
-            gs.apply_action(*a);
-        }
-
+    games.into_par_iter().enumerate().for_each(|(i, mut gs)| {
+        let mut actions = Vec::new();
         while !gs.is_terminal() {
-            let c = cached.evaluate_player(&gs, gs.cur_player());
-            let no_c = no_cache.evaluate_player(&gs, gs.cur_player());
+            let c = cached.clone().evaluate_player(&gs, gs.cur_player());
+            let no_c = no_cache.clone().evaluate_player(&gs, gs.cur_player());
             assert_eq!(c, no_c, "Different evaluations: {}: {}", i, gs);
             gs.legal_actions(&mut actions);
-            let a = actions.choose(&mut rng).unwrap();
+            let a = actions.choose(&mut thread_rng()).unwrap();
             gs.apply_action(*a);
         }
-    }
+    });
+
+    // for i in 0..1000 {
+    //     let mut gs = Euchre::new_state();
+    //     while gs.is_chance_node() {
+    //         gs.legal_actions(&mut actions);
+    //         let a = actions.choose(&mut rng).unwrap();
+    //         gs.apply_action(*a);
+    //     }
+
+    //     while !gs.is_terminal() {
+    //         let c = cached.evaluate_player(&gs, gs.cur_player());
+    //         let no_c = no_cache.evaluate_player(&gs, gs.cur_player());
+    //         assert_eq!(c, no_c, "Different evaluations: {}: {}", i, gs);
+    //         gs.legal_actions(&mut actions);
+    //         let a = actions.choose(&mut rng).unwrap();
+    //         gs.apply_action(*a);
+    //     }
+    // }
 }
 
 // /// Confirm that alphamu gives the same results with and without optimizations.

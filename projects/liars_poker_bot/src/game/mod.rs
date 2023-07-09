@@ -10,7 +10,7 @@ pub mod kuhn_poker;
 pub mod updownriver;
 
 use log::trace;
-use rand::{seq::SliceRandom, Rng};
+use rand::{rngs::StdRng, seq::SliceRandom, Rng};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::{
@@ -120,6 +120,24 @@ where
     trace!("game state: {}", s);
     trace!("game over, rewards: {}, {}", s.evaluate(0), s.evaluate(1));
     returns
+}
+
+pub fn get_games<T: GameState>(game: Game<T>, n: usize, rng: &mut StdRng) -> Vec<T> {
+    let mut games = Vec::with_capacity(n);
+    let mut actions = Vec::new();
+
+    for _ in 0..n {
+        let mut gs = (game.new)();
+        while gs.is_chance_node() {
+            gs.legal_actions(&mut actions);
+            let a = actions.choose(rng).unwrap();
+            gs.apply_action(*a);
+            actions.clear();
+        }
+
+        games.push(gs);
+    }
+    games
 }
 
 #[macro_export]
