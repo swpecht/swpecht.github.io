@@ -9,30 +9,18 @@ use super::{actions::Card, EPhase};
 
 /// Euchre specific processor for open hand solver
 pub fn process_euchre_actions(gs: &EuchreGameState, actions: &mut Vec<Action>) {
-    // We cannot simply remove the picked up card from the action list since there are some times when it is advantageous to discard it. For example:
-    // "QcKcKs9dTd|9cTcAc9sAh|JcTsJhJdKd|AsQhKhQdAd|Js|PT|"
-    // Instead, we just evaluate it last
-    if gs.phase() == EPhase::Discard {
-        let face_up = gs.face_up();
-        let idx = actions
-            .iter()
-            .find_position(|&x| EAction::from(*x).card() != face_up)
-            .unwrap()
-            .0;
+    match gs.phase() {
+        EPhase::DealHands => {}
+        EPhase::DealFaceUp => {}
+        EPhase::Pickup => {}
+        EPhase::Discard => process_discard_actions(gs, actions),
+        EPhase::ChooseTrump => {}
+        EPhase::Play => process_play_actions(gs, actions),
+    };
+}
 
-        let last = actions.len() - 1;
-        actions.swap(idx, last);
-        return;
-    }
-
-    // Only have action processing for the play phase
-    // could add further optimizations in the future, e.g. remove trump cards from discard consideration, unless all trump.
-    // or filter out higher cards for discard of the same suit
-    if gs.phase() != EPhase::Play {
-        return;
-    }
-
-    // if have the highest trump, and it's a new trick, remove all other actions, want to lead with that
+fn process_play_actions(gs: &EuchreGameState, actions: &mut Vec<Action>) {
+    // if have the highest trump, and it's a new trick, likely want to play that, evaluate it first
     if gs.is_trick_over() {
         if let Some((player, card)) = get_player_highest_trump(gs) {
             if player == gs.cur_player() {
@@ -47,12 +35,28 @@ pub fn process_euchre_actions(gs: &EuchreGameState, actions: &mut Vec<Action>) {
                     "found empty actions evaluating: {}",
                     gs
                 );
-                return;
             }
         }
     }
 
     // if leading and have off suit ace, use that
+
+    // remove actions that are the same (e.g. cards are next to each other)
+}
+
+fn process_discard_actions(gs: &EuchreGameState, actions: &mut Vec<Action>) {
+    // We cannot simply remove the picked up card from the action list since there are some times when it is advantageous to discard it. For example:
+    // "QcKcKs9dTd|9cTcAc9sAh|JcTsJhJdKd|AsQhKhQdAd|Js|PT|"
+    // Instead, we just evaluate it last
+    let face_up = gs.face_up();
+    let idx = actions
+        .iter()
+        .find_position(|&x| EAction::from(*x).card() != face_up)
+        .unwrap()
+        .0;
+
+    let last = actions.len() - 1;
+    actions.swap(idx, last);
 
     // remove actions that are the same (e.g. cards are next to each other)
 }
@@ -76,11 +80,7 @@ fn get_player_highest_trump(gs: &EuchreGameState) -> Option<(Player, Card)> {
         }
     }
 
-    if owner.is_some() {
-        Some((owner.unwrap(), highest_trump.unwrap()))
-    } else {
-        None
-    }
+    owner.map(|owner| (owner, highest_trump.unwrap()))
 }
 
 #[cfg(test)]
