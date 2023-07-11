@@ -172,12 +172,12 @@ impl EuchreGameState {
     /// Can only be done by the dealer (player 3)
     fn apply_action_discard(&mut self, a: Action) {
         let discard = EAction::from(a).card();
-        if self.deck[discard] != CardLocation::Player3 {
-            panic!(
-                "attempting to discard a card not in dealers hand: {}\n{:?}",
-                discard, self.deck
-            )
-        }
+        assert!(
+            self.deck[discard] != CardLocation::Player3,
+            "attempting to discard a card not in dealers hand: {}\n{:?}",
+            discard,
+            self.deck
+        );
         self.deck[discard] = CardLocation::None; // dealer
         self.cur_player = 0;
         self.phase = EPhase::Play
