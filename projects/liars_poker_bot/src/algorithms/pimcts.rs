@@ -141,15 +141,27 @@ mod tests {
 
     #[test]
     fn test_pimcts_kuhn() {
-        let mut agent = PIMCTSBot::new(100, OpenHandSolver::new(), SeedableRng::seed_from_u64(109));
+        let mut agent = PIMCTSBot::new(
+            100,
+            OpenHandSolver::default(),
+            SeedableRng::seed_from_u64(109),
+        );
         let gs = KuhnPoker::from_actions(&[KPAction::Jack, KPAction::Queen]);
         assert_eq!(agent.evaluate(&gs), vec![-1.0, 1.0]);
 
-        let mut agent = PIMCTSBot::new(100, OpenHandSolver::new(), SeedableRng::seed_from_u64(109));
+        let mut agent = PIMCTSBot::new(
+            100,
+            OpenHandSolver::default(),
+            SeedableRng::seed_from_u64(109),
+        );
         let gs = KuhnPoker::from_actions(&[KPAction::Queen, KPAction::Jack]);
         assert_eq!(agent.evaluate(&gs), vec![0.0, 0.0]);
 
-        let mut agent = PIMCTSBot::new(100, OpenHandSolver::new(), SeedableRng::seed_from_u64(109));
+        let mut agent = PIMCTSBot::new(
+            100,
+            OpenHandSolver::default(),
+            SeedableRng::seed_from_u64(109),
+        );
         let gs = KuhnPoker::from_actions(&[KPAction::King, KPAction::Jack]);
         assert_eq!(agent.evaluate(&gs), vec![1.0, -1.0]);
     }
@@ -160,12 +172,19 @@ mod tests {
             "JsQs9hKhAh|TcQcKcThAd|9cJc9sAsQh|KsJh9dJdQd|Kd|PPPT|Ks|JsThAsJh|JdQsAd9c|Qd",
         );
 
-        let mut policy = PIMCTSBot::new(10, OpenHandSolver::new(), SeedableRng::seed_from_u64(42));
+        let mut policy = PIMCTSBot::new(
+            10,
+            OpenHandSolver::default(),
+            SeedableRng::seed_from_u64(42),
+        );
         let result = policy.action_probabilities(&gs);
 
         for _ in 0..100 {
-            let mut policy =
-                PIMCTSBot::new(10, OpenHandSolver::new(), SeedableRng::seed_from_u64(42));
+            let mut policy = PIMCTSBot::new(
+                10,
+                OpenHandSolver::default(),
+                SeedableRng::seed_from_u64(42),
+            );
             assert_eq!(policy.action_probabilities(&gs), result);
         }
     }

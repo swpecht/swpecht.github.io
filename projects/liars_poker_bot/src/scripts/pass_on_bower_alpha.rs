@@ -35,13 +35,13 @@ pub fn benchmark_pass_on_bower(num_games: usize) {
     agents.push(("pimcts, 10 worlds, random", a));
 
     let a = &mut PolicyAgent::new(
-        PIMCTSBot::new(10, OpenHandSolver::new(), policy_rng.clone()),
+        PIMCTSBot::new(10, OpenHandSolver::new_euchre(), policy_rng.clone()),
         agent_rng.clone(),
     );
     agents.push(("pimcts, 10 worlds, open hand", a));
 
     let a = &mut PolicyAgent::new(
-        PIMCTSBot::new(20, OpenHandSolver::new(), policy_rng.clone()),
+        PIMCTSBot::new(20, OpenHandSolver::new_euchre(), policy_rng.clone()),
         agent_rng.clone(),
     );
     agents.push(("pimcts, 100 worlds, open hand", a));
@@ -54,13 +54,13 @@ pub fn benchmark_pass_on_bower(num_games: usize) {
     // agents.push(("ismcts, 100 simulations", ismcts));
 
     let alphamu = &mut PolicyAgent::new(
-        AlphaMuBot::new(OpenHandSolver::new(), 10, 1, policy_rng.clone()),
+        AlphaMuBot::new(OpenHandSolver::new_euchre(), 10, 1, policy_rng.clone()),
         agent_rng.clone(),
     );
     agents.push(("alphamu, open hand, m=1, 10 worlds", alphamu));
 
     let alphamu = &mut PolicyAgent::new(
-        AlphaMuBot::new(OpenHandSolver::new(), 10, 5, policy_rng),
+        AlphaMuBot::new(OpenHandSolver::new_euchre(), 10, 5, policy_rng),
         agent_rng,
     );
     agents.push(("alphamu, open hand", alphamu));
@@ -73,7 +73,11 @@ pub fn benchmark_pass_on_bower(num_games: usize) {
         // this is the agent all oponents will play against in the 0 and 2 spot (team 0)
         // We re-initialize to ensure everyone is playing against the same agent
         let agent1 = &mut PolicyAgent::new(
-            PIMCTSBot::new(100, OpenHandSolver::new(), SeedableRng::seed_from_u64(100)),
+            PIMCTSBot::new(
+                100,
+                OpenHandSolver::new_euchre(),
+                SeedableRng::seed_from_u64(100),
+            ),
             SeedableRng::seed_from_u64(101),
         );
 

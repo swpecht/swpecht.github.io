@@ -73,10 +73,10 @@ pub struct OpenHandSolver<G> {
 }
 
 impl<G: Clone> OpenHandSolver<G> {
-    pub fn new() -> Self {
+    pub fn new(optimizations: Optimizations<G>) -> Self {
         Self {
-            cache: AlphaBetaCache::new(Optimizations::default()),
-            optimizations: Optimizations::default(),
+            cache: AlphaBetaCache::new(optimizations.clone()),
+            optimizations,
         }
     }
 
@@ -98,7 +98,9 @@ impl<G: Clone> OpenHandSolver<G> {
 }
 
 impl OpenHandSolver<EuchreGameState> {
-    pub fn new_euchre(optimizations: Optimizations<EuchreGameState>) -> Self {
+    pub fn new_euchre() -> Self {
+        let optimizations = Optimizations::new_euchre();
+
         Self {
             cache: AlphaBetaCache::new(optimizations.clone()),
             optimizations,
@@ -108,7 +110,7 @@ impl OpenHandSolver<EuchreGameState> {
 
 impl<G: Clone> Default for OpenHandSolver<G> {
     fn default() -> Self {
-        Self::new()
+        Self::new(Optimizations::default())
     }
 }
 
@@ -542,7 +544,7 @@ mod tests {
         gs.apply_action(BluffActions::Roll(Dice::One).into());
         gs.apply_action(BluffActions::Bid(1, Dice::Five).into());
 
-        let mut cache = OpenHandSolver::new();
+        let mut cache = OpenHandSolver::default();
         let first = cache.evaluate_player(&gs, 0);
 
         for _ in 0..1000 {

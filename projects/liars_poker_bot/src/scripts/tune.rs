@@ -75,7 +75,7 @@ fn tune_alpha_mu(num_games: usize) {
     for m in ms {
         for count in world_counts.clone() {
             let alphamu = PolicyAgent::new(
-                AlphaMuBot::new(OpenHandSolver::new(), count, m, get_rng()),
+                AlphaMuBot::new(OpenHandSolver::new_euchre(), count, m, get_rng()),
                 get_rng(),
             );
             let returns = get_returns(alphamu, worlds.clone());
@@ -108,7 +108,7 @@ fn tune_ismcts(num_games: usize) {
                         max_world_samples: -1,
                     };
                     let alphamu = PolicyAgent::new(
-                        ISMCTSBot::new(uct_c, count, OpenHandSolver::new(), config),
+                        ISMCTSBot::new(uct_c, count, OpenHandSolver::new_euchre(), config),
                         get_rng(),
                     );
                     let returns = get_returns(alphamu, worlds.clone());
@@ -133,7 +133,7 @@ fn tune_pimcts(num_games: usize) {
 
     for count in world_counts {
         let pimcts = PolicyAgent::new(
-            PIMCTSBot::new(count, OpenHandSolver::new(), get_rng()),
+            PIMCTSBot::new(count, OpenHandSolver::new_euchre(), get_rng()),
             get_rng(),
         );
         let returns = get_returns(pimcts, worlds.clone());
@@ -170,7 +170,11 @@ fn get_returns<T: Agent<EuchreGameState>>(mut test_agent: T, worlds: Vec<EuchreG
 
 fn get_opponent() -> PolicyAgent<PIMCTSBot<EuchreGameState, OpenHandSolver<EuchreGameState>>> {
     PolicyAgent::new(
-        PIMCTSBot::new(50, OpenHandSolver::new(), SeedableRng::seed_from_u64(100)),
+        PIMCTSBot::new(
+            50,
+            OpenHandSolver::new_euchre(),
+            SeedableRng::seed_from_u64(100),
+        ),
         SeedableRng::seed_from_u64(101),
     )
 }
@@ -192,7 +196,7 @@ fn compare_agents(args: TuneArgs) {
     // );
 
     let test_agent = &mut PolicyAgent::new(
-        AlphaMuBot::new(OpenHandSolver::new(), 20, 25, get_rng()),
+        AlphaMuBot::new(OpenHandSolver::new_euchre(), 20, 25, get_rng()),
         get_rng(),
     );
 

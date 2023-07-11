@@ -24,7 +24,32 @@ pub fn process_euchre_actions(gs: &EuchreGameState, actions: &mut Vec<Action>) {
     };
 }
 
+/// Evaluate if the euchre game is already over. For example, if a play has the highest trump card, their team is guaranteed
+/// to get at least one more trick
 pub fn euchre_early_terminate(gs: &EuchreGameState) -> bool {
+    let mut future_score = gs.tricks_won;
+    let mut highest = None;
+    let mut i = 0;
+
+    while let Some((p, _)) = get_n_highest_trump(gs, i) {
+        if let Some(highest) = highest {
+            if highest != p {
+                break;
+            }
+        } else {
+            highest = Some(p);
+        }
+
+        future_score[p % 2] += 1;
+        if future_score[p % 2] == 5 // won all five tricks
+            // won more than 3 and opponent has won at least 1
+                || (future_score[p % 2] >= 3 && future_score[(p + 1) % 2] > 0)
+        {
+            return true;
+        }
+        i += 1;
+    }
+
     false
 }
 
@@ -48,20 +73,28 @@ fn process_discard_actions(gs: &EuchreGameState, actions: &mut Vec<Action>) {
     remove_equivlent_cards(gs, actions);
 }
 
-fn get_player_highest_trump(gs: &EuchreGameState) -> Option<(Player, Card)> {
-    let trump = gs.trump.unwrap();
+/// Get the owner and card for the nth highest trump in the game
+///
+/// 0 is the highest
+fn get_n_highest_trump(gs: &EuchreGameState, n: usize) -> Option<(Player, Card)> {
+    let trump = gs.trump?;
     let deck = gs.deck;
     let mut owner = None;
     let mut highest_trump = None;
+    let mut count = 0;
     for c in get_cards(trump, gs.trump).iter().rev() {
         let loc = deck[*c];
 
         use deck::CardLocation::*;
         match loc {
             Player0 | Player1 | Player2 | Player3 => {
-                owner = loc.to_player();
-                highest_trump = Some(*c);
-                break;
+                if n == count {
+                    owner = loc.to_player();
+                    highest_trump = Some(*c);
+                    break;
+                } else {
+                    count += 1;
+                }
             }
             Played(_) | FaceUp | None => {}
         }
@@ -72,7 +105,7 @@ fn get_player_highest_trump(gs: &EuchreGameState) -> Option<(Player, Card)> {
 
 fn evaluate_highest_trump_first(gs: &EuchreGameState, actions: &mut Vec<Action>) {
     if gs.is_trick_over() {
-        if let Some((player, card)) = get_player_highest_trump(gs) {
+        if let Some((player, card)) = get_n_highest_trump(gs, 0) {
             if player == gs.cur_player() {
                 let idx = actions
                     .iter()

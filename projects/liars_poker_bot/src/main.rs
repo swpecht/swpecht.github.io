@@ -121,7 +121,11 @@ fn run_scratch(_args: Args) {
     let actions = actions!(gs).into_iter().map(EAction::from).collect_vec();
     println!("actions: {:?}", actions);
 
-    let mut agent = PIMCTSBot::new(50, OpenHandSolver::new(), SeedableRng::seed_from_u64(43));
+    let mut agent = PIMCTSBot::new(
+        50,
+        OpenHandSolver::default(),
+        SeedableRng::seed_from_u64(43),
+    );
     let policy = agent.action_probabilities(&gs);
 
     for (a, p) in policy.to_vec() {
@@ -130,9 +134,12 @@ fn run_scratch(_args: Args) {
 
     println!(
         "euchre: {}",
-        OpenHandSolver::new_euchre(Optimizations::default()).evaluate_player(&gs, 0)
+        OpenHandSolver::new_euchre().evaluate_player(&gs, 0)
     );
-    println!("default: {}", OpenHandSolver::new().evaluate_player(&gs, 0));
+    println!(
+        "default: {}",
+        OpenHandSolver::default().evaluate_player(&gs, 0)
+    );
 }
 
 fn run_analyze(args: Args) {
@@ -216,7 +223,7 @@ fn run_play(_args: Args) {
     let mut rng: StdRng = SeedableRng::seed_from_u64(2);
 
     let mut agent = PolicyAgent::new(
-        PIMCTSBot::new(50, OpenHandSolver::new(), get_rng()),
+        PIMCTSBot::new(50, OpenHandSolver::new_euchre(), get_rng()),
         get_rng(),
     );
     let mut player = PlayerAgent::default();

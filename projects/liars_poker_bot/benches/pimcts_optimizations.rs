@@ -5,7 +5,7 @@ use liars_poker_bot::{
     actions,
     algorithms::{
         ismcts::Evaluator,
-        open_hand_solver::{OpenHandSolver, Optimizations, DEFAULT_MAX_TT_DEPTH},
+        open_hand_solver::{OpenHandSolver, Optimizations},
         pimcts::PIMCTSBot,
     },
     game::{
@@ -78,7 +78,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 fn get_evaluator(
     optimizations: Optimizations<EuchreGameState>,
 ) -> PIMCTSBot<EuchreGameState, OpenHandSolver<EuchreGameState>> {
-    let solver = OpenHandSolver::new_euchre(optimizations);
+    let solver = OpenHandSolver::new(optimizations);
     PIMCTSBot::new(50, solver, SeedableRng::seed_from_u64(100))
 }
 

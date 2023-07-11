@@ -5,10 +5,7 @@ use liars_poker_bot::{
     actions,
     agents::PolicyAgent,
     algorithms::{
-        alphamu::AlphaMuBot,
-        ismcts::Evaluator,
-        open_hand_solver::{OpenHandSolver, Optimizations},
-        pimcts::PIMCTSBot,
+        alphamu::AlphaMuBot, ismcts::Evaluator, open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot,
     },
     game::{
         euchre::{Euchre, EuchreGameState},
@@ -20,7 +17,7 @@ use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 pub fn criterion_benchmark(c: &mut Criterion) {
     let mut evaluator = PIMCTSBot::new(
         50,
-        OpenHandSolver::new_euchre(Optimizations::default()),
+        OpenHandSolver::new_euchre(),
         SeedableRng::seed_from_u64(100),
     );
 
@@ -46,12 +43,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     let rng: StdRng = SeedableRng::seed_from_u64(42);
     let mut evaluator = PolicyAgent::new(
-        AlphaMuBot::new(
-            OpenHandSolver::new_euchre(Optimizations::default()),
-            10,
-            5,
-            rng.clone(),
-        ),
+        AlphaMuBot::new(OpenHandSolver::new_euchre(), 10, 5, rng.clone()),
         rng,
     );
     let mut rng: StdRng = SeedableRng::seed_from_u64(45);
@@ -60,14 +52,14 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     });
 
     let rng: StdRng = SeedableRng::seed_from_u64(42);
-    let mut evaluator = AlphaMuBot::new(OpenHandSolver::new(), 20, 5, rng);
+    let mut evaluator = AlphaMuBot::new(OpenHandSolver::default(), 20, 5, rng);
     let mut rng: StdRng = SeedableRng::seed_from_u64(45);
     group.bench_function("alpha mu 20 worlds, m=5", |b| {
         b.iter(|| alpha_mu_eval_benchmark(&mut evaluator, &mut rng))
     });
 
     let rng: StdRng = SeedableRng::seed_from_u64(42);
-    let mut evaluator = AlphaMuBot::new(OpenHandSolver::new(), 30, 3, rng);
+    let mut evaluator = AlphaMuBot::new(OpenHandSolver::default(), 30, 3, rng);
     let mut rng: StdRng = SeedableRng::seed_from_u64(45);
     group.bench_function("alpha mu 30 worlds, m=3", |b| {
         b.iter(|| alpha_mu_eval_benchmark(&mut evaluator, &mut rng))

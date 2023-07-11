@@ -70,7 +70,7 @@ fn run_full_game_benchmark<G: GameState + ResampleFromInfoState + Send>(
     // agents.insert(ra.get_name(), ra);
 
     let a = &mut PolicyAgent::new(
-        PIMCTSBot::new(50, OpenHandSolver::new(), get_rng()),
+        PIMCTSBot::new(50, OpenHandSolver::default(), get_rng()),
         get_rng(),
     );
     agents.insert("pimcts, 50 worlds, open hand".to_string(), a);
@@ -89,7 +89,7 @@ fn run_full_game_benchmark<G: GameState + ResampleFromInfoState + Send>(
         max_world_samples: -1, // unlimited samples
     };
     let ismcts = &mut PolicyAgent::new(
-        ISMCTSBot::new(3.0, 500, OpenHandSolver::new(), config),
+        ISMCTSBot::new(3.0, 500, OpenHandSolver::default(), config),
         get_rng(),
     );
     agents.insert("ismcts".to_string(), ismcts);
@@ -221,13 +221,13 @@ fn run_card_play_benchmark(args: BenchmarkArgs) {
     // agents.insert(ra.get_name(), ra);
 
     let a = &mut PolicyAgent::new(
-        PIMCTSBot::new(32, OpenHandSolver::new(), get_rng()),
+        PIMCTSBot::new(32, OpenHandSolver::new_euchre(), get_rng()),
         get_rng(),
     );
     agents.insert("pimcts, 32 worlds hand".to_string(), a);
 
     let alphamu = &mut PolicyAgent::new(
-        AlphaMuBot::new(OpenHandSolver::new(), 32, 20, get_rng()),
+        AlphaMuBot::new(OpenHandSolver::new_euchre(), 32, 20, get_rng()),
         get_rng(),
     );
     agents.insert("alphamu, 32 worlds, m=20".to_string(), alphamu);
@@ -239,7 +239,7 @@ pub fn get_card_play_games(n: usize, rng: &mut StdRng) -> Vec<EuchreGameState> {
     let mut games = get_games(Euchre::game(), n, rng);
 
     let mut agent = PolicyAgent::new(
-        PIMCTSBot::new(50, OpenHandSolver::new(), get_rng()),
+        PIMCTSBot::new(50, OpenHandSolver::new_euchre(), get_rng()),
         get_rng(),
     );
 
