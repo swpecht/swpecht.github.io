@@ -179,10 +179,6 @@ impl EuchreGameState {
             )
         }
         self.deck[discard] = CardLocation::None; // dealer
-
-        let pickup = self.face_up();
-        self.deck[pickup] = CardLocation::Player3;
-
         self.cur_player = 0;
         self.phase = EPhase::Play
     }
