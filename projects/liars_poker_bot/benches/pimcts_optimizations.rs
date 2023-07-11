@@ -54,17 +54,6 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         b.iter(|| evaluate_games(&mut evaluator, &mut rng))
     });
 
-    group.sample_size(2000);
-    let mut evaluator = get_evaluator(Optimizations {
-        use_transposition_table: true,
-        isometric_transposition: true,
-        max_depth_for_tt: DEFAULT_MAX_TT_DEPTH,
-        action_processor: |_: &EuchreGameState, _: &mut Vec<Action>| {},
-    });
-    group.bench_function("euchre solver: limit tt depth", |b| {
-        b.iter(|| evaluate_games(&mut evaluator, &mut rng))
-    });
-
     let mut evaluator = get_evaluator(Optimizations::new_euchre());
     group.bench_function("euchre solver: all optimizations", |b| {
         b.iter(|| evaluate_games(&mut evaluator, &mut rng))
