@@ -29,7 +29,7 @@ fn test_alg_open_hand_solver_euchre() {
     let games = get_games(Euchre::game(), 1000, &mut rng);
 
     // Also use the euchre specific optimizations for the cached one
-    let cached = OpenHandSolver::new_euchre(Optimizations::default());
+    let cached = OpenHandSolver::new_euchre();
     let no_cache = OpenHandSolver::new_without_cache();
 
     // Change to a non parallel iterator to see the error message
@@ -91,11 +91,16 @@ fn alpha_mu_pimcts_equivalent() {
     let agent_rng: StdRng = SeedableRng::seed_from_u64(57);
     let rollouts = 5;
     let mut alpha = PolicyAgent::new(
-        AlphaMuBot::new(OpenHandSolver::new(), rollouts, 1, policy_rng.clone()),
+        AlphaMuBot::new(
+            OpenHandSolver::new_euchre(),
+            rollouts,
+            1,
+            policy_rng.clone(),
+        ),
         agent_rng.clone(),
     );
     let mut pimcts = PolicyAgent::new(
-        PIMCTSBot::new(rollouts, OpenHandSolver::new(), policy_rng),
+        PIMCTSBot::new(rollouts, OpenHandSolver::new_euchre(), policy_rng),
         agent_rng,
     );
     let mut actions = Vec::new();

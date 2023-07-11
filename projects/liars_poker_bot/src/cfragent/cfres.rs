@@ -36,7 +36,7 @@ impl Algorithm for CFRES {
 impl CFRES {
     fn cfres<G: GameState, N: NodeStore<CFRNode>>(
         &mut self,
-        ns: &mut N,
+        _ns: &mut N,
         gs: &mut G,
         update_player: Player,
         _depth: usize,
@@ -47,13 +47,13 @@ impl CFRES {
 
         self.nodes_touched += 1;
 
-        let cur_player = gs.cur_player();
+        let _cur_player = gs.cur_player();
         let mut actions = self.vector_pool.detach();
         gs.legal_actions(&mut actions);
         if actions.len() == 1 {
             // avoid processing nodes with no choices
             gs.apply_action(actions[0]);
-            let v = self.cfres(ns, gs, update_player, _depth + 1);
+            let v = self.cfres(_ns, gs, update_player, _depth + 1);
             gs.undo();
             return v;
         }
@@ -61,7 +61,7 @@ impl CFRES {
         if gs.is_chance_node() {
             let a = *actions.choose(&mut self.rng).unwrap();
             gs.apply_action(a);
-            let v = self.cfres(ns, gs, update_player, _depth + 1);
+            let v = self.cfres(_ns, gs, update_player, _depth + 1);
             gs.undo();
             return v;
         }

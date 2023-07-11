@@ -4,9 +4,8 @@ use clap::{command, Parser, Subcommand, ValueEnum};
 
 use itertools::Itertools;
 use liars_poker_bot::actions;
-use liars_poker_bot::agents::{Agent, PlayerAgent, PolicyAgent, RandomAgent};
+use liars_poker_bot::agents::{Agent, PlayerAgent, PolicyAgent};
 
-use liars_poker_bot::algorithms::alphamu::AlphaMuBot;
 use liars_poker_bot::algorithms::exploitability::{self};
 
 use liars_poker_bot::algorithms::ismcts::Evaluator;
@@ -19,6 +18,7 @@ use liars_poker_bot::database::Storage;
 use liars_poker_bot::game::bluff::{Bluff, BluffGameState};
 
 use liars_poker_bot::game::euchre::actions::EAction;
+use liars_poker_bot::game::euchre::processors::euchre_early_terminate;
 use liars_poker_bot::game::euchre::{Euchre, EuchreGameState};
 use liars_poker_bot::game::kuhn_poker::{KPGameState, KuhnPoker};
 use liars_poker_bot::game::{Action, GameState};
@@ -116,7 +116,15 @@ fn run_scratch(_args: Args) {
     println!("kuhn poker size: {}", mem::size_of::<KPGameState>());
     println!("euchre size: {}", mem::size_of::<EuchreGameState>());
 
-    let gs = EuchreGameState::from("QcKcKs9dTd|9cTcAc9sAh|JcTsJhJdKd|AsQhKhQdAd|Js|PT|");
+    let gs = EuchreGameState::from("Qc9sTs9dAd|Tc9hAhTdJd|9cKcAcJhQh|JcJsKsAsKd|Qs|PT|");
+    // println!("{:?}", gs);
+    // println!(
+    //     "{:?}",
+    //     gs.istate_key(3)
+    //         .iter()
+    //         .map(|x| EAction::from(*x))
+    //         .collect_vec()
+    // );
 
     let actions = actions!(gs).into_iter().map(EAction::from).collect_vec();
     println!("actions: {:?}", actions);
@@ -134,11 +142,23 @@ fn run_scratch(_args: Args) {
 
     println!(
         "euchre: {}",
-        OpenHandSolver::new_euchre().evaluate_player(&gs, 0)
+        OpenHandSolver::new(Optimizations {
+            use_transposition_table: true,
+            isometric_transposition: true,
+            max_depth_for_tt: 255,
+            action_processor: |_: &EuchreGameState, _: &mut Vec<Action>| {},
+            can_early_terminate: euchre_early_terminate
+        })
+        .evaluate_player(&gs, 0)
     );
     println!(
         "default: {}",
         OpenHandSolver::default().evaluate_player(&gs, 0)
+    );
+
+    println!(
+        "no cache: {}",
+        OpenHandSolver::new_without_cache().evaluate_player(&gs, 0)
     );
 }
 

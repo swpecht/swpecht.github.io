@@ -15,18 +15,25 @@ use super::{actions::Card, EPhase};
 /// Euchre specific processor for open hand solver
 pub fn process_euchre_actions(gs: &EuchreGameState, actions: &mut Vec<Action>) {
     match gs.phase() {
-        EPhase::DealHands => {}
-        EPhase::DealFaceUp => {}
-        EPhase::Pickup => {}
         EPhase::Discard => process_discard_actions(gs, actions),
-        EPhase::ChooseTrump => {}
         EPhase::Play => process_play_actions(gs, actions),
+        _ => {}
     };
 }
 
 /// Evaluate if the euchre game is already over. For example, if a play has the highest trump card, their team is guaranteed
 /// to get at least one more trick
 pub fn euchre_early_terminate(gs: &EuchreGameState) -> bool {
+    if gs.is_terminal() {
+        return true;
+    }
+
+    // only do this when a trick is over, otherwise might miss played cards
+    // also only valid for play phase
+    if !gs.is_trick_over() || gs.phase != EPhase::Play {
+        return false;
+    }
+
     let mut future_score = gs.tricks_won;
     let mut highest = None;
     let mut i = 0;
@@ -73,7 +80,7 @@ fn process_discard_actions(gs: &EuchreGameState, actions: &mut Vec<Action>) {
     remove_equivlent_cards(gs, actions);
 }
 
-/// Get the owner and card for the nth highest trump in the game
+/// Get the owner and card for the nth highest trump in the game, doesn't account for played cards
 ///
 /// 0 is the highest
 fn get_n_highest_trump(gs: &EuchreGameState, n: usize) -> Option<(Player, Card)> {
@@ -176,7 +183,8 @@ mod tests {
     use crate::game::{
         euchre::{
             actions::{Card, EAction},
-            processors::evaluate_highest_trump_first,
+            deck::CardLocation,
+            processors::{evaluate_highest_trump_first, get_n_highest_trump},
             EuchreGameState,
         },
         Action, GameState,

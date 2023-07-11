@@ -5,6 +5,7 @@ use std::{
 };
 
 use dashmap::DashMap;
+use log::trace;
 
 use crate::{
     actions,
@@ -334,6 +335,8 @@ fn alpha_beta<G: GameState>(
 
         actions.clear();
         cache.vec_pool.attach(actions);
+
+        trace!("early termination found for: {}, evaluation: {}", gs, v);
         return (v, None);
     }
 
