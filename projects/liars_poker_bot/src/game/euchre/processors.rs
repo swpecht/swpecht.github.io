@@ -24,6 +24,10 @@ pub fn process_euchre_actions(gs: &EuchreGameState, actions: &mut Vec<Action>) {
     };
 }
 
+pub fn euchre_early_terminate(gs: &EuchreGameState) -> bool {
+    false
+}
+
 fn process_play_actions(gs: &EuchreGameState, actions: &mut Vec<Action>) {
     // if have the highest trump, and it's a new trick, likely want to play that, evaluate it first
     evaluate_highest_trump_first(gs, actions);

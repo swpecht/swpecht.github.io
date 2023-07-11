@@ -9,7 +9,7 @@ use liars_poker_bot::{
         pimcts::PIMCTSBot,
     },
     game::{
-        euchre::{Euchre, EuchreGameState},
+        euchre::{processors::euchre_early_terminate, Euchre, EuchreGameState},
         Action, GameState,
     },
 };
@@ -27,6 +27,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         isometric_transposition: false,
         max_depth_for_tt: 255,
         action_processor: |_: &EuchreGameState, _: &mut Vec<Action>| {},
+        can_early_terminate: |_: &EuchreGameState| false,
     });
     group.bench_function("euchre solver: no optimizations", |b| {
         b.iter(|| evaluate_games(&mut evaluator, &mut rng))
@@ -38,6 +39,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         isometric_transposition: false,
         max_depth_for_tt: 255,
         action_processor: |_: &EuchreGameState, _: &mut Vec<Action>| {},
+        can_early_terminate: |_: &EuchreGameState| false,
     });
     group.bench_function("euchre solver: add transposition table", |b| {
         b.iter(|| evaluate_games(&mut evaluator, &mut rng))
@@ -49,8 +51,20 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         isometric_transposition: true,
         max_depth_for_tt: 255,
         action_processor: |_: &EuchreGameState, _: &mut Vec<Action>| {},
+        can_early_terminate: |_: &EuchreGameState| false,
     });
     group.bench_function("euchre solver: add isometric representation", |b| {
+        b.iter(|| evaluate_games(&mut evaluator, &mut rng))
+    });
+
+    let mut evaluator = get_evaluator(Optimizations {
+        use_transposition_table: true,
+        isometric_transposition: true,
+        max_depth_for_tt: 255,
+        action_processor: |_: &EuchreGameState, _: &mut Vec<Action>| {},
+        can_early_terminate: euchre_early_terminate,
+    });
+    group.bench_function("euchre solver: add early termination", |b| {
         b.iter(|| evaluate_games(&mut evaluator, &mut rng))
     });
 

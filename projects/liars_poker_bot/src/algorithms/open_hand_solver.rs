@@ -11,7 +11,10 @@ use crate::{
     alloc::Pool,
     cfragent::cfrnode::ActionVec,
     game::{
-        euchre::{processors::process_euchre_actions, EuchreGameState},
+        euchre::{
+            processors::{euchre_early_terminate, process_euchre_actions},
+            EuchreGameState,
+        },
         Action, GameState, Player,
     },
 };
@@ -30,6 +33,9 @@ pub struct Optimizations<G> {
     /// For example, it could filter down to a single move, or it could
     /// remove all but 1 move.
     pub action_processor: fn(gs: &G, actions: &mut Vec<Action>),
+    /// Determines if a game is already decided and can be finished by randomly
+    /// playing move with no impact to the outcome
+    pub can_early_terminate: fn(gs: &G) -> bool,
 }
 
 impl<G> Default for Optimizations<G> {
@@ -39,6 +45,7 @@ impl<G> Default for Optimizations<G> {
             isometric_transposition: true,
             max_depth_for_tt: DEFAULT_MAX_TT_DEPTH,
             action_processor: |_: &G, _: &mut Vec<Action>| {},
+            can_early_terminate: |_: &G| false,
         }
     }
 }
@@ -50,6 +57,7 @@ impl Optimizations<EuchreGameState> {
             isometric_transposition: true,
             max_depth_for_tt: DEFAULT_MAX_TT_DEPTH,
             action_processor: process_euchre_actions,
+            can_early_terminate: euchre_early_terminate,
         }
     }
 }
@@ -300,6 +308,30 @@ fn alpha_beta<G: GameState>(
 ) -> (f64, Option<Action>) {
     if gs.is_terminal() {
         let v = gs.evaluate(maximizing_team as usize);
+        return (v, None);
+    }
+
+    // if the game is decided, just play the first action until the game
+    // is actually terminal, get the value, get the score, and then undo the actions
+    if (optimizations.can_early_terminate)(gs) {
+        let mut actions = cache.vec_pool.detach();
+
+        let mut actions_applied = 0;
+
+        while !gs.is_terminal() {
+            gs.legal_actions(&mut actions);
+            gs.apply_action(actions[0]);
+            actions_applied += 1;
+        }
+
+        let v = gs.evaluate(maximizing_team as usize);
+
+        for _ in 0..actions_applied {
+            gs.undo();
+        }
+
+        actions.clear();
+        cache.vec_pool.attach(actions);
         return (v, None);
     }
 
