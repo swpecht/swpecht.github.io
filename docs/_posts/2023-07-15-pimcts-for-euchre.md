@@ -14,9 +14,16 @@ Much of this work is adapted from [Bo Haglund's double dummy solver for bridge](
 
 PIMCTS works by evaluating a number of hands of euchre assuming that each player can see the others cards and play optimally. It then suggests the move with the highest chance of winning across all games evaluated.
 
-For example, imagine we are dealt the following hand: `QhTsAdTc9s|9d` where `QhTsAdTc9s` are our cards and `9d` is the face up card. This is our information state -- it is all of the information we know about the game. We don't know the actual game state, i.e. the cards the other players are dealt. To overcome this, we generate a number of games that have the same information state, and solve each of those game independently, such as:
+For example, imagine we are dealt the following hand: `Qc9sTs9dAd|Qs` where `Qc9sTs9dAd` are our cards and `Qs` is the face up card. This is our information state -- it is all of the information we know about the game. We don't know the actual game state, i.e. the cards the other players are dealt. To overcome this, we generate a number of games that have the same information state, and solve each of those game independently, such as:
+
 ```
-TODO: Add in game states with matching information states
+Qc9sTs9dAd|9cKsThQhTd|KcAsJhKhQd|AcJs9hAhJd|Qs
+Qc9sTs9dAd|JcKcKsAsKd|9cTc9hJhKh|JsThQhTdJd|Qs
+Qc9sTs9dAd|9cJcAc9hKh|KsAsQhAhJd|TcKcJsQdKd|Qs
+Qc9sTs9dAd|KcAcJsAhQd|JcKsQhTdJd|9c9hThJhKd|Qs
+Qc9sTs9dAd|9cTcThJhTd|JcKcKsAs9h|JsQhAhJdKd|Qs
+^           ^ Other players hands vary
+Our hand is always the same
 ```
 
 In rust code, it would look something like:
@@ -80,16 +87,16 @@ To start, our `AlphaBetaWithMemory` doesn't have any memory and we must fully re
 
 The first optimization is to actually give some memory to the `AlphaBetaWithMemory` function. We use the [dashmap crate](https://docs.rs/dashmap/latest/dashmap/) as a performant,  threadsafe hashmap for this.
 
-Initially, we use the full gamestate as the key when storing and retrieving values, for example `TODO: insert example gamestate key`.
+Initially, we use the full gamestate as the key when storing and retrieving values, for example `Qc9sTs9dAd|9cKsThQhTd|KcAsJhKhQd|AcJs9hAhJd|Qs`.
 
 Because a zero-window alpha beta search (what we use with MTD) returns bounds for each search and not exact values, we store the lower bound, upper bound, and best action in each entry. For more details on how this works, see [Aske's post](http://people.csail.mit.edu/plaat/mtdf.html#abmem). 
 
 For memory reasons, we also only store results during the bidding phase and at the start of new tricks for euchre. For example:
 
 ```
-[store example] -- stored, we're still in the bidding phase
-[store example] -- stored, we're in the play phase and at the start of a new trick
-[not stored example] -- not stored, we're in the middle of a trick.
+Qc9sTs9dAd|9cKsThQhTd|KcAsJhKhQd|AcJs9hAhJd|Qs|PT: stored, we're still in the bidding phase
+Qc9sTs9dAd|9cKsThQhTd|KcAsJhKhQd|AcJs9hAhJd|Qs|PT|AdTdQdJd: stored, we're in the play phase and at the start of a new trick
+Qc9sTs9dAd|9cKsThQhTd|KcAsJhKhQd|AcJs9hAhJd|Qs|PT|AdTdQd: not stored, we're in the middle of a trick.
 ```
 
 Adding in the transposition table means we don't need to re-calculate everything on future searches to `AlphaBetaWithMemory` for the same game state. We can evaluate 7 games / s. More than twice as many as without the transposition table.
