@@ -149,3 +149,11 @@ fn test_cfr_exploitability() {
     let exploitability = exploitability(|| (KuhnPoker::game().new)(), &mut agent.ns).nash_conv;
     assert_relative_eq!(exploitability, 0.0, epsilon = 0.001);
 }
+
+#[test]
+fn test_cfr_euchre() {
+    let gs = || (Euchre::game().new)();
+
+    let mut agent = CFRAgent::new(gs, 42, MemoryNodeStore::default(), CFRAlgorithm::CFRCS);
+    agent.train(1);
+}
