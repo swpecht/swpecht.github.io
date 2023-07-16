@@ -28,6 +28,7 @@ arc-swap = "1.6"
 dashmap = "5.4.0"
 wgpu = "0.16.1"
 indicatif = "0.17.5"
+features = "0.10.0"
 
 
 [dev-dependencies]
