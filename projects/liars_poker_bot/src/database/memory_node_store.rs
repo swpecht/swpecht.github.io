@@ -10,7 +10,6 @@ use crate::{
 
 use super::{node_tree::Tree, NodeStore};
 
-#[derive(Clone)]
 pub struct MemoryNodeStore<T> {
     store: Tree<Rc<RefCell<T>>>,
 }

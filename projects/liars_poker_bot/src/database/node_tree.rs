@@ -1,10 +1,10 @@
 use log::debug;
 use rustc_hash::FxHashMap;
+use serde::Serialize;
 
 use crate::{game::Action, istate::IStateKey};
 
 /// A performant datastructure for storing nodes in memory
-#[derive(Clone)]
 pub struct Tree<T: Clone> {
     nodes: Vec<Node<T>>,
     /// the starting roots of the tree
@@ -42,7 +42,7 @@ struct Cursor {
 ///
 /// Exploring imlementing storing the private information state data at the end of the node, this would enable us to have the policy looksups for
 /// best response be close together. But this would make it difficult to use for cfr -- since we might need intermediate nodes
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 struct Node<T> {
     parent: usize,
     children: FxHashMap<Action, usize>,
@@ -63,21 +63,17 @@ impl<T> Node<T> {
 
 impl<T: Clone> Default for Tree<T> {
     fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<T: Clone> Tree<T> {
-    pub fn new() -> Self {
         Self {
-            nodes: Vec::new(),
+            nodes: Vec::default(),
             roots: FxHashMap::default(),
             cursors: FxHashMap::default(),
             stats: TreeStats::new(),
             root_value: None,
         }
     }
+}
 
+impl<T: Clone> Tree<T> {
     pub fn insert(&mut self, k: IStateKey, v: T) {
         if k.is_empty() {
             self.root_value = Some(v);
@@ -197,6 +193,7 @@ impl<T: Clone> Tree<T> {
 
         if self.stats.get_calls % 10_000_000 == 0 {
             debug!("nodestore stats: {:?}", self.stats);
+            debug!("nodes stored: {}", self.len());
         }
 
         self.nodes[idx].v.clone()
@@ -253,7 +250,7 @@ mod tests {
 
     #[test]
     fn test_node_tree() {
-        let mut t = Tree::new();
+        let mut t = Tree::default();
         let mut gs = (Euchre::game().new)();
         while gs.is_chance_node() {
             let a = actions!(gs)[0];
@@ -298,7 +295,7 @@ mod tests {
 
     #[test]
     fn test_node_tree_simple() {
-        let mut t = Tree::new();
+        let mut t = Tree::default();
         let mut k1 = IStateKey::default();
         k1.push(Action(0));
         k1.push(Action(1));
@@ -310,7 +307,7 @@ mod tests {
 
     #[test]
     fn test_node_tree_empty_key() {
-        let mut t = Tree::new();
+        let mut t = Tree::default();
         let k1 = IStateKey::default();
 
         assert!(!t.contains_key(&k1));

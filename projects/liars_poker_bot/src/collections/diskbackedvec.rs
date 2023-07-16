@@ -23,17 +23,12 @@ pub struct DiskBackedVec<T> {
 
 impl<T: Serialize + DeserializeOwned> Default for DiskBackedVec<T> {
     fn default() -> Self {
-        Self::new()
+        Self::new(2_000_000, 10)
     }
 }
 
 impl<T: Serialize + DeserializeOwned> DiskBackedVec<T> {
-    pub fn new() -> Self {
-        // defualt to 20M items in memory
-        Self::with_sizes(2_000_000, 10)
-    }
-
-    pub fn with_sizes(page_size: usize, max_mem_pages: usize) -> Self {
+    pub fn new(page_size: usize, max_mem_pages: usize) -> Self {
         if page_size < 2 {
             panic!("page_size must be >= 2");
         }
@@ -202,7 +197,7 @@ mod tests {
 
     #[test]
     fn test_disk_backed_vector() {
-        let mut v = DiskBackedVec::new();
+        let mut v = DiskBackedVec::default();
         assert_eq!(v.len(), 0);
 
         v.push(0);
@@ -212,7 +207,7 @@ mod tests {
 
     #[test]
     fn test_disk_backed_vector_splitting() {
-        let mut v = DiskBackedVec::with_sizes(2, 10);
+        let mut v = DiskBackedVec::new(2, 10);
         for i in 0..20 {
             v.push(i);
         }
@@ -225,7 +220,7 @@ mod tests {
 
     #[test]
     fn test_disk_backed_vector_caching() {
-        let mut v = DiskBackedVec::with_sizes(2, 10);
+        let mut v = DiskBackedVec::new(2, 10);
         for i in 0..100 {
             v.push(i);
         }
