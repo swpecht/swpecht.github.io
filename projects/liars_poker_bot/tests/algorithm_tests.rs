@@ -2,11 +2,8 @@ use approx::assert_relative_eq;
 use liars_poker_bot::{
     agents::{Agent, PolicyAgent},
     algorithms::{
-        alphamu::AlphaMuBot,
-        exploitability::exploitability,
-        ismcts::Evaluator,
-        open_hand_solver::{OpenHandSolver, Optimizations},
-        pimcts::PIMCTSBot,
+        alphamu::AlphaMuBot, exploitability::exploitability, ismcts::Evaluator,
+        open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot,
     },
     cfragent::{CFRAgent, CFRAlgorithm},
     database::memory_node_store::MemoryNodeStore,
@@ -146,9 +143,9 @@ fn alpha_mu_pimcts_equivalent() {
 #[test]
 fn test_cfr_exploitability() {
     let ns = MemoryNodeStore::default();
-    let mut agent = CFRAgent::new(KuhnPoker::game(), 1, ns, CFRAlgorithm::CFRCS);
+    let mut agent = CFRAgent::new(|| (KuhnPoker::game().new)(), 1, ns, CFRAlgorithm::CFRCS);
     agent.train(1_000_000);
 
-    let exploitability = exploitability(KuhnPoker::game(), &mut agent.ns).nash_conv;
+    let exploitability = exploitability(|| (KuhnPoker::game().new)(), &mut agent.ns).nash_conv;
     assert_relative_eq!(exploitability, 0.0, epsilon = 0.001);
 }

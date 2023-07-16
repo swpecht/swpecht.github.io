@@ -15,7 +15,7 @@ use crate::{
         cfrcs::CFRCS,
     },
     database::NodeStore,
-    game::{Action, Game, GameState},
+    game::{Action, GameState},
     istate::IStateKey,
     policy::Policy,
 };
@@ -30,7 +30,7 @@ pub enum CFRAlgorithm {
 }
 
 pub struct CFRAgent<T: GameState, N: NodeStore<CFRNode>> {
-    pub game: Game<T>,
+    pub game_generator: fn() -> T,
     rng: StdRng,
     alg: CFRAlgorithm,
     nodes_touched: usize,
@@ -39,9 +39,9 @@ pub struct CFRAgent<T: GameState, N: NodeStore<CFRNode>> {
 }
 
 impl<T: GameState, N: NodeStore<CFRNode> + Policy<T>> CFRAgent<T, N> {
-    pub fn new(game: Game<T>, seed: u64, ns: N, alg: CFRAlgorithm) -> Self {
+    pub fn new(game_generator: fn() -> T, seed: u64, ns: N, alg: CFRAlgorithm) -> Self {
         Self {
-            game,
+            game_generator,
             rng: SeedableRng::seed_from_u64(seed),
             // store: FileNodeStore::new(FileBackend::new(storage)),
             ns,
@@ -105,9 +105,9 @@ fn train<T: GameState, N: NodeStore<CFRNode> + Policy<T>, A: Algorithm>(
 ) -> usize {
     debug!("starting {} training iterations for CFR", iterations);
     for _ in 0..iterations {
-        let gs = (agent.game.new)();
+        let gs = (agent.game_generator)();
 
-        for p in 0..agent.game.max_players {
+        for p in 0..gs.num_players() {
             alg.run(&mut agent.ns, &gs, p);
         }
     }
@@ -133,7 +133,7 @@ mod tests {
     #[test]
     fn cfragent_sample_test() {
         let mut qa = CFRAgent::new(
-            KuhnPoker::game(),
+            || (KuhnPoker::game().new)(),
             42,
             MemoryNodeStore::default(),
             CFRAlgorithm::CFRCS,

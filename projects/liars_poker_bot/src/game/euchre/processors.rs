@@ -183,8 +183,7 @@ mod tests {
     use crate::game::{
         euchre::{
             actions::{Card, EAction},
-            deck::CardLocation,
-            processors::{evaluate_highest_trump_first, get_n_highest_trump},
+            processors::evaluate_highest_trump_first,
             EuchreGameState,
         },
         Action, GameState,

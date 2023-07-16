@@ -281,7 +281,7 @@ impl<G: GameState> AlphaBetaCache<G> {
             true => k,
             false => {
                 let mut hasher = DefaultHasher::default();
-                gs.istate_key(gs.cur_player()).hash(&mut hasher);
+                gs.key().hash(&mut hasher);
                 Some(hasher.finish())
             }
         }

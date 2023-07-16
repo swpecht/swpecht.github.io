@@ -13,9 +13,9 @@ use liars_poker_bot::{
     },
 };
 use log::{debug, info};
-use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
+use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
-use crate::{scripts::benchmark::get_rng, Args};
+use crate::scripts::benchmark::get_rng;
 
 use super::pass_on_bower::PassOnBowerIterator;
 

@@ -1,5 +1,3 @@
-use core::num;
-
 use clap::{Args, ValueEnum};
 use indicatif::ProgressBar;
 use liars_poker_bot::{
@@ -185,11 +183,11 @@ fn compare_agents(args: TuneArgs) {
     let mut pimcts = get_opponent();
     // Based on tuning run for 100 games
     // https://docs.google.com/spreadsheets/d/1AGjEaqjCkuuWveUBqbOBOMH0SPHPQ_YhH1jRHij7ErY/edit#gid=1418816031
-    let config = ISMCTBotConfig {
-        child_selection_policy: ChildSelectionPolicy::Uct,
-        final_policy_type: ISMCTSFinalPolicyType::MaxVisitCount,
-        max_world_samples: -1, // unlimited samples
-    };
+    // let config = ISMCTBotConfig {
+    //     child_selection_policy: ChildSelectionPolicy::Uct,
+    //     final_policy_type: ISMCTSFinalPolicyType::MaxVisitCount,
+    //     max_world_samples: -1, // unlimited samples
+    // };
     // let mut test_agent = PolicyAgent::new(
     //     ISMCTSBot::new(3.0, 100, OpenHandSolver::new(), config),
     //     rng(),

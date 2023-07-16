@@ -4,7 +4,7 @@ use clap::{Args, ValueEnum};
 use indicatif::ProgressBar;
 use itertools::Itertools;
 use liars_poker_bot::{
-    agents::{Agent, PolicyAgent, RandomAgent},
+    agents::{Agent, PolicyAgent},
     algorithms::{
         alphamu::AlphaMuBot,
         ismcts::{
@@ -23,7 +23,7 @@ use liars_poker_bot::{
     },
 };
 use log::{debug, info};
-use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
+use rand::{rngs::StdRng, thread_rng, SeedableRng};
 
 use crate::GameType;
 

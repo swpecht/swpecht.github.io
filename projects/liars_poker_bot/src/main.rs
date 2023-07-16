@@ -1,4 +1,4 @@
-use std::{io, mem};
+use std::mem;
 
 use clap::{command, Parser, Subcommand, ValueEnum};
 
@@ -8,19 +8,19 @@ use liars_poker_bot::agents::{Agent, PlayerAgent, PolicyAgent};
 
 use liars_poker_bot::algorithms::exploitability::{self};
 
-use liars_poker_bot::algorithms::ismcts::Evaluator;
+use liars_poker_bot::algorithms::ismcts::{Evaluator, ResampleFromInfoState};
 use liars_poker_bot::algorithms::open_hand_solver::{OpenHandSolver, Optimizations};
 use liars_poker_bot::algorithms::pimcts::PIMCTSBot;
 use liars_poker_bot::cfragent::cfrnode::CFRNode;
 use liars_poker_bot::cfragent::{CFRAgent, CFRAlgorithm};
 use liars_poker_bot::database::memory_node_store::MemoryNodeStore;
-use liars_poker_bot::database::Storage;
-use liars_poker_bot::game::bluff::{Bluff, BluffGameState};
+
+use liars_poker_bot::game::bluff::BluffGameState;
 
 use liars_poker_bot::game::euchre::actions::EAction;
 use liars_poker_bot::game::euchre::processors::euchre_early_terminate;
 use liars_poker_bot::game::euchre::{Euchre, EuchreGameState};
-use liars_poker_bot::game::kuhn_poker::{KPGameState, KuhnPoker};
+use liars_poker_bot::game::kuhn_poker::KPGameState;
 use liars_poker_bot::game::{Action, GameState};
 
 use liars_poker_bot::policy::Policy;
@@ -33,6 +33,7 @@ use scripts::benchmark::{get_rng, run_benchmark, BenchmarkArgs};
 use scripts::estimate_euchre_game_tree::estimate_euchre_game_tree;
 use scripts::pass_on_bower::open_hand_score_pass_on_bower;
 use scripts::pass_on_bower_alpha::benchmark_pass_on_bower;
+use scripts::pass_on_bower_cfr::run_pass_on_bower_cfr;
 use scripts::tune::{run_tune, TuneArgs};
 
 pub mod scripts;
@@ -56,6 +57,7 @@ enum Commands {
     Exploitability,
     PassOnBowerOpenHand,
     PassOnBowerAlpha { num_games: usize },
+    PassOnBowerCFR,
     Tune(TuneArgs),
 }
 
@@ -108,6 +110,7 @@ fn main() {
         Commands::Exploitability => calcualte_agent_exploitability(args),
         Commands::PassOnBowerAlpha { num_games } => benchmark_pass_on_bower(num_games),
         Commands::Tune(tune) => run_tune(tune),
+        Commands::PassOnBowerCFR => run_pass_on_bower_cfr(),
     }
 }
 
@@ -117,6 +120,10 @@ fn run_scratch(_args: Args) {
     println!("euchre size: {}", mem::size_of::<EuchreGameState>());
 
     let gs = EuchreGameState::from("Qc9sTs9dAd|Tc9hAhTdJd|9cKcAcJhQh|JcJsKsAsKd|Qs|PT|");
+    for _ in 0..5 {
+        println!("{}", gs.resample_from_istate(0, &mut get_rng()));
+    }
+
     // println!("{:?}", gs);
     // println!(
     //     "{:?}",
@@ -172,53 +179,54 @@ fn run_analyze(args: Args) {
     }
 }
 
-fn run(args: Args) {
-    let _storage = match args.file.unwrap_or("".to_string()).as_str() {
-        "" => Storage::Temp,
-        _ => panic!("need to add support to create named files"), // Storage::Named(args.file),
-    };
+fn run(_args: Args) {
+    todo!();
+    // let _storage = match args.file.unwrap_or("".to_string()).as_str() {
+    //     "" => Storage::Temp,
+    //     _ => panic!("need to add support to create named files"), // Storage::Named(args.file),
+    // };
 
-    println!("running for: {:?} with {:?}", args.game, args.alg);
-    match args.game {
-        GameType::KuhnPoker => {
-            train_cfr_agent(CFRAgent::new(
-                KuhnPoker::game(),
-                1,
-                MemoryNodeStore::default(),
-                args.alg,
-            ));
-        }
-        GameType::Euchre => {
-            CFRAgent::new(Euchre::game(), 1, MemoryNodeStore::default(), args.alg).train(10);
-        }
-        GameType::Bluff11 => {
-            train_cfr_agent(CFRAgent::new(
-                Bluff::game(1, 1),
-                1,
-                MemoryNodeStore::default(),
-                args.alg,
-            ));
-        }
-        GameType::Bluff21 => {
-            train_cfr_agent(CFRAgent::new(
-                Bluff::game(2, 1),
-                1,
-                MemoryNodeStore::default(),
-                args.alg,
-            ));
-        }
-        GameType::Bluff22 => {
-            train_cfr_agent(CFRAgent::new(
-                Bluff::game(2, 2),
-                1,
-                MemoryNodeStore::default(),
-                args.alg,
-            ));
-        }
-    };
+    // println!("running for: {:?} with {:?}", args.game, args.alg);
+    // match args.game {
+    //     GameType::KuhnPoker => {
+    //         train_cfr_agent(CFRAgent::new(
+    //             KuhnPoker::game(),
+    //             1,
+    //             MemoryNodeStore::default(),
+    //             args.alg,
+    //         ));
+    //     }
+    //     GameType::Euchre => {
+    //         CFRAgent::new(Euchre::game(), 1, MemoryNodeStore::default(), args.alg).train(10);
+    //     }
+    //     GameType::Bluff11 => {
+    //         train_cfr_agent(CFRAgent::new(
+    //             Bluff::game(1, 1),
+    //             1,
+    //             MemoryNodeStore::default(),
+    //             args.alg,
+    //         ));
+    //     }
+    //     GameType::Bluff21 => {
+    //         train_cfr_agent(CFRAgent::new(
+    //             Bluff::game(2, 1),
+    //             1,
+    //             MemoryNodeStore::default(),
+    //             args.alg,
+    //         ));
+    //     }
+    //     GameType::Bluff22 => {
+    //         train_cfr_agent(CFRAgent::new(
+    //             Bluff::game(2, 2),
+    //             1,
+    //             MemoryNodeStore::default(),
+    //             args.alg,
+    //         ));
+    //     }
+    // };
 }
 
-fn train_cfr_agent<G: GameState>(mut agent: CFRAgent<G, MemoryNodeStore<CFRNode>>) {
+fn _train_cfr_agent<G: GameState>(mut agent: CFRAgent<G, MemoryNodeStore<CFRNode>>) {
     let mut iteration = 1;
 
     while iteration < 100_001 {
@@ -228,7 +236,7 @@ fn train_cfr_agent<G: GameState>(mut agent: CFRAgent<G, MemoryNodeStore<CFRNode>
             iteration
         );
         let exploitability =
-            exploitability::exploitability(agent.game.clone(), &mut agent.ns).nash_conv;
+            exploitability::exploitability(agent.game_generator, &mut agent.ns).nash_conv;
         info!(
             "exploitability:\t{}\t{}\t{}",
             iteration,
