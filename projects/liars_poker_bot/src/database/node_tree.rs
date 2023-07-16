@@ -5,7 +5,7 @@ use serde::Serialize;
 use crate::{game::Action, istate::IStateKey};
 
 /// A performant datastructure for storing nodes in memory
-pub struct Tree<T: Clone> {
+pub struct Tree<T> {
     nodes: Vec<Node<T>>,
     /// the starting roots of the tree
     roots: FxHashMap<Action, usize>,
