@@ -30,7 +30,7 @@ Qc9sTs9dAd|JcKcKsAsKd|9cTc9hJhKh|JsThQhTdJd|Qs
 Qc9sTs9dAd|9cJcAc9hKh|KsAsQhAhJd|TcKcJsQdKd|Qs
 Qc9sTs9dAd|KcAcJsAhQd|JcKsQhTdJd|9c9hThJhKd|Qs
 Qc9sTs9dAd|9cTcThJhTd|JcKcKsAs9h|JsQhAhJdKd|Qs
-^ ^ Other player's hands vary
+^           ^ Other player's hands vary
 Our hand is always the same
 ```
 
@@ -66,11 +66,11 @@ The optimizations are focused on improving the `mtd_search` function. See below 
 
 **Information states evaluated per second, for 50 game PIMCTS, 2000 samples**
 ```
-1) Vanilla MTD |█▌3
-2) Transposition table | ██ +4
+1) Vanilla MTD              |█▌3
+2) Transposition table      | ██ +4
 3) Isometric representation | ███████████████ +31
-4) Euchre-specific rules | ███ +7
-Optimized |██████████████████████ 44 (22ms per game)
+4) Euchre-specific rules    | ███ +7
+Optimized                   |██████████████████████ 44 (22ms per game)
 ```
 
 
@@ -86,15 +86,15 @@ I use the MTD search algorithm from [Aske Plaat's post](http://people.csail.mit.
 In pseudocode:
 ```
 function MTDF(root : node_type; f : integer; d : integer) : integer;
-g := f;
-upperbound := +INFINITY;
-lowerbound := -INFINITY;
-repeat
-if g == lowerbound then beta := g + 1 else beta := g;
-g := AlphaBetaWithMemory(root, beta - 1, beta, d);
-if g < beta then upperbound := g else lowerbound := g;
-until lowerbound >= upperbound;
-return g;
+    g := f;
+    upperbound := +INFINITY;
+    lowerbound := -INFINITY;
+    repeat
+        if g == lowerbound then beta := g + 1 else beta := g;
+        g := AlphaBetaWithMemory(root, beta - 1, beta, d);
+        if g < beta then upperbound := g else lowerbound := g;
+    until lowerbound >= upperbound;
+    return g;
 ```
 
 
