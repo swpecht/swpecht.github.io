@@ -5,7 +5,7 @@ use liars_poker_bot::{
         alphamu::AlphaMuBot, exploitability::exploitability, ismcts::Evaluator,
         open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot,
     },
-    cfragent::{CFRAgent, CFRAlgorithm},
+    cfragent::{cfres::CFRES, CFRAgent, CFRAlgorithm},
     database::memory_node_store::MemoryNodeStore,
     game::{
         euchre::{actions::EAction, Euchre},
@@ -156,4 +156,14 @@ fn test_cfr_euchre() {
 
     let mut agent = CFRAgent::new(gs, 42, MemoryNodeStore::default(), CFRAlgorithm::CFRCS);
     agent.train(1);
+}
+
+#[test]
+fn test_cfres_nash() {
+    // Verify the nash equilibrium is reached. From https://en.wikipedia.org/wiki/Kuhn_poker
+    let mut alg = CFRES::new(|| (KuhnPoker::game().new)(), SeedableRng::seed_from_u64(43));
+
+    alg.train(1_000_000);
+    let exploitability = exploitability(|| (KuhnPoker::game().new)(), &mut alg).nash_conv;
+    assert_relative_eq!(exploitability, 0.0, epsilon = 0.001);
 }

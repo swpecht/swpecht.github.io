@@ -119,6 +119,10 @@ impl<T: Default + Clone> ActionVec<T> {
 
         output
     }
+
+    pub fn actions(&self) -> &Vec<Action> {
+        &self.actions
+    }
 }
 
 impl<T: Default + Clone> Index<Action> for ActionVec<T> {
