@@ -20,15 +20,13 @@ serde = { version = "1.0", features = ["derive"] }
 rmp-serde = "1.1" # can be set to human readable for debugging
 tempfile = "3.3"
 serde-big-array = "0.5"
-bumpalo = "3"
 rustc-hash = "1.1.0"
 approx = "0.5"
 rayon = "1.7"
-arc-swap = "1.6"
 dashmap = "5.4.0"
-wgpu = "0.16.1"
 indicatif = "0.17.5"
 features = "0.10.0"
+metrics = "0.21.1"
 
 
 [dev-dependencies]
