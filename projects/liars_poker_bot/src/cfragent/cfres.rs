@@ -1,10 +1,18 @@
 use std::collections::HashMap;
 
-use rand::{rngs::StdRng, seq::SliceRandom};
+use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
 
 use crate::{
+    algorithms::{
+        ismcts::{Evaluator, ResampleFromInfoState},
+        open_hand_solver::OpenHandSolver,
+        pimcts::PIMCTSBot,
+    },
     alloc::Pool,
-    game::{Action, GameState, Player},
+    game::{
+        euchre::{processors::post_bidding_phase, EuchreGameState},
+        Action, GameState, Player,
+    },
     istate::IStateKey,
     policy::Policy,
 };
@@ -50,21 +58,48 @@ pub struct CFRES<G> {
     game_generator: fn() -> G,
     average_type: AverageType,
     infostates: HashMap<IStateKey, InfoState>,
+    /// determine if we are at the max depth and should use the rollout
+    is_max_depth: fn(&G) -> bool,
+    evaluator: PIMCTSBot<G, OpenHandSolver<G>>,
 }
 
-impl<G> CFRES<G> {
-    pub fn new(game_generator: fn() -> G, rng: StdRng) -> Self {
+impl CFRES<EuchreGameState> {
+    pub fn new_euchre_bidding(game_generator: fn() -> EuchreGameState, mut rng: StdRng) -> Self {
+        let pimcts_seed = rng.gen();
         Self {
             rng,
             vector_pool: Pool::new(Vec::new),
             game_generator,
             average_type: AverageType::Simple,
             infostates: HashMap::new(),
+            is_max_depth: |gs: &EuchreGameState| post_bidding_phase(gs),
+            evaluator: PIMCTSBot::new(
+                50,
+                OpenHandSolver::default(),
+                SeedableRng::seed_from_u64(pimcts_seed),
+            ),
         }
     }
 }
 
-impl<G: GameState> CFRES<G> {
+impl<G: GameState + ResampleFromInfoState> CFRES<G> {
+    pub fn new(game_generator: fn() -> G, mut rng: StdRng) -> Self {
+        let pimcts_seed = rng.gen();
+        Self {
+            rng,
+            vector_pool: Pool::new(Vec::new),
+            game_generator,
+            average_type: AverageType::Simple,
+            infostates: HashMap::new(),
+            is_max_depth: |_: &G| false,
+            evaluator: PIMCTSBot::new(
+                50,
+                OpenHandSolver::default(),
+                SeedableRng::seed_from_u64(pimcts_seed),
+            ),
+        }
+    }
+
     pub fn train(&mut self, n: usize) {
         for _ in 0..n {
             self.iteration();
@@ -78,7 +113,7 @@ impl<G: GameState> CFRES<G> {
     fn iteration(&mut self) {
         let num_players = (self.game_generator)().num_players();
         for player in 0..num_players {
-            self.update_regrets(&mut (self.game_generator)(), player);
+            self.update_regrets(&mut (self.game_generator)(), player, 0);
         }
 
         if matches!(self.average_type, AverageType::_Full) {
@@ -97,7 +132,7 @@ impl<G: GameState> CFRES<G> {
     ///     value: is the value of the state in the game
     ///     obtained as the weighted average of the values
     ///     of the children
-    fn update_regrets(&mut self, gs: &mut G, player: Player) -> f64 {
+    fn update_regrets(&mut self, gs: &mut G, player: Player, _depth: usize) -> f64 {
         if gs.is_terminal() {
             return gs.evaluate(player);
         }
@@ -112,9 +147,14 @@ impl<G: GameState> CFRES<G> {
             self.vector_pool.attach(actions);
 
             gs.apply_action(outcome);
-            let value = self.update_regrets(gs, player);
+            let value = self.update_regrets(gs, player, _depth + 1);
             gs.undo();
             return value;
+        }
+
+        // If we're at max depth, do the rollout
+        if (self.is_max_depth)(gs) {
+            return self.evaluator.evaluate_player(gs, player);
         }
 
         let cur_player = gs.cur_player();
@@ -139,13 +179,13 @@ impl<G: GameState> CFRES<G> {
                 .expect("error choosing weighted action")
                 .0;
             gs.apply_action(a);
-            value = self.update_regrets(gs, player);
+            value = self.update_regrets(gs, player, _depth + 1);
             gs.undo();
         } else {
             // walk over all actions at my node
             for &a in actions.iter() {
                 gs.apply_action(a);
-                child_values[a] = self.update_regrets(gs, player);
+                child_values[a] = self.update_regrets(gs, player, _depth + 1);
                 gs.undo();
                 value += policy[a] * child_values[a];
             }
@@ -227,13 +267,17 @@ fn add_avstrat(infostate: &mut InfoState, action: Action, amount: f64) {
     infostate.avg_strategy[action] += amount;
 }
 
-impl<G: GameState> Policy<G> for CFRES<G> {
+impl<G: GameState + ResampleFromInfoState + Send> Policy<G> for CFRES<G> {
     /// Returns the MCCFR average policy for a player in a state.
     ///
     /// If the policy is not defined for the provided state, a uniform
     /// random policy is returned.
     fn action_probabilities(&mut self, gs: &G) -> ActionVec<f64> {
         let player = gs.cur_player();
+
+        if (self.is_max_depth)(gs) {
+            return self.evaluator.action_probabilities(gs);
+        }
 
         let mut actions = self.vector_pool.detach();
         gs.legal_actions(&mut actions);

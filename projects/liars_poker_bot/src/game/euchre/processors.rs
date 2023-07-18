@@ -1,4 +1,5 @@
 use itertools::Itertools;
+use rand::rngs::StdRng;
 
 use crate::game::{
     euchre::{
@@ -10,7 +11,7 @@ use crate::game::{
     Action, GameState, Player,
 };
 
-use super::{actions::Card, EPhase};
+use super::{actions::Card, EPhase, Euchre};
 
 /// Euchre specific processor for open hand solver
 pub fn process_euchre_actions(gs: &EuchreGameState, actions: &mut Vec<Action>) {
@@ -174,6 +175,17 @@ fn find_next_card_owner(c: Card, gs: &EuchreGameState) -> Option<Player> {
     }
 
     None
+}
+
+pub fn post_bidding_phase(gs: &EuchreGameState) -> bool {
+    match gs.phase() {
+        EPhase::DealHands => false,
+        EPhase::DealFaceUp => false,
+        EPhase::Pickup => false,
+        EPhase::ChooseTrump => false,
+        EPhase::Discard => true,
+        EPhase::Play => true,
+    }
 }
 
 #[cfg(test)]
