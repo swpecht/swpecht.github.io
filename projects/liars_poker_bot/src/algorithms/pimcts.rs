@@ -11,7 +11,10 @@ use crate::{
 };
 use rayon::prelude::*;
 
-use super::ismcts::{Evaluator, ResampleFromInfoState};
+use super::{
+    ismcts::{Evaluator, ResampleFromInfoState},
+    open_hand_solver::OpenHandSolver,
+};
 
 pub struct PIMCTSBot<G, E> {
     n_rollouts: usize,
@@ -38,6 +41,12 @@ impl<G: GameState + ResampleFromInfoState + Send, E: Evaluator<G> + Clone + Sync
             .sum();
 
         sum / self.n_rollouts as f64
+    }
+}
+
+impl<G: GameState + ResampleFromInfoState + Send> PIMCTSBot<G, OpenHandSolver<G>> {
+    pub fn reset(&mut self) {
+        self.solver.reset();
     }
 }
 

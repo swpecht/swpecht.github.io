@@ -1,9 +1,13 @@
-use std::{collections::HashMap, fs::File, io::BufWriter};
+use std::{
+    collections::HashMap,
+    fs::{self, File},
+    io::BufWriter,
+};
 
 use log::info;
 use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
 use rmp_serde::Serializer;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     algorithms::{
@@ -17,6 +21,7 @@ use crate::{
         Action, GameState, Player,
     },
     istate::IStateKey,
+    metrics::increment_counter,
     policy::Policy,
 };
 
@@ -79,7 +84,7 @@ impl CFRES<EuchreGameState> {
             is_max_depth: post_bidding_phase,
             evaluator: PIMCTSBot::new(
                 50,
-                OpenHandSolver::default(),
+                OpenHandSolver::new_euchre(),
                 SeedableRng::seed_from_u64(pimcts_seed),
             ),
         }
@@ -108,9 +113,12 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
         for _ in 0..n {
             self.iteration();
         }
+        self.evaluator.reset();
     }
 
     pub fn save(&self) {
+        fs::rename("/tmp/infostates", "/tmp/infostates.old")
+            .expect("error backing up previous file");
         let f = File::create("/tmp/infostates").unwrap();
         let f = BufWriter::new(f);
 
@@ -175,6 +183,8 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
         if (self.is_max_depth)(gs) {
             return self.evaluator.evaluate_player(gs, player);
         }
+
+        increment_counter("cfr.cfres.nodes_touched");
 
         let cur_player = gs.cur_player();
         let info_state_key = gs.istate_key(cur_player);

@@ -57,7 +57,7 @@ enum Commands {
     Exploitability,
     PassOnBowerOpenHand,
     PassOnBowerAlpha { num_games: usize },
-    PassOnBowerCFR,
+    PassOnBowerCFR { training_iterations: usize },
     Tune(TuneArgs),
 }
 
@@ -110,7 +110,9 @@ fn main() {
         Commands::Exploitability => calcualte_agent_exploitability(args),
         Commands::PassOnBowerAlpha { num_games } => benchmark_pass_on_bower(num_games),
         Commands::Tune(tune) => run_tune(tune),
-        Commands::PassOnBowerCFR => run_pass_on_bower_cfr(),
+        Commands::PassOnBowerCFR {
+            training_iterations,
+        } => run_pass_on_bower_cfr(training_iterations),
     }
 }
 

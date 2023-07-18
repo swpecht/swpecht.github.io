@@ -1,6 +1,6 @@
 use std::ops::{Index, IndexMut};
 
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 use crate::game::Action;
 

@@ -3,7 +3,7 @@ use itertools::Itertools;
 use liars_poker_bot::{
     agents::{Agent, PolicyAgent},
     algorithms::{open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot},
-    cfragent::cfres::CFRES,
+    cfragent::{cfres::CFRES, cfrnode::ActionVec},
     game::{
         euchre::{
             actions::{Card, EAction},
@@ -11,22 +11,27 @@ use liars_poker_bot::{
         },
         GameState,
     },
+    metrics::read_counter,
+    policy::Policy,
 };
 use rand::{seq::SliceRandom, thread_rng};
 
-use super::benchmark::get_rng;
+use super::{benchmark::get_rng, pass_on_bower::PassOnBowerIterator};
 
-pub fn run_pass_on_bower_cfr() {
+pub fn run_pass_on_bower_cfr(training_iterations: usize) {
     let generator = generate_jack_of_spades_deal;
-    let num_iterations = 10_000;
-    let pb = ProgressBar::new(num_iterations as u64);
+    let pb = ProgressBar::new(training_iterations as u64);
     let mut alg = CFRES::new_euchre_bidding(generator, get_rng());
     alg.load();
-    for i in 0..num_iterations {
+
+    print_scored_istates(&mut alg);
+
+    for i in 0..training_iterations {
         alg.train(1);
         pb.inc(1);
         if i % 1000 == 0 && i > 0 {
-            alg.save()
+            alg.save();
+            println!("nodes touched: {}", read_counter("cfr.cfres.nodes_touched"))
         }
     }
     pb.finish_and_clear();
@@ -75,6 +80,24 @@ pub fn run_pass_on_bower_cfr() {
         "pimcts player 3 score: {}",
         running_score / worlds.len() as f64
     );
+}
+
+fn print_scored_istates(alg: &mut CFRES<EuchreGameState>) {
+    let games = PassOnBowerIterator::new();
+    for gs in games {
+        let policy = alg.action_probabilities(&gs);
+        if !policy.to_vec().iter().all(|(_, b)| *b == 0.5) {
+            println!(
+                "{}: {:?}",
+                gs,
+                policy
+                    .to_vec()
+                    .into_iter()
+                    .map(|(a, b)| (EAction::from(a), b))
+                    .collect_vec()
+            );
+        }
+    }
 }
 
 /// Generator for games where the jack of spades is face up
