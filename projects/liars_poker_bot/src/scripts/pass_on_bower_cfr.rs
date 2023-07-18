@@ -51,9 +51,9 @@ pub fn run_pass_on_bower_cfr(training_iterations: usize) {
     for mut w in worlds.clone() {
         while !w.is_terminal() {
             let cur_player = w.cur_player();
-            let a = match cur_player % 2 == 0 {
-                true => opponent.step(&w),
-                false => cfr_agent.step(&w),
+            let a = match cur_player == 3 {
+                true => cfr_agent.step(&w),
+                false => opponent.step(&w),
             };
             w.apply_action(a);
         }
