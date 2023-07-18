@@ -1,6 +1,9 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fs::File, io::BufWriter};
 
+use log::info;
 use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
+use rmp_serde::Serializer;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::{
     algorithms::{
@@ -24,6 +27,7 @@ enum AverageType {
     Simple,
 }
 
+#[derive(Serialize, Deserialize)]
 struct InfoState {
     regrets: ActionVec<f64>,
     avg_strategy: ActionVec<f64>,
@@ -72,7 +76,7 @@ impl CFRES<EuchreGameState> {
             game_generator,
             average_type: AverageType::Simple,
             infostates: HashMap::new(),
-            is_max_depth: |gs: &EuchreGameState| post_bidding_phase(gs),
+            is_max_depth: post_bidding_phase,
             evaluator: PIMCTSBot::new(
                 50,
                 OpenHandSolver::default(),
@@ -104,6 +108,21 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
         for _ in 0..n {
             self.iteration();
         }
+    }
+
+    pub fn save(&self) {
+        let f = File::create("/tmp/infostates").unwrap();
+        let f = BufWriter::new(f);
+
+        info!("saving weights for {} infostates...", self.infostates.len());
+        self.infostates.serialize(&mut Serializer::new(f)).unwrap();
+    }
+
+    pub fn load(&mut self) {
+        let f = &mut File::open("/tmp/infostates");
+        let f = f.as_mut().unwrap();
+        self.infostates = rmp_serde::from_read(f).unwrap();
+        info!("loaded weights for {} infostates", self.infostates.len());
     }
 
     /// erforms one iteration of external sampling.

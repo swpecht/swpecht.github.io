@@ -18,14 +18,19 @@ use super::benchmark::get_rng;
 
 pub fn run_pass_on_bower_cfr() {
     let generator = generate_jack_of_spades_deal;
-    let num_iterations = 5_000;
+    let num_iterations = 10_000;
     let pb = ProgressBar::new(num_iterations as u64);
     let mut alg = CFRES::new_euchre_bidding(generator, get_rng());
-    for _ in 0..num_iterations {
+    alg.load();
+    for i in 0..num_iterations {
         alg.train(1);
         pb.inc(1);
+        if i % 1000 == 0 && i > 0 {
+            alg.save()
+        }
     }
     pb.finish_and_clear();
+    alg.save();
     println!("num info states: {}", alg.num_info_states());
 
     let mut opponent = PolicyAgent::new(

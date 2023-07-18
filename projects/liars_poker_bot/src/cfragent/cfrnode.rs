@@ -1,5 +1,7 @@
 use std::ops::{Index, IndexMut};
 
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+
 use crate::game::Action;
 
 /// Adapted from: https://towardsdatascience.com/counterfactual-regret-minimization-ff4204bf4205
@@ -69,7 +71,7 @@ impl CFRNode {
 /// A helper struct to make working with sparse action vectors easy
 ///
 /// It uses actions to index into a vector
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActionVec<T: Default + Clone> {
     data: Vec<T>,
     // TODO: Can change this to a reference to same memory in the future

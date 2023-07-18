@@ -1,5 +1,4 @@
 use itertools::Itertools;
-use rand::rngs::StdRng;
 
 use crate::game::{
     euchre::{
@@ -11,7 +10,7 @@ use crate::game::{
     Action, GameState, Player,
 };
 
-use super::{actions::Card, EPhase, Euchre};
+use super::{actions::Card, EPhase};
 
 /// Euchre specific processor for open hand solver
 pub fn process_euchre_actions(gs: &EuchreGameState, actions: &mut Vec<Action>) {
