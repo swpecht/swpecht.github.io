@@ -189,6 +189,10 @@ impl<G: GameState> CFRES<G> {
     fn full_update_average(&mut self, _gs: G, _reach_probs: Vec<f64>) {
         todo!();
     }
+
+    pub fn num_info_states(&self) -> usize {
+        self.infostates.len()
+    }
 }
 
 /// Applies regret matching to get a policy.

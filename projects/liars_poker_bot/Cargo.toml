@@ -26,7 +26,6 @@ rayon = "1.7"
 dashmap = "5.4.0"
 indicatif = "0.17.5"
 features = "0.10.0"
-metrics = "0.21.1"
 
 
 [dev-dependencies]
