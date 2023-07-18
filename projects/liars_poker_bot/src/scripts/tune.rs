@@ -1,5 +1,6 @@
 use clap::{Args, ValueEnum};
 use indicatif::ProgressBar;
+use itertools::Itertools;
 use liars_poker_bot::{
     agents::{Agent, PolicyAgent},
     algorithms::{
@@ -8,15 +9,18 @@ use liars_poker_bot::{
         open_hand_solver::OpenHandSolver,
         pimcts::PIMCTSBot,
     },
+    cfragent::cfres::CFRES,
     game::{
-        euchre::{actions::EAction, Euchre, EuchreGameState},
+        euchre::{actions::EAction, processors::post_bidding_phase, Euchre, EuchreGameState},
         get_games, GameState,
     },
 };
-use log::info;
+use log::{info, warn};
 use rand::SeedableRng;
 
 use crate::scripts::{benchmark::get_rng, pass_on_bower_alpha::get_bower_deals};
+
+use super::pass_on_bower_cfr::generate_jack_of_spades_deal;
 
 #[derive(Debug, ValueEnum, Clone, Copy)]
 pub enum TuneMode {
@@ -178,7 +182,12 @@ fn get_opponent() -> PolicyAgent<PIMCTSBot<EuchreGameState, OpenHandSolver<Euchr
 }
 
 fn compare_agents(args: TuneArgs) {
-    let games = get_games(Euchre::game(), args.num_games, &mut get_rng());
+    // let games = get_games(Euchre::game(), args.num_games, &mut get_rng());
+
+    warn!("only using jack of spades deals");
+    let games = (0..args.num_games)
+        .map(|_| generate_jack_of_spades_deal())
+        .collect_vec();
 
     let mut pimcts = get_opponent();
     // Based on tuning run for 100 games
@@ -193,13 +202,13 @@ fn compare_agents(args: TuneArgs) {
     //     rng(),
     // );
 
-    let test_agent = &mut PolicyAgent::new(
-        AlphaMuBot::new(OpenHandSolver::new_euchre(), 20, 25, get_rng()),
-        get_rng(),
-    );
+    let mut test_agent = CFRES::new(Euchre::new_state, get_rng());
+    test_agent.load("infostates");
+
+    let mut test_agent = PolicyAgent::new(test_agent, get_rng());
 
     for mut gs in games {
-        while !gs.is_terminal() {
+        while !post_bidding_phase(&gs) {
             let baseline_a = pimcts.step(&gs);
             let test_a = test_agent.step(&gs);
 

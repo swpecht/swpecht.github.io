@@ -3,7 +3,7 @@ use itertools::Itertools;
 use liars_poker_bot::{
     agents::{Agent, PolicyAgent},
     algorithms::{open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot},
-    cfragent::{cfres::CFRES, cfrnode::ActionVec},
+    cfragent::cfres::CFRES,
     game::{
         euchre::{
             actions::{Card, EAction},
@@ -22,7 +22,9 @@ pub fn run_pass_on_bower_cfr(training_iterations: usize) {
     let generator = generate_jack_of_spades_deal;
     let pb = ProgressBar::new(training_iterations as u64);
     let mut alg = CFRES::new_euchre_bidding(generator, get_rng());
-    alg.load();
+
+    let infostate_path = "infostates";
+    alg.load(infostate_path);
 
     print_scored_istates(&mut alg);
 
@@ -30,12 +32,12 @@ pub fn run_pass_on_bower_cfr(training_iterations: usize) {
         alg.train(1);
         pb.inc(1);
         if i % 1000 == 0 && i > 0 {
-            alg.save();
+            alg.save(infostate_path);
             println!("nodes touched: {}", read_counter("cfr.cfres.nodes_touched"))
         }
     }
     pb.finish_and_clear();
-    alg.save();
+    alg.save(infostate_path);
     println!("num info states: {}", alg.num_info_states());
 
     let mut opponent = PolicyAgent::new(
@@ -44,14 +46,14 @@ pub fn run_pass_on_bower_cfr(training_iterations: usize) {
     );
     let mut cfr_agent = PolicyAgent::new(alg, get_rng());
 
-    let worlds = (0..500)
+    let worlds = (0..100)
         .map(|_| generate_jack_of_spades_deal())
         .collect_vec();
     let mut running_score = 0.0;
     for mut w in worlds.clone() {
         while !w.is_terminal() {
             let cur_player = w.cur_player();
-            let a = match cur_player == 3 {
+            let a = match cur_player == 3 || cur_player == 1 {
                 true => cfr_agent.step(&w),
                 false => opponent.step(&w),
             };

@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     fs::{self, File},
     io::BufWriter,
+    path::Path,
 };
 
 use log::info;
@@ -116,21 +117,29 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
         self.evaluator.reset();
     }
 
-    pub fn save(&self) {
-        fs::rename("/tmp/infostates", "/tmp/infostates.old")
-            .expect("error backing up previous file");
-        let f = File::create("/tmp/infostates").unwrap();
+    pub fn save(&self, path: &str) {
+        if Path::new(path).exists() {
+            let mut target = path.to_string();
+            target.push_str(".old");
+            fs::rename(path, target.as_str()).expect("error backing up previous file");
+        }
+
+        let f = File::create(path).unwrap();
         let f = BufWriter::new(f);
 
         info!("saving weights for {} infostates...", self.infostates.len());
         self.infostates.serialize(&mut Serializer::new(f)).unwrap();
     }
 
-    pub fn load(&mut self) {
-        let f = &mut File::open("/tmp/infostates");
-        let f = f.as_mut().unwrap();
-        self.infostates = rmp_serde::from_read(f).unwrap();
-        info!("loaded weights for {} infostates", self.infostates.len());
+    pub fn load(&mut self, path: &str) {
+        if Path::new(path).exists() {
+            let f = &mut File::open(path);
+            let f = f.as_mut().unwrap();
+            self.infostates = rmp_serde::from_read(f).unwrap();
+            info!("loaded weights for {} infostates", self.infostates.len());
+        } else {
+            info!("file not found, no infostates loaded")
+        }
     }
 
     /// erforms one iteration of external sampling.
