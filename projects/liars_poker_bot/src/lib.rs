@@ -6,4 +6,5 @@ pub mod collections;
 pub mod database;
 pub mod game;
 pub mod istate;
+pub mod metrics;
 pub mod policy;
