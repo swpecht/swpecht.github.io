@@ -8,6 +8,7 @@ use liars_poker_bot::{
     cfragent::{cfres::CFRES, CFRAgent, CFRAlgorithm},
     database::memory_node_store::MemoryNodeStore,
     game::{
+        bluff::Bluff,
         euchre::{actions::EAction, Euchre},
         get_games,
         kuhn_poker::KuhnPoker,
@@ -159,11 +160,21 @@ fn test_cfr_euchre() {
 }
 
 #[test]
-fn test_cfres_nash() {
+fn test_cfres_nash_kuhn_poker() {
     // Verify the nash equilibrium is reached. From https://en.wikipedia.org/wiki/Kuhn_poker
     let mut alg = CFRES::new(|| (KuhnPoker::game().new)(), SeedableRng::seed_from_u64(43));
 
     alg.train(1_000_000);
     let exploitability = exploitability(|| (KuhnPoker::game().new)(), &mut alg).nash_conv;
     assert_relative_eq!(exploitability, 0.0, epsilon = 0.001);
+}
+
+#[test]
+fn test_cfres_nash_bluff11() {
+    // Verify the nash equilibrium is reached. From https://en.wikipedia.org/wiki/Kuhn_poker
+    let mut alg = CFRES::new(|| (Bluff::game(1, 1).new)(), SeedableRng::seed_from_u64(43));
+
+    alg.train(1_000_000);
+    let exploitability = exploitability(|| (Bluff::game(1, 1).new)(), &mut alg).nash_conv;
+    assert_relative_eq!(exploitability, 0.0, epsilon = 0.01);
 }
