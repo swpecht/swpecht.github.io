@@ -67,9 +67,9 @@ The optimizations are focused on improving the `mtd_search` function. See below 
 **Information states evaluated per second, for 50 game PIMCTS, 2000 samples**
 ```
 1) Vanilla MTD              |█▌3
-2) Transposition table      | ██ +4
-3) Isometric representation | ███████████████ +31
-4) Euchre-specific rules    | ███ +7
+2) Transposition table      |  ██ +4
+3) Isometric representation |    ███████████████ +31
+4) Euchre-specific rules    |                   ███ +7
 Optimized                   |██████████████████████ 44 (22ms per game)
 ```
 
@@ -201,7 +201,7 @@ For determining if a game is over, we know that if a player has the highest trum
 For choosing what moves to evaluate, we do two optimizations. First, we remove equivalent cards from our hand. Similarly, the `9c` is the same as the `10c` if a player holds both. We only need to evaluate one of those plays. It is also usually beneficial to play the highest trump card to start a new trick if you have it. So we evaluate that move first.
 
 
-With these changes, we can evaluate up to 44 games / s — Sa 16% improvement.
+With these changes, we can evaluate up to 44 games / s — a 16% improvement.
 
 
 # Conclusion
