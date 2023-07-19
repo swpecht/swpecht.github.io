@@ -5,12 +5,13 @@ use std::{
     path::Path,
 };
 
-use log::info;
+use log::{debug, info, warn};
 use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
 use rmp_serde::Serializer;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    agents::Agent,
     algorithms::{
         ismcts::{Evaluator, ResampleFromInfoState},
         open_hand_solver::OpenHandSolver,
@@ -127,7 +128,7 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
         let f = File::create(path).unwrap();
         let f = BufWriter::new(f);
 
-        info!("saving weights for {} infostates...", self.infostates.len());
+        debug!("saving weights for {} infostates...", self.infostates.len());
         self.infostates.serialize(&mut Serializer::new(f)).unwrap();
     }
 
@@ -136,9 +137,9 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
             let f = &mut File::open(path);
             let f = f.as_mut().unwrap();
             self.infostates = rmp_serde::from_read(f).unwrap();
-            info!("loaded weights for {} infostates", self.infostates.len());
+            debug!("loaded weights for {} infostates", self.infostates.len());
         } else {
-            info!("file not found, no infostates loaded")
+            warn!("file not found, no infostates loaded")
         }
     }
 
@@ -342,6 +343,16 @@ impl<G: GameState + ResampleFromInfoState + Send> Policy<G> for CFRES<G> {
         self.vector_pool.attach(actions);
 
         policy
+    }
+}
+
+impl<G: GameState + ResampleFromInfoState + Send> Agent<G> for CFRES<G> {
+    fn step(&mut self, s: &G) -> Action {
+        let action_weights = self.action_probabilities(s).to_vec();
+        action_weights
+            .choose_weighted(&mut self.rng, |item| item.1)
+            .unwrap()
+            .0
     }
 }
 

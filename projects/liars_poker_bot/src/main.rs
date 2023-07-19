@@ -1,3 +1,4 @@
+use std::fs::OpenOptions;
 use std::mem;
 
 use clap::{command, Parser, Subcommand, ValueEnum};
@@ -24,7 +25,7 @@ use liars_poker_bot::game::kuhn_poker::KPGameState;
 use liars_poker_bot::game::{Action, GameState};
 
 use liars_poker_bot::policy::Policy;
-use log::{debug, info};
+use log::{debug, info, set_max_level, warn, LevelFilter};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
@@ -33,8 +34,12 @@ use scripts::benchmark::{get_rng, run_benchmark, BenchmarkArgs};
 use scripts::estimate_euchre_game_tree::estimate_euchre_game_tree;
 use scripts::pass_on_bower::open_hand_score_pass_on_bower;
 use scripts::pass_on_bower_alpha::benchmark_pass_on_bower;
-use scripts::pass_on_bower_cfr::run_pass_on_bower_cfr;
+use scripts::pass_on_bower_cfr::{run_pass_on_bower_cfr, PassOnBowerCFRArgs};
 use scripts::tune::{run_tune, TuneArgs};
+use simplelog::{
+    format_description, ColorChoice, CombinedLogger, Config, ConfigBuilder, TermLogger,
+    TerminalMode, WriteLogger,
+};
 
 pub mod scripts;
 
@@ -47,7 +52,7 @@ enum GameType {
     Bluff22,
 }
 
-#[derive(Debug, Subcommand, Copy, Clone)]
+#[derive(Debug, Subcommand, Clone)]
 enum Commands {
     Run,
     Benchmark(BenchmarkArgs),
@@ -57,7 +62,7 @@ enum Commands {
     Exploitability,
     PassOnBowerOpenHand,
     PassOnBowerAlpha { num_games: usize },
-    PassOnBowerCFR { training_iterations: usize },
+    PassOnBowerCFR(PassOnBowerCFRArgs),
     Tune(TuneArgs),
 }
 
@@ -91,13 +96,32 @@ pub struct Args {
 fn main() {
     let args = Args::parse();
 
-    stderrlog::new()
-        .verbosity(args.verbosity)
-        .timestamp(stderrlog::Timestamp::Second)
-        .show_module_names(true)
-        .modules(args.modules.clone())
-        .init()
-        .unwrap();
+    set_max_level(LevelFilter::Info);
+
+    let config = ConfigBuilder::new().set_time_format_rfc3339().build();
+
+    CombinedLogger::init(vec![
+        TermLogger::new(
+            LevelFilter::Warn,
+            config.clone(),
+            TerminalMode::Mixed,
+            ColorChoice::Auto,
+        ),
+        WriteLogger::new(
+            LevelFilter::Info,
+            config,
+            OpenOptions::new()
+                .append(true)
+                .write(true)
+                .open("liars_poker.log")
+                .unwrap(),
+        ),
+    ])
+    .unwrap();
+
+    if args.verbosity != 0 {
+        warn!("verbosity param not supported yet, logging at info level");
+    }
 
     match args.command {
         Commands::Run => run(args),
@@ -110,9 +134,7 @@ fn main() {
         Commands::Exploitability => calcualte_agent_exploitability(args),
         Commands::PassOnBowerAlpha { num_games } => benchmark_pass_on_bower(num_games),
         Commands::Tune(tune) => run_tune(tune),
-        Commands::PassOnBowerCFR {
-            training_iterations,
-        } => run_pass_on_bower_cfr(training_iterations),
+        Commands::PassOnBowerCFR(bower_cfr) => run_pass_on_bower_cfr(bower_cfr),
     }
 }
 
