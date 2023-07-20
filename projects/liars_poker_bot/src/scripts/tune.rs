@@ -11,7 +11,7 @@ use liars_poker_bot::{
     },
     cfragent::cfres::CFRES,
     game::{
-        euchre::{actions::EAction, processors::post_bidding_phase, Euchre, EuchreGameState},
+        euchre::{actions::EAction, processors::post_discard_phase, Euchre, EuchreGameState},
         get_games, GameState,
     },
 };
@@ -208,7 +208,7 @@ fn compare_agents(args: TuneArgs) {
     let mut test_agent = PolicyAgent::new(test_agent, get_rng());
 
     for mut gs in games {
-        while !post_bidding_phase(&gs) {
+        while !post_discard_phase(&gs) {
             let baseline_a = pimcts.step(&gs);
             let test_a = test_agent.step(&gs);
 

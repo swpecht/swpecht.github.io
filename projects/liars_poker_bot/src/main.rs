@@ -37,8 +37,7 @@ use scripts::pass_on_bower_alpha::benchmark_pass_on_bower;
 use scripts::pass_on_bower_cfr::{run_pass_on_bower_cfr, PassOnBowerCFRArgs};
 use scripts::tune::{run_tune, TuneArgs};
 use simplelog::{
-    format_description, ColorChoice, CombinedLogger, Config, ConfigBuilder, TermLogger,
-    TerminalMode, WriteLogger,
+    ColorChoice, CombinedLogger, ConfigBuilder, TermLogger, TerminalMode, WriteLogger,
 };
 
 pub mod scripts;

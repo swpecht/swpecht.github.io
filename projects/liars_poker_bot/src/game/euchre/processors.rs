@@ -176,13 +176,13 @@ fn find_next_card_owner(c: Card, gs: &EuchreGameState) -> Option<Player> {
     None
 }
 
-pub fn post_bidding_phase(gs: &EuchreGameState) -> bool {
+pub fn post_discard_phase(gs: &EuchreGameState) -> bool {
     match gs.phase() {
         EPhase::DealHands => false,
         EPhase::DealFaceUp => false,
         EPhase::Pickup => false,
         EPhase::ChooseTrump => false,
-        EPhase::Discard => true,
+        EPhase::Discard => false,
         EPhase::Play => true,
     }
 }

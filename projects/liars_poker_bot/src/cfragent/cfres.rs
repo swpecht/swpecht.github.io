@@ -5,7 +5,7 @@ use std::{
     path::Path,
 };
 
-use log::{debug, info, warn};
+use log::{debug, warn};
 use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
 use rmp_serde::Serializer;
 use serde::{Deserialize, Serialize};
@@ -19,7 +19,7 @@ use crate::{
     },
     alloc::Pool,
     game::{
-        euchre::{processors::post_bidding_phase, EuchreGameState},
+        euchre::{processors::post_discard_phase, EuchreGameState},
         Action, GameState, Player,
     },
     istate::IStateKey,
@@ -83,7 +83,7 @@ impl CFRES<EuchreGameState> {
             game_generator,
             average_type: AverageType::Simple,
             infostates: HashMap::new(),
-            is_max_depth: post_bidding_phase,
+            is_max_depth: post_discard_phase,
             evaluator: PIMCTSBot::new(
                 50,
                 OpenHandSolver::new_euchre(),
