@@ -194,13 +194,22 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
             return self.evaluator.evaluate_player(gs, player);
         }
 
-        increment_counter("cfr.cfres.nodes_touched");
-
         let cur_player = gs.cur_player();
         let info_state_key = gs.istate_key(cur_player);
         let mut actions = self.vector_pool.detach();
         gs.legal_actions(&mut actions);
 
+        // don't store anything if only 1 valid action
+        if actions.len() == 1 {
+            gs.apply_action(actions[0]);
+            let v = self.update_regrets(gs, player, _depth + 1);
+            gs.undo();
+            actions.clear();
+            self.vector_pool.attach(actions);
+            return v;
+        }
+
+        increment_counter("cfr.cfres.nodes_touched");
         let policy;
         {
             let infostate_info = self.lookup_infostate_info(&info_state_key, &actions);
