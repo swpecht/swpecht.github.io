@@ -2,7 +2,7 @@ use clap::Args;
 use indicatif::ProgressBar;
 use itertools::Itertools;
 use liars_poker_bot::{
-    agents::{Agent, PolicyAgent},
+    agents::{Agent, Seedable},
     algorithms::{open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot},
     cfragent::cfres::CFRES,
     game::{
@@ -16,7 +16,7 @@ use liars_poker_bot::{
     policy::Policy,
 };
 use log::info;
-use rand::{seq::SliceRandom, thread_rng};
+use rand::{seq::SliceRandom, thread_rng, SeedableRng};
 
 use super::{benchmark::get_rng, pass_on_bower::PassOnBowerIterator};
 
@@ -41,7 +41,18 @@ pub fn run_pass_on_bower_cfr(args: PassOnBowerCFRArgs) {
     let mut alg = CFRES::new_euchre_bidding(generator, get_rng());
 
     let infostate_path = args.weight_file.as_str();
-    alg.load(infostate_path);
+    let loaded_states = alg.load(infostate_path);
+    info!(
+        "loaded {} info states from {}",
+        loaded_states, infostate_path
+    );
+
+    let worlds = (0..args.scoring_iterations)
+        .map(|_| generate_jack_of_spades_deal())
+        .collect_vec();
+    let mut baseline = PIMCTSBot::new(50, OpenHandSolver::new_euchre(), get_rng());
+    info!("calculating baseline performance...");
+    let baseline_score = score_vs_defender(&mut baseline, 1, worlds.clone());
 
     // print_scored_istates(&mut alg);
 
@@ -53,69 +64,62 @@ pub fn run_pass_on_bower_cfr(args: PassOnBowerCFRArgs) {
         }
 
         if i % args.scoring_freq == 0 {
-            log_checkpoint(&mut alg, i, args.scoring_iterations);
+            log_score(&mut alg, i, worlds.clone(), baseline_score);
         }
     }
     pb.finish_and_clear();
     alg.save(infostate_path);
     println!("num info states: {}", alg.num_info_states());
 
-    log_checkpoint(&mut alg, args.training_iterations, args.scoring_iterations);
+    log_score(&mut alg, args.training_iterations, worlds, baseline_score);
 }
 
-fn log_checkpoint(alg: &mut CFRES<EuchreGameState>, iteration: usize, scoring_iterations: usize) {
-    let worlds = (0..scoring_iterations)
-        .map(|_| generate_jack_of_spades_deal())
-        .collect_vec();
-    let mut baseline = PolicyAgent::new(
-        PIMCTSBot::new(50, OpenHandSolver::new_euchre(), get_rng()),
-        get_rng(),
-    );
-    let (score, baseline) = performance_vs_baseline(alg, &mut baseline, 1, worlds);
+fn log_score(
+    alg: &mut CFRES<EuchreGameState>,
+    iteration: usize,
+    worlds: Vec<EuchreGameState>,
+    baseline_score: f64,
+) {
+    let score = score_vs_defender(alg, 1, worlds);
     info!(
         "iteration:\t{}\tnodes touched:\t{}\tinfo_states:\t{}\tscore:\t{}\tbaseline:\t{}",
         iteration,
         read_counter("cfr.cfres.nodes_touched"),
         alg.num_info_states(),
         score,
-        baseline
+        baseline_score,
     );
 }
 
-fn performance_vs_baseline<G: GameState, A: Agent<G>, B: Agent<G>>(
+fn score_vs_defender<A: Agent<EuchreGameState> + Seedable>(
     target: &mut A,
-    baseline: &mut B,
     target_team: usize,
-    worlds: Vec<G>,
-) -> (f64, f64) {
+    worlds: Vec<EuchreGameState>,
+) -> f64 {
     let mut running_score = 0.0;
-    for mut w in worlds.clone() {
+    for (i, mut w) in worlds.clone().into_iter().enumerate() {
+        // have a consistent seed for the defender each game
+        let mut defender = PIMCTSBot::new(
+            50,
+            OpenHandSolver::new_euchre(),
+            SeedableRng::seed_from_u64(i as u64),
+        );
+
+        // magic number offset so the games are the same as the defender
+        target.set_seed(i as u64 + 42);
+
         while !w.is_terminal() {
             let cur_player = w.cur_player();
             let a = match cur_player % 2 == target_team {
                 true => target.step(&w),
-                false => baseline.step(&w),
+                false => defender.step(&w),
             };
             w.apply_action(a);
         }
 
         running_score += w.evaluate(target_team);
     }
-    let target_score = running_score / worlds.len() as f64;
-
-    let mut running_score = 0.0;
-    for mut w in worlds.clone() {
-        while !w.is_terminal() {
-            let a = baseline.step(&w);
-            w.apply_action(a);
-        }
-
-        running_score += w.evaluate(target_team);
-    }
-
-    let baseline_score = running_score / worlds.len() as f64;
-
-    (target_score, baseline_score)
+    running_score / worlds.len() as f64
 }
 
 fn print_scored_istates(alg: &mut CFRES<EuchreGameState>) {

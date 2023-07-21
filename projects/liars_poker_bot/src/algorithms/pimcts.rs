@@ -1,12 +1,13 @@
 use std::marker::PhantomData;
 
 use itertools::Itertools;
-use rand::rngs::StdRng;
+use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
 use crate::{
     actions,
+    agents::{Agent, Seedable},
     cfragent::cfrnode::ActionVec,
-    game::{GameState, Player},
+    game::{Action, GameState, Player},
     policy::Policy,
 };
 use rayon::prelude::*;
@@ -132,6 +133,24 @@ pub(super) fn get_worlds<G: GameState + ResampleFromInfoState>(
         worlds.push(gs.resample_from_istate(gs.cur_player(), rng));
     }
     worlds
+}
+
+impl<G, E> Seedable for PIMCTSBot<G, E> {
+    fn set_seed(&mut self, seed: u64) {
+        self.rng = SeedableRng::seed_from_u64(seed);
+    }
+}
+
+impl<G: GameState + ResampleFromInfoState + Send, E: Evaluator<G> + Clone + Sync> Agent<G>
+    for PIMCTSBot<G, E>
+{
+    fn step(&mut self, s: &G) -> Action {
+        let action_weights = self.action_probabilities(s).to_vec();
+        action_weights
+            .choose_weighted(&mut self.rng, |item| item.1)
+            .unwrap()
+            .0
+    }
 }
 
 #[cfg(test)]

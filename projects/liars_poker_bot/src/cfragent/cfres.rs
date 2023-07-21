@@ -11,7 +11,7 @@ use rmp_serde::Serializer;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    agents::Agent,
+    agents::{Agent, Seedable},
     algorithms::{
         ismcts::{Evaluator, ResampleFromInfoState},
         open_hand_solver::OpenHandSolver,
@@ -76,6 +76,13 @@ pub struct CFRES<G> {
     evaluator: PIMCTSBot<G, OpenHandSolver<G>>,
 }
 
+impl<G> Seedable for CFRES<G> {
+    fn set_seed(&mut self, seed: u64) {
+        self.rng = SeedableRng::seed_from_u64(seed);
+        self.evaluator.set_seed(seed);
+    }
+}
+
 impl CFRES<EuchreGameState> {
     pub fn new_euchre_bidding(game_generator: fn() -> EuchreGameState, mut rng: StdRng) -> Self {
         let pimcts_seed = rng.gen();
@@ -134,14 +141,16 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
         self.infostates.serialize(&mut Serializer::new(f)).unwrap();
     }
 
-    pub fn load(&mut self, path: &str) {
+    pub fn load(&mut self, path: &str) -> usize {
         if Path::new(path).exists() {
             let f = &mut File::open(path);
             let f = f.as_mut().unwrap();
             self.infostates = rmp_serde::from_read(f).unwrap();
             debug!("loaded weights for {} infostates", self.infostates.len());
+            self.infostates.len()
         } else {
-            warn!("file not found, no infostates loaded")
+            warn!("file not found, no infostates loaded");
+            0
         }
     }
 

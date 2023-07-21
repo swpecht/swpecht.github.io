@@ -166,3 +166,7 @@ impl Agent<EuchreGameState> for PlayerAgent {
         actions[a].into()
     }
 }
+
+pub trait Seedable {
+    fn set_seed(&mut self, seed: u64);
+}
