@@ -335,7 +335,8 @@ impl EuchreGameState {
         let mut winner = 0;
         let mut winning_card = cards[0];
         let mut winning_suit = self.get_suit(cards[0]);
-        for (i, &c) in cards.iter().enumerate() {
+        // don't need to evaluate card 0
+        for (i, &c) in cards.iter().enumerate().skip(1) {
             let suit = self.get_suit(c);
             // Player can't win if not following suit or playing trump
             // The winning suit can only ever be trump or the lead suit
