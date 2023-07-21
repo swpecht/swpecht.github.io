@@ -29,8 +29,10 @@ use crate::{
 
 use super::cfrnode::ActionVec;
 
+#[derive(Default)]
 enum AverageType {
     _Full,
+    #[default]
     Simple,
 }
 
@@ -81,7 +83,7 @@ impl CFRES<EuchreGameState> {
             rng,
             vector_pool: Pool::new(Vec::new),
             game_generator,
-            average_type: AverageType::Simple,
+            average_type: AverageType::default(),
             infostates: HashMap::new(),
             is_max_depth: post_discard_phase,
             evaluator: PIMCTSBot::new(
@@ -100,7 +102,7 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
             rng,
             vector_pool: Pool::new(Vec::new),
             game_generator,
-            average_type: AverageType::Simple,
+            average_type: AverageType::default(),
             infostates: HashMap::new(),
             is_max_depth: |_: &G| false,
             evaluator: PIMCTSBot::new(
@@ -155,7 +157,7 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
 
         if matches!(self.average_type, AverageType::_Full) {
             let reach_probs = vec![1.0; num_players];
-            self.full_update_average((self.game_generator)(), reach_probs);
+            self.full_update_average(&mut (self.game_generator)(), &reach_probs);
         }
     }
 
@@ -274,8 +276,55 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
             .or_insert(InfoState::new(actions))
     }
 
-    fn full_update_average(&mut self, _gs: G, _reach_probs: Vec<f64>) {
-        todo!();
+    fn full_update_average(&mut self, gs: &mut G, reach_probs: &Vec<f64>) {
+        if gs.is_terminal() {
+            return;
+        }
+
+        if gs.is_chance_node() {
+            let mut actions = self.vector_pool.detach();
+            gs.legal_actions(&mut actions);
+            for a in &actions {
+                gs.apply_action(*a);
+                self.full_update_average(gs, reach_probs);
+                gs.undo();
+            }
+            actions.clear();
+            self.vector_pool.attach(actions);
+            return;
+        }
+
+        // If all the probs are zero, no need to keep going.
+        let sum_reach_probs: f64 = reach_probs.iter().sum();
+        if sum_reach_probs == 0.0 {
+            return;
+        }
+
+        let cur_player = gs.cur_player();
+        let info_state_key = gs.istate_key(cur_player);
+
+        let mut actions = self.vector_pool.detach();
+        gs.legal_actions(&mut actions);
+
+        let infostate_info = self.lookup_infostate_info(&info_state_key, &actions);
+        let policy = regret_matching(&infostate_info.regrets);
+
+        for a in actions.iter() {
+            let mut new_reach_probs = reach_probs.clone();
+            new_reach_probs[cur_player] *= policy[*a];
+            gs.apply_action(*a);
+            self.full_update_average(gs, &new_reach_probs);
+            gs.undo();
+        }
+
+        // Now update the cumulative policy
+        let infostate_info = self.lookup_infostate_info(&info_state_key, &actions);
+        for a in actions.iter() {
+            add_avstrat(infostate_info, *a, reach_probs[cur_player] * policy[*a])
+        }
+
+        actions.clear();
+        self.vector_pool.attach(actions);
     }
 
     pub fn num_info_states(&self) -> usize {
