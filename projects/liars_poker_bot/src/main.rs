@@ -88,7 +88,7 @@ pub struct Args {
     #[command(subcommand)]
     command: Commands,
 
-    #[clap(short = 'v', long, action, default_value_t = 0)]
+    #[clap(short = 'v', long, action, default_value_t = 1)]
     verbosity: usize,
 }
 
@@ -99,9 +99,21 @@ fn main() {
 
     let config = ConfigBuilder::new().set_time_format_rfc3339().build();
 
+    let term_logger_level = match args.verbosity {
+        0 => LevelFilter::Error,
+        1 => LevelFilter::Warn,
+        2 => LevelFilter::Info,
+        3 => LevelFilter::Debug,
+        4 => LevelFilter::Trace,
+        _ => panic!(
+            "invalid log level: {}, must be between 0 and 4",
+            args.verbosity
+        ),
+    };
+
     CombinedLogger::init(vec![
         TermLogger::new(
-            LevelFilter::Warn,
+            term_logger_level,
             config.clone(),
             TerminalMode::Mixed,
             ColorChoice::Auto,
@@ -117,10 +129,6 @@ fn main() {
         ),
     ])
     .unwrap();
-
-    if args.verbosity != 0 {
-        warn!("verbosity param not supported yet, logging at info level");
-    }
 
     match args.command {
         Commands::Run => run(args),
