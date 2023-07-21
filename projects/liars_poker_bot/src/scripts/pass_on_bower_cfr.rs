@@ -16,7 +16,7 @@ use liars_poker_bot::{
     policy::Policy,
 };
 use log::info;
-use rand::{seq::SliceRandom, thread_rng, SeedableRng};
+use rand::{seq::SliceRandom, thread_rng, Rng, SeedableRng};
 
 use super::{benchmark::get_rng, pass_on_bower::PassOnBowerIterator};
 
@@ -53,6 +53,7 @@ pub fn run_pass_on_bower_cfr(args: PassOnBowerCFRArgs) {
     let mut baseline = PIMCTSBot::new(50, OpenHandSolver::new_euchre(), get_rng());
     info!("calculating baseline performance...");
     let baseline_score = score_vs_defender(&mut baseline, 1, worlds.clone());
+    info!("found baseline performance of: {}", baseline_score);
 
     // print_scored_istates(&mut alg);
 
@@ -65,6 +66,8 @@ pub fn run_pass_on_bower_cfr(args: PassOnBowerCFRArgs) {
 
         if i % args.scoring_freq == 0 {
             log_score(&mut alg, i, worlds.clone(), baseline_score);
+            // reset to a random seed for future training
+            alg.set_seed(get_rng().gen());
         }
     }
     pb.finish_and_clear();

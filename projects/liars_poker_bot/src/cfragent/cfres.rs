@@ -77,8 +77,8 @@ pub struct CFRES<G> {
 }
 
 impl<G> Seedable for CFRES<G> {
+    /// Sets the seed for the evaluator
     fn set_seed(&mut self, seed: u64) {
-        self.rng = SeedableRng::seed_from_u64(seed);
         self.evaluator.set_seed(seed);
     }
 }
