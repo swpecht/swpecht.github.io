@@ -57,16 +57,17 @@ pub fn run_pass_on_bower_cfr(args: PassOnBowerCFRArgs) {
 
     // print_scored_istates(&mut alg);
 
-    for i in 0..args.training_iterations {
-        alg.train(1);
-        pb.inc(1);
+    const TRAINING_PER_ITERATION: usize = 100;
+    for i in 0..args.training_iterations / TRAINING_PER_ITERATION {
+        alg.train(TRAINING_PER_ITERATION);
+        pb.inc(TRAINING_PER_ITERATION as u64);
         if i % args.checkpoint_freq == 0 && i > 0 {
             alg.save(infostate_path);
         }
 
         if i % args.scoring_freq == 0 {
             log_score(&mut alg, i, worlds.clone(), baseline_score);
-            // reset to a random seed for future training
+            // reset to a random seed for future training evaluation
             alg.set_seed(get_rng().gen());
         }
     }

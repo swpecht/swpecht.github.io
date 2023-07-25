@@ -73,13 +73,14 @@ pub struct CFRES<G> {
     infostates: HashMap<IStateKey, InfoState>,
     /// determine if we are at the max depth and should use the rollout
     is_max_depth: fn(&G) -> bool,
-    evaluator: PIMCTSBot<G, OpenHandSolver<G>>,
+    play_bot: PIMCTSBot<G, OpenHandSolver<G>>,
+    evaluator: OpenHandSolver<G>,
 }
 
 impl<G> Seedable for CFRES<G> {
-    /// Sets the seed for the evaluator
+    /// Sets the seed for the evaluator, it doesn't change the seed used for training
     fn set_seed(&mut self, seed: u64) {
-        self.evaluator.set_seed(seed);
+        self.play_bot.set_seed(seed);
     }
 }
 
@@ -93,11 +94,12 @@ impl CFRES<EuchreGameState> {
             average_type: AverageType::default(),
             infostates: HashMap::new(),
             is_max_depth: post_discard_phase,
-            evaluator: PIMCTSBot::new(
+            play_bot: PIMCTSBot::new(
                 50,
                 OpenHandSolver::new_euchre(),
                 SeedableRng::seed_from_u64(pimcts_seed),
             ),
+            evaluator: OpenHandSolver::new_euchre(),
         }
     }
 }
@@ -112,11 +114,12 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
             average_type: AverageType::default(),
             infostates: HashMap::new(),
             is_max_depth: |_: &G| false,
-            evaluator: PIMCTSBot::new(
+            play_bot: PIMCTSBot::new(
                 50,
                 OpenHandSolver::default(),
                 SeedableRng::seed_from_u64(pimcts_seed),
             ),
+            evaluator: OpenHandSolver::default(),
         }
     }
 
@@ -124,6 +127,7 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
         for _ in 0..n {
             self.iteration();
         }
+        self.play_bot.reset();
         self.evaluator.reset();
     }
 
@@ -382,7 +386,7 @@ impl<G: GameState + ResampleFromInfoState + Send> Policy<G> for CFRES<G> {
         let player = gs.cur_player();
 
         if (self.is_max_depth)(gs) {
-            return self.evaluator.action_probabilities(gs);
+            return self.play_bot.action_probabilities(gs);
         }
 
         let mut actions = self.vector_pool.detach();
