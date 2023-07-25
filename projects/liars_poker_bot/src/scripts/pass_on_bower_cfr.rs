@@ -66,7 +66,12 @@ pub fn run_pass_on_bower_cfr(args: PassOnBowerCFRArgs) {
         }
 
         if (i * TRAINING_PER_ITERATION) % args.scoring_freq == 0 {
-            log_score(&mut alg, i, worlds.clone(), baseline_score);
+            log_score(
+                &mut alg,
+                i * TRAINING_PER_ITERATION,
+                worlds.clone(),
+                baseline_score,
+            );
             // reset to a random seed for future training evaluation
             alg.set_seed(get_rng().gen());
         }
