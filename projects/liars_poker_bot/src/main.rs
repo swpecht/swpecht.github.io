@@ -12,6 +12,7 @@ use liars_poker_bot::algorithms::exploitability::{self};
 use liars_poker_bot::algorithms::ismcts::{Evaluator, ResampleFromInfoState};
 use liars_poker_bot::algorithms::open_hand_solver::{OpenHandSolver, Optimizations};
 use liars_poker_bot::algorithms::pimcts::PIMCTSBot;
+use liars_poker_bot::cfragent::cfres::CFRES;
 use liars_poker_bot::cfragent::cfrnode::CFRNode;
 use liars_poker_bot::cfragent::{CFRAgent, CFRAlgorithm};
 use liars_poker_bot::database::memory_node_store::MemoryNodeStore;
@@ -39,6 +40,8 @@ use scripts::tune::{run_tune, TuneArgs};
 use simplelog::{
     ColorChoice, CombinedLogger, ConfigBuilder, TermLogger, TerminalMode, WriteLogger,
 };
+
+use crate::scripts::pass_on_bower_cfr::generate_jack_of_spades_deal;
 
 pub mod scripts;
 
@@ -150,54 +153,37 @@ fn run_scratch(_args: Args) {
     println!("kuhn poker size: {}", mem::size_of::<KPGameState>());
     println!("euchre size: {}", mem::size_of::<EuchreGameState>());
 
-    let gs = EuchreGameState::from("Qc9sTs9dAd|Tc9hAhTdJd|9cKcAcJhQh|JcJsKsAsKd|Qs|PT|");
-    for _ in 0..5 {
-        println!("{}", gs.resample_from_istate(0, &mut get_rng()));
+    let generator = generate_jack_of_spades_deal;
+    let mut alg = CFRES::new_euchre_bidding(generator, get_rng());
+
+    let infostate_path = "infostates.open-hand-5m";
+    let loaded_states = alg.load(infostate_path);
+    println!(
+        "loaded {} info states from {}",
+        loaded_states, infostate_path
+    );
+
+    let infostates = alg.get_infostates();
+
+    for (k, v) in infostates {
+        // filter for the istate keys that end in the right actions
+        if k[k.len() - 3..]
+            .iter()
+            .all(|&x| EAction::from(x) == EAction::Pass)
+            && EAction::from(k[k.len() - 4]) != EAction::Pass
+        {
+            let istate = k[..k.len() - 4]
+                .iter()
+                .map(|&x| EAction::from(x).to_string())
+                .collect_vec()
+                .join("\t");
+
+            let policy_sum: f64 = v.avg_strategy().to_vec().iter().map(|(_, v)| *v).sum();
+            let take_prob = v.avg_strategy()[EAction::Pickup.into()] / policy_sum;
+
+            info!("\t{}\t{}", istate, take_prob);
+        }
     }
-
-    // println!("{:?}", gs);
-    // println!(
-    //     "{:?}",
-    //     gs.istate_key(3)
-    //         .iter()
-    //         .map(|x| EAction::from(*x))
-    //         .collect_vec()
-    // );
-
-    let actions = actions!(gs).into_iter().map(EAction::from).collect_vec();
-    println!("actions: {:?}", actions);
-
-    let mut agent = PIMCTSBot::new(
-        50,
-        OpenHandSolver::default(),
-        SeedableRng::seed_from_u64(43),
-    );
-    let policy = agent.action_probabilities(&gs);
-
-    for (a, p) in policy.to_vec() {
-        println!("{} ({}): {}", EAction::from(a), a, p);
-    }
-
-    println!(
-        "euchre: {}",
-        OpenHandSolver::new(Optimizations {
-            use_transposition_table: true,
-            isometric_transposition: true,
-            max_depth_for_tt: 255,
-            action_processor: |_: &EuchreGameState, _: &mut Vec<Action>| {},
-            can_early_terminate: euchre_early_terminate
-        })
-        .evaluate_player(&gs, 0)
-    );
-    println!(
-        "default: {}",
-        OpenHandSolver::default().evaluate_player(&gs, 0)
-    );
-
-    println!(
-        "no cache: {}",
-        OpenHandSolver::new_without_cache().evaluate_player(&gs, 0)
-    );
 }
 
 fn run_analyze(args: Args) {
