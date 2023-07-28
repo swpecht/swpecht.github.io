@@ -36,10 +36,12 @@ enum AverageType {
     Simple,
 }
 
-#[derive(Serialize, Deserialize)]
-struct InfoState {
+#[derive(Serialize, Deserialize, Clone)]
+pub struct InfoState {
     regrets: ActionVec<f64>,
     avg_strategy: ActionVec<f64>,
+    /// Number of times this infostate was updated during training
+    update_count: usize,
 }
 
 impl InfoState {
@@ -57,7 +59,16 @@ impl InfoState {
         Self {
             regrets,
             avg_strategy,
+            update_count: 0,
         }
+    }
+
+    pub fn regrets(&self) -> &ActionVec<f64> {
+        &self.regrets
+    }
+
+    pub fn avg_strategy(&self) -> &ActionVec<f64> {
+        &self.avg_strategy
     }
 }
 
@@ -75,6 +86,13 @@ pub struct CFRES<G> {
     is_max_depth: fn(&G) -> bool,
     play_bot: PIMCTSBot<G, OpenHandSolver<G>>,
     evaluator: OpenHandSolver<G>,
+}
+
+impl<G> CFRES<G> {
+    /// Gets the infostates of the agent for external analysis
+    pub fn get_infostates(&self) -> HashMap<IStateKey, InfoState> {
+        self.infostates.clone()
+    }
 }
 
 impl<G> Seedable for CFRES<G> {
@@ -158,7 +176,7 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
         }
     }
 
-    /// erforms one iteration of external sampling.
+    /// Performs one iteration of external sampling.
     ///
     /// An iteration consists of one episode for each player as the update
     /// player.
@@ -259,6 +277,7 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
             let infostate_info = self.lookup_infostate_info(&info_state_key, &actions);
             for &a in actions.iter() {
                 add_regret(infostate_info, a, child_values[a] - value);
+                infostate_info.update_count += 1;
             }
         }
 
