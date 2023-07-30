@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fs};
 
-use clap::Args;
+use clap::{Args, ValueEnum};
 use indicatif::ProgressBar;
 use itertools::Itertools;
 use liars_poker_bot::{
@@ -21,6 +21,12 @@ use rand::{seq::SliceRandom, thread_rng, Rng, SeedableRng};
 
 use super::benchmark::get_rng;
 
+#[derive(ValueEnum, Copy, Clone, Debug)]
+enum DealType {
+    JackOfSpadesOnly,
+    All,
+}
+
 #[derive(Args, Clone, Debug)]
 pub struct PassOnBowerCFRArgs {
     training_iterations: usize,
@@ -32,12 +38,20 @@ pub struct PassOnBowerCFRArgs {
     scoring_freq: usize,
     #[clap(long, default_value = "infostates")]
     weight_file: String,
+    #[clap(long, value_enum, default_value_t=DealType::All)]
+    deal_type: DealType,
 }
 
 pub fn run_pass_on_bower_cfr(args: PassOnBowerCFRArgs) {
+    match args.deal_type {
+        DealType::JackOfSpadesOnly => train_cfr(args, generate_jack_of_spades_deal),
+        DealType::All => train_cfr(args, Euchre::new_state),
+    }
+}
+
+pub fn train_cfr(args: PassOnBowerCFRArgs, generator: fn() -> EuchreGameState) {
     info!("starting new run of pass on bower cfr. args {:?}", args);
 
-    let generator = generate_jack_of_spades_deal;
     let pb = ProgressBar::new(args.training_iterations as u64);
     let mut alg = CFRES::new_euchre_bidding(generator, get_rng());
 
