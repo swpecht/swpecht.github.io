@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use clap::{Args, ValueEnum};
 use indicatif::ProgressBar;
@@ -273,22 +273,48 @@ fn run_jack_face_up_benchmark(args: BenchmarkArgs) {
 
     // all agents play the same games
     info!("generating games...");
-    let games = get_jack_of_spades_games(args.num_games * 19);
+    let games = get_jack_of_spades_games(args.num_games);
     info!("finished generated {} games", games.len());
 
-    let mut agents: HashMap<String, &mut dyn Agent<EuchreGameState>> = HashMap::new();
+    let mut agents: Vec<(String, Rc<RefCell<dyn Agent<EuchreGameState>>>)> = Vec::new();
 
-    let a = &mut PolicyAgent::new(
+    let a = PolicyAgent::new(
         PIMCTSBot::new(50, OpenHandSolver::new_euchre(), get_rng()),
         get_rng(),
     );
-    agents.insert("pimcts, 50 worlds".to_string(), a);
+    agents.push(("pimcts, 50 worlds".to_string(), Rc::new(RefCell::new(a))));
 
     let mut cfr = CFRES::new_euchre_bidding(generate_jack_of_spades_deal, get_rng());
-    cfr.load("infostates.open-hand-20m");
-    agents.insert("pre-play cfr, 20m".to_string(), &mut cfr);
+    let loaded = cfr.load("infostates.open-hand-20m");
+    println!("loaded {loaded} infostates");
+    agents.push(("pre-play cfr, 20m".to_string(), Rc::new(RefCell::new(cfr))));
 
-    score_games(args, agents, games);
+    for (a1_name, a1) in agents.clone() {
+        for (a2_name, a2) in agents.clone() {
+            let mut dealer_team_score = 0.0;
+            let pb = ProgressBar::new(games.len() as u64);
+            for mut gs in games.clone() {
+                while !gs.is_terminal() {
+                    assert!(!gs.is_chance_node());
+
+                    let a = if gs.cur_player() % 2 == 0 {
+                        a1.borrow_mut().step(&gs)
+                    } else {
+                        a2.borrow_mut().step(&gs)
+                    };
+                    gs.apply_action(a);
+                }
+
+                dealer_team_score += gs.evaluate(1);
+                pb.inc(1);
+            }
+            pb.finish_and_clear();
+            println!(
+                "team 0: {a1_name}\tdealer: {a2_name}\tdealer score: {}",
+                dealer_team_score / games.len() as f64
+            );
+        }
+    }
 }
 
 fn get_jack_of_spades_games(n: usize) -> Vec<EuchreGameState> {
