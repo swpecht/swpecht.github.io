@@ -1,3 +1,5 @@
+use std::{collections::HashMap, fs};
+
 use clap::Args;
 use indicatif::ProgressBar;
 use itertools::Itertools;
@@ -13,12 +15,11 @@ use liars_poker_bot::{
         GameState,
     },
     metrics::read_counter,
-    policy::Policy,
 };
 use log::info;
 use rand::{seq::SliceRandom, thread_rng, Rng, SeedableRng};
 
-use super::{benchmark::get_rng, pass_on_bower::PassOnBowerIterator};
+use super::benchmark::get_rng;
 
 #[derive(Args, Clone, Debug)]
 pub struct PassOnBowerCFRArgs {
@@ -131,24 +132,6 @@ fn score_vs_defender<A: Agent<EuchreGameState> + Seedable>(
     running_score / worlds.len() as f64
 }
 
-fn print_scored_istates(alg: &mut CFRES<EuchreGameState>) {
-    let games = PassOnBowerIterator::new();
-    for gs in games {
-        let policy = alg.action_probabilities(&gs);
-        if !policy.to_vec().iter().all(|(_, b)| *b == 0.5) {
-            println!(
-                "{}: {:?}",
-                gs,
-                policy
-                    .to_vec()
-                    .into_iter()
-                    .map(|(a, b)| (EAction::from(a), b))
-                    .collect_vec()
-            );
-        }
-    }
-}
-
 /// Generator for games where the jack of spades is face up
 pub fn generate_jack_of_spades_deal() -> EuchreGameState {
     let mut gs = Euchre::new_state();
@@ -166,4 +149,56 @@ pub fn generate_jack_of_spades_deal() -> EuchreGameState {
     gs.apply_action(EAction::DealFaceUp { c: Card::JS }.into());
 
     gs
+}
+
+pub fn parse_weights(infostate_path: &str) {
+    let generator = generate_jack_of_spades_deal;
+    let mut alg = CFRES::new_euchre_bidding(generator, get_rng());
+
+    let loaded_states = alg.load(infostate_path);
+    println!(
+        "loaded {} info states from {}",
+        loaded_states, infostate_path
+    );
+
+    let infostates = alg.get_infostates();
+
+    for (k, v) in infostates.clone() {
+        // filter for the istate keys that end in the right actions
+        if k[k.len() - 3..]
+            .iter()
+            .all(|&x| EAction::from(x) == EAction::Pass)
+            && EAction::from(k[k.len() - 4]) != EAction::Pass
+        {
+            let istate = k[..k.len() - 4]
+                .iter()
+                .map(|&x| EAction::from(x).to_string())
+                .collect_vec()
+                .join("\t");
+
+            let policy_sum: f64 = v.avg_strategy().to_vec().iter().map(|(_, v)| *v).sum();
+            let take_prob = v.avg_strategy()[EAction::Pickup.into()] / policy_sum;
+
+            info!("\t{}\t{}\t{}", istate, take_prob, v.update_count());
+        }
+    }
+    println!("pass on bower take probs written to log file");
+
+    // convert to a key string
+    let mut json_infostates = HashMap::with_capacity(infostates.len());
+    for (k, v) in infostates {
+        let istate_string = k
+            .iter()
+            .map(|&x| EAction::from(x).to_string())
+            .collect_vec()
+            .join("");
+        json_infostates.insert(istate_string, v);
+    }
+
+    // Save a csv file
+    let json_data = serde_json::to_string(&json_infostates).unwrap();
+    let mut json_path = infostate_path.to_string();
+    json_path.push_str(".json");
+    fs::write(json_path.clone(), json_data).unwrap();
+    println!("json weights written to: {json_path}");
 }

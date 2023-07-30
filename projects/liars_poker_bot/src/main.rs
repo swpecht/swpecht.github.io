@@ -1,33 +1,26 @@
-use std::collections::HashMap;
-use std::fs::{self, OpenOptions};
+use std::fs::OpenOptions;
 use std::mem;
 
 use clap::{command, Parser, Subcommand, ValueEnum};
 
-use itertools::Itertools;
 use liars_poker_bot::actions;
 use liars_poker_bot::agents::{Agent, PlayerAgent, PolicyAgent};
 
 use liars_poker_bot::algorithms::exploitability::{self};
 
-use liars_poker_bot::algorithms::ismcts::{Evaluator, ResampleFromInfoState};
-use liars_poker_bot::algorithms::open_hand_solver::{OpenHandSolver, Optimizations};
+use liars_poker_bot::algorithms::open_hand_solver::OpenHandSolver;
 use liars_poker_bot::algorithms::pimcts::PIMCTSBot;
-use liars_poker_bot::cfragent::cfres::CFRES;
 use liars_poker_bot::cfragent::cfrnode::CFRNode;
 use liars_poker_bot::cfragent::{CFRAgent, CFRAlgorithm};
 use liars_poker_bot::database::memory_node_store::MemoryNodeStore;
 
 use liars_poker_bot::game::bluff::BluffGameState;
 
-use liars_poker_bot::game::euchre::actions::EAction;
-use liars_poker_bot::game::euchre::processors::euchre_early_terminate;
 use liars_poker_bot::game::euchre::{Euchre, EuchreGameState};
 use liars_poker_bot::game::kuhn_poker::KPGameState;
-use liars_poker_bot::game::{Action, GameState};
+use liars_poker_bot::game::GameState;
 
-use liars_poker_bot::policy::Policy;
-use log::{debug, info, set_max_level, warn, LevelFilter};
+use log::{debug, info, set_max_level, LevelFilter};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
@@ -36,13 +29,11 @@ use scripts::benchmark::{get_rng, run_benchmark, BenchmarkArgs};
 use scripts::estimate_euchre_game_tree::estimate_euchre_game_tree;
 use scripts::pass_on_bower::open_hand_score_pass_on_bower;
 use scripts::pass_on_bower_alpha::benchmark_pass_on_bower;
-use scripts::pass_on_bower_cfr::{run_pass_on_bower_cfr, PassOnBowerCFRArgs};
+use scripts::pass_on_bower_cfr::{parse_weights, run_pass_on_bower_cfr, PassOnBowerCFRArgs};
 use scripts::tune::{run_tune, TuneArgs};
 use simplelog::{
     ColorChoice, CombinedLogger, ConfigBuilder, TermLogger, TerminalMode, WriteLogger,
 };
-
-use crate::scripts::pass_on_bower_cfr::generate_jack_of_spades_deal;
 
 pub mod scripts;
 
@@ -65,7 +56,8 @@ enum Commands {
     Exploitability,
     PassOnBowerOpenHand,
     PassOnBowerAlpha { num_games: usize },
-    PassOnBowerCFR(PassOnBowerCFRArgs),
+    PassOnBowerCFRTrain(PassOnBowerCFRArgs),
+    PassOnBowerCFRParseWeights { infostate_path: String },
     Tune(TuneArgs),
 }
 
@@ -145,7 +137,10 @@ fn main() {
         Commands::Exploitability => calcualte_agent_exploitability(args),
         Commands::PassOnBowerAlpha { num_games } => benchmark_pass_on_bower(num_games),
         Commands::Tune(tune) => run_tune(tune),
-        Commands::PassOnBowerCFR(bower_cfr) => run_pass_on_bower_cfr(bower_cfr),
+        Commands::PassOnBowerCFRTrain(bower_cfr) => run_pass_on_bower_cfr(bower_cfr),
+        Commands::PassOnBowerCFRParseWeights { infostate_path } => {
+            parse_weights(infostate_path.as_str())
+        }
     }
 }
 
@@ -153,56 +148,6 @@ fn run_scratch(_args: Args) {
     println!("bluff size: {}", mem::size_of::<BluffGameState>());
     println!("kuhn poker size: {}", mem::size_of::<KPGameState>());
     println!("euchre size: {}", mem::size_of::<EuchreGameState>());
-
-    let generator = generate_jack_of_spades_deal;
-    let mut alg = CFRES::new_euchre_bidding(generator, get_rng());
-
-    let infostate_path = "infostates.open-hand-20m";
-    let loaded_states = alg.load(infostate_path);
-    println!(
-        "loaded {} info states from {}",
-        loaded_states, infostate_path
-    );
-
-    let infostates = alg.get_infostates();
-
-    for (k, v) in infostates.clone() {
-        // filter for the istate keys that end in the right actions
-        if k[k.len() - 3..]
-            .iter()
-            .all(|&x| EAction::from(x) == EAction::Pass)
-            && EAction::from(k[k.len() - 4]) != EAction::Pass
-        {
-            let istate = k[..k.len() - 4]
-                .iter()
-                .map(|&x| EAction::from(x).to_string())
-                .collect_vec()
-                .join("\t");
-
-            let policy_sum: f64 = v.avg_strategy().to_vec().iter().map(|(_, v)| *v).sum();
-            let take_prob = v.avg_strategy()[EAction::Pickup.into()] / policy_sum;
-
-            info!("\t{}\t{}\t{}", istate, take_prob, v.update_count());
-        }
-    }
-
-    // convert to a key string
-    let mut json_infostates = HashMap::with_capacity(infostates.len());
-    for (k, v) in infostates {
-        let istate_string = k
-            .iter()
-            .map(|&x| EAction::from(x).to_string())
-            .collect_vec()
-            .join("");
-        json_infostates.insert(istate_string, v);
-    }
-
-    // Save a csv file
-    let json_data = serde_json::to_string(&json_infostates).unwrap();
-    let mut json_path = infostate_path.to_string();
-    json_path.push_str(".json");
-    fs::write(json_path.clone(), json_data).unwrap();
-    println!("json weights written to: {json_path}");
 }
 
 fn run_analyze(args: Args) {
