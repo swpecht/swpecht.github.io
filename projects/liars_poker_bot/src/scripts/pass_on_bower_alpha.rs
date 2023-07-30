@@ -65,7 +65,7 @@ pub fn benchmark_pass_on_bower(num_games: usize) {
     );
     agents.push(("alphamu, open hand", alphamu));
 
-    let worlds = get_bower_deals(num_games, &mut get_rng());
+    let worlds = get_pass_on_bower_deals(num_games, &mut get_rng());
 
     info!("starting benchmark, defended by: {}", "PIMCTS, n=100");
 
@@ -103,7 +103,7 @@ pub fn benchmark_pass_on_bower(num_games: usize) {
     }
 }
 
-pub fn get_bower_deals(n: usize, rng: &mut StdRng) -> Vec<EuchreGameState> {
+pub fn get_pass_on_bower_deals(n: usize, rng: &mut StdRng) -> Vec<EuchreGameState> {
     let generator = PassOnBowerIterator::new();
     let mut worlds = generator
         .take(n)

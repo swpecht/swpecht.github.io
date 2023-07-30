@@ -14,6 +14,7 @@ use liars_poker_bot::{
         open_hand_solver::OpenHandSolver,
         pimcts::PIMCTSBot,
     },
+    cfragent::cfres::CFRES,
     game::{
         bluff::Bluff,
         euchre::{EPhase, Euchre, EuchreGameState},
@@ -27,10 +28,13 @@ use rand::{rngs::StdRng, thread_rng, SeedableRng};
 
 use crate::GameType;
 
+use super::pass_on_bower_cfr::generate_jack_of_spades_deal;
+
 #[derive(ValueEnum, Clone, Copy, Debug)]
 pub enum BenchmarkMode {
     FullGame,
     CardPlay,
+    JackFaceUp,
 }
 
 #[derive(Args, Debug, Clone, Copy)]
@@ -52,6 +56,7 @@ pub fn run_benchmark(args: BenchmarkArgs) {
             GameType::Bluff22 => run_full_game_benchmark(args, Bluff::game(2, 2)),
         },
         BenchmarkMode::CardPlay => run_card_play_benchmark(args),
+        BenchmarkMode::JackFaceUp => run_jack_face_up_benchmark(args),
     }
 }
 
@@ -113,11 +118,6 @@ fn score_games<G: GameState + ResampleFromInfoState + Send>(
 
     for a1_name in agent_names.clone() {
         for a2_name in agent_names.clone() {
-            // disable self play for now
-            if a1_name == a2_name {
-                continue;
-            }
-
             let a1 = agents.remove(&a1_name).unwrap();
             let mut a2 = if a1_name != a2_name {
                 Some(agents.remove(&a2_name).unwrap())
@@ -157,7 +157,7 @@ fn score_games<G: GameState + ResampleFromInfoState + Send>(
                         let a = match (agent_1_turn, a2.is_some()) {
                             (true, true) => a1.step(&gs),
                             (false, true) => a2.as_mut().unwrap().step(&gs),
-                            (_, false) => todo!(), // a1.step(&gs), // only agent a1
+                            (_, false) => a1.step(&gs), // only agent a1
                         };
                         gs.apply_action(a);
                     }
@@ -266,6 +266,33 @@ pub fn get_card_play_games(n: usize, rng: &mut StdRng) -> Vec<EuchreGameState> {
     pb.finish_and_clear();
 
     games
+}
+
+fn run_jack_face_up_benchmark(args: BenchmarkArgs) {
+    assert!(matches!(args.game, GameType::Euchre));
+
+    // all agents play the same games
+    info!("generating games...");
+    let games = get_jack_of_spades_games(args.num_games * 19);
+    info!("finished generated {} games", games.len());
+
+    let mut agents: HashMap<String, &mut dyn Agent<EuchreGameState>> = HashMap::new();
+
+    let a = &mut PolicyAgent::new(
+        PIMCTSBot::new(50, OpenHandSolver::new_euchre(), get_rng()),
+        get_rng(),
+    );
+    agents.insert("pimcts, 50 worlds".to_string(), a);
+
+    let mut cfr = CFRES::new_euchre_bidding(generate_jack_of_spades_deal, get_rng());
+    cfr.load("infostates.open-hand-20m");
+    agents.insert("pre-play cfr, 20m".to_string(), &mut cfr);
+
+    score_games(args, agents, games);
+}
+
+fn get_jack_of_spades_games(n: usize) -> Vec<EuchreGameState> {
+    (0..n).map(|_| generate_jack_of_spades_deal()).collect_vec()
 }
 
 pub fn get_rng() -> StdRng {

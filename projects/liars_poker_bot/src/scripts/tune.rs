@@ -18,7 +18,7 @@ use liars_poker_bot::{
 use log::{info, warn};
 use rand::SeedableRng;
 
-use crate::scripts::{benchmark::get_rng, pass_on_bower_alpha::get_bower_deals};
+use crate::scripts::{benchmark::get_rng, pass_on_bower_alpha::get_pass_on_bower_deals};
 
 use super::pass_on_bower_cfr::generate_jack_of_spades_deal;
 
@@ -131,7 +131,7 @@ fn tune_ismcts(num_games: usize) {
 fn tune_pimcts(num_games: usize) {
     info!("num worlds\tavg score");
     let world_counts = vec![5, 10, 15, 20, 50, 100, 200];
-    let worlds = get_bower_deals(num_games, &mut get_rng());
+    let worlds = get_pass_on_bower_deals(num_games, &mut get_rng());
 
     for count in world_counts {
         let pimcts = PolicyAgent::new(
