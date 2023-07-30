@@ -2,6 +2,8 @@
 
 Todos:
 [ ] https://www.science.org/doi/10.1126/science.aay2400 -- linear CFR to speed things up?
+[ ] Make sure the discard marker isn't screwing things up
+    * May want to re-think this where the discard part is actually visible in the istate
 
 Future post on:
 * Specfic deals and why
