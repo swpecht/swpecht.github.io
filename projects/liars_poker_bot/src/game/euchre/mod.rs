@@ -782,7 +782,7 @@ impl GameState for EuchreGameState {
                 self.trump_caller = 0;
                 self.trump = None;
             }
-            EAction::Pickup | EAction::DiscardMarker => {
+            EAction::Pickup => {
                 self.phase = EPhase::Pickup;
                 // return to defaults
                 self.trump_caller = 0;
@@ -818,6 +818,9 @@ impl GameState for EuchreGameState {
                         self.deck[c] = CardLocation::Played(*p);
                     }
                 }
+            }
+            EAction::DiscardMarker => {
+                panic!("discard marker should never be in interanl game istate")
             }
         }
     }
