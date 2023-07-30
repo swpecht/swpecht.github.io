@@ -14,10 +14,20 @@ pub enum EAction {
     Spades,
     Hearts,
     Diamonds,
-    DealPlayer { c: Card },
-    DealFaceUp { c: Card },
-    Discard { c: Card },
-    Play { c: Card },
+    DealPlayer {
+        c: Card,
+    },
+    DealFaceUp {
+        c: Card,
+    },
+    Discard {
+        c: Card,
+    },
+    Play {
+        c: Card,
+    },
+    /// Value to differentiate discard states from player 0 states
+    DiscardMarker,
 }
 
 impl EAction {
@@ -102,7 +112,7 @@ impl From<u8> for Card {
             21 => Self::QD,
             22 => Self::KD,
             23 => Self::AD,
-            _ => panic!("invalid value to conver to card: {}", value),
+            _ => panic!("invalid value to convert to card: {}", value),
         }
     }
 }
@@ -213,6 +223,7 @@ impl From<EAction> for Action {
             EAction::Play { c: x } => 100 + x as u8,
             EAction::Discard { c: x } => 150 + x as u8,
             EAction::DealFaceUp { c: x } => 200 + x as u8,
+            EAction::DiscardMarker => 255,
         };
         Action(v)
     }
@@ -227,6 +238,8 @@ impl From<Action> for EAction {
             3 => EAction::Spades,
             4 => EAction::Hearts,
             5 => EAction::Diamonds,
+            255 => EAction::DiscardMarker,
+            x if x >= 250 => panic!("invalid action: {}", x),
             x if x >= 200 => EAction::DealFaceUp {
                 c: Card::from(x - 200),
             },
@@ -268,6 +281,7 @@ fn eaction_fmt(v: &EAction, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
         EAction::DealPlayer { c: x } => f.write_str(&x.to_string()),
         EAction::Discard { c: x } => f.write_str(&x.to_string()),
         EAction::DealFaceUp { c: x } => f.write_str(&x.to_string()),
+        EAction::DiscardMarker => f.write_str(""),
     }
 }
 

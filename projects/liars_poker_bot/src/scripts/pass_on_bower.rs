@@ -129,11 +129,11 @@ impl PassOnBowerIterator {
                 for c in b + 1..22 {
                     for d in c + 1..23 {
                         for e in d + 1..24 {
-                            if a == Card::JS.into()
-                                || b == Card::JS.into()
-                                || c == Card::JS.into()
-                                || d == Card::JS.into()
-                                || e == Card::JS.into()
+                            if a == u8::from(Card::JS)
+                                || b == u8::from(Card::JS)
+                                || c == u8::from(Card::JS)
+                                || d == u8::from(Card::JS)
+                                || e == u8::from(Card::JS)
                             {
                                 continue;
                             }

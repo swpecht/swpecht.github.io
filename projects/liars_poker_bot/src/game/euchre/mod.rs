@@ -512,6 +512,7 @@ impl Display for EuchreGameState {
                 }
                 EAction::Discard { c: _ } => true,
                 EAction::Pass => false,
+                EAction::DiscardMarker => false,
             };
             if append_pipe {
                 write!(f, "|").unwrap();
@@ -587,6 +588,7 @@ impl GameState for EuchreGameState {
                 EAction::DealFaceUp { c: _ } => true,
                 EAction::Discard { c: _ } => player == 3, // dealer can see
                 EAction::Play { c: _ } => true,
+                EAction::DiscardMarker => false,
             };
 
             if is_visible {
@@ -597,7 +599,7 @@ impl GameState for EuchreGameState {
 
         // Push a bogus action to the end to show that this is a discard istate rather than player 1 going
         if player == 3 && self.phase == EPhase::Discard {
-            istate.push(Action(255))
+            istate.push(EAction::DiscardMarker.into())
         }
 
         istate
@@ -780,7 +782,7 @@ impl GameState for EuchreGameState {
                 self.trump_caller = 0;
                 self.trump = None;
             }
-            EAction::Pickup => {
+            EAction::Pickup | EAction::DiscardMarker => {
                 self.phase = EPhase::Pickup;
                 // return to defaults
                 self.trump_caller = 0;

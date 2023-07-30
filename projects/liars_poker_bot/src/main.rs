@@ -1,4 +1,5 @@
-use std::fs::OpenOptions;
+use std::collections::HashMap;
+use std::fs::{self, OpenOptions};
 use std::mem;
 
 use clap::{command, Parser, Subcommand, ValueEnum};
@@ -156,7 +157,7 @@ fn run_scratch(_args: Args) {
     let generator = generate_jack_of_spades_deal;
     let mut alg = CFRES::new_euchre_bidding(generator, get_rng());
 
-    let infostate_path = "infostates.open-hand-5m";
+    let infostate_path = "infostates.open-hand-20m";
     let loaded_states = alg.load(infostate_path);
     println!(
         "loaded {} info states from {}",
@@ -165,7 +166,7 @@ fn run_scratch(_args: Args) {
 
     let infostates = alg.get_infostates();
 
-    for (k, v) in infostates {
+    for (k, v) in infostates.clone() {
         // filter for the istate keys that end in the right actions
         if k[k.len() - 3..]
             .iter()
@@ -181,9 +182,27 @@ fn run_scratch(_args: Args) {
             let policy_sum: f64 = v.avg_strategy().to_vec().iter().map(|(_, v)| *v).sum();
             let take_prob = v.avg_strategy()[EAction::Pickup.into()] / policy_sum;
 
-            info!("\t{}\t{}", istate, take_prob);
+            info!("\t{}\t{}\t{}", istate, take_prob, v.update_count());
         }
     }
+
+    // convert to a key string
+    let mut json_infostates = HashMap::with_capacity(infostates.len());
+    for (k, v) in infostates {
+        let istate_string = k
+            .iter()
+            .map(|&x| EAction::from(x).to_string())
+            .collect_vec()
+            .join("");
+        json_infostates.insert(istate_string, v);
+    }
+
+    // Save a csv file
+    let json_data = serde_json::to_string(&json_infostates).unwrap();
+    let mut json_path = infostate_path.to_string();
+    json_path.push_str(".json");
+    fs::write(json_path.clone(), json_data).unwrap();
+    println!("json weights written to: {json_path}");
 }
 
 fn run_analyze(args: Args) {

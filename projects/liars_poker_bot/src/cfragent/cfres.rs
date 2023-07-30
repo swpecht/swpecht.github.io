@@ -70,6 +70,10 @@ impl InfoState {
     pub fn avg_strategy(&self) -> &ActionVec<f64> {
         &self.avg_strategy
     }
+
+    pub fn update_count(&self) -> usize {
+        self.update_count
+    }
 }
 
 /// Implementation of external sampled CFR
