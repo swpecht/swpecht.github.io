@@ -71,7 +71,7 @@ pub enum Card {
 }
 
 impl Card {
-    pub(super) fn suit(&self) -> Suit {
+    pub fn suit(&self) -> Suit {
         match self {
             Card::NS | Card::TS | Card::JS | Card::QS | Card::KS | Card::AS => Suit::Spades,
             Card::NC | Card::TC | Card::JC | Card::QC | Card::KC | Card::AC => Suit::Clubs,
@@ -315,7 +315,7 @@ fn eaction_fmt(v: &EAction, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy, Serialize, Deserialize, Hash)]
-pub(super) enum Suit {
+pub enum Suit {
     Clubs = 0,
     Spades,
     Hearts,

@@ -1,6 +1,7 @@
 #![allow(non_snake_case)]
 use core::num;
 
+use card_platypus::game::euchre::actions::Card;
 // import the prelude to get access to the `rsx!` macro and the `Scope` and `Element` types
 use dioxus::{
     html::{table, tr},
@@ -12,7 +13,6 @@ fn main() {
     dioxus_web::launch(App);
 }
 
-// create a component that renders a div with the text "Hello, world!"
 fn App(cx: Scope) -> Element {
     let mut count = use_state(cx, || 0);
 
@@ -40,9 +40,9 @@ fn App(cx: Scope) -> Element {
                 td {}
                 td {}
                 td { style: "text-align:center",
-                    button { color: "red", font_size: "75px", onclick: move |_| count += 1, "🂡" }
-                    button { color: "red", font_size: "75px", onclick: move |_| count += 1, "🂡" }
-                    button { color: "red", font_size: "75px", onclick: move |_| count += 1, "🂡" }
+                    button { color: "red", font_size: "75px", onclick: move |_| count += 1, Card::AC.icon() }
+                    button { color: "red", font_size: "75px", onclick: move |_| count += 1, Card::NS.icon() }
+                    CardButton(cx, Card::AS),
                     button { color: "red", font_size: "75px", onclick: move |_| count += 1, "🂡" }
                     button { color: "red", font_size: "75px", onclick: move |_| count += 1, "🂡" }
                 }
@@ -59,6 +59,18 @@ fn OpponentHand(cx: Scope, num_cards: usize) -> Element {
 
     cx.render(rsx! {
         div { font_size: "75px", s.as_str() }
+    })
+}
+
+fn CardButton(cx: Scope, c: Card) -> Element {
+    use card_platypus::game::euchre::actions::Suit::*;
+    let color = match c.suit() {
+        Clubs | Spades => "black",
+        Hearts | Diamonds => "red",
+    };
+
+    cx.render(rsx! {
+        button { color: color, font_size: "75px", c.icon() }
     })
 }
 
