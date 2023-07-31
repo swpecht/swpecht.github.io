@@ -83,6 +83,35 @@ impl Card {
     pub(super) fn rank(&self) -> u8 {
         *self as u8 % CARD_PER_SUIT
     }
+
+    pub fn icon(&self) -> &str {
+        match self {
+            Card::NC => "🃙",
+            Card::TC => "🃚",
+            Card::JC => "🃛",
+            Card::QC => "🃝",
+            Card::KC => "🃞",
+            Card::AC => "🃑",
+            Card::NS => "🂩",
+            Card::TS => "🂪",
+            Card::JS => "🂫",
+            Card::QS => "🂭",
+            Card::KS => "🂮",
+            Card::AS => "🂡",
+            Card::NH => "🂹",
+            Card::TH => "🂺",
+            Card::JH => "🂻",
+            Card::QH => "🂽",
+            Card::KH => "🂾",
+            Card::AH => "🂱",
+            Card::ND => "🃉",
+            Card::TD => "🃊",
+            Card::JD => "🃋",
+            Card::QD => "🃍",
+            Card::KD => "🃎",
+            Card::AD => "🃁",
+        }
+    }
 }
 
 impl From<u8> for Card {
