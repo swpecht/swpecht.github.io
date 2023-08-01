@@ -6,10 +6,6 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[profile.release]
-debug = true
-# lto = true # increase compile times for better possible perf
-
 [dependencies]
 rand = "0.8"
 log = "0.4"

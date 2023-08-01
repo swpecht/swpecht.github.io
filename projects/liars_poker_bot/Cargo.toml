@@ -1,2 +1,6 @@
 [workspace]
 members = ["crates/*"]
+
+[profile.release]
+debug = true
+# lto = true # increase compile times for better possible perf

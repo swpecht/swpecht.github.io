@@ -4,6 +4,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
+use itertools::Itertools;
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 
@@ -84,6 +85,55 @@ pub enum EPhase {
 }
 
 impl EuchreGameState {
+    /// Return all cards currently in a players hand
+    pub fn get_hand(&self, player: Player) -> Vec<Card> {
+        let player_loc = player.into();
+        let mut hand = Vec::new();
+
+        for (c, loc) in self.deck.into_iter() {
+            if loc == player_loc {
+                hand.push(c);
+            }
+        }
+
+        hand
+    }
+
+    /// Return the card played by the player for the current trick
+    pub fn played_card(&self, player: Player) -> Option<Card> {
+        let player_loc = CardLocation::Played(player);
+        for (c, loc) in self.deck.into_iter() {
+            if loc == player_loc {
+                return Some(c);
+            }
+        }
+        None
+    }
+
+    /// Returns the displayed face up card, if it exists
+    pub fn displayed_face_up_card(&self) -> Option<Card> {
+        let player_loc = CardLocation::FaceUp;
+        for (c, loc) in self.deck.into_iter() {
+            if loc == player_loc {
+                return Some(c);
+            }
+        }
+        None
+    }
+
+    /// Returns the non-chance node history
+    pub fn history(&self) -> Vec<(Player, EAction)> {
+        if self.is_chance_node() {
+            return Vec::new();
+        }
+
+        self.play_order
+            .iter()
+            .zip(self.key())
+            .map(|(p, a)| (*p, EAction::from(a)))
+            .collect_vec()
+    }
+
     fn apply_action_deal_hands(&mut self, a: Action) {
         let card = EAction::from(a).card();
 

@@ -11,3 +11,4 @@ dioxus-router = "0.3.0"
 dioxus-web = "0.3.2"
 card_platypus =  { path = "../card_platypus" }
 getrandom = { version = "0.2", features = ["js"] }
+rand = "0.8"
