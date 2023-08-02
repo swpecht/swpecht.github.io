@@ -1,7 +1,8 @@
 #![allow(non_snake_case)]
 
-use std::fmt::format;
+use std::{fmt::format, time::Duration};
 
+use async_std::task;
 use card_platypus::{
     actions,
     algorithms::{open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot},
@@ -66,7 +67,6 @@ fn NewGame(cx: Scope) -> Element {
         client
             .post(SERVER)
             .json(&new_game_req)
-            // .header("Content-Type", "application/json")
             .send()
             .await
             .expect("error unwraping response")
@@ -92,27 +92,30 @@ fn InGame(cx: Scope, game_id: String) -> Element {
     let player_id = use_shared_state::<PlayerId>(cx).unwrap().read().id;
     let client = reqwest::Client::new();
     let target = format!("{}/{}", SERVER, game_id);
-    let game_data = use_future(cx, (), |_| async move {
-        client
-            .get(target)
-            .send()
-            .await
-            .expect("error unwraping response")
-            .json::<GameData>()
-            .await
+
+    // https://dioxuslabs.com/learn/0.4/reference/use_coroutine
+
+    let gs = use_state(cx, Euchre::new_state);
+    let gs_polling_task = use_coroutine(cx, |_rx: UnboundedReceiver<()>| {
+        let gs = gs.to_owned();
+        async move {
+            loop {
+                let new_state = client
+                    .get(target.clone())
+                    .send()
+                    .await
+                    .expect("error unwraping response")
+                    .json::<GameData>()
+                    .await
+                    .unwrap();
+                gs.set(EuchreGameState::from(new_state.gs.as_str()));
+
+                task::sleep(Duration::from_secs(5)).await;
+            }
+        }
     });
 
-    let mut gs = Euchre::new_state();
-    match game_data.value() {
-        Some(Ok(response)) => {
-            gs = EuchreGameState::from(response.gs.as_str());
-            render!(PlayArea(cx, gs))
-        }
-        Some(Err(e)) => render!(
-            div { format!("Error getting game data: {:?}", e) }
-        ),
-        None => render!( div { "Loading game data..." } ),
-    }
+    render!(PlayArea(cx, gs.get().clone()))
 }
 
 fn PlayArea(cx: Scope<InGameProps>, gs: EuchreGameState) -> Element {
@@ -263,7 +266,7 @@ fn GameLog(cx: Scope<InGameProps>, gs: EuchreGameState) -> Element {
 }
 
 fn PlayerActions(cx: Scope<InGameProps>, gs: EuchreGameState, south_player: usize) -> Element {
-    if gs.cur_player() != south_player {
+    if gs.cur_player() != south_player || gs.is_chance_node() {
         return cx.render(rsx! { div {} });
     }
 

@@ -7,7 +7,8 @@ const REMOTE_ADDR: &str = "static.222.71.9.5.clients.your-server.de";
 #[derive(Debug, Subcommand, Clone)]
 enum Commands {
     RemoteLogs,
-    Serve,
+    ServeApp,
+    ServeServer,
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -22,7 +23,8 @@ fn main() -> anyhow::Result<()> {
 
     match args.command {
         Commands::RemoteLogs => get_remote_logs(),
-        Commands::Serve => serve(),
+        Commands::ServeApp => serve_app(),
+        Commands::ServeServer => serve_server(),
     }
 }
 
@@ -42,10 +44,18 @@ fn get_remote_logs() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn serve() -> anyhow::Result<()> {
+fn serve_app() -> anyhow::Result<()> {
     let sh = Shell::new()?;
     sh.change_dir("crates/euchre-app");
-    cmd!(sh, "dioxus serve").run()?;
+    cmd!(sh, "dx serve").run()?;
+
+    Ok(())
+}
+
+fn serve_server() -> anyhow::Result<()> {
+    let sh = Shell::new()?;
+    sh.change_dir("crates/euchre_server");
+    cmd!(sh, "cargo watch -x run").run()?;
 
     Ok(())
 }
