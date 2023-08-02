@@ -17,10 +17,21 @@ use dioxus::{
     html::{table, tr},
     prelude::*,
 };
+use dioxus_router::prelude::*;
 
 use rand::{rngs::StdRng, thread_rng, Rng, SeedableRng};
 
 const SERVER: &str = "http://127.0.0.1:4000";
+
+#[derive(Routable, Clone, PartialEq)]
+enum Route {
+    // if the current location is "/home", render the Home component
+    #[route("/")]
+    NewGame {},
+    // if the current location is "/blog", render the Blog component
+    #[route("/:game_id")]
+    InGame { game_id: String },
+}
 
 fn main() {
     // launch the web app
@@ -34,13 +45,17 @@ fn App(cx: Scope) -> Element {
         StdRng::from_rng(thread_rng()).unwrap(),
     );
 
-    let gs = use_state(cx, || {
-        EuchreGameState::from("Qc9sTs9dAd|9cKsThQhTd|KcAsJhKhQd|AcJs9hAhJd|Qs")
+    // set the random player id
+    use_shared_state_provider(cx, || PlayerId {
+        id: thread_rng().gen(),
     });
 
-    let south_player = use_state(cx, || 0);
+    render! { Router::<Route> {} }
+}
 
-    let player_id: usize = thread_rng().gen();
+#[inline_props]
+fn NewGame(cx: Scope) -> Element {
+    let player_id = use_shared_state::<PlayerId>(cx).unwrap().read().id;
     let new_game_req = NewGameRequest::new(player_id);
 
     let client = reqwest::Client::new();
@@ -57,22 +72,26 @@ fn App(cx: Scope) -> Element {
             .await
     });
 
-    cx.render(match new_game_response.value() {
-        Some(Ok(response)) => rsx! {
-            div { format!("{}", response.id) }
-        },
-        Some(Err(e)) => rsx! {
+    let nav = use_navigator(cx);
+    match new_game_response.value() {
+        Some(Ok(response)) => {
+            nav.push(format!("/{}", response.id));
+            render!({})
+        }
+        Some(Err(e)) => render!(
             div { format!("Error getting new game: {:?}", e) }
-        },
-        None => rsx! { div { "Loading new game..." } },
-    })
+        ),
+        None => render!( div { "Loading new game..." } ),
+    }
 }
 
-fn InGameScreen<'a>(
-    cx: Scope<'a>,
-    south_player: usize,
-    gs: &'a mut EuchreGameState,
-) -> Element<'a> {
+#[inline_props]
+fn InGame(cx: Scope, game_id: String) -> Element {
+    let gs = use_state(cx, || {
+        EuchreGameState::from("Qc9sTs9dAd|9cKsThQhTd|KcAsJhKhQd|AcJs9hAhJd|Qs")
+    });
+
+    let south_player = **use_state(cx, || 0);
     let west_player = (south_player + 1) % 4;
     let north_player = (south_player + 2) % 4;
     let east_player = (south_player + 3) % 4;
@@ -123,7 +142,7 @@ fn InGameScreen<'a>(
     })
 }
 
-fn OpponentHand(cx: Scope, num_cards: usize) -> Element {
+fn OpponentHand(cx: Scope<InGameProps>, num_cards: usize) -> Element {
     let mut s = String::new();
     for _ in 0..num_cards {
         s.push('🂠')
@@ -134,7 +153,7 @@ fn OpponentHand(cx: Scope, num_cards: usize) -> Element {
     })
 }
 
-fn PlayerHand(cx: Scope, hand: Vec<Card>) -> Element {
+fn PlayerHand(cx: Scope<InGameProps>, hand: Vec<Card>) -> Element {
     cx.render(rsx! {
         for c in hand.iter() {
             CardIcon(cx, *c)
@@ -154,7 +173,7 @@ fn CardButton(cx: Scope, c: Card) -> Element {
     })
 }
 
-fn PlayedCard(cx: Scope, c: Option<Card>) -> Element {
+fn PlayedCard(cx: Scope<InGameProps>, c: Option<Card>) -> Element {
     if let Some(c) = c {
         cx.render(rsx! {CardIcon(cx, c)})
     } else {
@@ -162,7 +181,11 @@ fn PlayedCard(cx: Scope, c: Option<Card>) -> Element {
     }
 }
 
-fn TurnTracker<'a>(cx: Scope<'a>, gs: &'a EuchreGameState, south_player: usize) -> Element<'a> {
+fn TurnTracker<'a>(
+    cx: Scope<'a, InGameProps>,
+    gs: &'a EuchreGameState,
+    south_player: usize,
+) -> Element<'a> {
     let arrow = match gs.cur_player() {
         x if x == (south_player + 1) % 4 => "←",
         x if x == (south_player + 2) % 4 => "↑",
@@ -172,7 +195,7 @@ fn TurnTracker<'a>(cx: Scope<'a>, gs: &'a EuchreGameState, south_player: usize) 
     cx.render(rsx! { div { font_size: "60px", "{arrow}" } })
 }
 
-fn FaceUpCard(cx: Scope, c: Option<Card>) -> Element {
+fn FaceUpCard(cx: Scope<InGameProps>, c: Option<Card>) -> Element {
     if let Some(c) = c {
         cx.render(rsx! {CardIcon(cx, c)})
     } else {
@@ -180,7 +203,7 @@ fn FaceUpCard(cx: Scope, c: Option<Card>) -> Element {
     }
 }
 
-fn CardIcon(cx: Scope, c: Card) -> Element {
+fn CardIcon(cx: Scope<InGameProps>, c: Card) -> Element {
     use card_platypus::game::euchre::actions::Suit::*;
     let color = match c.suit() {
         Clubs | Spades => "black",
@@ -192,7 +215,7 @@ fn CardIcon(cx: Scope, c: Card) -> Element {
     })
 }
 
-fn GameLog<'a>(cx: Scope<'a>, gs: &'a EuchreGameState) -> Element<'a> {
+fn GameLog<'a>(cx: Scope<'a, InGameProps>, gs: &'a EuchreGameState) -> Element<'a> {
     let mut log = Vec::new();
 
     for (p, a) in gs.history().into_iter() {
@@ -218,7 +241,11 @@ fn GameLog<'a>(cx: Scope<'a>, gs: &'a EuchreGameState) -> Element<'a> {
     })
 }
 
-fn PlayerActions<'a>(cx: Scope<'a>, gs: &'a EuchreGameState, south_player: usize) -> Element<'a> {
+fn PlayerActions<'a>(
+    cx: Scope<'a, InGameProps>,
+    gs: &'a EuchreGameState,
+    south_player: usize,
+) -> Element<'a> {
     if gs.cur_player() != south_player {
         return cx.render(rsx! { div {} });
     }
@@ -232,4 +259,6 @@ fn PlayerActions<'a>(cx: Scope<'a>, gs: &'a EuchreGameState, south_player: usize
     })
 }
 
-pub async fn take_action(a: Action) {}
+struct PlayerId {
+    pub id: usize,
+}
