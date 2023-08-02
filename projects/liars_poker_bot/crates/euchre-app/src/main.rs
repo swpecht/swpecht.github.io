@@ -78,7 +78,7 @@ fn NewGame(cx: Scope) -> Element {
         Some(Err(e)) => render!(
             div { format!("Error getting new game: {:?}", e) }
         ),
-        None => render!( div { "Loading new game..." } ),
+        None => render!( div { class: "text-xl", "Loading new game..." } ),
     }
 }
 
@@ -217,18 +217,6 @@ fn PlayerHand(cx: Scope<InGameProps>, hand: Vec<Card>) -> Element {
         for c in hand.iter() {
             CardIcon(cx, *c)
         }
-    })
-}
-
-fn CardButton(cx: Scope, c: Card) -> Element {
-    use card_platypus::game::euchre::actions::Suit::*;
-    let color = match c.suit() {
-        Clubs | Spades => "black",
-        Hearts | Diamonds => "red",
-    };
-
-    cx.render(rsx! {
-        button { color: color, font_size: "75px", c.icon() }
     })
 }
 
