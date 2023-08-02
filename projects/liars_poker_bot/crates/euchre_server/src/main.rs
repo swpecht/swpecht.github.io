@@ -8,6 +8,8 @@ use actix_web::{
 };
 use card_platypus::{
     actions,
+    agents::{Agent, PolicyAgent},
+    algorithms::{open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot},
     game::{
         euchre::{Euchre, EuchreGameState},
         Action, GameState,
@@ -15,7 +17,7 @@ use card_platypus::{
 };
 use client_server_messages::{ActionRequest, GameData, NewGameRequest, NewGameResponse};
 use log::info;
-use rand::{seq::SliceRandom, thread_rng};
+use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
 use uuid::Uuid;
 
 #[derive(Default)]
@@ -90,6 +92,21 @@ async fn post_game(
     }
 
     gs.apply_action(req.action);
+
+    // Apply bot actions for all non players
+    let mut agent = PolicyAgent::new(
+        PIMCTSBot::new(
+            50,
+            OpenHandSolver::new_euchre(),
+            StdRng::from_rng(thread_rng()).unwrap(),
+        ),
+        StdRng::from_rng(thread_rng()).unwrap(),
+    );
+
+    while game_data.players[gs.cur_player()].is_none() {
+        let a = agent.step(&gs);
+        gs.apply_action(a);
+    }
 
     game_data.gs = gs.to_string();
 
