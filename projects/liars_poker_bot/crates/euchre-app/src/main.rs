@@ -124,12 +124,13 @@ fn InGame(cx: Scope, game_id: String) -> Element {
     });
 
     let target = format!("{}/{}", SERVER, game_id);
+    let s_player = **south_player;
     let _action_task = use_coroutine(cx, |mut rx: UnboundedReceiver<EAction>| async move {
         let client = reqwest::Client::new();
 
         loop {
             if let Ok(Some(a)) = rx.try_next() {
-                let action_req = ActionRequest::new(south_player, a.into());
+                let action_req = ActionRequest::new(s_player, a.into());
                 client
                     .post(target.clone())
                     .json(&action_req)
