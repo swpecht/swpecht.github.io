@@ -17,7 +17,6 @@ rmp-serde = "1.1" # can be set to human readable for debugging
 tempfile = "3.3"
 serde-big-array = "0.5"
 rustc-hash = "1.1.0"
-approx = "0.5"
 rayon = "1.7"
 dashmap = "5.4.0"
 indicatif = "0.17.5"
