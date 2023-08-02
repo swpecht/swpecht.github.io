@@ -14,7 +14,7 @@ use card_platypus::{
         Action, GameState,
     },
 };
-use client_server_messages::{GameData, NewGameRequest, NewGameResponse};
+use client_server_messages::{ActionRequest, GameData, NewGameRequest, NewGameResponse};
 // import the prelude to get access to the `rsx!` macro and the `Scope` and `Element` types
 use dioxus::{
     html::{table, tr},
@@ -93,11 +93,11 @@ fn InGame(cx: Scope, game_id: String) -> Element {
     let client = reqwest::Client::new();
     let target = format!("{}/{}", SERVER, game_id);
 
-    // https://dioxuslabs.com/learn/0.4/reference/use_coroutine
-
+    let south_player = use_state::<usize>(cx, || 0);
     let gs = use_state(cx, Euchre::new_state);
-    let gs_polling_task = use_coroutine(cx, |_rx: UnboundedReceiver<()>| {
+    let _gs_polling_task = use_coroutine(cx, |_rx: UnboundedReceiver<()>| {
         let gs = gs.to_owned();
+        let south_player = south_player.to_owned();
         async move {
             loop {
                 let new_state = client
@@ -109,9 +109,35 @@ fn InGame(cx: Scope, game_id: String) -> Element {
                     .await
                     .unwrap();
                 gs.set(EuchreGameState::from(new_state.gs.as_str()));
+                south_player.set(
+                    new_state
+                        .players
+                        .iter()
+                        .flatten()
+                        .position(|&x| x == player_id)
+                        .expect("counldn't find matchin player id"),
+                );
 
                 task::sleep(Duration::from_secs(5)).await;
             }
+        }
+    });
+
+    let target = format!("{}/{}", SERVER, game_id);
+    let _action_task = use_coroutine(cx, |mut rx: UnboundedReceiver<EAction>| async move {
+        let client = reqwest::Client::new();
+
+        loop {
+            if let Ok(Some(a)) = rx.try_next() {
+                let action_req = ActionRequest::new(south_player, a.into());
+                client
+                    .post(target.clone())
+                    .json(&action_req)
+                    .send()
+                    .await
+                    .expect("error sending action");
+            }
+            task::sleep(Duration::from_secs(1)).await;
         }
     });
 
@@ -271,10 +297,11 @@ fn PlayerActions(cx: Scope<InGameProps>, gs: EuchreGameState, south_player: usiz
     }
 
     let actions: Vec<EAction> = actions!(gs).into_iter().map(EAction::from).collect();
+    let action_task = use_coroutine_handle::<EAction>(cx).expect("error getting action task");
 
     cx.render(rsx! {
-        for a in actions.iter() {
-            button { font_size: "75px", "{a}" }
+        for a in actions.into_iter() {
+            button { onclick: move |_| { action_task.send(a) }, font_size: "75px", "{a}" }
         }
     })
 }

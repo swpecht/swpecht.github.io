@@ -48,3 +48,9 @@ pub struct ActionRequest {
     pub player: usize,
     pub action: Action,
 }
+
+impl ActionRequest {
+    pub fn new(player: usize, action: Action) -> Self {
+        Self { player, action }
+    }
+}
