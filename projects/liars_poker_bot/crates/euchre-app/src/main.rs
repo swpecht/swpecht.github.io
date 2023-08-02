@@ -126,19 +126,28 @@ fn InGame(cx: Scope, game_id: String) -> Element {
 
     let target = format!("{}/{}", SERVER, game_id);
     let s_player = **south_player;
-    let _action_task = use_coroutine(cx, |mut rx: UnboundedReceiver<EAction>| async move {
-        let client = reqwest::Client::new();
+    let _action_task = use_coroutine(cx, |mut rx: UnboundedReceiver<EAction>| {
+        let gs = gs.to_owned();
 
-        while let Some(a) = rx.next().await {
-            let action_req = ActionRequest::new(s_player, a.into());
-            client
-                .post(target.clone())
-                .json(&action_req)
-                .send()
-                .await
-                .expect("error sending action");
+        async move {
+            let client = reqwest::Client::new();
+
+            while let Some(a) = rx.next().await {
+                let action_req = ActionRequest::new(s_player, a.into());
+                let new_state = client
+                    .post(target.clone())
+                    .json(&action_req)
+                    .send()
+                    .await
+                    .expect("error sending action")
+                    .json::<GameData>()
+                    .await
+                    .unwrap();
+                gs.set(EuchreGameState::from(new_state.gs.as_str()));
+            }
+
+            task::sleep(Duration::from_secs(1)).await;
         }
-        task::sleep(Duration::from_secs(1)).await;
     });
 
     render!(PlayArea(cx, gs.get().clone()))
