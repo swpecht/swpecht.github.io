@@ -22,6 +22,7 @@ title = "dioxus | ⛺"
 
 # when watcher trigger, regenerate the `index.html`
 reload_html = true
+index_on_404 = true
 
 # which files or dirs will be watcher monitoring
 watch_path = ["src", "public"]
