@@ -22,6 +22,7 @@ use dioxus::{
 };
 use dioxus_router::prelude::*;
 
+use futures_util::StreamExt;
 use rand::{rngs::StdRng, thread_rng, Rng, SeedableRng};
 
 const SERVER: &str = "http://127.0.0.1:4000";
@@ -128,18 +129,16 @@ fn InGame(cx: Scope, game_id: String) -> Element {
     let _action_task = use_coroutine(cx, |mut rx: UnboundedReceiver<EAction>| async move {
         let client = reqwest::Client::new();
 
-        loop {
-            if let Ok(Some(a)) = rx.try_next() {
-                let action_req = ActionRequest::new(s_player, a.into());
-                client
-                    .post(target.clone())
-                    .json(&action_req)
-                    .send()
-                    .await
-                    .expect("error sending action");
-            }
-            task::sleep(Duration::from_secs(1)).await;
+        while let Some(a) = rx.next().await {
+            let action_req = ActionRequest::new(s_player, a.into());
+            client
+                .post(target.clone())
+                .json(&action_req)
+                .send()
+                .await
+                .expect("error sending action");
         }
+        task::sleep(Duration::from_secs(1)).await;
     });
 
     render!(PlayArea(cx, gs.get().clone()))
@@ -151,12 +150,19 @@ fn PlayArea(cx: Scope<InGameProps>, gs: EuchreGameState) -> Element {
     let north_player = (south_player + 2) % 4;
     let east_player = (south_player + 3) % 4;
 
+    let player_0_score = if gs.is_terminal() {
+        Some(gs.evaluate(0))
+    } else {
+        None
+    };
+
     cx.render(rsx! {
 
         h1 { "High-Five counter: {south_player}" }
         div { "west player: {west_player}" }
         div { "north player: {north_player}" }
         div { "east player: {east_player}" }
+        ScoreLine(cx, player_0_score),
         table {
             tr {
                 td {}
@@ -195,6 +201,16 @@ fn PlayArea(cx: Scope<InGameProps>, gs: EuchreGameState) -> Element {
         button { onclick: move |_| {}, "go to next player: {south_player}" }
         GameLog(cx, gs)
     })
+}
+
+fn ScoreLine(cx: Scope<InGameProps>, player_0_score: Option<f64>) -> Element {
+    if let Some(score) = player_0_score {
+        render!(
+            div { format!("game over. player 0 score: {}", score) }
+        )
+    } else {
+        render!({})
+    }
 }
 
 fn OpponentHand(cx: Scope<InGameProps>, num_cards: usize) -> Element {

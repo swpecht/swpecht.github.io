@@ -103,7 +103,7 @@ async fn post_game(
         StdRng::from_rng(thread_rng()).unwrap(),
     );
 
-    while game_data.players[gs.cur_player()].is_none() {
+    while game_data.players[gs.cur_player()].is_none() && !gs.is_terminal() {
         let a = agent.step(&gs);
         gs.apply_action(a);
     }
