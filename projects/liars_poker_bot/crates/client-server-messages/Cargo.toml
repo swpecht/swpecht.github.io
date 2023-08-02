@@ -1,19 +1,13 @@
 [package]
-name = "euchre_server"
+name = "client-server-messages"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-actix-web = "4"
-actix-cors = "0.6"
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
 card_platypus =  { path = "../card_platypus" }
-client-server-messages =  { path = "../client-server-messages" }
-rand = "0.8"
-log = "0.4"
 
 [dependencies.uuid]
 version = "1.4.1"

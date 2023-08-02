@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::Mutex};
 
+use actix_cors::Cors;
 use actix_web::{
     get, post,
     web::{self, Json},
@@ -12,57 +13,14 @@ use card_platypus::{
         Action, GameState,
     },
 };
+use client_server_messages::{ActionRequest, GameData, NewGameRequest, NewGameResponse};
 use log::info;
 use rand::{seq::SliceRandom, thread_rng};
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[derive(Default)]
 struct AppState {
     games: Mutex<HashMap<Uuid, GameData>>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct GameData {
-    gs: String,
-    player_one: usize,
-    player_two: Option<usize>,
-    human_score: usize,
-    computer_score: usize,
-}
-
-impl GameData {
-    pub fn new(gs: EuchreGameState, player_id: usize) -> Self {
-        Self {
-            gs: gs.to_string(),
-            player_one: player_id,
-            player_two: None,
-            human_score: 0,
-            computer_score: 0,
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct NewGameResponse {
-    id: String,
-}
-
-impl NewGameResponse {
-    pub fn new(id: Uuid) -> Self {
-        Self { id: id.to_string() }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct NewGameRequest {
-    player_id: usize,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct ActionRequest {
-    player: usize,
-    action: Action,
 }
 
 #[post("/")]
@@ -143,8 +101,16 @@ async fn main() -> std::io::Result<()> {
     let app_state = web::Data::new(AppState::default());
 
     HttpServer::new(move || {
+        // let cors = Cors::default()
+        //     .allowed_origin("http://localhost:8080")
+        //     .allowed_origin("http://127.0.0.1:8080")
+        //     .allowed_methods(vec!["GET", "POST"]);
+
+        let cors = Cors::permissive();
+
         App::new()
             .app_data(app_state.clone())
+            .wrap(cors)
             .service(index)
             .service(get_game)
             .service(post_game)

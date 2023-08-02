@@ -1,6 +1,4 @@
 #![allow(non_snake_case)]
-use core::num;
-use std::fmt::format;
 
 use card_platypus::{
     actions,
@@ -10,15 +8,19 @@ use card_platypus::{
             actions::{Card, EAction},
             EuchreGameState,
         },
-        GameState,
+        Action, GameState,
     },
 };
+use client_server_messages::{NewGameRequest, NewGameResponse};
 // import the prelude to get access to the `rsx!` macro and the `Scope` and `Element` types
 use dioxus::{
     html::{table, tr},
     prelude::*,
 };
-use rand::{rngs::StdRng, thread_rng, SeedableRng};
+
+use rand::{rngs::StdRng, thread_rng, Rng, SeedableRng};
+
+const SERVER: &str = "http://127.0.0.1:4000";
 
 fn main() {
     // launch the web app
@@ -26,8 +28,6 @@ fn main() {
 }
 
 fn App(cx: Scope) -> Element {
-    let mut count = use_state(cx, || 0);
-
     let mut agent = PIMCTSBot::new(
         20,
         OpenHandSolver::new_euchre(),
@@ -38,14 +38,48 @@ fn App(cx: Scope) -> Element {
         EuchreGameState::from("Qc9sTs9dAd|9cKsThQhTd|KcAsJhKhQd|AcJs9hAhJd|Qs")
     });
 
-    let controlling_player = use_state(cx, || 0);
+    let south_player = use_state(cx, || 0);
 
-    let west_player = (controlling_player + 1) % 4;
-    let north_player = (controlling_player + 2) % 4;
-    let east_player = (controlling_player + 3) % 4;
+    let player_id: usize = thread_rng().gen();
+    let new_game_req = NewGameRequest::new(player_id);
+
+    let client = reqwest::Client::new();
+
+    let new_game_response = use_future(cx, (), |_| async move {
+        client
+            .post(SERVER)
+            .json(&new_game_req)
+            // .header("Content-Type", "application/json")
+            .send()
+            .await
+            .expect("error unwraping response")
+            .json::<NewGameResponse>()
+            .await
+    });
+
+    cx.render(match new_game_response.value() {
+        Some(Ok(response)) => rsx! {
+            div { format!("{}", response.id) }
+        },
+        Some(Err(e)) => rsx! {
+            div { format!("Error getting new game: {:?}", e) }
+        },
+        None => rsx! { div { "Loading new game..." } },
+    })
+}
+
+fn InGameScreen<'a>(
+    cx: Scope<'a>,
+    south_player: usize,
+    gs: &'a mut EuchreGameState,
+) -> Element<'a> {
+    let west_player = (south_player + 1) % 4;
+    let north_player = (south_player + 2) % 4;
+    let east_player = (south_player + 3) % 4;
 
     cx.render(rsx! {
-        h1 { "High-Five counter: {controlling_player}" }
+
+        h1 { "High-Five counter: {south_player}" }
         div { "west player: {west_player}" }
         div { "north player: {north_player}" }
         div { "east player: {east_player}" }
@@ -65,7 +99,7 @@ fn App(cx: Scope) -> Element {
                 td { style: "text-align:center", PlayedCard(cx, gs.played_card(west_player)) }
                 td { style: "text-align:center",
                     FaceUpCard(cx, gs.displayed_face_up_card()),
-                    TurnTracker(cx, gs.get().clone(), *controlling_player.get())
+                    TurnTracker(cx, gs, south_player)
                 }
                 td { style: "text-align:center", PlayedCard(cx, gs.played_card(east_player)) }
                 td { OpponentHand(cx, gs.get_hand(east_player).len()) }
@@ -73,21 +107,19 @@ fn App(cx: Scope) -> Element {
             tr {
                 td {}
                 td {}
-                td { style: "text-align:center", PlayedCard(cx, gs.played_card(**controlling_player)) }
+                td { style: "text-align:center", PlayedCard(cx, gs.played_card(south_player)) }
             }
             tr {
                 td {}
                 td {}
-                td { style: "text-align:center", PlayerHand(cx, gs.get_hand(**controlling_player)) }
+                td { style: "text-align:center",
+                    div { PlayerHand(cx, gs.get_hand(south_player)) }
+                    div { PlayerActions(cx, gs, south_player) }
+                }
             }
         }
-        button {
-            onclick: move |_| {
-                gs.make_mut().apply_action(actions!(gs)[0]);
-            },
-            "go to next player: {controlling_player}"
-        }
-        GameLog(cx, gs.get().clone())
+        button { onclick: move |_| {}, "go to next player: {south_player}" }
+        GameLog(cx, gs)
     })
 }
 
@@ -104,11 +136,9 @@ fn OpponentHand(cx: Scope, num_cards: usize) -> Element {
 
 fn PlayerHand(cx: Scope, hand: Vec<Card>) -> Element {
     cx.render(rsx! {
-        if !hand.is_empty() {CardButton(cx, hand[0]) }
-        if hand.len() > 1 {CardButton(cx, hand[1]) }
-        if hand.len() > 2 {CardButton(cx, hand[2]) }
-        if hand.len() > 3 {CardButton(cx, hand[3]) }
-        if hand.len() > 4 {CardButton(cx, hand[4]) }
+        for c in hand.iter() {
+            CardIcon(cx, *c)
+        }
     })
 }
 
@@ -128,15 +158,15 @@ fn PlayedCard(cx: Scope, c: Option<Card>) -> Element {
     if let Some(c) = c {
         cx.render(rsx! {CardIcon(cx, c)})
     } else {
-        cx.render(rsx! { div {} })
+        cx.render(rsx! { div { font_size: "60px" } })
     }
 }
 
-fn TurnTracker(cx: Scope, gs: EuchreGameState, controlling_player: usize) -> Element {
+fn TurnTracker<'a>(cx: Scope<'a>, gs: &'a EuchreGameState, south_player: usize) -> Element<'a> {
     let arrow = match gs.cur_player() {
-        x if x == (controlling_player + 1) % 4 => "←",
-        x if x == (controlling_player + 2) % 4 => "↑",
-        x if x == (controlling_player + 3) % 4 => "→",
+        x if x == (south_player + 1) % 4 => "←",
+        x if x == (south_player + 2) % 4 => "↑",
+        x if x == (south_player + 3) % 4 => "→",
         _ => "↓",
     };
     cx.render(rsx! { div { font_size: "60px", "{arrow}" } })
@@ -158,11 +188,11 @@ fn CardIcon(cx: Scope, c: Card) -> Element {
     };
 
     cx.render(rsx! {
-        div { color: color, font_size: "75px", c.icon() }
+        span { color: color, font_size: "75px", c.icon() }
     })
 }
 
-fn GameLog(cx: Scope, gs: EuchreGameState) -> Element {
+fn GameLog<'a>(cx: Scope<'a>, gs: &'a EuchreGameState) -> Element<'a> {
     let mut log = Vec::new();
 
     for (p, a) in gs.history().into_iter() {
@@ -188,6 +218,18 @@ fn GameLog(cx: Scope, gs: EuchreGameState) -> Element {
     })
 }
 
-fn PlayerAction(cx: Scope, gs: EuchreGameState) -> Element {
-    todo!()
+fn PlayerActions<'a>(cx: Scope<'a>, gs: &'a EuchreGameState, south_player: usize) -> Element<'a> {
+    if gs.cur_player() != south_player {
+        return cx.render(rsx! { div {} });
+    }
+
+    let actions: Vec<EAction> = actions!(gs).into_iter().map(EAction::from).collect();
+
+    cx.render(rsx! {
+        for a in actions.iter() {
+            button { font_size: "75px", "{a}" }
+        }
+    })
 }
+
+pub async fn take_action(a: Action) {}
