@@ -1,17 +1,19 @@
 #![allow(non_snake_case)]
 
+use std::fmt::format;
+
 use card_platypus::{
     actions,
     algorithms::{open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot},
     game::{
         euchre::{
             actions::{Card, EAction},
-            EuchreGameState,
+            Euchre, EuchreGameState,
         },
         Action, GameState,
     },
 };
-use client_server_messages::{NewGameRequest, NewGameResponse};
+use client_server_messages::{GameData, NewGameRequest, NewGameResponse};
 // import the prelude to get access to the `rsx!` macro and the `Scope` and `Element` types
 use dioxus::{
     html::{table, tr},
@@ -87,10 +89,33 @@ fn NewGame(cx: Scope) -> Element {
 
 #[inline_props]
 fn InGame(cx: Scope, game_id: String) -> Element {
-    let gs = use_state(cx, || {
-        EuchreGameState::from("Qc9sTs9dAd|9cKsThQhTd|KcAsJhKhQd|AcJs9hAhJd|Qs")
+    let player_id = use_shared_state::<PlayerId>(cx).unwrap().read().id;
+    let client = reqwest::Client::new();
+    let target = format!("{}/{}", SERVER, game_id);
+    let game_data = use_future(cx, (), |_| async move {
+        client
+            .get(target)
+            .send()
+            .await
+            .expect("error unwraping response")
+            .json::<GameData>()
+            .await
     });
 
+    let mut gs = Euchre::new_state();
+    match game_data.value() {
+        Some(Ok(response)) => {
+            gs = EuchreGameState::from(response.gs.as_str());
+            render!(PlayArea(cx, gs))
+        }
+        Some(Err(e)) => render!(
+            div { format!("Error getting game data: {:?}", e) }
+        ),
+        None => render!( div { "Loading game data..." } ),
+    }
+}
+
+fn PlayArea(cx: Scope<InGameProps>, gs: EuchreGameState) -> Element {
     let south_player = **use_state(cx, || 0);
     let west_player = (south_player + 1) % 4;
     let north_player = (south_player + 2) % 4;
@@ -118,7 +143,7 @@ fn InGame(cx: Scope, game_id: String) -> Element {
                 td { style: "text-align:center", PlayedCard(cx, gs.played_card(west_player)) }
                 td { style: "text-align:center",
                     FaceUpCard(cx, gs.displayed_face_up_card()),
-                    TurnTracker(cx, gs, south_player)
+                    TurnTracker(cx, gs.clone(), south_player)
                 }
                 td { style: "text-align:center", PlayedCard(cx, gs.played_card(east_player)) }
                 td { OpponentHand(cx, gs.get_hand(east_player).len()) }
@@ -133,7 +158,7 @@ fn InGame(cx: Scope, game_id: String) -> Element {
                 td {}
                 td { style: "text-align:center",
                     div { PlayerHand(cx, gs.get_hand(south_player)) }
-                    div { PlayerActions(cx, gs, south_player) }
+                    div { PlayerActions(cx, gs.clone(), south_player) }
                 }
             }
         }
@@ -181,11 +206,7 @@ fn PlayedCard(cx: Scope<InGameProps>, c: Option<Card>) -> Element {
     }
 }
 
-fn TurnTracker<'a>(
-    cx: Scope<'a, InGameProps>,
-    gs: &'a EuchreGameState,
-    south_player: usize,
-) -> Element<'a> {
+fn TurnTracker(cx: Scope<InGameProps>, gs: EuchreGameState, south_player: usize) -> Element {
     let arrow = match gs.cur_player() {
         x if x == (south_player + 1) % 4 => "←",
         x if x == (south_player + 2) % 4 => "↑",
@@ -215,7 +236,7 @@ fn CardIcon(cx: Scope<InGameProps>, c: Card) -> Element {
     })
 }
 
-fn GameLog<'a>(cx: Scope<'a, InGameProps>, gs: &'a EuchreGameState) -> Element<'a> {
+fn GameLog(cx: Scope<InGameProps>, gs: EuchreGameState) -> Element {
     let mut log = Vec::new();
 
     for (p, a) in gs.history().into_iter() {
@@ -241,11 +262,7 @@ fn GameLog<'a>(cx: Scope<'a, InGameProps>, gs: &'a EuchreGameState) -> Element<'
     })
 }
 
-fn PlayerActions<'a>(
-    cx: Scope<'a, InGameProps>,
-    gs: &'a EuchreGameState,
-    south_player: usize,
-) -> Element<'a> {
+fn PlayerActions(cx: Scope<InGameProps>, gs: EuchreGameState, south_player: usize) -> Element {
     if gs.cur_player() != south_player {
         return cx.render(rsx! { div {} });
     }
