@@ -108,6 +108,19 @@ async fn post_game(
         gs.apply_action(a);
     }
 
+    if gs.is_terminal() {
+        // todo: add scoring
+        let human_team = game_data
+            .players
+            .iter()
+            .position(|x| x.is_some())
+            .expect("couldn't find human player");
+        game_data.human_score += gs.evaluate(human_team).max(0.0) as usize;
+        game_data.computer_score += gs.evaluate((human_team + 1) % 4).max(0.0) as usize;
+
+        gs = new_game();
+    }
+
     game_data.gs = gs.to_string();
 
     HttpResponse::Ok().json(game_data)

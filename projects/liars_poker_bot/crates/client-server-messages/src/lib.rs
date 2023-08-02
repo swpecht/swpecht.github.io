@@ -2,7 +2,7 @@ use card_platypus::game::{euchre::EuchreGameState, Action};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GameData {
     pub gs: String,
     pub players: Vec<Option<usize>>,

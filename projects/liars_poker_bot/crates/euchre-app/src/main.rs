@@ -43,12 +43,6 @@ fn main() {
 }
 
 fn App(cx: Scope) -> Element {
-    let mut agent = PIMCTSBot::new(
-        20,
-        OpenHandSolver::new_euchre(),
-        StdRng::from_rng(thread_rng()).unwrap(),
-    );
-
     // set the random player id
     use_shared_state_provider(cx, || PlayerId {
         id: thread_rng().gen(),
@@ -94,11 +88,9 @@ fn InGame(cx: Scope, game_id: String) -> Element {
     let client = reqwest::Client::new();
     let target = format!("{}/{}", SERVER, game_id);
 
-    let south_player = use_state::<usize>(cx, || 0);
-    let gs = use_state(cx, Euchre::new_state);
+    let game_data = use_state(cx, || GameData::new(Euchre::new_state(), player_id));
     let _gs_polling_task = use_coroutine(cx, |_rx: UnboundedReceiver<()>| {
-        let gs = gs.to_owned();
-        let south_player = south_player.to_owned();
+        let game_data = game_data.to_owned();
         async move {
             loop {
                 let new_state = client
@@ -109,31 +101,26 @@ fn InGame(cx: Scope, game_id: String) -> Element {
                     .json::<GameData>()
                     .await
                     .unwrap();
-                gs.set(EuchreGameState::from(new_state.gs.as_str()));
-                south_player.set(
-                    new_state
-                        .players
-                        .iter()
-                        .flatten()
-                        .position(|&x| x == player_id)
-                        .expect("counldn't find matchin player id"),
-                );
-
+                game_data.set(new_state);
                 task::sleep(Duration::from_secs(5)).await;
             }
         }
     });
 
     let target = format!("{}/{}", SERVER, game_id);
-    let s_player = **south_player;
     let _action_task = use_coroutine(cx, |mut rx: UnboundedReceiver<EAction>| {
-        let gs = gs.to_owned();
+        let game_data = game_data.to_owned();
+        let south_player = game_data
+            .players
+            .iter()
+            .position(|x| x.is_some() && x.unwrap() == player_id)
+            .unwrap();
 
         async move {
             let client = reqwest::Client::new();
 
             while let Some(a) = rx.next().await {
-                let action_req = ActionRequest::new(s_player, a.into());
+                let action_req = ActionRequest::new(south_player, a.into());
                 let new_state = client
                     .post(target.clone())
                     .json(&action_req)
@@ -143,27 +130,29 @@ fn InGame(cx: Scope, game_id: String) -> Element {
                     .json::<GameData>()
                     .await
                     .unwrap();
-                gs.set(EuchreGameState::from(new_state.gs.as_str()));
+                game_data.set(new_state);
             }
 
             task::sleep(Duration::from_secs(1)).await;
         }
     });
 
-    render!(PlayArea(cx, gs.get().clone()))
+    render!(PlayArea(cx, game_data.get().clone()))
 }
 
-fn PlayArea(cx: Scope<InGameProps>, gs: EuchreGameState) -> Element {
-    let south_player = **use_state(cx, || 0);
+fn PlayArea(cx: Scope<InGameProps>, game_data: GameData) -> Element {
+    let gs = EuchreGameState::from(game_data.gs.as_str());
+
+    let player_id = use_shared_state::<PlayerId>(cx).unwrap().read().id;
+    let south_player = game_data
+        .players
+        .iter()
+        .position(|x| x.is_some() && x.unwrap() == player_id)
+        .unwrap();
+
     let west_player = (south_player + 1) % 4;
     let north_player = (south_player + 2) % 4;
     let east_player = (south_player + 3) % 4;
-
-    let player_0_score = if gs.is_terminal() {
-        Some(gs.evaluate(0))
-    } else {
-        None
-    };
 
     cx.render(rsx! {
 
@@ -171,7 +160,8 @@ fn PlayArea(cx: Scope<InGameProps>, gs: EuchreGameState) -> Element {
         div { "west player: {west_player}" }
         div { "north player: {north_player}" }
         div { "east player: {east_player}" }
-        ScoreLine(cx, player_0_score),
+        div { format!("humans: {}", game_data.human_score) }
+        div { format!("machines: {}", game_data.computer_score) }
         table {
             tr {
                 td {}
@@ -207,19 +197,8 @@ fn PlayArea(cx: Scope<InGameProps>, gs: EuchreGameState) -> Element {
                 }
             }
         }
-        button { onclick: move |_| {}, "go to next player: {south_player}" }
         GameLog(cx, gs)
     })
-}
-
-fn ScoreLine(cx: Scope<InGameProps>, player_0_score: Option<f64>) -> Element {
-    if let Some(score) = player_0_score {
-        render!(
-            div { format!("game over. player 0 score: {}", score) }
-        )
-    } else {
-        render!({})
-    }
 }
 
 fn OpponentHand(cx: Scope<InGameProps>, num_cards: usize) -> Element {
