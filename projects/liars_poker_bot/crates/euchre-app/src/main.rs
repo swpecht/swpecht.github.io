@@ -119,16 +119,26 @@ fn InGame(cx: Scope, game_id: String) -> Element {
     let target = format!("{}/{}", SERVER, game_id);
     let _action_task = use_coroutine(cx, |mut rx: UnboundedReceiver<EAction>| {
         let game_data = game_data.to_owned();
-        let south_player = game_data
-            .players
-            .iter()
-            .position(|x| x.is_some() && x.unwrap() == player_id)
-            .unwrap();
 
         async move {
             let client = reqwest::Client::new();
 
             while let Some(a) = rx.next().await {
+                let new_state = client
+                    .get(target.clone())
+                    .send()
+                    .await
+                    .expect("error unwraping response")
+                    .json::<GameData>()
+                    .await
+                    .unwrap();
+
+                let south_player = new_state
+                    .players
+                    .iter()
+                    .position(|x| x.is_some() && x.unwrap() == player_id)
+                    .unwrap();
+
                 let action_req = ActionRequest::new(south_player, a.into());
                 let new_state = client
                     .post(target.clone())
@@ -141,8 +151,6 @@ fn InGame(cx: Scope, game_id: String) -> Element {
                     .unwrap();
                 game_data.set(new_state);
             }
-
-            task::sleep(Duration::from_secs(1)).await;
         }
     });
 

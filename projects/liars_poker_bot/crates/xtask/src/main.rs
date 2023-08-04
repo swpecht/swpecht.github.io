@@ -1,3 +1,5 @@
+use std::thread;
+
 use anyhow::Ok;
 use clap::{command, Parser, Subcommand};
 use xshell::{cmd, Shell};
@@ -45,9 +47,26 @@ fn get_remote_logs() -> anyhow::Result<()> {
 }
 
 fn serve_app() -> anyhow::Result<()> {
-    let sh = Shell::new()?;
-    sh.change_dir("crates/euchre-app");
-    cmd!(sh, "dx serve").run()?;
+    let dx_serve_handle = thread::spawn(|| -> anyhow::Result<()> {
+        let sh = Shell::new()?;
+        sh.change_dir("crates/euchre-app");
+        cmd!(sh, "dx serve --hot-reload").run()?;
+        Ok(())
+    });
+
+    let tailwind_watch_handle = thread::spawn(|| -> anyhow::Result<()> {
+        let sh = Shell::new()?;
+        sh.change_dir("crates/euchre-app");
+        cmd!(
+            sh,
+            "npx tailwindcss -i ./input.css -o ./public/tailwind.css --watch"
+        )
+        .run()?;
+        Ok(())
+    });
+
+    dx_serve_handle.join().unwrap()?;
+    tailwind_watch_handle.join().unwrap()?;
 
     Ok(())
 }

@@ -88,7 +88,11 @@ async fn post_game(
     }
 
     if gs.cur_player() != req.player {
-        return HttpResponse::BadRequest().body("attempted action on wrong players turn");
+        return HttpResponse::BadRequest().body(format!(
+            "attempted action on wrong players turn. Current player is: {}.\n request: {:?}\ngs: {}",
+            gs.cur_player(),
+            req, gs
+        ));
     }
 
     gs.apply_action(req.action);
@@ -119,6 +123,13 @@ async fn post_game(
         game_data.computer_score += gs.evaluate((human_team + 1) % 4).max(0.0) as usize;
 
         gs = new_game();
+        // todo: change who dealer is
+        game_data.players.rotate_right(1);
+    }
+
+    while game_data.players[gs.cur_player()].is_none() && !gs.is_terminal() {
+        let a = agent.step(&gs);
+        gs.apply_action(a);
     }
 
     game_data.gs = gs.to_string();
