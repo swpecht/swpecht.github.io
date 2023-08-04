@@ -11,7 +11,7 @@ use card_platypus::{
             actions::{Card, EAction},
             Euchre, EuchreGameState,
         },
-        Action, GameState,
+        Action, GameState, Player,
     },
 };
 use client_server_messages::{ActionRequest, GameData, NewGameRequest, NewGameResponse};
@@ -193,28 +193,47 @@ fn GameData(cx: Scope<InGameProps>, gs: String, south_player: usize) -> Element 
     let south_trick_wins = gs.trick_score()[south_player % 2];
     let east_trick_wins = gs.trick_score()[(south_player + 1) % 2];
 
+    let last_trick = gs.last_trick();
+
     render!(
         div {
             div { class: "text-xl font-large text-black", "Game information" }
             div { trump_string }
             div { "North/South have {south_trick_wins} tricks. East/West have {east_trick_wins} tricks" }
+            LastTrick(cx, last_trick, south_player)
+        }
+    )
+}
+
+fn LastTrick(
+    cx: Scope<InGameProps>,
+    last_trick: Option<(Player, [Card; 4])>,
+    south_player: usize,
+) -> Element {
+    if let Some((starter, mut trick)) = last_trick {
+        trick.rotate_left(4 - starter);
+        trick.rotate_left(south_player);
+        render!(
+            div { "last trick:" }
             table {
                 tr {
                     td {}
-                    td { "🂠" }
+                    td { format!("{}", trick[2]) }
                 }
                 tr {
-                    td { "🂠" }
+                    td { format!("{}", trick[1]) }
                     td {}
-                    td { "🂠" }
+                    td { format!("{}", trick[3]) }
                 }
                 tr {
                     td {}
-                    td { "🂠" }
+                    td { format!("{}", trick[0]) }
                 }
             }
-        }
-    )
+        )
+    } else {
+        render!({})
+    }
 }
 
 fn RunningStats(cx: Scope<InGameProps>, machine_score: usize, human_score: usize) -> Element {
@@ -339,32 +358,6 @@ fn CardIcon(cx: Scope<InGameProps>, c: Card) -> Element {
     })
 }
 
-fn GameLog(cx: Scope<InGameProps>, gs: EuchreGameState) -> Element {
-    let mut log = Vec::new();
-
-    for (p, a) in gs.history().into_iter() {
-        use EAction::*;
-        let description = match a {
-            DealFaceUp { c } => format!("{} is the faceup card", c.icon()),
-            Pickup => format!("{p} told the dealer to pickup"),
-            Pass => format!("{p} passed\n"),
-            Clubs | Spades | Hearts | Diamonds => format!("{p} called {a} as trump"),
-            DealPlayer { c } | Discard { c } => "".to_string(), // nothing reported, hidden action
-            Play { c } => format!("{p} played {}\n", c.icon()),
-            DiscardMarker => panic!("should not encounter a discard marker in gamestate"),
-        };
-
-        log.push(description);
-    }
-
-    cx.render(rsx! {
-        div { font_size: "30px", "Log:" }
-        for item in log.iter() {
-            div { font_size: "30px", "{item}" }
-        }
-    })
-}
-
 fn PlayerActions(cx: Scope<InGameProps>, gs: EuchreGameState, south_player: usize) -> Element {
     if gs.cur_player() != south_player || gs.is_chance_node() {
         return cx.render(rsx! { div {} });
@@ -374,9 +367,14 @@ fn PlayerActions(cx: Scope<InGameProps>, gs: EuchreGameState, south_player: usiz
     let action_task = use_coroutine_handle::<EAction>(cx).expect("error getting action task");
 
     cx.render(rsx! {
-        div { class: "flex",
+        div {
             for a in actions.into_iter() {
-                button { class: "px-8", onclick: move |_| { action_task.send(a) }, font_size: "75px", "{a}" }
+                button {
+                    class: "bg-white hover:bg-gray-100 text-gray-800 font-semibold py-2 px-4 border border-gray-400 rounded shadow",
+                    onclick: move |_| { action_task.send(a) },
+                    font_size: "75px",
+                    "{a}"
+                }
             }
         }
     })

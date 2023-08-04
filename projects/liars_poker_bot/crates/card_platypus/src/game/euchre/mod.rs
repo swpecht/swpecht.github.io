@@ -85,6 +85,24 @@ pub enum EPhase {
 }
 
 impl EuchreGameState {
+    pub fn last_trick(&self) -> Option<(Player, [Card; 4])> {
+        if self.cards_played < 4 {
+            return None;
+        }
+
+        let cards_played_in_cur_trick = self.cards_played % 4;
+
+        let sidx = self.key.len() - cards_played_in_cur_trick - 4;
+        let mut trick = [Card::NS; 4];
+        for (i, t) in trick.iter_mut().enumerate() {
+            *t = EAction::from(self.key[sidx + i]).card();
+        }
+
+        let trick_starter = self.play_order[sidx];
+
+        Some((trick_starter, trick))
+    }
+
     /// Return all cards currently in a players hand
     pub fn get_hand(&self, player: Player) -> Vec<Card> {
         let player_loc = player.into();
