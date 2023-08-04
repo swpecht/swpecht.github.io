@@ -33,8 +33,11 @@ enum Route {
     #[route("/")]
     NewGame {},
     // if the current location is "/blog", render the Blog component
-    #[route("/:game_id")]
+    #[route("/game/:game_id")]
     InGame { game_id: String },
+
+    #[route("/:..route")]
+    NotFound { route: Vec<String> },
 }
 
 fn main() {
@@ -43,12 +46,18 @@ fn main() {
 }
 
 fn App(cx: Scope) -> Element {
-    // set the random player id
-    use_shared_state_provider(cx, || PlayerId {
-        id: thread_rng().gen(),
-    });
+    use_shared_state_provider(cx, || PlayerId { id: 42 });
 
     render! { Router::<Route> {} }
+}
+
+#[inline_props]
+fn NotFound(cx: Scope, route: Vec<String>) -> Element {
+    render! {
+        h1 { "Page not found" }
+        p { "We are terribly sorry, but the page you requested doesn't exist." }
+        pre { color: "red", "log:\nattemped to navigate to: {route:?}" }
+    }
 }
 
 #[inline_props]
@@ -72,7 +81,7 @@ fn NewGame(cx: Scope) -> Element {
     let nav = use_navigator(cx);
     match new_game_response.value() {
         Some(Ok(response)) => {
-            nav.push(format!("/{}", response.id));
+            nav.push(format!("/game/{}", response.id));
             render!({})
         }
         Some(Err(e)) => render!(
@@ -137,12 +146,6 @@ fn InGame(cx: Scope, game_id: String) -> Element {
         }
     });
 
-    render!(PlayArea(cx, game_data.get().clone()))
-}
-
-fn PlayArea(cx: Scope<InGameProps>, game_data: GameData) -> Element {
-    let gs = EuchreGameState::from(game_data.gs.as_str());
-
     let player_id = use_shared_state::<PlayerId>(cx).unwrap().read().id;
     let south_player = game_data
         .players
@@ -150,66 +153,136 @@ fn PlayArea(cx: Scope<InGameProps>, game_data: GameData) -> Element {
         .position(|x| x.is_some() && x.unwrap() == player_id)
         .unwrap();
 
+    render!(
+        div { class: "grid grid-cols-2",
+            PlayArea(cx, game_data.get().clone(), south_player),
+            div {
+                GameData(cx, game_data.gs.clone(), south_player),
+                RunningStats(cx, game_data.computer_score, game_data.human_score)
+            }
+        }
+    )
+}
+
+fn GameData(cx: Scope<InGameProps>, gs: String, south_player: usize) -> Element {
+    let gs = EuchreGameState::from(gs.as_str());
+    let trump_details = gs.trump();
+
+    let trump_string = if let Some((suit, caller)) = trump_details {
+        let caller_seat = match caller {
+            x if x == south_player => "South",
+            x if x == (south_player + 1) % 4 => "West",
+            x if x == (south_player + 2) % 4 => "North",
+            x if x == (south_player + 3) % 4 => "East",
+            _ => "Error finding caller seat",
+        };
+
+        format!("Trump is {}. Called by {caller_seat}", suit.icon())
+    } else {
+        "Trump has not been called".to_string()
+    };
+
+    let south_trick_wins = gs.trick_score()[south_player % 2];
+    let east_trick_wins = gs.trick_score()[(south_player + 1) % 2];
+
+    render!(
+        div {
+            div { class: "text-xl font-large text-black", "Game information" }
+            div { trump_string }
+            div { "North/South have {south_trick_wins} tricks. East/West have {east_trick_wins} tricks" }
+            table {
+                tr {
+                    td {}
+                    td { "🂠" }
+                }
+                tr {
+                    td { "🂠" }
+                    td {}
+                    td { "🂠" }
+                }
+                tr {
+                    td {}
+                    td { "🂠" }
+                }
+            }
+        }
+    )
+}
+
+fn RunningStats(cx: Scope<InGameProps>, machine_score: usize, human_score: usize) -> Element {
+    render!(
+        div {
+            div { class: "text-xl font-large text-black", "Running stats" }
+            div { "humans: {human_score} to machines: {machine_score}" }
+        }
+    )
+}
+
+fn PlayArea(cx: Scope<InGameProps>, game_data: GameData, south_player: usize) -> Element {
+    let gs = EuchreGameState::from(game_data.gs.as_str());
+
     let west_player = (south_player + 1) % 4;
     let north_player = (south_player + 2) % 4;
     let east_player = (south_player + 3) % 4;
 
     cx.render(rsx! {
-
-        h1 { "High-Five counter: {south_player}" }
-        div { "west player: {west_player}" }
-        div { "north player: {north_player}" }
-        div { "east player: {east_player}" }
-        div { format!("humans: {}", game_data.human_score) }
-        div { format!("machines: {}", game_data.computer_score) }
-        table {
-            tr {
-                td {}
-                td {}
-                td { OpponentHand(cx, gs.get_hand(north_player).len()) }
-            }
-            tr {
-                td {}
-                td {}
-                td { style: "text-align:center", PlayedCard(cx, gs.played_card(north_player)) }
-            }
-            tr {
-                td { OpponentHand(cx, gs.get_hand(west_player).len()) }
-                td { style: "text-align:center", PlayedCard(cx, gs.played_card(west_player)) }
-                td { style: "text-align:center",
-                    FaceUpCard(cx, gs.displayed_face_up_card()),
-                    TurnTracker(cx, gs.clone(), south_player)
+        div {
+            table {
+                tr {
+                    td {}
+                    td {}
+                    td { OpponentHand(cx, gs.get_hand(north_player).len(), true) }
                 }
-                td { style: "text-align:center", PlayedCard(cx, gs.played_card(east_player)) }
-                td { OpponentHand(cx, gs.get_hand(east_player).len()) }
-            }
-            tr {
-                td {}
-                td {}
-                td { style: "text-align:center", PlayedCard(cx, gs.played_card(south_player)) }
-            }
-            tr {
-                td {}
-                td {}
-                td { style: "text-align:center",
-                    div { PlayerHand(cx, gs.get_hand(south_player)) }
-                    div { PlayerActions(cx, gs.clone(), south_player) }
+                tr {
+                    td {}
+                    td {}
+                    td { style: "text-align:center", PlayedCard(cx, gs.played_card(north_player)) }
+                }
+                tr {
+                    td { OpponentHand(cx, gs.get_hand(west_player).len(), false) }
+                    td { style: "text-align:center", PlayedCard(cx, gs.played_card(west_player)) }
+                    td { style: "text-align:center",
+                        FaceUpCard(cx, gs.displayed_face_up_card()),
+                        TurnTracker(cx, gs.clone(), south_player)
+                    }
+                    td { style: "text-align:center", PlayedCard(cx, gs.played_card(east_player)) }
+                    td { OpponentHand(cx, gs.get_hand(east_player).len(), false) }
+                }
+                tr {
+                    td {}
+                    td {}
+                    td { style: "text-align:center", PlayedCard(cx, gs.played_card(south_player)) }
+                }
+                tr {
+                    td {}
+                    td {}
+                    td { style: "text-align:center",
+                        div { PlayerHand(cx, gs.get_hand(south_player)) }
+                        div { PlayerActions(cx, gs.clone(), south_player) }
+                    }
                 }
             }
         }
-        GameLog(cx, gs)
     })
 }
 
-fn OpponentHand(cx: Scope<InGameProps>, num_cards: usize) -> Element {
-    let mut s = String::new();
-    for _ in 0..num_cards {
-        s.push('🂠')
-    }
+fn OpponentHand(cx: Scope<InGameProps>, num_cards: usize, is_north: bool) -> Element {
+    if is_north {
+        let mut s = String::new();
+        for _ in 0..num_cards {
+            s.push('🂠')
+        }
 
-    cx.render(rsx! {
-        div { font_size: "75px", s.as_str() }
-    })
+        cx.render(rsx! {
+            div { style: "text-align:center", font_size: "75px", s.as_str() }
+        })
+    } else {
+        cx.render(rsx! {
+            for _ in 0..num_cards {
+                div { font_size: "75px", "🂠" }
+            }
+        })
+    }
 }
 
 fn PlayerHand(cx: Scope<InGameProps>, hand: Vec<Card>) -> Element {
@@ -293,8 +366,10 @@ fn PlayerActions(cx: Scope<InGameProps>, gs: EuchreGameState, south_player: usiz
     let action_task = use_coroutine_handle::<EAction>(cx).expect("error getting action task");
 
     cx.render(rsx! {
-        for a in actions.into_iter() {
-            button { onclick: move |_| { action_task.send(a) }, font_size: "75px", "{a}" }
+        div { class: "flex",
+            for a in actions.into_iter() {
+                button { class: "px-8", onclick: move |_| { action_task.send(a) }, font_size: "75px", "{a}" }
+            }
         }
     })
 }

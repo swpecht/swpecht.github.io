@@ -99,6 +99,15 @@ impl EuchreGameState {
         hand
     }
 
+    pub fn trick_score(&self) -> [u8; 2] {
+        self.tricks_won
+    }
+
+    /// Returns trump and who called it
+    pub fn trump(&self) -> Option<(Suit, Player)> {
+        self.trump.map(|suit| (suit, self.trump_caller))
+    }
+
     /// Return the card played by the player for the current trick
     pub fn played_card(&self, player: Player) -> Option<Card> {
         let player_loc = CardLocation::Played(player);
@@ -248,7 +257,7 @@ impl EuchreGameState {
         let trick_over = self.cards_played % 4 == 0;
         // trick is over and played at least one card
         if trick_over && self.cards_played > 0 {
-            let trick = self.get_last_trick(card);
+            let trick = self.last_trick_with_card(card).unwrap();
             let starter = (self.cur_player + 1) % self.num_players;
             let winner = self.evaluate_trick(&trick, starter);
             self.cur_player = winner;
@@ -281,7 +290,15 @@ impl EuchreGameState {
     }
 
     /// Gets last trick with a as the final action of the trick
-    fn get_last_trick(&self, card: Card) -> [Card; 4] {
+    fn last_trick_with_card(&self, card: Card) -> Option<[Card; 4]> {
+        if self.phase() != EPhase::Play {
+            return None;
+        }
+
+        if self.cards_played < 4 {
+            return None;
+        }
+
         let sidx = self.key.len() - 3;
         let mut trick = [Card::NS; 4];
         for (i, t) in trick.iter_mut().enumerate().take(3) {
@@ -289,7 +306,7 @@ impl EuchreGameState {
         }
         trick[3] = card;
 
-        trick
+        Some(trick)
     }
 
     /// Get the card that started the current trick

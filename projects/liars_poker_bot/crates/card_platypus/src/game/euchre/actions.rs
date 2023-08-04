@@ -322,6 +322,17 @@ pub enum Suit {
     Diamonds,
 }
 
+impl Suit {
+    pub fn icon(&self) -> &str {
+        match self {
+            Suit::Clubs => "♣",
+            Suit::Spades => "♠",
+            Suit::Hearts => "♥",
+            Suit::Diamonds => "♦",
+        }
+    }
+}
+
 impl Display for Suit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let c = match self {
