@@ -198,7 +198,13 @@ fn GameData(cx: Scope<InGameProps>, gs: String, south_player: usize) -> Element 
         div {
             div { class: "text-xl font-large text-black", "Game information" }
             div { trump_string }
-            div { "North/South have {south_trick_wins} tricks. East/West have {east_trick_wins} tricks" }
+            div { class: "font-bold", "Tricks taken:" }
+            div { class: "grid grid-cols-2",
+                div { "North/South" }
+                div { "East/West" }
+                div { "{south_trick_wins}" }
+                div { "{east_trick_wins}" }
+            }
             LastTrick(cx, last_trick, south_player)
         }
     )
@@ -217,16 +223,16 @@ fn LastTrick(
             table {
                 tr {
                     td {}
-                    td { format!("{}", trick[2]) }
+                    td { format!("{}", trick[2].icon()) }
                 }
                 tr {
-                    td { format!("{}", trick[1]) }
+                    td { format!("{}", trick[1].icon()) }
                     td {}
-                    td { format!("{}", trick[3]) }
+                    td { format!("{}", trick[3].icon()) }
                 }
                 tr {
                     td {}
-                    td { format!("{}", trick[0]) }
+                    td { format!("{}", trick[0].icon()) }
                 }
             }
         )
@@ -251,13 +257,40 @@ fn PlayArea(cx: Scope<InGameProps>, game_data: GameData, south_player: usize) ->
     let north_player = (south_player + 2) % 4;
     let east_player = (south_player + 3) % 4;
 
+    let north_label = if north_player == 3 {
+        "North (Dealer)"
+    } else {
+        "North"
+    };
+
+    let south_label = if south_player == 3 {
+        "South (Dealer)"
+    } else {
+        "South"
+    };
+
+    let east_label = if east_player == 3 {
+        "East (Dealer)"
+    } else {
+        "East"
+    };
+
+    let west_label = if west_player == 3 {
+        "West (Dealer)"
+    } else {
+        "West"
+    };
+
     cx.render(rsx! {
         div {
             table {
                 tr {
                     td {}
                     td {}
-                    td { OpponentHand(cx, gs.get_hand(north_player).len(), true) }
+                    td {
+                        div { style: "text-align:center", north_label }
+                        OpponentHand(cx, gs.get_hand(north_player).len(), true)
+                    }
                 }
                 tr {
                     td {}
@@ -265,19 +298,28 @@ fn PlayArea(cx: Scope<InGameProps>, game_data: GameData, south_player: usize) ->
                     td { style: "text-align:center", PlayedCard(cx, gs.played_card(north_player)) }
                 }
                 tr {
-                    td { OpponentHand(cx, gs.get_hand(west_player).len(), false) }
+                    td {
+                        div { style: "text-align:center", west_label }
+                        OpponentHand(cx, gs.get_hand(west_player).len(), false)
+                    }
                     td { style: "text-align:center", PlayedCard(cx, gs.played_card(west_player)) }
                     td { style: "text-align:center",
                         FaceUpCard(cx, gs.displayed_face_up_card()),
                         TurnTracker(cx, gs.clone(), south_player)
                     }
                     td { style: "text-align:center", PlayedCard(cx, gs.played_card(east_player)) }
-                    td { OpponentHand(cx, gs.get_hand(east_player).len(), false) }
+                    td {
+                        div { style: "text-align:center", east_label }
+                        OpponentHand(cx, gs.get_hand(east_player).len(), false)
+                    }
                 }
                 tr {
                     td {}
                     td {}
-                    td { style: "text-align:center", PlayedCard(cx, gs.played_card(south_player)) }
+                    td { style: "text-align:center",
+                        div { style: "text-align:center", south_label }
+                        PlayedCard(cx, gs.played_card(south_player))
+                    }
                 }
                 tr {
                     td {}
@@ -369,7 +411,7 @@ fn PlayerActions(cx: Scope<InGameProps>, gs: EuchreGameState, south_player: usiz
         div {
             for a in actions.into_iter() {
                 button {
-                    class: "bg-white hover:bg-gray-100 text-gray-800 font-semibold py-2 px-4 border border-gray-400 rounded shadow",
+                    class: "bg-slate-400",
                     onclick: move |_| { action_task.send(a) },
                     font_size: "75px",
                     "{a}"
