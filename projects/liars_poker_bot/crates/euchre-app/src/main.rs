@@ -23,7 +23,6 @@ use dioxus::{
 use dioxus_router::prelude::*;
 
 use futures_util::StreamExt;
-use rand::{rngs::StdRng, thread_rng, Rng, SeedableRng};
 
 const SERVER: &str = "http://127.0.0.1:4000";
 
