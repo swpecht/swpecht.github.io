@@ -124,7 +124,7 @@ async fn post_game(
 
         gs = new_game();
         // todo: change who dealer is
-        game_data.players.rotate_right(1);
+        game_data.players.rotate_left(1);
     }
 
     while game_data.players[gs.cur_player()].is_none() && !gs.is_terminal() {
