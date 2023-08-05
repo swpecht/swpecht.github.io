@@ -214,7 +214,7 @@ fn GameData(cx: Scope<InGameProps>, gs: String, south_player: usize) -> Element 
 
     render!(
         div {
-            div { class: "text-xl font-large text-black", "Game information" }
+            div { class: "pt-8 font-bold text-xl font-large text-black", "Game information" }
             div { trump_string }
             div { class: "font-bold", "Tricks taken:" }
             div { class: "grid grid-cols-2",
@@ -249,8 +249,13 @@ fn LastTrick(cx: Scope<InGameProps>, game_data: GameData, player: Player) -> Ele
 fn RunningStats(cx: Scope<InGameProps>, machine_score: usize, human_score: usize) -> Element {
     render!(
         div {
-            div { class: "text-xl font-large text-black", "Running stats" }
-            div { "humans: {human_score} to machines: {machine_score}" }
+            div { class: "pt-8 font-bold text-xl font-large text-black", "Running stats" }
+            div { class: "grid grid-cols-2",
+                div { "humans" }
+                div { "machines" }
+                div { "{human_score}" }
+                div { "{machine_score}" }
+            }
         }
     )
 }
@@ -380,12 +385,12 @@ fn OpponentHand(cx: Scope<InGameProps>, num_cards: usize, is_north: bool) -> Ele
         }
 
         cx.render(rsx! {
-            div { style: "text-align:center", font_size: "75px", s.as_str() }
+            div { style: "text-align:center", font_size: "60px", s.as_str() }
         })
     } else {
         cx.render(rsx! {
             for _ in 0..num_cards {
-                div { font_size: "75px", "🂠" }
+                div { font_size: "60px", "🂠" }
             }
         })
     }
@@ -433,7 +438,7 @@ fn CardIcon(cx: Scope<InGameProps>, c: Card) -> Element {
     };
 
     cx.render(rsx! {
-        span { color: color, font_size: "75px", c.icon() }
+        span { color: color, font_size: "60px", c.icon() }
     })
 }
 
@@ -449,7 +454,7 @@ fn PlayerActions(cx: Scope<InGameProps>, gs: EuchreGameState, south_player: usiz
         div { class: "space-x-4",
             for a in actions.into_iter() {
                 button {
-                    class: "outline hover:outline-2",
+                    class: "px-4 outline hover:outline-2",
                     onclick: move |_| { action_task.send(GameAction::TakeAction(a.into())) },
                     font_size: "75px",
                     "{a}"
