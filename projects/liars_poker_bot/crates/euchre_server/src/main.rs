@@ -71,20 +71,17 @@ async fn post_game(
     path: web::Path<String>,
     data: web::Data<AppState>,
 ) -> impl Responder {
-    let game_id_parse = Uuid::parse_str(path.into_inner().as_str());
-
-    if game_id_parse.is_err() {
-        return HttpResponse::BadRequest().finish();
-    }
-
-    let game_id = game_id_parse.unwrap();
+    let game_id = match parse_game_id(path.into_inner().as_str()) {
+        Ok(x) => x,
+        Err(x) => return x,
+    };
 
     let mut games = data.games.lock().unwrap();
-    if !games.contains_key(&game_id) {
-        return HttpResponse::NotFound().finish();
-    }
+    let game_data = match games.get_mut(&game_id) {
+        Some(x) => x,
+        None => return HttpResponse::NotFound().finish(),
+    };
 
-    let game_data = games.get_mut(&game_id).unwrap();
     let mut gs = EuchreGameState::from(game_data.gs.as_str());
 
     let legal_actions = actions!(gs);
@@ -150,20 +147,16 @@ async fn post_player(
 ) -> impl Responder {
     info!("new player attempted registration");
 
-    let game_id_parse = Uuid::parse_str(path.into_inner().as_str());
-
-    if game_id_parse.is_err() {
-        return HttpResponse::BadRequest().body("couldn't parse game");
-    }
-
-    let game_id = game_id_parse.unwrap();
+    let game_id = match parse_game_id(path.into_inner().as_str()) {
+        Ok(x) => x,
+        Err(x) => return x,
+    };
 
     let mut games = data.games.lock().unwrap();
-    if !games.contains_key(&game_id) {
-        return HttpResponse::NotFound().finish();
-    }
-
-    let game_data = games.get_mut(&game_id).unwrap();
+    let game_data = match games.get_mut(&game_id) {
+        Some(x) => x,
+        None => return HttpResponse::NotFound().finish(),
+    };
 
     let num_humans = game_data.players.iter().flatten().count();
     if num_humans >= 2 {
@@ -178,6 +171,16 @@ async fn post_player(
     game_data.players[(cur_player_index + 2) % 4] = Some(req.player_id);
 
     HttpResponse::Ok().json(game_data)
+}
+
+fn parse_game_id(game_id: &str) -> Result<Uuid, HttpResponse> {
+    let game_id_parse = Uuid::parse_str(game_id);
+
+    if let Ok(uuid) = game_id_parse {
+        Ok(uuid)
+    } else {
+        Err(HttpResponse::BadRequest().body("couldn't parse game id"))
+    }
 }
 
 #[actix_web::main]
