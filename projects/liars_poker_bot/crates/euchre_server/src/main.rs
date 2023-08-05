@@ -100,27 +100,6 @@ async fn post_game(
     progress_game(game_data);
 
     HttpResponse::Ok().json(&game_data)
-
-    // Todo: re-implement later
-    // if gs.is_terminal() {
-    //     // todo: add scoring
-    //     let human_team = game_data
-    //         .players
-    //         .iter()
-    //         .position(|x| x.is_some())
-    //         .expect("couldn't find human player");
-    //     game_data.human_score += gs.evaluate(human_team).max(0.0) as usize;
-    //     game_data.computer_score += gs.evaluate((human_team + 1) % 4).max(0.0) as usize;
-
-    //     gs = new_game();
-    //     // todo: change who dealer is
-    //     game_data.players.rotate_left(1);
-    // }
-
-    // while game_data.players[gs.cur_player()].is_none() && !gs.is_terminal() {
-    //     let a = agent.step(&gs);
-    //     gs.apply_action(a);
-    // }
 }
 
 fn handle_trick_clear(game_data: &mut GameData, player_id: usize) -> Result<(), HttpResponse> {
@@ -204,9 +183,6 @@ fn progress_game(game_data: &mut GameData) {
 
     loop {
         let new_state = match &game_data.display_state {
-            _ if gs.is_terminal() => WaitingNextGame {
-                ready_players: vec![],
-            },
             WaitingHumanMove | WaitingMachineMoves => {
                 if gs.is_trick_over() {
                     WaitingTrickClear {
@@ -220,6 +196,21 @@ fn progress_game(game_data: &mut GameData) {
             }
             WaitingTrickClear { ready_players } => {
                 if ready_players.len() == num_humans {
+                    if gs.is_terminal() {
+                        let human_team = game_data
+                            .players
+                            .iter()
+                            .position(|x| x.is_some())
+                            .expect("couldn't find human player");
+                        game_data.human_score += gs.evaluate(human_team).max(0.0) as usize;
+                        game_data.computer_score +=
+                            gs.evaluate((human_team + 1) % 4).max(0.0) as usize;
+
+                        gs = new_game();
+                        // todo: change who dealer is
+                        game_data.players.rotate_left(1);
+                    }
+
                     if game_data.players[gs.cur_player()].is_none() {
                         WaitingMachineMoves
                     } else {
@@ -231,8 +222,6 @@ fn progress_game(game_data: &mut GameData) {
                     }
                 }
             }
-            WaitingBidClear { ready_players } => todo!(),
-            WaitingNextGame { ready_players } => todo!(),
         };
         game_data.display_state = new_state;
 
