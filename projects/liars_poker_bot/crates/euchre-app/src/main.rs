@@ -212,8 +212,6 @@ fn GameData(cx: Scope<InGameProps>, gs: String, south_player: usize) -> Element 
     let south_trick_wins = gs.trick_score()[south_player % 2];
     let east_trick_wins = gs.trick_score()[(south_player + 1) % 2];
 
-    let last_trick = gs.last_trick();
-
     render!(
         div {
             div { class: "text-xl font-large text-black", "Game information" }
@@ -354,16 +352,21 @@ fn PlayArea(cx: Scope<InGameProps>, game_data: GameData, south_player: usize) ->
 
 fn ClearTrickButton(cx: Scope<InGameProps>, display_state: GameProcessingState) -> Element {
     let action_task = use_coroutine_handle::<GameAction>(cx).expect("error getting action task");
+    let player_id = use_shared_state::<PlayerId>(cx).unwrap().read().id;
 
-    if matches!(
-        display_state,
-        GameProcessingState::WaitingTrickClear { ready_players: _ }
-    ) {
-        render!(
-            button { onclick: move |_| { action_task.send(GameAction::ReadyTrickClear) }, "Clear trick" }
-        )
-    } else {
-        render!({})
+    match display_state {
+        GameProcessingState::WaitingTrickClear { ready_players } => {
+            if ready_players.contains(&player_id) {
+                render!( div { "waiting on other players..." } )
+            } else {
+                render!(
+                    button { onclick: move |_| { action_task.send(GameAction::ReadyTrickClear) },
+                        "Clear trick"
+                    }
+                )
+            }
+        }
+        _ => render!({}),
     }
 }
 
