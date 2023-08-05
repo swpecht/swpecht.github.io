@@ -23,8 +23,10 @@ use dioxus::{
 use dioxus_router::prelude::*;
 
 use futures_util::StreamExt;
+use rand::{thread_rng, Rng};
 
 const SERVER: &str = "http://127.0.0.1:4000";
+const PLAYER_ID_KEY: &str = "PLAYER_ID";
 
 #[derive(Routable, Clone, PartialEq)]
 enum Route {
@@ -45,7 +47,23 @@ fn main() {
 }
 
 fn App(cx: Scope) -> Element {
-    use_shared_state_provider(cx, || PlayerId { id: 42 });
+    let local_storage = web_sys::window().unwrap().local_storage().unwrap().unwrap();
+
+    let stored_id = local_storage.get_item(PLAYER_ID_KEY);
+
+    if let Ok((Some(player_id))) = stored_id {
+        use_shared_state_provider(cx, || PlayerId {
+            id: player_id
+                .parse()
+                .expect("error parsing previously saved player id"),
+        });
+    } else {
+        let player_id: usize = thread_rng().gen();
+        local_storage
+            .set_item(PLAYER_ID_KEY, player_id.to_string().as_str())
+            .expect("error storing player id");
+        use_shared_state_provider(cx, || PlayerId { id: player_id });
+    }
 
     render! { Router::<Route> {} }
 }
