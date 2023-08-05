@@ -15,7 +15,7 @@ use card_platypus::{
     },
 };
 use client_server_messages::{
-    ActionRequest, DisplayState, GameAction, GameData, NewGameRequest, NewGameResponse,
+    ActionRequest, GameAction, GameData, GameProcessingState, NewGameRequest, NewGameResponse,
 };
 // import the prelude to get access to the `rsx!` macro and the `Scope` and `Element` types
 use dioxus::{
@@ -225,37 +225,24 @@ fn GameData(cx: Scope<InGameProps>, gs: String, south_player: usize) -> Element 
                 div { "{south_trick_wins}" }
                 div { "{east_trick_wins}" }
             }
-            LastTrick(cx, last_trick, south_player)
         }
     )
 }
 
-fn LastTrick(
-    cx: Scope<InGameProps>,
-    last_trick: Option<(Player, [Card; 4])>,
-    south_player: usize,
-) -> Element {
+fn LastTrick(cx: Scope<InGameProps>, game_data: GameData, player: Player) -> Element {
+    let gs = EuchreGameState::from(game_data.gs.as_str());
+    if !matches!(
+        game_data.display_state,
+        GameProcessingState::WaitingTrickClear { ready_players: _ }
+    ) {
+        return render!({});
+    }
+
+    let last_trick = gs.last_trick();
     if let Some((starter, mut trick)) = last_trick {
         trick.rotate_left(4 - starter);
-        trick.rotate_left(south_player);
-        render!(
-            div { "last trick:" }
-            table {
-                tr {
-                    td {}
-                    td { format!("{}", trick[2].icon()) }
-                }
-                tr {
-                    td { format!("{}", trick[1].icon()) }
-                    td {}
-                    td { format!("{}", trick[3].icon()) }
-                }
-                tr {
-                    td {}
-                    td { format!("{}", trick[0].icon()) }
-                }
-            }
-        )
+
+        render!(CardIcon(cx, trick[player]))
     } else {
         render!({})
     }
@@ -315,20 +302,29 @@ fn PlayArea(cx: Scope<InGameProps>, game_data: GameData, south_player: usize) ->
                 tr {
                     td {}
                     td {}
-                    td { style: "text-align:center", PlayedCard(cx, gs.played_card(north_player)) }
+                    td { style: "text-align:center",
+                        PlayedCard(cx, gs.played_card(north_player)),
+                        LastTrick(cx, game_data.clone(), north_player)
+                    }
                 }
                 tr {
                     td {
                         div { style: "text-align:center", west_label }
                         OpponentHand(cx, gs.get_hand(west_player).len(), false)
                     }
-                    td { style: "text-align:center", PlayedCard(cx, gs.played_card(west_player)) }
+                    td { style: "text-align:center",
+                        PlayedCard(cx, gs.played_card(west_player)),
+                        LastTrick(cx, game_data.clone(), west_player)
+                    }
                     td { style: "text-align:center",
                         FaceUpCard(cx, gs.displayed_face_up_card()),
-                        ClearTrickButton(cx, game_data.display_state),
+                        ClearTrickButton(cx, game_data.clone().display_state),
                         TurnTracker(cx, gs.clone(), south_player)
                     }
-                    td { style: "text-align:center", PlayedCard(cx, gs.played_card(east_player)) }
+                    td { style: "text-align:center",
+                        PlayedCard(cx, gs.played_card(east_player)),
+                        LastTrick(cx, game_data.clone(), east_player)
+                    }
                     td {
                         div { style: "text-align:center", east_label }
                         OpponentHand(cx, gs.get_hand(east_player).len(), false)
@@ -339,7 +335,8 @@ fn PlayArea(cx: Scope<InGameProps>, game_data: GameData, south_player: usize) ->
                     td {}
                     td { style: "text-align:center",
                         div { style: "text-align:center", south_label }
-                        PlayedCard(cx, gs.played_card(south_player))
+                        PlayedCard(cx, gs.played_card(south_player)),
+                        LastTrick(cx, game_data.clone(), south_player)
                     }
                 }
                 tr {
@@ -355,10 +352,13 @@ fn PlayArea(cx: Scope<InGameProps>, game_data: GameData, south_player: usize) ->
     })
 }
 
-fn ClearTrickButton(cx: Scope<InGameProps>, display_state: DisplayState) -> Element {
+fn ClearTrickButton(cx: Scope<InGameProps>, display_state: GameProcessingState) -> Element {
     let action_task = use_coroutine_handle::<GameAction>(cx).expect("error getting action task");
 
-    if matches!(display_state, DisplayState::ClearTrick { ready_players: _ }) {
+    if matches!(
+        display_state,
+        GameProcessingState::WaitingTrickClear { ready_players: _ }
+    ) {
         render!(
             button { onclick: move |_| { action_task.send(GameAction::ReadyTrickClear) }, "Clear trick" }
         )
@@ -456,4 +456,11 @@ fn PlayerActions(cx: Scope<InGameProps>, gs: EuchreGameState, south_player: usiz
 
 struct PlayerId {
     pub id: usize,
+}
+
+enum PlayerLocation {
+    North,
+    South,
+    East,
+    West,
 }

@@ -3,10 +3,12 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum DisplayState {
-    Playing,
-    ClearTrick { ready_players: Vec<usize> },
-    ClearBid { ready_players: Vec<usize> },
+pub enum GameProcessingState {
+    WaitingHumanMoves,
+    WaitingMachineMoves,
+    WaitingTrickClear { ready_players: Vec<usize> },
+    WaitingBidClear { ready_players: Vec<usize> },
+    WaitingNextGame { ready_players: Vec<usize> },
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -15,7 +17,7 @@ pub struct GameData {
     pub players: Vec<Option<usize>>,
     pub human_score: usize,
     pub computer_score: usize,
-    pub display_state: DisplayState,
+    pub display_state: GameProcessingState,
 }
 
 impl GameData {
@@ -25,7 +27,7 @@ impl GameData {
             players: vec![Some(player_id), None, None, None],
             human_score: 0,
             computer_score: 0,
-            display_state: DisplayState::Playing,
+            display_state: GameProcessingState::WaitingHumanMoves,
         }
     }
 }

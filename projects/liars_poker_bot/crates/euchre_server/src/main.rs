@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Mutex};
+use std::{collections::HashMap, fmt::format, sync::Mutex};
 
 use actix_cors::Cors;
 use actix_web::{
@@ -18,7 +18,7 @@ use card_platypus::{
     },
 };
 use client_server_messages::{
-    ActionRequest, DisplayState, GameData, NewGameRequest, NewGameResponse,
+    ActionRequest, GameData, GameProcessingState, NewGameRequest, NewGameResponse,
 };
 use log::{info, set_max_level, LevelFilter};
 use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
@@ -71,6 +71,8 @@ async fn post_game(
     path: web::Path<String>,
     data: web::Data<AppState>,
 ) -> impl Responder {
+    info!("received request: {:?}", req);
+
     let game_id = match parse_game_id(path.into_inner().as_str()) {
         Ok(x) => x,
         Err(x) => return x,
@@ -85,7 +87,7 @@ async fn post_game(
     use client_server_messages::GameAction::*;
     match req.action {
         TakeAction(a) => handle_take_action(game_data, a, req.player_id),
-        ReadyTrickClear => todo!(),
+        ReadyTrickClear => handle_trick_clear(game_data, req.player_id),
         ReadyBidClear => todo!(),
         RegisterPlayer => handle_register_player(game_data, req.player_id),
     }
@@ -110,6 +112,27 @@ async fn post_game(
     //     let a = agent.step(&gs);
     //     gs.apply_action(a);
     // }
+}
+
+fn handle_trick_clear(game_data: &mut GameData, player_id: usize) -> HttpResponse {
+    match &mut game_data.display_state {
+        GameProcessingState::WaitingTrickClear { ready_players } => {
+            if !ready_players.contains(&player_id) {
+                ready_players.push(player_id);
+            }
+
+            if ready_players.len() == game_data.players.iter().flatten().count() {
+                game_data.display_state = GameProcessingState::WaitingMachineMoves;
+            }
+
+            progress_game(game_data);
+            HttpResponse::Ok().json(game_data)
+        }
+        _ => HttpResponse::BadRequest().body(format!(
+            "can't clear trick in current state: {:?}",
+            game_data.display_state
+        )),
+    }
 }
 
 fn handle_take_action(game_data: &mut GameData, a: Action, player_id: usize) -> HttpResponse {
@@ -141,29 +164,9 @@ fn handle_take_action(game_data: &mut GameData, a: Action, player_id: usize) -> 
     }
 
     gs.apply_action(a);
-
-    // Apply bot actions for all non players
-    let mut agent = PolicyAgent::new(
-        PIMCTSBot::new(
-            50,
-            OpenHandSolver::new_euchre(),
-            StdRng::from_rng(thread_rng()).unwrap(),
-        ),
-        StdRng::from_rng(thread_rng()).unwrap(),
-    );
-
-    while game_data.players[gs.cur_player()].is_none() && !gs.is_terminal() && !gs.is_trick_over() {
-        let a = agent.step(&gs);
-        gs.apply_action(a);
-    }
-
-    if gs.is_trick_over() {
-        game_data.display_state = DisplayState::ClearTrick {
-            ready_players: vec![],
-        }
-    }
-
     game_data.gs = gs.to_string();
+
+    progress_game(game_data);
 
     HttpResponse::Ok().json(game_data)
 }
@@ -182,6 +185,44 @@ fn handle_register_player(game_data: &mut GameData, player_id: usize) -> HttpRes
     game_data.players[(cur_player_index + 2) % 4] = Some(player_id);
 
     HttpResponse::Ok().json(game_data)
+}
+
+fn progress_game(game_data: &mut GameData) {
+    let mut gs = EuchreGameState::from(game_data.gs.as_str());
+
+    // Apply bot actions for all non players
+    let mut agent = PolicyAgent::new(
+        PIMCTSBot::new(
+            50,
+            OpenHandSolver::new_euchre(),
+            StdRng::from_rng(thread_rng()).unwrap(),
+        ),
+        StdRng::from_rng(thread_rng()).unwrap(),
+    );
+
+    let mut taken_one_move = false;
+    while game_data.players[gs.cur_player()].is_none()
+        && !gs.is_terminal()
+        && (!gs.is_trick_over() || !taken_one_move)
+    {
+        let a = agent.step(&gs);
+        gs.apply_action(a);
+        taken_one_move = true;
+    }
+
+    if gs.is_trick_over() {
+        game_data.display_state = GameProcessingState::WaitingTrickClear {
+            ready_players: vec![],
+        }
+    }
+
+    if gs.is_terminal() {
+        game_data.display_state = GameProcessingState::WaitingNextGame {
+            ready_players: vec![],
+        }
+    }
+
+    game_data.gs = gs.to_string();
 }
 
 fn parse_game_id(game_id: &str) -> Result<Uuid, HttpResponse> {
