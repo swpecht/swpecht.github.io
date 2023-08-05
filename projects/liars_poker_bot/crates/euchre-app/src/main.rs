@@ -11,15 +11,15 @@ use card_platypus::{
             actions::{Card, EAction},
             Euchre, EuchreGameState,
         },
-        Action, GameState, Player,
+        Action, Game, GameState, Player,
     },
 };
 use client_server_messages::{
-    ActionRequest, GameData, NewGameRequest, NewGameResponse, PlayerRequest,
+    ActionRequest, DisplayState, GameAction, GameData, NewGameRequest, NewGameResponse,
 };
 // import the prelude to get access to the `rsx!` macro and the `Scope` and `Element` types
 use dioxus::{
-    html::{table, tr},
+    html::{button, table, tr},
     prelude::*,
 };
 use dioxus_router::prelude::*;
@@ -113,7 +113,6 @@ fn InGame(cx: Scope, game_id: String) -> Element {
     let player_id = use_shared_state::<PlayerId>(cx).unwrap().read().id;
     let client = reqwest::Client::new();
     let game_url = format!("{}/{}", SERVER, game_id);
-    let player_url = format!("{}/{}/player", SERVER, game_id);
 
     let game_data = use_state(cx, || GameData::new(Euchre::new_state(), player_id));
     let _gs_polling_task = use_coroutine(cx, |_rx: UnboundedReceiver<()>| {
@@ -131,9 +130,11 @@ fn InGame(cx: Scope, game_id: String) -> Element {
 
                 // register the player if needed
                 if !new_state.players.contains(&Some(player_id)) {
+                    let req = ActionRequest::new(player_id, GameAction::RegisterPlayer);
+
                     new_state = client
-                        .post(player_url.clone())
-                        .json(&PlayerRequest::new(player_id))
+                        .post(game_url.clone())
+                        .json(&req)
                         .send()
                         .await
                         .expect("error registering player")
@@ -148,33 +149,20 @@ fn InGame(cx: Scope, game_id: String) -> Element {
         }
     });
 
+    let player_id = use_shared_state::<PlayerId>(cx).unwrap().read().id;
     let target = format!("{}/{}", SERVER, game_id);
-    let _action_task = use_coroutine(cx, |mut rx: UnboundedReceiver<EAction>| {
+    let _action_task = use_coroutine(cx, |mut rx: UnboundedReceiver<GameAction>| {
         let game_data = game_data.to_owned();
 
         async move {
             let client = reqwest::Client::new();
 
-            while let Some(a) = rx.next().await {
-                let new_state = client
-                    .get(target.clone())
-                    .send()
-                    .await
-                    .expect("error unwraping response")
-                    .json::<GameData>()
-                    .await
-                    .unwrap();
+            while let Some(action) = rx.next().await {
+                let req = ActionRequest::new(player_id, action);
 
-                let south_player = new_state
-                    .players
-                    .iter()
-                    .position(|x| x.is_some() && x.unwrap() == player_id)
-                    .unwrap();
-
-                let action_req = ActionRequest::new(south_player, a.into());
                 let new_state = client
                     .post(target.clone())
-                    .json(&action_req)
+                    .json(&req)
                     .send()
                     .await
                     .expect("error sending action")
@@ -186,7 +174,6 @@ fn InGame(cx: Scope, game_id: String) -> Element {
         }
     });
 
-    let player_id = use_shared_state::<PlayerId>(cx).unwrap().read().id;
     let south_player = game_data
         .players
         .iter()
@@ -338,6 +325,7 @@ fn PlayArea(cx: Scope<InGameProps>, game_data: GameData, south_player: usize) ->
                     td { style: "text-align:center", PlayedCard(cx, gs.played_card(west_player)) }
                     td { style: "text-align:center",
                         FaceUpCard(cx, gs.displayed_face_up_card()),
+                        ClearTrickButton(cx, game_data.display_state),
                         TurnTracker(cx, gs.clone(), south_player)
                     }
                     td { style: "text-align:center", PlayedCard(cx, gs.played_card(east_player)) }
@@ -365,6 +353,18 @@ fn PlayArea(cx: Scope<InGameProps>, game_data: GameData, south_player: usize) ->
             }
         }
     })
+}
+
+fn ClearTrickButton(cx: Scope<InGameProps>, display_state: DisplayState) -> Element {
+    let action_task = use_coroutine_handle::<GameAction>(cx).expect("error getting action task");
+
+    if matches!(display_state, DisplayState::ClearTrick { ready_players: _ }) {
+        render!(
+            button { onclick: move |_| { action_task.send(GameAction::ReadyTrickClear) }, "Clear trick" }
+        )
+    } else {
+        render!({})
+    }
 }
 
 fn OpponentHand(cx: Scope<InGameProps>, num_cards: usize, is_north: bool) -> Element {
@@ -438,14 +438,14 @@ fn PlayerActions(cx: Scope<InGameProps>, gs: EuchreGameState, south_player: usiz
     }
 
     let actions: Vec<EAction> = actions!(gs).into_iter().map(EAction::from).collect();
-    let action_task = use_coroutine_handle::<EAction>(cx).expect("error getting action task");
+    let action_task = use_coroutine_handle::<GameAction>(cx).expect("error getting action task");
 
     cx.render(rsx! {
         div {
             for a in actions.into_iter() {
                 button {
                     class: "bg-slate-400",
-                    onclick: move |_| { action_task.send(a) },
+                    onclick: move |_| { action_task.send(GameAction::TakeAction(a.into())) },
                     font_size: "75px",
                     "{a}"
                 }

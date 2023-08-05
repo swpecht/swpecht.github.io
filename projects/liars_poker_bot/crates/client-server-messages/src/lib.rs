@@ -3,11 +3,19 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum DisplayState {
+    Playing,
+    ClearTrick { ready_players: Vec<usize> },
+    ClearBid { ready_players: Vec<usize> },
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GameData {
     pub gs: String,
     pub players: Vec<Option<usize>>,
     pub human_score: usize,
     pub computer_score: usize,
+    pub display_state: DisplayState,
 }
 
 impl GameData {
@@ -17,6 +25,7 @@ impl GameData {
             players: vec![Some(player_id), None, None, None],
             human_score: 0,
             computer_score: 0,
+            display_state: DisplayState::Playing,
         }
     }
 }
@@ -44,24 +53,21 @@ impl NewGameRequest {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct ActionRequest {
-    pub player: usize,
-    pub action: Action,
-}
-
-impl ActionRequest {
-    pub fn new(player: usize, action: Action) -> Self {
-        Self { player, action }
-    }
+pub enum GameAction {
+    TakeAction(Action),
+    ReadyTrickClear,
+    ReadyBidClear,
+    RegisterPlayer,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct PlayerRequest {
+pub struct ActionRequest {
     pub player_id: usize,
+    pub action: GameAction,
 }
 
-impl PlayerRequest {
-    pub fn new(player_id: usize) -> Self {
-        Self { player_id }
+impl ActionRequest {
+    pub fn new(player_id: usize, action: GameAction) -> Self {
+        Self { player_id, action }
     }
 }

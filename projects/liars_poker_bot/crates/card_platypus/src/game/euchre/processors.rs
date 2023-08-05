@@ -30,7 +30,7 @@ pub fn euchre_early_terminate(gs: &EuchreGameState) -> bool {
 
     // only do this when a trick is over, otherwise might miss played cards
     // also only valid for play phase
-    if !gs.is_trick_over() || gs.phase != EPhase::Play {
+    if !gs.is_start_of_trick() || gs.phase != EPhase::Play {
         return false;
     }
 
@@ -111,7 +111,7 @@ fn get_n_highest_trump(gs: &EuchreGameState, n: usize) -> Option<(Player, Card)>
 }
 
 fn evaluate_highest_trump_first(gs: &EuchreGameState, actions: &mut Vec<Action>) {
-    if gs.is_trick_over() {
+    if gs.is_start_of_trick() {
         if let Some((player, card)) = get_n_highest_trump(gs, 0) {
             if player == gs.cur_player() {
                 let idx = actions

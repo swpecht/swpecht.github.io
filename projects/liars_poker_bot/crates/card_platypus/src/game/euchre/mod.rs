@@ -85,6 +85,11 @@ pub enum EPhase {
 }
 
 impl EuchreGameState {
+    /// Returns true if a trick is over. Returns false if a trick hasn't started yet
+    pub fn is_trick_over(&self) -> bool {
+        self.cards_played % 4 == 0 && self.cards_played > 0
+    }
+
     pub fn last_trick(&self) -> Option<(Player, [Card; 4])> {
         if self.cards_played < 4 {
             return None;
@@ -303,7 +308,7 @@ impl EuchreGameState {
 
     /// Determine if current trick is over (all 4 players have played)
     /// Also returns true if none have played
-    fn is_trick_over(&self) -> bool {
+    fn is_start_of_trick(&self) -> bool {
         self.cards_played % 4 == 0
     }
 
@@ -384,7 +389,7 @@ impl EuchreGameState {
     fn legal_actions_play(&self, actions: &mut Vec<Action>) {
         let player_loc = self.cur_player.into();
         // If they are the first to act on a trick then can play any card in hand
-        if self.is_trick_over() {
+        if self.is_start_of_trick() {
             for (c, loc) in self.deck.into_iter() {
                 if loc == player_loc {
                     actions.push(EAction::Play { c }.into());
@@ -915,7 +920,7 @@ impl GameState for EuchreGameState {
             return None;
         }
 
-        if !self.is_trick_over() && self.cards_played > 0 {
+        if !self.is_start_of_trick() && self.cards_played > 0 {
             // only cache values at the start of the trick
             return None;
         }
