@@ -332,8 +332,8 @@ fn PlayArea(cx: Scope<InGameProps>, game_data: GameData, south_player: usize) ->
                     td {}
                     td {}
                     td { style: "text-align:center",
-                        div { style: "text-align:center", south_label }
                         PlayedCard(cx, gs.played_card(south_player)),
+                        div { style: "text-align:center", south_label }
                         LastTrick(cx, game_data.clone(), south_player)
                     }
                 }
@@ -360,7 +360,9 @@ fn ClearTrickButton(cx: Scope<InGameProps>, display_state: GameProcessingState) 
                 render!( div { "waiting on other players..." } )
             } else {
                 render!(
-                    button { onclick: move |_| { action_task.send(GameAction::ReadyTrickClear) },
+                    button {
+                        class: "bg-violet-500 hover:bg-violet-600 focus:outline-none focus:ring focus:ring-violet-300 active:bg-violet-700 px-5 py-2 text-sm leading-5 rounded-full font-semibold text-white",
+                        onclick: move |_| { action_task.send(GameAction::ReadyTrickClear) },
                         "Clear trick"
                     }
                 )
@@ -444,10 +446,10 @@ fn PlayerActions(cx: Scope<InGameProps>, gs: EuchreGameState, south_player: usiz
     let action_task = use_coroutine_handle::<GameAction>(cx).expect("error getting action task");
 
     cx.render(rsx! {
-        div {
+        div { class: "space-x-4",
             for a in actions.into_iter() {
                 button {
-                    class: "bg-slate-400",
+                    class: "outline hover:outline-2",
                     onclick: move |_| { action_task.send(GameAction::TakeAction(a.into())) },
                     font_size: "75px",
                     "{a}"
