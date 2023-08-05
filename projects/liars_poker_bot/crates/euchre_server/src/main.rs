@@ -86,12 +86,20 @@ async fn post_game(
 
     // redo this to move the progress game call to the end of this call? Have functions all return results with the error
     use client_server_messages::GameAction::*;
-    match req.action {
+    let result = match req.action {
         TakeAction(a) => handle_take_action(game_data, a, req.player_id),
         ReadyTrickClear => handle_trick_clear(game_data, req.player_id),
         ReadyBidClear => todo!(),
         RegisterPlayer => handle_register_player(game_data, req.player_id),
+    };
+
+    if let Err(x) = result {
+        return x;
     }
+
+    progress_game(game_data);
+
+    HttpResponse::Ok().json(&game_data)
 
     // Todo: re-implement later
     // if gs.is_terminal() {
@@ -115,7 +123,7 @@ async fn post_game(
     // }
 }
 
-fn handle_trick_clear(game_data: &mut GameData, player_id: usize) -> HttpResponse {
+fn handle_trick_clear(game_data: &mut GameData, player_id: usize) -> Result<(), HttpResponse> {
     let gs = EuchreGameState::from(game_data.gs.as_str());
 
     match &mut game_data.display_state {
@@ -124,22 +132,25 @@ fn handle_trick_clear(game_data: &mut GameData, player_id: usize) -> HttpRespons
                 ready_players.push(player_id);
             }
 
-            progress_game(game_data);
-            HttpResponse::Ok().json(game_data)
+            Ok(())
         }
-        _ => HttpResponse::BadRequest().body(format!(
+        _ => Err(HttpResponse::BadRequest().body(format!(
             "can't clear trick in current state: {:?}",
             game_data.display_state
-        )),
+        ))),
     }
 }
 
-fn handle_take_action(game_data: &mut GameData, a: Action, player_id: usize) -> HttpResponse {
+fn handle_take_action(
+    game_data: &mut GameData,
+    a: Action,
+    player_id: usize,
+) -> Result<(), HttpResponse> {
     let mut gs = EuchreGameState::from(game_data.gs.as_str());
 
     let legal_actions = actions!(gs);
     if !legal_actions.contains(&a) {
-        return HttpResponse::BadRequest().body("illegal action attempted");
+        return Err(HttpResponse::BadRequest().body("illegal action attempted"));
     }
 
     let player = match game_data
@@ -149,31 +160,29 @@ fn handle_take_action(game_data: &mut GameData, a: Action, player_id: usize) -> 
     {
         Some(x) => x,
         None => {
-            return HttpResponse::BadRequest()
-                .body("attempted to make a move for a player not registered to this game")
+            return Err(HttpResponse::BadRequest()
+                .body("attempted to make a move for a player not registered to this game"))
         }
     };
 
     if gs.cur_player() != player {
-        return HttpResponse::BadRequest().body(format!(
+        return Err(HttpResponse::BadRequest().body(format!(
             "attempted action on wrong players turn. Current player is: {}.\n request: {:?}\ngs: {}",
             gs.cur_player(),
             a, gs
-        ));
+        )));
     }
 
     gs.apply_action(a);
     game_data.gs = gs.to_string();
 
-    progress_game(game_data);
-
-    HttpResponse::Ok().json(game_data)
+    Ok(())
 }
 
-fn handle_register_player(game_data: &mut GameData, player_id: usize) -> HttpResponse {
+fn handle_register_player(game_data: &mut GameData, player_id: usize) -> Result<(), HttpResponse> {
     let num_humans = game_data.players.iter().flatten().count();
     if num_humans >= 2 {
-        return HttpResponse::BadRequest().body("game alrady has 2 human players");
+        return Err(HttpResponse::BadRequest().body("game alrady has 2 human players"));
     }
 
     let cur_player_index = game_data
@@ -183,7 +192,7 @@ fn handle_register_player(game_data: &mut GameData, player_id: usize) -> HttpRes
         .expect("error finding current player");
     game_data.players[(cur_player_index + 2) % 4] = Some(player_id);
 
-    HttpResponse::Ok().json(game_data)
+    Ok(())
 }
 
 fn progress_game(game_data: &mut GameData) {
