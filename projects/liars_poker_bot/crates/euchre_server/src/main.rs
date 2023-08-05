@@ -84,6 +84,7 @@ async fn post_game(
         None => return HttpResponse::NotFound().finish(),
     };
 
+    // redo this to move the progress game call to the end of this call? Have functions all return results with the error
     use client_server_messages::GameAction::*;
     match req.action {
         TakeAction(a) => handle_take_action(game_data, a, req.player_id),
@@ -115,14 +116,12 @@ async fn post_game(
 }
 
 fn handle_trick_clear(game_data: &mut GameData, player_id: usize) -> HttpResponse {
+    let gs = EuchreGameState::from(game_data.gs.as_str());
+
     match &mut game_data.display_state {
         GameProcessingState::WaitingTrickClear { ready_players } => {
             if !ready_players.contains(&player_id) {
                 ready_players.push(player_id);
-            }
-
-            if ready_players.len() == game_data.players.iter().flatten().count() {
-                game_data.display_state = GameProcessingState::WaitingMachineMoves;
             }
 
             progress_game(game_data);
@@ -190,36 +189,60 @@ fn handle_register_player(game_data: &mut GameData, player_id: usize) -> HttpRes
 fn progress_game(game_data: &mut GameData) {
     let mut gs = EuchreGameState::from(game_data.gs.as_str());
 
-    // Apply bot actions for all non players
-    let mut agent = PolicyAgent::new(
-        PIMCTSBot::new(
-            50,
-            OpenHandSolver::new_euchre(),
-            StdRng::from_rng(thread_rng()).unwrap(),
-        ),
-        StdRng::from_rng(thread_rng()).unwrap(),
-    );
+    use GameProcessingState::*;
+    // set the current state
+    let num_humans = game_data.players.iter().flatten().count();
 
-    let mut taken_one_move = false;
-    while game_data.players[gs.cur_player()].is_none()
-        && !gs.is_terminal()
-        && (!gs.is_trick_over() || !taken_one_move)
-    {
+    loop {
+        let new_state = match &game_data.display_state {
+            _ if gs.is_terminal() => WaitingNextGame {
+                ready_players: vec![],
+            },
+            WaitingHumanMove | WaitingMachineMoves => {
+                if gs.is_trick_over() {
+                    WaitingTrickClear {
+                        ready_players: vec![],
+                    }
+                } else if game_data.players[gs.cur_player()].is_none() {
+                    WaitingMachineMoves
+                } else {
+                    WaitingHumanMove
+                }
+            }
+            WaitingTrickClear { ready_players } => {
+                if ready_players.len() == num_humans {
+                    if game_data.players[gs.cur_player()].is_none() {
+                        WaitingMachineMoves
+                    } else {
+                        WaitingHumanMove
+                    }
+                } else {
+                    WaitingTrickClear {
+                        ready_players: ready_players.clone(),
+                    }
+                }
+            }
+            WaitingBidClear { ready_players } => todo!(),
+            WaitingNextGame { ready_players } => todo!(),
+        };
+        game_data.display_state = new_state;
+
+        if !matches!(game_data.display_state, WaitingMachineMoves) {
+            break;
+        }
+
+        // Apply bot actions for all non players
+        let mut agent = PolicyAgent::new(
+            PIMCTSBot::new(
+                50,
+                OpenHandSolver::new_euchre(),
+                StdRng::from_rng(thread_rng()).unwrap(),
+            ),
+            StdRng::from_rng(thread_rng()).unwrap(),
+        );
+
         let a = agent.step(&gs);
         gs.apply_action(a);
-        taken_one_move = true;
-    }
-
-    if gs.is_trick_over() {
-        game_data.display_state = GameProcessingState::WaitingTrickClear {
-            ready_players: vec![],
-        }
-    }
-
-    if gs.is_terminal() {
-        game_data.display_state = GameProcessingState::WaitingNextGame {
-            ready_players: vec![],
-        }
     }
 
     game_data.gs = gs.to_string();

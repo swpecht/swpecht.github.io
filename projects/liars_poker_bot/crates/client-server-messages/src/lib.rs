@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum GameProcessingState {
-    WaitingHumanMoves,
+    WaitingHumanMove,
     WaitingMachineMoves,
     WaitingTrickClear { ready_players: Vec<usize> },
     WaitingBidClear { ready_players: Vec<usize> },
@@ -27,7 +27,7 @@ impl GameData {
             players: vec![Some(player_id), None, None, None],
             human_score: 0,
             computer_score: 0,
-            display_state: GameProcessingState::WaitingHumanMoves,
+            display_state: GameProcessingState::WaitingHumanMove,
         }
     }
 }
