@@ -14,7 +14,9 @@ use card_platypus::{
         Action, GameState, Player,
     },
 };
-use client_server_messages::{ActionRequest, GameData, NewGameRequest, NewGameResponse};
+use client_server_messages::{
+    ActionRequest, GameData, NewGameRequest, NewGameResponse, PlayerRequest,
+};
 // import the prelude to get access to the `rsx!` macro and the `Scope` and `Element` types
 use dioxus::{
     html::{table, tr},
@@ -71,9 +73,7 @@ fn App(cx: Scope) -> Element {
 #[inline_props]
 fn NotFound(cx: Scope, route: Vec<String>) -> Element {
     render! {
-        h1 { "Page not found" }
-        p { "We are terribly sorry, but the page you requested doesn't exist." }
-        pre { color: "red", "log:\nattemped to navigate to: {route:?}" }
+        div { format!("Error: page not found: {:?}", route) }
     }
 }
 
@@ -112,21 +112,36 @@ fn NewGame(cx: Scope) -> Element {
 fn InGame(cx: Scope, game_id: String) -> Element {
     let player_id = use_shared_state::<PlayerId>(cx).unwrap().read().id;
     let client = reqwest::Client::new();
-    let target = format!("{}/{}", SERVER, game_id);
+    let game_url = format!("{}/{}", SERVER, game_id);
+    let player_url = format!("{}/{}/player", SERVER, game_id);
 
     let game_data = use_state(cx, || GameData::new(Euchre::new_state(), player_id));
     let _gs_polling_task = use_coroutine(cx, |_rx: UnboundedReceiver<()>| {
         let game_data = game_data.to_owned();
         async move {
             loop {
-                let new_state = client
-                    .get(target.clone())
+                let mut new_state = client
+                    .get(game_url.clone())
                     .send()
                     .await
                     .expect("error unwraping response")
                     .json::<GameData>()
                     .await
                     .unwrap();
+
+                // register the player if needed
+                if !new_state.players.contains(&Some(player_id)) {
+                    new_state = client
+                        .post(player_url.clone())
+                        .json(&PlayerRequest::new(player_id))
+                        .send()
+                        .await
+                        .expect("error registering player")
+                        .json::<GameData>()
+                        .await
+                        .unwrap();
+                }
+
                 game_data.set(new_state);
                 task::sleep(Duration::from_secs(5)).await;
             }
@@ -165,7 +180,7 @@ fn InGame(cx: Scope, game_id: String) -> Element {
                     .expect("error sending action")
                     .json::<GameData>()
                     .await
-                    .unwrap();
+                    .expect("error parsing game data");
                 game_data.set(new_state);
             }
         }

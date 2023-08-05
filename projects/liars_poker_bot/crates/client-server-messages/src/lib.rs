@@ -54,3 +54,14 @@ impl ActionRequest {
         Self { player, action }
     }
 }
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PlayerRequest {
+    pub player_id: usize,
+}
+
+impl PlayerRequest {
+    pub fn new(player_id: usize) -> Self {
+        Self { player_id }
+    }
+}

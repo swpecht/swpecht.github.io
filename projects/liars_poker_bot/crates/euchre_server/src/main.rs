@@ -2,7 +2,9 @@ use std::{collections::HashMap, sync::Mutex};
 
 use actix_cors::Cors;
 use actix_web::{
-    get, post,
+    get,
+    middleware::Logger,
+    post,
     web::{self, Json},
     App, HttpResponse, HttpServer, Responder,
 };
@@ -15,9 +17,12 @@ use card_platypus::{
         Action, GameState,
     },
 };
-use client_server_messages::{ActionRequest, GameData, NewGameRequest, NewGameResponse};
-use log::info;
+use client_server_messages::{
+    ActionRequest, GameData, NewGameRequest, NewGameResponse, PlayerRequest,
+};
+use log::{info, set_max_level, LevelFilter};
 use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
+use simplelog::{ColorChoice, CombinedLogger, ConfigBuilder, TermLogger, TerminalMode};
 use uuid::Uuid;
 
 #[derive(Default)]
@@ -137,8 +142,57 @@ async fn post_game(
     HttpResponse::Ok().json(game_data)
 }
 
+#[post("/{game_id}/player")]
+async fn post_player(
+    req: web::Json<PlayerRequest>,
+    path: web::Path<String>,
+    data: web::Data<AppState>,
+) -> impl Responder {
+    info!("new player attempted registration");
+
+    let game_id_parse = Uuid::parse_str(path.into_inner().as_str());
+
+    if game_id_parse.is_err() {
+        return HttpResponse::BadRequest().body("couldn't parse game");
+    }
+
+    let game_id = game_id_parse.unwrap();
+
+    let mut games = data.games.lock().unwrap();
+    if !games.contains_key(&game_id) {
+        return HttpResponse::NotFound().finish();
+    }
+
+    let game_data = games.get_mut(&game_id).unwrap();
+
+    let num_humans = game_data.players.iter().flatten().count();
+    if num_humans >= 2 {
+        return HttpResponse::BadRequest().body("game alrady has 2 human players");
+    }
+
+    let cur_player_index = game_data
+        .players
+        .iter()
+        .position(|x| x.is_some())
+        .expect("error finding current player");
+    game_data.players[(cur_player_index + 2) % 4] = Some(req.player_id);
+
+    HttpResponse::Ok().json(game_data)
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    set_max_level(LevelFilter::Trace);
+    let config = ConfigBuilder::new().set_time_format_rfc3339().build();
+
+    CombinedLogger::init(vec![TermLogger::new(
+        LevelFilter::Debug,
+        config.clone(),
+        TerminalMode::Mixed,
+        ColorChoice::Auto,
+    )])
+    .unwrap();
+
     let app_state = web::Data::new(AppState::default());
 
     HttpServer::new(move || {
@@ -152,9 +206,11 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .app_data(app_state.clone())
             .wrap(cors)
+            .wrap(Logger::default())
             .service(index)
             .service(get_game)
             .service(post_game)
+            .service(post_player)
     })
     .bind(("127.0.0.1", 4000))?
     .run()
