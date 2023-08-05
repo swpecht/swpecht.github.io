@@ -1,7 +1,8 @@
-use std::thread;
+use std::{path::Path, thread};
 
 use anyhow::Ok;
 use clap::{command, Parser, Subcommand};
+use notify::{RecursiveMode, Watcher};
 use xshell::{cmd, Shell};
 
 const REMOTE_ADDR: &str = "static.222.71.9.5.clients.your-server.de";
@@ -47,26 +48,43 @@ fn get_remote_logs() -> anyhow::Result<()> {
 }
 
 fn serve_app() -> anyhow::Result<()> {
-    let dx_serve_handle = thread::spawn(|| -> anyhow::Result<()> {
-        let sh = Shell::new()?;
-        sh.change_dir("crates/euchre-app");
-        cmd!(sh, "dx serve --hot-reload").run()?;
-        Ok(())
-    });
+    // Automatically select the best implementation for your platform.
+    let mut watcher =
+        notify::recommended_watcher(|res: Result<notify::Event, notify::Error>| match res {
+            std::result::Result::Ok(event) => {
+                if event
+                    .paths
+                    .iter()
+                    .any(|x| x.extension().map_or(false, |x| x == "html" || x == "rs"))
+                {
+                    println!("{:?}", event);
+                    let sh = Shell::new().unwrap();
+                    sh.change_dir("crates/euchre-app");
+                    cmd!(
+                        sh,
+                        "npx tailwindcss -i ./input.css -o ./public/tailwind.css"
+                    )
+                    .run()
+                    .unwrap();
+                }
+            }
+            Err(e) => println!("watch error: {:?}", e),
+        })?;
 
-    let tailwind_watch_handle = thread::spawn(|| -> anyhow::Result<()> {
-        let sh = Shell::new()?;
-        sh.change_dir("crates/euchre-app");
-        cmd!(
-            sh,
-            "npx tailwindcss -i ./input.css -o ./public/tailwind.css --watch"
-        )
-        .run()?;
-        Ok(())
-    });
+    // Add a path to be watched. All files and directories at that path and
+    // below will be monitored for changes.
+    watcher.watch(
+        Path::new("./crates/euchre-app/src"),
+        RecursiveMode::Recursive,
+    )?;
+    watcher.watch(
+        Path::new("./crates/euchre-app/dist"),
+        RecursiveMode::Recursive,
+    )?;
 
-    dx_serve_handle.join().unwrap()?;
-    tailwind_watch_handle.join().unwrap()?;
+    let sh = Shell::new()?;
+    sh.change_dir("crates/euchre-app");
+    cmd!(sh, "dx serve").quiet().run()?;
 
     Ok(())
 }

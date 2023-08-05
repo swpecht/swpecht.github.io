@@ -9,3 +9,4 @@ edition = "2021"
 xshell = "0.2"
 clap = { version = "4.3", features = ["derive"] }
 anyhow = "1.0"
+notify = "6.0.1"
