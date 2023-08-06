@@ -1,6 +1,11 @@
 [workspace]
 members = ["crates/*"]
 
-[profile.release]
+
+[profile.release-debug]
+inherits = "release"
 debug = true
+
+[profile.release]
+debug = false
 # lto = true # increase compile times for better possible perf
