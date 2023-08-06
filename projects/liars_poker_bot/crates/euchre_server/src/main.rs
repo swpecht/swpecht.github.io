@@ -205,6 +205,12 @@ fn progress_game(game_data: &mut GameData) {
                         game_data.human_score += gs.evaluate(human_team).max(0.0) as usize;
                         game_data.computer_score +=
                             gs.evaluate((human_team + 1) % 4).max(0.0) as usize;
+                        info!(
+                            "game ended\thuman score:\t{}\tgame:\t{}\thuman players:\t{}",
+                            game_data.human_score,
+                            gs,
+                            game_data.players.iter().flatten().count()
+                        );
 
                         gs = new_game();
                         // todo: change who dealer is
