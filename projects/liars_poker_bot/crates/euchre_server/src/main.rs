@@ -281,16 +281,8 @@ async fn main() -> std::io::Result<()> {
     let app_state = web::Data::new(AppState::default());
 
     HttpServer::new(move || {
-        // let cors = Cors::default()
-        //     .allowed_origin("http://localhost:8080")
-        //     .allowed_origin("http://127.0.0.1:8080")
-        //     .allowed_methods(vec!["GET", "POST"]);
-
-        let cors = Cors::permissive();
-
         App::new()
             .app_data(app_state.clone())
-            .wrap(cors)
             .wrap(Logger::default())
             .service(api_index)
             .service(get_game)
