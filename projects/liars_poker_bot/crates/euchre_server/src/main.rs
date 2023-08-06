@@ -1,14 +1,13 @@
-use std::{collections::HashMap, fmt::format, path::PathBuf, sync::Mutex};
+use std::{collections::HashMap, path::PathBuf, sync::Mutex};
 
 use actix_cors::Cors;
 use actix_files::NamedFile;
 use actix_web::{
-    dev::ServiceRequest,
     get,
     middleware::Logger,
     post,
     web::{self, Json},
-    App, HttpRequest, HttpResponse, HttpServer, Responder,
+    App, HttpResponse, HttpServer, Responder,
 };
 use card_platypus::{
     actions,
@@ -16,7 +15,7 @@ use card_platypus::{
     algorithms::{open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot},
     game::{
         euchre::{Euchre, EuchreGameState},
-        Action, GameState, Player,
+        Action, GameState,
     },
 };
 use client_server_messages::{
