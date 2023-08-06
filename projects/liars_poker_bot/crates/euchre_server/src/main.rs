@@ -1,12 +1,14 @@
-use std::{collections::HashMap, fmt::format, sync::Mutex};
+use std::{collections::HashMap, fmt::format, path::PathBuf, sync::Mutex};
 
 use actix_cors::Cors;
+use actix_files::NamedFile;
 use actix_web::{
+    dev::ServiceRequest,
     get,
     middleware::Logger,
     post,
     web::{self, Json},
-    App, HttpResponse, HttpServer, Responder,
+    App, HttpRequest, HttpResponse, HttpServer, Responder,
 };
 use card_platypus::{
     actions,
@@ -30,8 +32,8 @@ struct AppState {
     games: Mutex<HashMap<Uuid, GameData>>,
 }
 
-#[post("/")]
-async fn index(json: Json<NewGameRequest>, data: web::Data<AppState>) -> impl Responder {
+#[post("/api")]
+async fn api_index(json: Json<NewGameRequest>, data: web::Data<AppState>) -> impl Responder {
     let game_id = Uuid::new_v4();
     let gs = new_game();
 
@@ -45,7 +47,7 @@ async fn index(json: Json<NewGameRequest>, data: web::Data<AppState>) -> impl Re
     HttpResponse::Ok().json(response)
 }
 
-#[get("/{game_id}")]
+#[get("/api/{game_id}")]
 async fn get_game(path: web::Path<String>, data: web::Data<AppState>) -> impl Responder {
     let game_id_parse = Uuid::parse_str(path.into_inner().as_str());
 
@@ -65,7 +67,7 @@ async fn get_game(path: web::Path<String>, data: web::Data<AppState>) -> impl Re
     HttpResponse::Ok().json(game_data)
 }
 
-#[post("/{game_id}")]
+#[post("/api/{game_id}")]
 async fn post_game(
     req: web::Json<ActionRequest>,
     path: web::Path<String>,
@@ -256,6 +258,14 @@ fn parse_game_id(game_id: &str) -> Result<Uuid, HttpResponse> {
     }
 }
 
+/// Returns the index page on not found
+///
+/// Necessary for dioxus to work
+async fn not_found() -> actix_web::Result<NamedFile> {
+    let path: PathBuf = "./static/index.html".parse().unwrap();
+    Ok(NamedFile::open(path)?)
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     set_max_level(LevelFilter::Trace);
@@ -283,9 +293,12 @@ async fn main() -> std::io::Result<()> {
             .app_data(app_state.clone())
             .wrap(cors)
             .wrap(Logger::default())
-            .service(index)
+            .service(api_index)
             .service(get_game)
             .service(post_game)
+            // Need to register this last so other services are accessible
+            .service(actix_files::Files::new("/", "./static").index_file("index.html"))
+            .default_service(web::get().to(not_found))
     })
     .bind(("127.0.0.1", 4000))?
     .run()
@@ -326,7 +339,7 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .app_data(app_state)
-                .service(index)
+                .service(api_index)
                 .service(get_game)
                 .service(post_game),
         )

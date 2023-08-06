@@ -27,8 +27,12 @@ use dioxus_router::prelude::*;
 use futures_util::StreamExt;
 use rand::{thread_rng, Rng};
 
-const SERVER: &str = "http://127.0.0.1:4000";
+const SERVER: &str = "api";
 const PLAYER_ID_KEY: &str = "PLAYER_ID";
+
+pub fn base_url() -> String {
+    web_sys::window().unwrap().location().origin().unwrap()
+}
 
 #[derive(Routable, Clone, PartialEq)]
 enum Route {
@@ -86,7 +90,7 @@ fn NewGame(cx: Scope) -> Element {
 
     let new_game_response = use_future(cx, (), |_| async move {
         client
-            .post(SERVER)
+            .post(base_url() + "/" + SERVER)
             .json(&new_game_req)
             .send()
             .await
@@ -112,7 +116,7 @@ fn NewGame(cx: Scope) -> Element {
 fn InGame(cx: Scope, game_id: String) -> Element {
     let player_id = use_shared_state::<PlayerId>(cx).unwrap().read().id;
     let client = reqwest::Client::new();
-    let game_url = format!("{}/{}", SERVER, game_id);
+    let game_url = format!("{}/{}/{}", base_url(), SERVER, game_id);
 
     let game_data = use_state(cx, || GameData::new(Euchre::new_state(), player_id));
     let _gs_polling_task = use_coroutine(cx, |_rx: UnboundedReceiver<()>| {
@@ -150,7 +154,7 @@ fn InGame(cx: Scope, game_id: String) -> Element {
     });
 
     let player_id = use_shared_state::<PlayerId>(cx).unwrap().read().id;
-    let target = format!("{}/{}", SERVER, game_id);
+    let target = format!("{}/{}/{}", base_url(), SERVER, game_id);
     let _action_task = use_coroutine(cx, |mut rx: UnboundedReceiver<GameAction>| {
         let game_data = game_data.to_owned();
 
@@ -292,8 +296,9 @@ fn PlayArea(cx: Scope<InGameProps>, game_data: GameData, south_player: usize) ->
     };
 
     cx.render(rsx! {
+
         div {
-            table {
+            table { class: "border-collapse",
                 tr {
                     td {}
                     td {}
