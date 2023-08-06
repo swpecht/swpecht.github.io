@@ -87,7 +87,10 @@ fn build_and_deploy_app() {
     let sh = Shell::new().unwrap();
     sh.change_dir("crates/euchre-app");
 
-    cmd!(sh, "dx build --release").run().unwrap();
+    let result = cmd!(sh, "dx build --release").run();
+    if let Err(e) = result {
+        println!("Error: {:?}", e);
+    }
 
     cmd!(
         sh,
