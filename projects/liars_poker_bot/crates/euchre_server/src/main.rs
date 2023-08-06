@@ -1,6 +1,5 @@
 use std::{collections::HashMap, path::PathBuf, sync::Mutex};
 
-use actix_cors::Cors;
 use actix_files::NamedFile;
 use actix_web::{
     get,
