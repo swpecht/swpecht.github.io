@@ -120,6 +120,7 @@ fn main() {
             OpenOptions::new()
                 .append(true)
                 .write(true)
+                .create(true)
                 .open("liars_poker.log")
                 .unwrap(),
         ),

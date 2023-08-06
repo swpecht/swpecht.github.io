@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::PathBuf, sync::Mutex};
+use std::{collections::HashMap, fs::OpenOptions, path::PathBuf, sync::Mutex};
 
 use actix_files::NamedFile;
 use actix_web::{
@@ -22,7 +22,9 @@ use client_server_messages::{
 };
 use log::{info, set_max_level, LevelFilter};
 use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
-use simplelog::{ColorChoice, CombinedLogger, ConfigBuilder, TermLogger, TerminalMode};
+use simplelog::{
+    ColorChoice, CombinedLogger, ConfigBuilder, TermLogger, TerminalMode, WriteLogger,
+};
 use uuid::Uuid;
 
 #[derive(Default)]
@@ -275,12 +277,24 @@ async fn main() -> std::io::Result<()> {
     set_max_level(LevelFilter::Trace);
     let config = ConfigBuilder::new().set_time_format_rfc3339().build();
 
-    CombinedLogger::init(vec![TermLogger::new(
-        LevelFilter::Debug,
-        config.clone(),
-        TerminalMode::Mixed,
-        ColorChoice::Auto,
-    )])
+    CombinedLogger::init(vec![
+        TermLogger::new(
+            LevelFilter::Debug,
+            config.clone(),
+            TerminalMode::Mixed,
+            ColorChoice::Auto,
+        ),
+        WriteLogger::new(
+            LevelFilter::Info,
+            config,
+            OpenOptions::new()
+                .append(true)
+                .write(true)
+                .create(true)
+                .open("euchre_server.log")
+                .unwrap(),
+        ),
+    ])
     .unwrap();
 
     let app_state = web::Data::new(AppState::default());
