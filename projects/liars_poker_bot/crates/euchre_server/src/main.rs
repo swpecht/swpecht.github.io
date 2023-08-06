@@ -105,8 +105,6 @@ async fn post_game(
 }
 
 fn handle_trick_clear(game_data: &mut GameData, player_id: usize) -> Result<(), HttpResponse> {
-    let gs = EuchreGameState::from(game_data.gs.as_str());
-
     match &mut game_data.display_state {
         GameProcessingState::WaitingTrickClear { ready_players } => {
             if !ready_players.contains(&player_id) {

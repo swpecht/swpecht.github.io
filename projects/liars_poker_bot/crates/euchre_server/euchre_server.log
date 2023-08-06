@@ -1,0 +1,89 @@
+2023-08-06T08:22:37.120183535Z [INFO] starting 4 workers
+2023-08-06T08:22:37.120300342Z [INFO] Actix runtime found; starting in Actix runtime
+2023-08-06T08:22:37.762108267Z [INFO] starting 4 workers
+2023-08-06T08:22:37.762201262Z [INFO] Actix runtime found; starting in Actix runtime
+2023-08-06T08:22:38.409660201Z [INFO] starting 4 workers
+2023-08-06T08:22:38.409747059Z [INFO] Actix runtime found; starting in Actix runtime
+2023-08-06T08:22:39.057760676Z [INFO] starting 4 workers
+2023-08-06T08:22:39.057864857Z [INFO] Actix runtime found; starting in Actix runtime
+2023-08-06T08:22:39.703889853Z [INFO] starting 4 workers
+2023-08-06T08:22:39.704012602Z [INFO] Actix runtime found; starting in Actix runtime
+2023-08-06T08:22:40.351044049Z [INFO] starting 4 workers
+2023-08-06T08:22:40.351133108Z [INFO] Actix runtime found; starting in Actix runtime
+2023-08-06T08:22:41.000384782Z [INFO] starting 4 workers
+2023-08-06T08:22:41.000505336Z [INFO] Actix runtime found; starting in Actix runtime
+2023-08-06T08:22:41.647868199Z [INFO] starting 4 workers
+2023-08-06T08:22:41.64795829Z [INFO] Actix runtime found; starting in Actix runtime
+2023-08-06T08:22:42.296719255Z [INFO] starting 4 workers
+2023-08-06T08:22:42.296832528Z [INFO] Actix runtime found; starting in Actix runtime
+2023-08-06T08:22:42.948034681Z [INFO] starting 4 workers
+2023-08-06T08:22:42.94812783Z [INFO] Actix runtime found; starting in Actix runtime
+2023-08-06T08:22:43.598948205Z [INFO] starting 4 workers
+2023-08-06T08:22:43.599054705Z [INFO] Actix runtime found; starting in Actix runtime
+2023-08-06T08:22:44.246039587Z [INFO] starting 4 workers
+2023-08-06T08:22:44.246146591Z [INFO] Actix runtime found; starting in Actix runtime
+2023-08-06T08:22:44.909616027Z [INFO] starting 4 workers
+2023-08-06T08:22:44.909706911Z [INFO] Actix runtime found; starting in Actix runtime
+2023-08-06T08:22:45.553715027Z [INFO] starting 4 workers
+2023-08-06T08:22:45.553807214Z [INFO] Actix runtime found; starting in Actix runtime
+2023-08-06T08:22:46.200712985Z [INFO] starting 4 workers
+2023-08-06T08:22:46.200837755Z [INFO] Actix runtime found; starting in Actix runtime
+2023-08-06T08:22:46.850701714Z [INFO] starting 4 workers
+2023-08-06T08:22:46.850827216Z [INFO] Actix runtime found; starting in Actix runtime
+2023-08-06T08:22:47.502609631Z [INFO] starting 4 workers
+2023-08-06T08:22:47.502716033Z [INFO] Actix runtime found; starting in Actix runtime
+2023-08-06T08:22:48.146948523Z [INFO] starting 4 workers
+2023-08-06T08:22:48.147049389Z [INFO] Actix runtime found; starting in Actix runtime
+2023-08-06T08:22:48.794217936Z [INFO] starting 4 workers
+2023-08-06T08:22:48.794315389Z [INFO] Actix runtime found; starting in Actix runtime
+2023-08-06T08:22:49.21320047Z [INFO] SIGINT received; starting forced shutdown
+2023-08-06T08:22:49.213984153Z [INFO] shutting down idle worker
+2023-08-06T08:22:49.21425646Z [INFO] accept thread stopped
+2023-08-06T08:22:49.214749959Z [INFO] shutting down idle worker
+2023-08-06T08:22:49.215047505Z [INFO] shutting down idle worker
+2023-08-06T08:22:49.215322419Z [INFO] shutting down idle worker
+2023-08-06T08:23:05.985921794Z [INFO] starting 4 workers
+2023-08-06T08:23:05.986014213Z [INFO] Actix runtime found; starting in Actix runtime
+2023-08-06T08:23:06.63250494Z [INFO] starting 4 workers
+2023-08-06T08:23:06.632604796Z [INFO] Actix runtime found; starting in Actix runtime
+2023-08-06T08:23:07.28030721Z [INFO] starting 4 workers
+2023-08-06T08:23:07.280437078Z [INFO] Actix runtime found; starting in Actix runtime
+2023-08-06T08:23:35.287145446Z [INFO] starting 4 workers
+2023-08-06T08:23:35.287266178Z [INFO] Actix runtime found; starting in Actix runtime
+2023-08-06T08:23:35.929247699Z [INFO] starting 4 workers
+2023-08-06T08:23:35.929376538Z [INFO] Actix runtime found; starting in Actix runtime
+2023-08-06T08:23:36.573013109Z [INFO] starting 4 workers
+2023-08-06T08:23:36.573116694Z [INFO] Actix runtime found; starting in Actix runtime
+2023-08-06T08:23:37.21821144Z [INFO] starting 4 workers
+2023-08-06T08:23:37.218339642Z [INFO] Actix runtime found; starting in Actix runtime
+2023-08-06T08:23:37.882806359Z [INFO] starting 4 workers
+2023-08-06T08:23:37.883002694Z [INFO] Actix runtime found; starting in Actix runtime
+2023-08-06T08:23:38.530008202Z [INFO] starting 4 workers
+2023-08-06T08:23:38.530132633Z [INFO] Actix runtime found; starting in Actix runtime
+2023-08-06T08:23:39.175721783Z [INFO] starting 4 workers
+2023-08-06T08:23:39.175847307Z [INFO] Actix runtime found; starting in Actix runtime
+2023-08-06T08:23:39.4832197Z [INFO] SIGINT received; starting forced shutdown
+2023-08-06T08:23:39.483832184Z [INFO] shutting down idle worker
+2023-08-06T08:23:39.484298756Z [INFO] shutting down idle worker
+2023-08-06T08:23:39.484611916Z [INFO] shutting down idle worker
+2023-08-06T08:23:39.484835334Z [INFO] accept thread stopped
+2023-08-06T08:23:39.485116601Z [INFO] shutting down idle worker
+2023-08-06T08:27:22.237200405Z [INFO] starting 4 workers
+2023-08-06T08:27:22.237291743Z [INFO] Actix runtime found; starting in Actix runtime
+2023-08-06T08:27:29.729065223Z [INFO] 127.0.0.1 "GET / HTTP/1.1" 200 568 "-" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36" 0.001056
+2023-08-06T08:27:29.7367314Z [INFO] 127.0.0.1 "GET /tailwind.css HTTP/1.1" 200 11967 "http://localhost:4000/" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36" 0.000884
+2023-08-06T08:27:29.752728687Z [INFO] 127.0.0.1 "GET /assets/dioxus/Euchre%20app.js HTTP/1.1" 200 63059 "http://localhost:4000/" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36" 0.000865
+2023-08-06T08:27:29.757726871Z [INFO] 127.0.0.1 "GET /assets/dioxus/snippets/dioxus-interpreter-js-603636eeca72cf05/inline0.js HTTP/1.1" 200 12749 "http://localhost:4000/assets/dioxus/Euchre%20app.js" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36" 0.000574
+2023-08-06T08:27:29.758095327Z [INFO] 127.0.0.1 "GET /assets/dioxus/snippets/dioxus-interpreter-js-603636eeca72cf05/src/common.js HTTP/1.1" 200 1720 "http://localhost:4000/assets/dioxus/Euchre%20app.js" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36" 0.000718
+2023-08-06T08:27:29.761337961Z [INFO] 127.0.0.1 "GET /assets/dioxus/snippets/dioxus-web-54817add8ba334eb/inline0.js HTTP/1.1" 200 258 "http://localhost:4000/assets/dioxus/Euchre%20app.js" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36" 0.000512
+2023-08-06T08:27:29.783315546Z [INFO] 127.0.0.1 "GET /assets/dioxus/snippets/dioxus-web-54817add8ba334eb/src/eval.js HTTP/1.1" 200 947 "http://localhost:4000/assets/dioxus/Euchre%20app.js" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36" 0.000524
+2023-08-06T08:27:29.849951519Z [INFO] 127.0.0.1 "GET /assets/dioxus/Euchre%20app_bg.wasm HTTP/1.1" 200 2944424 "http://localhost:4000/" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36" 0.020136
+2023-08-06T08:27:29.891438469Z [INFO] new game created
+2023-08-06T08:27:29.891582017Z [INFO] 127.0.0.1 "POST /api HTTP/1.1" 200 45 "http://localhost:4000/" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36" 0.000466
+2023-08-06T08:27:29.906070056Z [INFO] 127.0.0.1 "GET /api/c5e6f7d3-1b40-483e-9b99-d64fc6c33190 HTTP/1.1" 200 164 "http://localhost:4000/game/c5e6f7d3-1b40-483e-9b99-d64fc6c33190" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36" 0.000263
+2023-08-06T08:27:29.970753229Z [INFO] 127.0.0.1 "GET /favicon.ico HTTP/1.1" 200 568 "http://localhost:4000/game/c5e6f7d3-1b40-483e-9b99-d64fc6c33190" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36" 0.000631
+2023-08-06T08:27:34.917288679Z [INFO] 127.0.0.1 "GET /api/c5e6f7d3-1b40-483e-9b99-d64fc6c33190 HTTP/1.1" 200 164 "http://localhost:4000/game/c5e6f7d3-1b40-483e-9b99-d64fc6c33190" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36" 0.001282
+2023-08-06T08:27:39.932245252Z [INFO] 127.0.0.1 "GET /api/c5e6f7d3-1b40-483e-9b99-d64fc6c33190 HTTP/1.1" 200 164 "http://localhost:4000/game/c5e6f7d3-1b40-483e-9b99-d64fc6c33190" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36" 0.000973
+2023-08-06T08:27:44.944833245Z [INFO] 127.0.0.1 "GET /api/c5e6f7d3-1b40-483e-9b99-d64fc6c33190 HTTP/1.1" 200 164 "http://localhost:4000/game/c5e6f7d3-1b40-483e-9b99-d64fc6c33190" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36" 0.000429
+2023-08-06T08:27:49.956611874Z [INFO] 127.0.0.1 "GET /api/c5e6f7d3-1b40-483e-9b99-d64fc6c33190 HTTP/1.1" 200 164 "http://localhost:4000/game/c5e6f7d3-1b40-483e-9b99-d64fc6c33190" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36" 0.001099
+2023-08-06T08:27:54.973181694Z [INFO] 127.0.0.1 "GET /api/c5e6f7d3-1b40-483e-9b99-d64fc6c33190 HTTP/1.1" 200 164 "http://localhost:4000/game/c5e6f7d3-1b40-483e-9b99-d64fc6c33190" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36" 0.001027
