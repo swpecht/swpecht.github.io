@@ -11,7 +11,7 @@ const REMOTE_ADDR: &str = "static.222.71.9.5.clients.your-server.de";
 enum Commands {
     RemoteLogs,
     Serve,
-    ServeServer,
+    Deploy,
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -27,7 +27,7 @@ fn main() -> anyhow::Result<()> {
     match args.command {
         Commands::RemoteLogs => get_remote_logs(),
         Commands::Serve => serve(),
-        Commands::ServeServer => serve_server(),
+        Commands::Deploy => deploy(),
     }
 }
 
@@ -102,10 +102,21 @@ fn build_and_deploy_app() {
         .unwrap();
 }
 
-fn serve_server() -> anyhow::Result<()> {
+fn deploy() -> anyhow::Result<()> {
     let sh = Shell::new()?;
-    sh.change_dir("crates/euchre_server");
-    cmd!(sh, "cargo watch -x run").run()?;
+    sh.change_dir("crates/euchre-app");
+    cmd!(sh, "dx build --release").run()?;
+
+    cmd!(sh, "scp -r ./dist/. root@{REMOTE_ADDR}:~/deploy/static").run()?;
+
+    sh.change_dir("../euchre_server");
+
+    cmd!(sh, "cargo build --release").run()?;
+    cmd!(
+        sh,
+        "scp ../../target/release/euchre_server root@{REMOTE_ADDR}:~/deploy"
+    )
+    .run()?;
 
     Ok(())
 }
