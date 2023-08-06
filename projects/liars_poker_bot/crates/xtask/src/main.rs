@@ -78,7 +78,7 @@ fn serve() -> anyhow::Result<()> {
 
     let sh = Shell::new()?;
     sh.change_dir("crates/euchre_server");
-    cmd!(sh, "cargo watch -x run").run()?;
+    cmd!(sh, "cargo watch --ignore euchre_server.log -x run").run()?;
 
     Ok(())
 }
