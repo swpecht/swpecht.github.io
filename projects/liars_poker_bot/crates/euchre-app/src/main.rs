@@ -28,6 +28,7 @@ use rand::{thread_rng, Rng};
 
 const SERVER: &str = "api";
 const PLAYER_ID_KEY: &str = "PLAYER_ID";
+const ACTION_BUTTON_CLASS: &str = "bg-white outline outline-black hover:bg-slate-100 focus:outline-none focus:ring focus:bg-slate-100 active:bg-slate-200 px-5 py-2 rounded-lg disabled:outline-white";
 
 pub fn base_url() -> String {
     web_sys::window().unwrap().location().origin().unwrap()
@@ -305,7 +306,7 @@ fn PlayArea(cx: Scope<InGameProps>, game_data: GameData, south_player: usize) ->
 
             // Middle area
             div { class: "row-start-2 grid justify-items-center",
-                div { west_label }
+                div { class: "pb-4", west_label }
                 OpponentHand(cx, gs.get_hand(west_player).len(), false)
             }
 
@@ -335,14 +336,13 @@ fn PlayArea(cx: Scope<InGameProps>, game_data: GameData, south_player: usize) ->
                 }
             }
             div { class: "grid justify-items-center",
-                div { east_label }
+                div { class: "pb-4", east_label }
                 OpponentHand(cx, gs.get_hand(east_player).len(), false)
             }
 
             // bottom area
-            div { class: "row-start-3 col-start-2 col-span-3 grid grid-rows-3 gap-4 justify-items-center",
+            div { class: "row-start-3 col-span-5 grid grid-rows-3 gap-4 justify-items-center",
                 div { class: "self-end", south_label }
-                PlayerHand(cx, gs.get_hand(south_player)),
                 PlayerActions(cx, gs.clone(), south_player)
             }
         }
@@ -392,16 +392,6 @@ fn OpponentHand(cx: Scope<InGameProps>, num_cards: usize, is_north: bool) -> Ele
     }
 }
 
-fn PlayerHand(cx: Scope<InGameProps>, hand: Vec<Card>) -> Element {
-    cx.render(rsx! {
-        div {
-            for c in hand.iter() {
-                CardIcon(cx, *c)
-            }
-        }
-    })
-}
-
 fn PlayedCard(cx: Scope<InGameProps>, c: Option<Card>) -> Element {
     if let Some(c) = c {
         cx.render(rsx! {CardIcon(cx, c)})
@@ -442,23 +432,75 @@ fn CardIcon(cx: Scope<InGameProps>, c: Card) -> Element {
 
 fn PlayerActions(cx: Scope<InGameProps>, gs: EuchreGameState, south_player: usize) -> Element {
     if gs.cur_player() != south_player || gs.is_chance_node() {
-        return cx.render(rsx! { div {} });
+        return render!({});
     }
 
     let actions: Vec<EAction> = actions!(gs).into_iter().map(EAction::from).collect();
     let action_task = use_coroutine_handle::<GameAction>(cx).expect("error getting action task");
 
-    cx.render(rsx! {
-        div { class: "",
-            for a in actions.into_iter() {
-                button {
-                    class: "text-6xl outline hover:outline-2",
-                    onclick: move |_| { action_task.send(GameAction::TakeAction(a.into())) },
-                    "{a}"
+    if actions.contains(&EAction::Pass) {
+        // special case for play pass
+        let hand = gs.get_hand(south_player);
+        render!(
+            div { class: "grid gap-y-4",
+                div { class: "flex gap-x-4",
+                    for c in hand.into_iter() {
+                        CardIcon(cx, c)
+                    }
+                }
+                div { class: "flex gap-x-4",
+                    button {
+                        class: "basis-1/2 text-xl {ACTION_BUTTON_CLASS}",
+                        onclick: move |_| { action_task.send(GameAction::TakeAction(EAction::Pickup.into())) },
+                        "Tell dealer to take card"
+                    }
+
+                    button {
+                        class: "basis-1/2 text-xl {ACTION_BUTTON_CLASS}",
+                        onclick: move |_| { action_task.send(GameAction::TakeAction(EAction::Pass.into())) },
+                        "Pass"
+                    }
                 }
             }
-        }
-    })
+        )
+    } else {
+        let hand: Vec<(Card, Option<EAction>)> = gs
+            .get_hand(south_player)
+            .into_iter()
+            .map(|c| (c, actions.iter().find(|a| a.card() == c).cloned()))
+            .collect();
+
+        render!(
+            div { class: "flex space-x-4",
+                for (c , a) in hand.into_iter() {
+                    ActionButton(cx, c, a)
+                }
+            }
+        )
+    }
+}
+
+fn ActionButton(cx: Scope<InGameProps>, card: Card, action: Option<EAction>) -> Element {
+    use card_platypus::game::euchre::actions::Suit::*;
+    let color = match card.suit() {
+        Clubs | Spades => "text-black",
+        Hearts | Diamonds => "text-red-500",
+    };
+    let action_task = use_coroutine_handle::<GameAction>(cx).expect("error getting action task");
+
+    if let Some(a) = action {
+        render!(
+            button {
+                class: "text-6xl {ACTION_BUTTON_CLASS} {color}",
+                onclick: move |_| { action_task.send(GameAction::TakeAction(a.into())) },
+                card.icon()
+            }
+        )
+    } else {
+        render!(
+            button { disabled: "true", class: "text-6xl {ACTION_BUTTON_CLASS} {color}", card.icon() }
+        )
+    }
 }
 
 struct PlayerId {
