@@ -100,7 +100,7 @@ fn build_and_deploy_app() {
     .unwrap();
 
     sh.change_dir("..");
-    cmd!(sh, "cp -r ./euchre-app/dist/. ./euchre_server/static")
+    cmd!(sh, "rsync -r ./euchre-app/dist/. ./euchre_server/static")
         .run()
         .unwrap();
 }

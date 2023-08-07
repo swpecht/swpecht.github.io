@@ -184,9 +184,9 @@ fn InGame(cx: Scope, game_id: String) -> Element {
         .unwrap();
 
     render!(
-        div { class: "h-screen grid grid-cols-2",
-            PlayArea(cx, game_data.get().clone(), south_player),
-            div {
+        div { class: "h-screen flex flex-row",
+            div { class: "basis-3/4", PlayArea(cx, game_data.get().clone(), south_player) }
+            div { class: "basis-1/4",
                 GameData(cx, game_data.gs.clone(), south_player),
                 RunningStats(cx, game_data.computer_score, game_data.human_score)
             }
@@ -296,54 +296,54 @@ fn PlayArea(cx: Scope<InGameProps>, game_data: GameData, south_player: usize) ->
 
     cx.render(rsx! {
 
-        div { class: "grid content-between",
-            div { class: "grid",
+        div { class: "h-screen pb-8 pt-8 grid grid-cols-5 content-between",
+            // North area
+            div { class: "col-start-2 col-span-3 grid",
                 div { class: "justify-self-center", north_label }
                 OpponentHand(cx, gs.get_hand(north_player).len(), true)
             }
-            div {
-                div { class: "flex justify-center",
+
+            // Middle area
+            div { class: "row-start-2 grid justify-items-center",
+                div { west_label }
+                OpponentHand(cx, gs.get_hand(west_player).len(), false)
+            }
+
+            div { class: "col-span-3 grid grid-cols-3 items-center justify-items-center space-y-4",
+                div { class: "col-start-2",
                     PlayedCard(cx, gs.played_card(north_player)),
                     LastTrick(cx, game_data.clone(), north_player)
                 }
-                div { class: "flex justify-between",
-                    div { class: "flex content-center",
-                        div {
-                            div { style: "text-align:center", west_label }
-                            OpponentHand(cx, gs.get_hand(west_player).len(), false)
-                        }
-                        div { class: "grid content-center",
-                            PlayedCard(cx, gs.played_card(west_player)),
-                            LastTrick(cx, game_data.clone(), west_player)
-                        }
-                    }
-                    div { class: "grid content-center",
-                        div { style: "text-align:center",
-                            FaceUpCard(cx, gs.displayed_face_up_card()),
-                            ClearTrickButton(cx, game_data.clone().display_state),
-                            TurnTracker(cx, gs.clone(), south_player)
-                        }
-                    }
-                    div { class: "flex content-center",
-                        div { class: "grid content-center",
-                            PlayedCard(cx, gs.played_card(east_player)),
-                            LastTrick(cx, game_data.clone(), east_player)
-                        }
-                        div { class: "grid",
-                            div { class: "justify-self-center", east_label }
-                            OpponentHand(cx, gs.get_hand(east_player).len(), false)
-                        }
-                    }
+                div { class: "row-start-2",
+                    PlayedCard(cx, gs.played_card(west_player)),
+                    LastTrick(cx, game_data.clone(), west_player)
                 }
-                div { class: "flex justify-center",
+                div { class: "row-start-2 col-start-2 grid justify-items-center",
+                    FaceUpCard(cx, gs.displayed_face_up_card()),
+                    TurnTracker(cx, gs.clone(), south_player),
+                    ClearTrickButton(cx, game_data.clone().display_state)
+                }
+
+                div { class: "row-start-2 col-start-3",
+                    PlayedCard(cx, gs.played_card(east_player)),
+                    LastTrick(cx, game_data.clone(), east_player)
+                }
+
+                div { class: "row-start-3 col-start-2",
                     PlayedCard(cx, gs.played_card(south_player)),
                     LastTrick(cx, game_data.clone(), south_player)
                 }
             }
-            div { class: "grid content-between",
-                div { class: "justify-self-center", south_label }
-                div { class: "justify-self-center", PlayerHand(cx, gs.get_hand(south_player)) }
-                div { class: "justify-self-center", PlayerActions(cx, gs.clone(), south_player) }
+            div { class: "grid justify-items-center",
+                div { east_label }
+                OpponentHand(cx, gs.get_hand(east_player).len(), false)
+            }
+
+            // bottom area
+            div { class: "row-start-3 col-start-2 col-span-3 grid grid-rows-3 gap-4 justify-items-center",
+                div { class: "self-end", south_label }
+                PlayerHand(cx, gs.get_hand(south_player)),
+                PlayerActions(cx, gs.clone(), south_player)
             }
         }
     })
@@ -360,7 +360,7 @@ fn ClearTrickButton(cx: Scope<InGameProps>, display_state: GameProcessingState) 
             } else {
                 render!(
                     button {
-                        class: "bg-violet-500 hover:bg-violet-600 focus:outline-none focus:ring focus:ring-violet-300 active:bg-violet-700 px-5 py-2 text-sm leading-5 rounded-full font-semibold text-white",
+                        class: "bg-white outline outline-black hover:bg-slate-100 focus:outline-none focus:ring focus:bg-slate-100 active:bg-slate-200 px-5 py-2 text-sm leading-5 rounded-full font-semibold text-black",
                         onclick: move |_| { action_task.send(GameAction::ReadyTrickClear) },
                         "Clear trick"
                     }
@@ -394,8 +394,10 @@ fn OpponentHand(cx: Scope<InGameProps>, num_cards: usize, is_north: bool) -> Ele
 
 fn PlayerHand(cx: Scope<InGameProps>, hand: Vec<Card>) -> Element {
     cx.render(rsx! {
-        for c in hand.iter() {
-            CardIcon(cx, *c)
+        div {
+            for c in hand.iter() {
+                CardIcon(cx, *c)
+            }
         }
     })
 }
@@ -422,7 +424,7 @@ fn FaceUpCard(cx: Scope<InGameProps>, c: Option<Card>) -> Element {
     if let Some(c) = c {
         cx.render(rsx! {CardIcon(cx, c)})
     } else {
-        cx.render(rsx! { div {} })
+        render!({})
     }
 }
 
