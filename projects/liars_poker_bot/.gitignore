@@ -13,6 +13,7 @@ Cargo.lock
 
 # Ignore any log files
 **/*.log
+**/*.infostates
 
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
