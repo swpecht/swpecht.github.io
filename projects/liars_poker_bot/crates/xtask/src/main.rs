@@ -110,14 +110,14 @@ fn deploy() -> anyhow::Result<()> {
     sh.change_dir("crates/euchre-app");
     cmd!(sh, "dx build --release").run()?;
 
-    cmd!(sh, "scp -r ./dist/. root@{REMOTE_ADDR}:~/deploy/static").run()?;
+    cmd!(sh, "rsync -r ./dist/. root@{REMOTE_ADDR}:~/deploy/static").run()?;
 
     sh.change_dir("../euchre_server");
 
     cmd!(sh, "cargo build --release").run()?;
     cmd!(
         sh,
-        "scp ../../target/release/euchre_server root@{REMOTE_ADDR}:~/deploy"
+        "rsync ../../target/release/euchre_server root@{REMOTE_ADDR}:~/deploy"
     )
     .run()?;
 
