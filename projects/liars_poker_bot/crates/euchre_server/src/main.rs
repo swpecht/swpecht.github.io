@@ -10,8 +10,8 @@ use actix_web::{
 };
 use card_platypus::{
     actions,
-    agents::{Agent, PolicyAgent},
-    algorithms::{open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot},
+    agents::Agent,
+    cfragent::cfres::CFRES,
     game::{
         euchre::{Euchre, EuchreGameState},
         Action, GameState,
@@ -27,9 +27,26 @@ use simplelog::{
 };
 use uuid::Uuid;
 
-#[derive(Default)]
 struct AppState {
     games: Mutex<HashMap<Uuid, GameData>>,
+    bot: Mutex<CFRES<EuchreGameState>>,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        let mut bot = CFRES::new(
+            || panic!("training not supported"),
+            StdRng::from_rng(thread_rng()).unwrap(),
+        );
+
+        let n = bot.load("default.infostates");
+        info!("loaded bot with {n} infostates");
+
+        Self {
+            games: Default::default(),
+            bot: Mutex::new(bot),
+        }
+    }
 }
 
 #[post("/api")]
@@ -99,7 +116,7 @@ async fn post_game(
         return x;
     }
 
-    progress_game(game_data);
+    progress_game(game_data, &data.bot);
 
     HttpResponse::Ok().json(&game_data)
 }
@@ -174,7 +191,7 @@ fn handle_register_player(game_data: &mut GameData, player_id: usize) -> Result<
     Ok(())
 }
 
-fn progress_game(game_data: &mut GameData) {
+fn progress_game(game_data: &mut GameData, bot: &Mutex<CFRES<EuchreGameState>>) {
     let mut gs = EuchreGameState::from(game_data.gs.as_str());
 
     use GameProcessingState::*;
@@ -236,14 +253,7 @@ fn progress_game(game_data: &mut GameData) {
         }
 
         // Apply bot actions for all non players
-        let mut agent = PolicyAgent::new(
-            PIMCTSBot::new(
-                50,
-                OpenHandSolver::new_euchre(),
-                StdRng::from_rng(thread_rng()).unwrap(),
-            ),
-            StdRng::from_rng(thread_rng()).unwrap(),
-        );
+        let mut agent = bot.lock().unwrap();
 
         let a = agent.step(&gs);
         gs.apply_action(a);
