@@ -305,6 +305,7 @@ async fn main() -> std::io::Result<()> {
     ])
     .unwrap();
 
+    info!("starting load of initial app state...");
     let app_state = web::Data::new(AppState::default());
 
     HttpServer::new(move || {
