@@ -41,7 +41,7 @@ impl NewGameResponse {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub struct NewGameRequest {
     pub player_id: usize,
 }

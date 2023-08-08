@@ -38,6 +38,9 @@ pub fn base_url() -> String {
 enum Route {
     // if the current location is "/home", render the Home component
     #[route("/")]
+    Index {},
+
+    #[route("/game")]
     NewGame {},
     // if the current location is "/blog", render the Blog component
     #[route("/game/:game_id")]
@@ -82,12 +85,77 @@ fn NotFound(cx: Scope, route: Vec<String>) -> Element {
 }
 
 #[inline_props]
+fn Index(cx: Scope) -> Element {
+    let player_id = use_shared_state::<PlayerId>(cx).unwrap().read().id;
+    let new_game_req = NewGameRequest::new(player_id);
+
+    let client = reqwest::Client::new();
+    let _ = use_future(cx, (), |_| async move {
+        client
+            .post(base_url() + "/" + SERVER)
+            .json(&new_game_req)
+            .send()
+            .await
+            .expect("error unwraping response")
+            .json::<NewGameResponse>()
+            .await
+    });
+
+    render!(
+        div { class: "h-screen y-screen grid content-center justify-items-center",
+            div { class: "max-w-lg",
+                p {
+                    span { class: "font-bold", "Play euchre against ai agents" }
+                    br {}
+                    "Optionally play with your friend by sharing the link after you create a game. If you play alone,
+                    you'll get an ai agent as a teammate."
+                }
+                br {}
+                p { "Euchre is a team-based trick taking card game. (Brief overview of rules)" }
+                br {}
+                p {
+                    span { class: "font-bold",
+                        "Agents use counter factual regret minimization (CFR) and perfect information monte carlo tree search (PIMCT)"
+                    }
+                    br {}
+                    p {
+                        "Using counter factual regret minimization (CFR) alone would result in a stronger agent.
+                        But CFR cannot be naively applied to euchre -- the game is too large."
+                    }
+                    br {}
+                    p {
+                        "Instead, I use CFR for the bidding phase and PIMCTS for the card play phase of the game."
+                    }
+                    br {}
+                    p { "More detail on the approach can be found on by blog:" }
+                    a {
+                        href: "https://fewworddotrick.com/project-log/2023/07/30/cfr-for-euchre.html",
+                        class: "text-blue-600 visited:text-purple-600",
+                        "CFR for euchre"
+                    }
+                }
+                br {}
+                div { class: "grid justify-items-center",
+                    button {
+                        class: "{ACTION_BUTTON_CLASS} font-medium",
+                        onclick: move |_| {
+                            let nav = use_navigator(cx);
+                            nav.push("/game");
+                        },
+                        "New game"
+                    }
+                }
+            }
+        }
+    )
+}
+
+#[inline_props]
 fn NewGame(cx: Scope) -> Element {
     let player_id = use_shared_state::<PlayerId>(cx).unwrap().read().id;
     let new_game_req = NewGameRequest::new(player_id);
 
     let client = reqwest::Client::new();
-
     let new_game_response = use_future(cx, (), |_| async move {
         client
             .post(base_url() + "/" + SERVER)
@@ -102,7 +170,9 @@ fn NewGame(cx: Scope) -> Element {
     let nav = use_navigator(cx);
     match new_game_response.value() {
         Some(Ok(response)) => {
-            nav.push(format!("/game/{}", response.id));
+            // use replace here since we want to return to the index page
+            // not the game page on back
+            nav.replace(format!("/game/{}", response.id));
             render!({})
         }
         Some(Err(e)) => render!(
