@@ -13,6 +13,7 @@ use card_platypus::{
     agents::Agent,
     cfragent::cfres::CFRES,
     game::{
+        self,
         euchre::{Euchre, EuchreGameState},
         Action, GameState,
     },
@@ -142,6 +143,16 @@ fn handle_take_action(
     a: Action,
     player_id: usize,
 ) -> Result<(), HttpResponse> {
+    if !matches!(
+        game_data.display_state,
+        GameProcessingState::WaitingHumanMove
+    ) {
+        return Err(HttpResponse::BadRequest().body(format!(
+            "cannot take action in current state: {:?}",
+            game_data.display_state
+        )));
+    }
+
     let mut gs = EuchreGameState::from(game_data.gs.as_str());
 
     let legal_actions = actions!(gs);
