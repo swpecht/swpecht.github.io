@@ -129,7 +129,7 @@ fn UnknownError<'a, T>(cx: Scope<'a, T>, msg: &'a String) -> Element<'a> {
     render!("Encountered an unexpected error: {msg}")
 }
 
-fn GameData(cx: Scope<InGameProps>, gs: String, south_player: usize) -> Element {
+fn GameData<T>(cx: Scope<T>, gs: String, south_player: usize) -> Element {
     let gs = EuchreGameState::from(gs.as_str());
     let trump_details = gs.trump();
 
@@ -165,7 +165,7 @@ fn GameData(cx: Scope<InGameProps>, gs: String, south_player: usize) -> Element 
     )
 }
 
-fn LastTrick(cx: Scope<InGameProps>, game_data: GameData, player: Player) -> Element {
+fn LastTrick<T>(cx: Scope<T>, game_data: GameData, player: Player) -> Element {
     let gs = EuchreGameState::from(game_data.gs.as_str());
     if !matches!(
         game_data.display_state,
@@ -184,7 +184,7 @@ fn LastTrick(cx: Scope<InGameProps>, game_data: GameData, player: Player) -> Ele
     }
 }
 
-fn RunningStats(cx: Scope<InGameProps>, machine_score: usize, human_score: usize) -> Element {
+fn RunningStats<T>(cx: Scope<T>, machine_score: usize, human_score: usize) -> Element {
     render!(
         div {
             div { class: "pt-8 font-bold text-xl font-large text-black", "Running stats" }
@@ -198,7 +198,7 @@ fn RunningStats(cx: Scope<InGameProps>, machine_score: usize, human_score: usize
     )
 }
 
-fn PlayArea(cx: Scope<InGameProps>, game_data: GameData, south_player: usize) -> Element {
+fn PlayArea<T>(cx: Scope<T>, game_data: GameData, south_player: usize) -> Element {
     let gs = EuchreGameState::from(game_data.gs.as_str());
 
     let west_player = (south_player + 1) % 4;
@@ -283,7 +283,7 @@ fn PlayArea(cx: Scope<InGameProps>, game_data: GameData, south_player: usize) ->
     })
 }
 
-fn ClearTrickButton(cx: Scope<InGameProps>, display_state: GameProcessingState) -> Element {
+fn ClearTrickButton<T>(cx: Scope<T>, display_state: GameProcessingState) -> Element {
     let action_task = use_coroutine_handle::<GameAction>(cx).expect("error getting action task");
     let player_id = use_shared_state::<PlayerId>(cx).unwrap().read().id;
 
@@ -305,7 +305,7 @@ fn ClearTrickButton(cx: Scope<InGameProps>, display_state: GameProcessingState) 
     }
 }
 
-fn OpponentHand(cx: Scope<InGameProps>, num_cards: usize, is_north: bool) -> Element {
+fn OpponentHand<T>(cx: Scope<T>, num_cards: usize, is_north: bool) -> Element {
     if is_north {
         let mut s = String::new();
         for _ in 0..num_cards {
@@ -326,7 +326,7 @@ fn OpponentHand(cx: Scope<InGameProps>, num_cards: usize, is_north: bool) -> Ele
     }
 }
 
-fn PlayedCard(cx: Scope<InGameProps>, c: Option<Card>) -> Element {
+fn PlayedCard<T>(cx: Scope<T>, c: Option<Card>) -> Element {
     if let Some(c) = c {
         cx.render(rsx! {CardIcon(cx, c)})
     } else {
@@ -334,7 +334,7 @@ fn PlayedCard(cx: Scope<InGameProps>, c: Option<Card>) -> Element {
     }
 }
 
-fn TurnTracker(cx: Scope<InGameProps>, gs: EuchreGameState, south_player: usize) -> Element {
+fn TurnTracker<T>(cx: Scope<T>, gs: EuchreGameState, south_player: usize) -> Element {
     let arrow = match gs.cur_player() {
         x if x == (south_player + 1) % 4 => "←",
         x if x == (south_player + 2) % 4 => "↑",
@@ -344,7 +344,7 @@ fn TurnTracker(cx: Scope<InGameProps>, gs: EuchreGameState, south_player: usize)
     cx.render(rsx! { div { font_size: "60px", "{arrow}" } })
 }
 
-fn FaceUpCard(cx: Scope<InGameProps>, c: Option<Card>) -> Element {
+fn FaceUpCard<T>(cx: Scope<T>, c: Option<Card>) -> Element {
     if let Some(c) = c {
         cx.render(rsx! {CardIcon(cx, c)})
     } else {
@@ -352,7 +352,7 @@ fn FaceUpCard(cx: Scope<InGameProps>, c: Option<Card>) -> Element {
     }
 }
 
-fn CardIcon(cx: Scope<InGameProps>, c: Card) -> Element {
+fn CardIcon<T>(cx: Scope<T>, c: Card) -> Element {
     use card_platypus::game::euchre::actions::Suit::*;
     let color = match c.suit() {
         Clubs | Spades => "black",
@@ -364,7 +364,7 @@ fn CardIcon(cx: Scope<InGameProps>, c: Card) -> Element {
     })
 }
 
-fn PlayerActions(cx: Scope<InGameProps>, gs: EuchreGameState, south_player: usize) -> Element {
+fn PlayerActions<T>(cx: Scope<T>, gs: EuchreGameState, south_player: usize) -> Element {
     if gs.cur_player() != south_player || gs.is_chance_node() {
         return render!({});
     }
@@ -457,7 +457,7 @@ fn PlayerActions(cx: Scope<InGameProps>, gs: EuchreGameState, south_player: usiz
     }
 }
 
-fn ActionButton(cx: Scope<InGameProps>, card: Card, action: Option<EAction>) -> Element {
+fn ActionButton<T>(cx: Scope<T>, card: Card, action: Option<EAction>) -> Element {
     use card_platypus::game::euchre::actions::Suit::*;
     let color = match card.suit() {
         Clubs | Spades => "text-black",
