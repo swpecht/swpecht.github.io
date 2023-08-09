@@ -7,7 +7,7 @@ use card_platypus::{
     actions,
     game::{
         euchre::{
-            actions::{Card, EAction},
+            actions::{Card, EAction, Suit},
             EuchreGameState,
         },
         GameState, Player,
@@ -79,7 +79,11 @@ pub fn InGame(cx: Scope, game_id: String) -> Element {
 
                 let new_state = make_game_request(client.post(target.clone()).json(&req)).await;
 
-                game_data.set(new_state);
+                // only set the state to this if it's a valid response. We could get 400 errors
+                // for trying to play a move multiple times
+                if let InGameState::Ok(_) = new_state {
+                    game_data.set(new_state);
+                }
             }
         }
     });
@@ -309,7 +313,7 @@ fn OpponentHand(cx: Scope<InGameProps>, num_cards: usize, is_north: bool) -> Ele
         }
 
         cx.render(rsx! {
-            div { style: "text-align:center", font_size: "60px", s.as_str() }
+            div { class: "text-6xl", style: "text-align:center", s.as_str() }
         })
     } else {
         cx.render(rsx! {
@@ -368,8 +372,8 @@ fn PlayerActions(cx: Scope<InGameProps>, gs: EuchreGameState, south_player: usiz
     let actions: Vec<EAction> = actions!(gs).into_iter().map(EAction::from).collect();
     let action_task = use_coroutine_handle::<GameAction>(cx).expect("error getting action task");
 
-    if actions.contains(&EAction::Pass) {
-        // special case for play pass
+    if actions.contains(&EAction::Pickup) {
+        // special case for play pickup and pass
         let hand = gs.get_hand(south_player);
         render!(
             div { class: "grid gap-y-4",
@@ -387,6 +391,49 @@ fn PlayerActions(cx: Scope<InGameProps>, gs: EuchreGameState, south_player: usiz
 
                     button {
                         class: "basis-1/2 text-xl {ACTION_BUTTON_CLASS}",
+                        onclick: move |_| { action_task.send(GameAction::TakeAction(EAction::Pass.into())) },
+                        "Pass"
+                    }
+                }
+            }
+        )
+    } else if actions.contains(&EAction::Clubs) {
+        // special case for choosing suit
+        let hand = gs.get_hand(south_player);
+        render!(
+            div { class: "grid gap-y-4",
+                div { class: "flex gap-x-4",
+                    for c in hand.into_iter() {
+                        CardIcon(cx, c)
+                    }
+                }
+                div { class: "flex gap-x-4",
+                    button {
+                        class: "text-xl text-black {ACTION_BUTTON_CLASS}",
+                        onclick: move |_| { action_task.send(GameAction::TakeAction(EAction::Spades.into())) },
+                        Suit::Spades.icon()
+                    }
+
+                    button {
+                        class: "text-xl text-black {ACTION_BUTTON_CLASS}",
+                        onclick: move |_| { action_task.send(GameAction::TakeAction(EAction::Clubs.into())) },
+                        Suit::Clubs.icon()
+                    }
+
+                    button {
+                        class: "text-xl text-red-500 {ACTION_BUTTON_CLASS}",
+                        onclick: move |_| { action_task.send(GameAction::TakeAction(EAction::Hearts.into())) },
+                        Suit::Hearts.icon()
+                    }
+
+                    button {
+                        class: "text-xl text-red-500 {ACTION_BUTTON_CLASS}",
+                        onclick: move |_| { action_task.send(GameAction::TakeAction(EAction::Diamonds.into())) },
+                        Suit::Diamonds.icon()
+                    }
+
+                    button {
+                        class: "text-xl {ACTION_BUTTON_CLASS}",
                         onclick: move |_| { action_task.send(GameAction::TakeAction(EAction::Pass.into())) },
                         "Pass"
                     }

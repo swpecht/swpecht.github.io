@@ -65,21 +65,6 @@ fn NotFound(cx: Scope, route: Vec<String>) -> Element {
 
 #[inline_props]
 fn Index(cx: Scope) -> Element {
-    let player_id = use_shared_state::<PlayerId>(cx).unwrap().read().id;
-    let new_game_req = NewGameRequest::new(player_id);
-
-    let client = reqwest::Client::new();
-    let _ = use_future(cx, (), |_| async move {
-        client
-            .post(base_url() + "/" + SERVER)
-            .json(&new_game_req)
-            .send()
-            .await
-            .expect("error unwraping response")
-            .json::<NewGameResponse>()
-            .await
-    });
-
     render!(
         div { class: "h-screen y-screen grid content-center justify-items-center mx-4 my-4",
             div { class: "max-w-lg grid space-y-4",
@@ -172,11 +157,4 @@ fn NewGame(cx: Scope) -> Element {
         ),
         None => render!( div { class: "text-xl", "Loading new game..." } ),
     }
-}
-
-enum PlayerLocation {
-    North,
-    South,
-    East,
-    West,
 }
