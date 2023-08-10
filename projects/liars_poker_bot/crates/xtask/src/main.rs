@@ -10,6 +10,7 @@ const REMOTE_ADDR: &str = "static.222.71.9.5.clients.your-server.de";
 #[derive(Debug, Subcommand, Clone)]
 enum Commands {
     TrainLogs,
+    ServerLogs,
     Serve,
     Deploy,
     UpdateNginx,
@@ -27,6 +28,7 @@ fn main() -> anyhow::Result<()> {
 
     match args.command {
         Commands::TrainLogs => get_train_logs(),
+        Commands::ServerLogs => get_server_logs(),
         Commands::Serve => serve(),
         Commands::Deploy => deploy(),
         Commands::UpdateNginx => update_nginx(),
@@ -45,6 +47,19 @@ fn get_train_logs() -> anyhow::Result<()> {
     .run()?;
 
     cmd!(sh, "cat {local_log_file}").run()?;
+
+    Ok(())
+}
+
+fn get_server_logs() -> anyhow::Result<()> {
+    let local_log_file = "server.log";
+
+    let sh = Shell::new()?;
+    cmd!(
+        sh,
+        "rsync root@{REMOTE_ADDR}:~/deploy/euchre_server.log {local_log_file}"
+    )
+    .run()?;
 
     Ok(())
 }
@@ -94,12 +109,9 @@ fn build_and_deploy_app() {
         println!("Error: {:?}", e);
     }
 
-    cmd!(
-        sh,
-        "npx tailwindcss -i ./input.css -o ./public/tailwind.css"
-    )
-    .run()
-    .unwrap();
+    cmd!(sh, "npx tailwindcss -i ./input.css -o ./dist/tailwind.css")
+        .run()
+        .unwrap();
 
     sh.change_dir("..");
     cmd!(sh, "rsync -r ./euchre-app/dist/. ./euchre_server/static")
@@ -111,6 +123,7 @@ fn deploy() -> anyhow::Result<()> {
     let sh = Shell::new()?;
     sh.change_dir("crates/euchre-app");
     cmd!(sh, "dx build --release").run()?;
+    cmd!(sh, "npx tailwindcss -i ./input.css -o ./dist/tailwind.css").run()?;
 
     cmd!(sh, "rsync -r ./dist/. root@{REMOTE_ADDR}:~/deploy/static").run()?;
 

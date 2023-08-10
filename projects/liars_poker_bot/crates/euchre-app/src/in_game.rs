@@ -313,13 +313,13 @@ fn OpponentHand<T>(cx: Scope<T>, num_cards: usize, is_north: bool) -> Element {
         }
 
         cx.render(rsx! {
-            div { class: "text-2xl lg:text-6xl", style: "text-align:center", s.as_str() }
+            div { class: "text-4xl lg:text-6xl", style: "text-align:center", s.as_str() }
         })
     } else {
         cx.render(rsx! {
             div { class: "grid grid-cols-2 gap-1 lg:gap-4",
                 for _ in 0..num_cards {
-                    div { class: "text-2xl lg:text-6xl", "🂠" }
+                    div { class: "text-4xl lg:text-6xl", "🂠" }
                 }
             }
         })
