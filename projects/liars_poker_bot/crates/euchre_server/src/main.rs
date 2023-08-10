@@ -330,7 +330,7 @@ async fn main() -> std::io::Result<()> {
             .service(actix_files::Files::new("/", "./static").index_file("index.html"))
             .default_service(web::get().to(not_found))
     })
-    .bind(("0.0.0.0", 4000))?
+    .bind(("localhost", 4000))?
     .run()
     .await
 }
