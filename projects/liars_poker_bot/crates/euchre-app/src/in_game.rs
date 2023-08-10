@@ -97,9 +97,9 @@ pub fn InGame(cx: Scope, game_id: String) -> Element {
                 .unwrap();
 
             render!(
-                div { class: "h-screen flex flex-row",
-                    div { class: "basis-3/4", PlayArea(cx, gd.clone(), south_player) }
-                    div { class: "basis-1/4",
+                div { class: "h-screen grid sm:flex sm:flex-row m-1",
+                    div { class: "sm:basis-3/4", PlayArea(cx, gd.clone(), south_player) }
+                    div { class: "sm:basis-1/4",
                         GameData(cx, gd.gs.clone(), south_player),
                         RunningStats(cx, gd.computer_score, gd.human_score)
                     }
@@ -231,7 +231,7 @@ fn PlayArea<T>(cx: Scope<T>, game_data: GameData, south_player: usize) -> Elemen
 
     cx.render(rsx! {
 
-        div { class: "h-screen pb-8 pt-8 grid grid-cols-5 content-between",
+        div { class: "grid grid-cols-5 content-between",
             // North area
             div { class: "col-start-2 col-span-3 grid",
                 div { class: "justify-self-center", north_label }
@@ -275,7 +275,7 @@ fn PlayArea<T>(cx: Scope<T>, game_data: GameData, south_player: usize) -> Elemen
             }
 
             // bottom area
-            div { class: "row-start-3 col-span-5 grid grid-rows-3 gap-4 justify-items-center",
+            div { class: "row-start-3 col-span-5 grid justify-items-center",
                 div { class: "self-end", south_label }
                 PlayerActions(cx, gs.clone(), south_player)
             }
@@ -313,13 +313,13 @@ fn OpponentHand<T>(cx: Scope<T>, num_cards: usize, is_north: bool) -> Element {
         }
 
         cx.render(rsx! {
-            div { class: "text-6xl", style: "text-align:center", s.as_str() }
+            div { class: "text-2xl lg:text-6xl", style: "text-align:center", s.as_str() }
         })
     } else {
         cx.render(rsx! {
-            div { class: "grid gap-4",
+            div { class: "grid grid-cols-2 gap-1 lg:gap-4",
                 for _ in 0..num_cards {
-                    div { class: "text-6xl", "🂠" }
+                    div { class: "text-2xl lg:text-6xl", "🂠" }
                 }
             }
         })
@@ -341,7 +341,7 @@ fn TurnTracker<T>(cx: Scope<T>, gs: EuchreGameState, south_player: usize) -> Ele
         x if x == (south_player + 3) % 4 => "→",
         _ => "↓",
     };
-    cx.render(rsx! { div { font_size: "60px", "{arrow}" } })
+    cx.render(rsx! { div { class: "text-2xl lg:text-6xl", "{arrow}" } })
 }
 
 fn FaceUpCard<T>(cx: Scope<T>, c: Option<Card>) -> Element {
@@ -360,7 +360,7 @@ fn CardIcon<T>(cx: Scope<T>, c: Card) -> Element {
     };
 
     cx.render(rsx! {
-        span { class: "text-6xl", color: color, c.icon() }
+        span { class: "text-2xl lg:text-6xl", color: color, c.icon() }
     })
 }
 
@@ -376,7 +376,7 @@ fn PlayerActions<T>(cx: Scope<T>, gs: EuchreGameState, south_player: usize) -> E
         // special case for play pickup and pass
         let hand = gs.get_hand(south_player);
         render!(
-            div { class: "grid gap-y-4",
+            div { class: "grid gap-y-4 justify-items-center",
                 div { class: "flex gap-x-4",
                     for c in hand.into_iter() {
                         CardIcon(cx, c)
@@ -468,14 +468,14 @@ fn ActionButton<T>(cx: Scope<T>, card: Card, action: Option<EAction>) -> Element
     if let Some(a) = action {
         render!(
             button {
-                class: "text-6xl {ACTION_BUTTON_CLASS} {color}",
+                class: "text-2xl {ACTION_BUTTON_CLASS} {color}",
                 onclick: move |_| { action_task.send(GameAction::TakeAction(a.into())) },
                 card.icon()
             }
         )
     } else {
         render!(
-            button { disabled: "true", class: "text-6xl {ACTION_BUTTON_CLASS} {color}", card.icon() }
+            button { disabled: "true", class: "text-2xl {ACTION_BUTTON_CLASS} {color}", card.icon() }
         )
     }
 }
