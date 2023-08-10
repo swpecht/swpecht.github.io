@@ -9,7 +9,7 @@ const REMOTE_ADDR: &str = "static.222.71.9.5.clients.your-server.de";
 
 #[derive(Debug, Subcommand, Clone)]
 enum Commands {
-    RemoteLogs,
+    TrainLogs,
     Serve,
     Deploy,
 }
@@ -25,20 +25,20 @@ fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     match args.command {
-        Commands::RemoteLogs => get_remote_logs(),
+        Commands::TrainLogs => get_train_logs(),
         Commands::Serve => serve(),
         Commands::Deploy => deploy(),
     }
 }
 
-fn get_remote_logs() -> anyhow::Result<()> {
+fn get_train_logs() -> anyhow::Result<()> {
     let remote_log_file = "liars_poker.log";
     let local_log_file = "remote.log";
 
     let sh = Shell::new()?;
     cmd!(
         sh,
-        "scp root@{REMOTE_ADDR}:~/swpecht.github.io/projects/liars_poker_bot/{remote_log_file} {local_log_file}"
+        "rsync root@{REMOTE_ADDR}:~/swpecht.github.io/projects/liars_poker_bot/crates/card_platypus/{remote_log_file} {local_log_file}"
     )
     .run()?;
 
