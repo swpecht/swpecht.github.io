@@ -313,13 +313,13 @@ fn OpponentHand<T>(cx: Scope<T>, num_cards: usize, is_north: bool) -> Element {
         }
 
         cx.render(rsx! {
-            div { class: "text-4xl lg:text-6xl", style: "text-align:center", s.as_str() }
+            div { class: "text-3xl lg:text-6xl", style: "text-align:center", s.as_str() }
         })
     } else {
         cx.render(rsx! {
             div { class: "grid grid-cols-2 gap-1 lg:gap-4",
                 for _ in 0..num_cards {
-                    div { class: "text-4xl lg:text-6xl", "🂠" }
+                    div { class: "text-3xl lg:text-6xl", "🂠" }
                 }
             }
         })
@@ -360,7 +360,7 @@ fn CardIcon<T>(cx: Scope<T>, c: Card) -> Element {
     };
 
     cx.render(rsx! {
-        span { class: "text-2xl lg:text-6xl", color: color, c.icon() }
+        span { class: "text-5xl lg:text-6xl", color: color, c.icon() }
     })
 }
 
@@ -468,14 +468,18 @@ fn ActionButton<T>(cx: Scope<T>, card: Card, action: Option<EAction>) -> Element
     if let Some(a) = action {
         render!(
             button {
-                class: "text-2xl {ACTION_BUTTON_CLASS} {color}",
+                class: "text-3xl lg:text-6xl {ACTION_BUTTON_CLASS} {color}",
                 onclick: move |_| { action_task.send(GameAction::TakeAction(a.into())) },
                 card.icon()
             }
         )
     } else {
         render!(
-            button { disabled: "true", class: "text-2xl {ACTION_BUTTON_CLASS} {color}", card.icon() }
+            button {
+                disabled: "true",
+                class: "text-3xl lg:text-6xl {ACTION_BUTTON_CLASS} {color}",
+                card.icon()
+            }
         )
     }
 }
