@@ -134,7 +134,7 @@ fn update_nginx() -> anyhow::Result<()> {
         "rsync nginx-default root@{REMOTE_ADDR}:/etc/nginx/sites-enabled/default"
     )
     .run()?;
-    // cmd!(sh, )
+    cmd!(sh, "ssh root@{REMOTE_ADDR} nginx -s reload").run()?;
 
     Ok(())
 }
