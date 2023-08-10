@@ -12,6 +12,7 @@ enum Commands {
     TrainLogs,
     Serve,
     Deploy,
+    UpdateNginx,
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -28,6 +29,7 @@ fn main() -> anyhow::Result<()> {
         Commands::TrainLogs => get_train_logs(),
         Commands::Serve => serve(),
         Commands::Deploy => deploy(),
+        Commands::UpdateNginx => update_nginx(),
     }
 }
 
@@ -120,6 +122,19 @@ fn deploy() -> anyhow::Result<()> {
         "rsync ../../target/release/euchre_server root@{REMOTE_ADDR}:~/deploy"
     )
     .run()?;
+
+    Ok(())
+}
+
+fn update_nginx() -> anyhow::Result<()> {
+    let sh = Shell::new()?;
+    sh.change_dir("crates/xtask");
+    cmd!(
+        sh,
+        "rsync nginx-default root@{REMOTE_ADDR}:/etc/nginx/sites-enabled/default"
+    )
+    .run()?;
+    // cmd!(sh, )
 
     Ok(())
 }
