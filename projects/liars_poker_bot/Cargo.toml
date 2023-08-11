@@ -6,6 +6,12 @@ members = ["crates/*"]
 inherits = "release"
 debug = true
 
+[profile.wasm]
+inherits = "release"
+debug = false
+lto = true
+opt-level = 's'
+
 [profile.release]
 debug = false
 # lto = true # increase compile times for better possible perf
