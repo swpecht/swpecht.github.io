@@ -360,7 +360,7 @@ fn CardIcon<T>(cx: Scope<T>, c: Card) -> Element {
     };
 
     cx.render(rsx! {
-        span { class: "text-5xl lg:text-6xl", color: color, c.icon() }
+        span { class: "text-7xl", color: color, c.icon() }
     })
 }
 
@@ -468,18 +468,14 @@ fn ActionButton<T>(cx: Scope<T>, card: Card, action: Option<EAction>) -> Element
     if let Some(a) = action {
         render!(
             button {
-                class: "text-5xl lg:text-6xl {ACTION_BUTTON_CLASS} {color}",
+                class: "text-7xl {ACTION_BUTTON_CLASS} {color}",
                 onclick: move |_| { action_task.send(GameAction::TakeAction(a.into())) },
                 card.icon()
             }
         )
     } else {
         render!(
-            button {
-                disabled: "true",
-                class: "text-5xl lg:text-6xl {ACTION_BUTTON_CLASS} {color}",
-                card.icon()
-            }
+            button { disabled: "true", class: "text-7xl {ACTION_BUTTON_CLASS} {color}", card.icon() }
         )
     }
 }
