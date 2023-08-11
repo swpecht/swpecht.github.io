@@ -122,7 +122,22 @@ fn build_and_deploy_app() {
 fn deploy() -> anyhow::Result<()> {
     let sh = Shell::new()?;
     sh.change_dir("crates/euchre-app");
+
     cmd!(sh, "dx build --release").run()?;
+
+    // // build the wasm app
+    // cmd!(
+    //     sh,
+    //     "cargo build --target wasm32-unknown-unknown --profile wasm"
+    // )
+    // .run()?;
+    // // move it to the dist folder
+    // cmd!(
+    //     sh,
+    //     "cp ../../target/wasm32-unknown-unknown/wasm/euchre-app.wasm ./dist/assets/dioxus/euchre-app_bg.wasm"
+    // )
+    // .run()?;
+
     cmd!(sh, "npx tailwindcss -i ./input.css -o ./dist/tailwind.css").run()?;
 
     cmd!(sh, "rsync -r ./dist/. root@{REMOTE_ADDR}:~/deploy/static").run()?;
