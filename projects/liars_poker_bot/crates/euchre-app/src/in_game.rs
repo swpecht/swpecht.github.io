@@ -231,7 +231,7 @@ fn PlayArea<T>(cx: Scope<T>, game_data: GameData, south_player: usize) -> Elemen
 
     cx.render(rsx! {
 
-        div { class: "grid grid-cols-5 content-between",
+        div { class: "grid grid-cols-5 content-between gap-2",
             // North area
             div { class: "col-start-2 col-span-3 grid",
                 div { class: "justify-self-center", north_label }
@@ -239,8 +239,8 @@ fn PlayArea<T>(cx: Scope<T>, game_data: GameData, south_player: usize) -> Elemen
             }
 
             // Middle area
-            div { class: "row-start-2 grid justify-items-center",
-                div { class: "pb-4", west_label }
+            div { class: "row-start-2",
+                div { class: "text-center", west_label }
                 OpponentHand(cx, gs.get_hand(west_player).len(), false)
             }
 
@@ -269,8 +269,8 @@ fn PlayArea<T>(cx: Scope<T>, game_data: GameData, south_player: usize) -> Elemen
                     LastTrick(cx, game_data.clone(), south_player)
                 }
             }
-            div { class: "grid justify-items-center",
-                div { class: "pb-4", east_label }
+            div { class: "",
+                div { class: "text-center", east_label }
                 OpponentHand(cx, gs.get_hand(east_player).len(), false)
             }
 
@@ -319,7 +319,7 @@ fn OpponentHand<T>(cx: Scope<T>, num_cards: usize, is_north: bool) -> Element {
         cx.render(rsx! {
             div { class: "grid grid-cols-2 gap-1 lg:gap-4",
                 for _ in 0..num_cards {
-                    div { class: "text-3xl lg:text-6xl", "🂠" }
+                    div { class: "text-3xl lg:text-6xl text-center", "🂠" }
                 }
             }
         })
@@ -341,7 +341,7 @@ fn TurnTracker<T>(cx: Scope<T>, gs: EuchreGameState, south_player: usize) -> Ele
         x if x == (south_player + 3) % 4 => "→",
         _ => "↓",
     };
-    cx.render(rsx! { div { class: "text-2xl lg:text-6xl", "{arrow}" } })
+    cx.render(rsx! { div { class: "text-4xl lg:text-6xl", "{arrow}" } })
 }
 
 fn FaceUpCard<T>(cx: Scope<T>, c: Option<Card>) -> Element {
@@ -448,7 +448,7 @@ fn PlayerActions<T>(cx: Scope<T>, gs: EuchreGameState, south_player: usize) -> E
             .collect();
 
         render!(
-            div { class: "flex space-x-4",
+            div { class: "flex flex-wrap space-x-4",
                 for (c , a) in hand.into_iter() {
                     ActionButton(cx, c, a)
                 }
@@ -468,7 +468,7 @@ fn ActionButton<T>(cx: Scope<T>, card: Card, action: Option<EAction>) -> Element
     if let Some(a) = action {
         render!(
             button {
-                class: "text-3xl lg:text-6xl {ACTION_BUTTON_CLASS} {color}",
+                class: "text-5xl lg:text-6xl {ACTION_BUTTON_CLASS} {color}",
                 onclick: move |_| { action_task.send(GameAction::TakeAction(a.into())) },
                 card.icon()
             }
@@ -477,7 +477,7 @@ fn ActionButton<T>(cx: Scope<T>, card: Card, action: Option<EAction>) -> Element
         render!(
             button {
                 disabled: "true",
-                class: "text-3xl lg:text-6xl {ACTION_BUTTON_CLASS} {color}",
+                class: "text-5xl lg:text-6xl {ACTION_BUTTON_CLASS} {color}",
                 card.icon()
             }
         )
