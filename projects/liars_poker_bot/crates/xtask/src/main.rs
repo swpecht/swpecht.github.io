@@ -1,7 +1,9 @@
+use core::num;
 use std::{path::Path, thread};
 
 use anyhow::Ok;
 use clap::{command, Parser, Subcommand};
+use itertools::Itertools;
 use notify::{RecursiveMode, Watcher};
 use xshell::{cmd, Shell};
 
@@ -60,6 +62,24 @@ fn get_server_logs() -> anyhow::Result<()> {
         "rsync root@{REMOTE_ADDR}:~/deploy/euchre_server.log {local_log_file}"
     )
     .run()?;
+
+    let logs = cmd!(sh, "cat {local_log_file}").read()?;
+
+    let num_player_ids = logs
+        .split('\n')
+        .filter(|x| x.contains("player_id"))
+        .filter_map(|x| x.split(' ').nth(7))
+        .unique()
+        .count();
+
+    println!("unique player ids: {}", num_player_ids);
+
+    let num_games = logs
+        .split('\n')
+        .filter(|x| x.contains("game ended"))
+        .count();
+
+    println!("num games: {}", num_games);
 
     Ok(())
 }
