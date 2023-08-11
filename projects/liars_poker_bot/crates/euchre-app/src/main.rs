@@ -114,7 +114,7 @@ fn Index(cx: Scope) -> Element {
 
                 div { class: "grid justify-items-center",
                     button {
-                        class: "{ACTION_BUTTON_CLASS} font-medium",
+                        class: "{ACTION_BUTTON_CLASS} font-medium px-2",
                         onclick: move |_| {
                             let nav = use_navigator(cx);
                             nav.push("/game");

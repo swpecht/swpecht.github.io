@@ -468,14 +468,14 @@ fn ActionButton<T>(cx: Scope<T>, card: Card, action: Option<EAction>) -> Element
     if let Some(a) = action {
         render!(
             button {
-                class: "text-7xl {ACTION_BUTTON_CLASS} {color}",
+                class: "text-7xl py-2 {ACTION_BUTTON_CLASS} {color}",
                 onclick: move |_| { action_task.send(GameAction::TakeAction(a.into())) },
                 card.icon()
             }
         )
     } else {
         render!(
-            button { disabled: "true", class: "text-7xl {ACTION_BUTTON_CLASS} {color}", card.icon() }
+            button { disabled: "true", class: "text-7xl py-2 {ACTION_BUTTON_CLASS} {color}", card.icon() }
         )
     }
 }

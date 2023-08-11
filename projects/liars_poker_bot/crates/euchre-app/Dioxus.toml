@@ -1,7 +1,7 @@
 [application]
 
 # App (Project) Name
-name = "Euchre app"
+name = "euchre-app"
 
 # Dioxus App Default Platform
 # desktop, web, mobile, ssr
@@ -14,6 +14,8 @@ out_dir = "dist"
 asset_dir = "public"
 
 [web.app]
+
+binaryen = { wasm_opt = true }
 
 # HTML title tag content
 title = "Euchre"
