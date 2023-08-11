@@ -85,9 +85,36 @@ pub enum EPhase {
 }
 
 impl EuchreGameState {
+    /// Returns true if the bidding phase just ended
+    pub fn bidding_ended(&self) -> bool {
+        self.phase() == EPhase::Discard
+            || (self.phase() == EPhase::Play
+                && self.cards_played == 0
+                // don't want to go into this phase twice if we discarded
+                && !self.history().iter().any(|(_, a)| *a == EAction::Pickup))
+    }
+
     /// Returns true if a trick is over. Returns false if a trick hasn't started yet
     pub fn is_trick_over(&self) -> bool {
         self.cards_played % 4 == 0 && self.cards_played > 0
+    }
+
+    pub fn last_bid(&self, player: Player) -> Option<EAction> {
+        use EAction::*;
+        let x = self
+            .history()
+            .iter()
+            .rev()
+            .find(|(p, a)| {
+                *p == player && matches!(*a, Pickup | Pass | Clubs | Spades | Hearts | Diamonds)
+            })
+            .cloned();
+
+        if let Some((_, a)) = x {
+            Some(a)
+        } else {
+            None
+        }
     }
 
     pub fn last_trick(&self) -> Option<(Player, [Card; 4])> {
@@ -523,7 +550,7 @@ impl EuchreGameState {
         self.phase
     }
 
-    fn face_up(&self) -> Card {
+    pub fn face_up(&self) -> Card {
         // read the value from the deck
         // if it's not there, we're probably calling this to rewind, look through the
         // action history to find it

@@ -171,7 +171,7 @@ fn LastTrick<T>(cx: Scope<T>, game_data: GameData, player: Player) -> Element {
         game_data.display_state,
         GameProcessingState::WaitingTrickClear { ready_players: _ }
     ) {
-        return render!({});
+        return None;
     }
 
     let last_trick = gs.last_trick();
@@ -180,7 +180,7 @@ fn LastTrick<T>(cx: Scope<T>, game_data: GameData, player: Player) -> Element {
 
         render!(CardIcon(cx, trick[player]))
     } else {
-        render!({})
+        None
     }
 }
 
@@ -229,6 +229,8 @@ fn PlayArea<T>(cx: Scope<T>, game_data: GameData, south_player: usize) -> Elemen
         "West"
     };
 
+    use GameProcessingState::*;
+
     cx.render(rsx! {
 
         div { class: "grid grid-cols-5 content-between gap-2",
@@ -247,26 +249,41 @@ fn PlayArea<T>(cx: Scope<T>, game_data: GameData, south_player: usize) -> Elemen
             div { class: "col-span-3 grid grid-cols-3 items-center justify-items-center space-y-4",
                 div { class: "col-start-2",
                     PlayedCard(cx, gs.played_card(north_player)),
-                    LastTrick(cx, game_data.clone(), north_player)
+                    LastTrick(cx, game_data.clone(), north_player),
+                    if matches!(game_data.display_state, WaitingBidClear { ready_players: _ }) {
+                        LastBid(cx, gs.clone(), north_player)
+                    }
                 }
                 div { class: "row-start-2",
                     PlayedCard(cx, gs.played_card(west_player)),
-                    LastTrick(cx, game_data.clone(), west_player)
+                    LastTrick(cx, game_data.clone(), west_player),
+                    if matches!(game_data.display_state, WaitingBidClear { ready_players: _ }) {
+                        LastBid(cx, gs.clone(), west_player)
+                    }
                 }
                 div { class: "row-start-2 col-start-2 grid justify-items-center",
                     FaceUpCard(cx, gs.displayed_face_up_card()),
+                    if matches!(game_data.display_state, WaitingBidClear { ready_players: _ }) {
+                        FaceUpCard(cx, Some(gs.face_up()))
+                    }
                     TurnTracker(cx, gs.clone(), south_player),
-                    ClearTrickButton(cx, game_data.clone().display_state)
+                    ClearButton(cx, game_data.clone().display_state)
                 }
 
                 div { class: "row-start-2 col-start-3",
                     PlayedCard(cx, gs.played_card(east_player)),
-                    LastTrick(cx, game_data.clone(), east_player)
+                    LastTrick(cx, game_data.clone(), east_player),
+                    if matches!(game_data.display_state, WaitingBidClear { ready_players: _ }) {
+                        LastBid(cx, gs.clone(), east_player)
+                    }
                 }
 
                 div { class: "row-start-3 col-start-2",
                     PlayedCard(cx, gs.played_card(south_player)),
-                    LastTrick(cx, game_data.clone(), south_player)
+                    LastTrick(cx, game_data.clone(), south_player),
+                    if matches!(game_data.display_state, WaitingBidClear { ready_players: _ }) {
+                        LastBid(cx, gs.clone(), south_player)
+                    }
                 }
             }
             div { class: "",
@@ -283,7 +300,7 @@ fn PlayArea<T>(cx: Scope<T>, game_data: GameData, south_player: usize) -> Elemen
     })
 }
 
-fn ClearTrickButton<T>(cx: Scope<T>, display_state: GameProcessingState) -> Element {
+fn ClearButton<T>(cx: Scope<T>, display_state: GameProcessingState) -> Element {
     let action_task = use_coroutine_handle::<GameAction>(cx).expect("error getting action task");
     let player_id = use_shared_state::<PlayerId>(cx).unwrap().read().id;
 
@@ -301,7 +318,33 @@ fn ClearTrickButton<T>(cx: Scope<T>, display_state: GameProcessingState) -> Elem
                 )
             }
         }
+        GameProcessingState::WaitingBidClear { ready_players } => {
+            if ready_players.contains(&player_id) {
+                render!( div { "waiting on other players..." } )
+            } else {
+                render!(
+                    button {
+                        class: "bg-white outline outline-black hover:bg-slate-100 focus:outline-none focus:ring focus:bg-slate-100 active:bg-slate-200 px-5 py-2 text-sm leading-5 rounded-full font-semibold text-black",
+                        onclick: move |_| { action_task.send(GameAction::ReadyBidClear) },
+                        "Clear"
+                    }
+                )
+            }
+        }
         _ => render!({}),
+    }
+}
+
+fn LastBid<T>(cx: Scope<T>, gs: EuchreGameState, player: Player) -> Element {
+    match gs.last_bid(player) {
+        None => None,
+        Some(EAction::Pass) => render!( div { class: "text-xl", "Pass" } ),
+        Some(EAction::Pickup) => render!( div { class: "text-xl", "Pickup" } ),
+        Some(EAction::Clubs) => render!( div { class: "text-xl", "Clubs" } ),
+        Some(EAction::Spades) => render!( div { class: "text-xl", "Spades" } ),
+        Some(EAction::Hearts) => render!( div { class: "text-xl", "Hearts" } ),
+        Some(EAction::Diamonds) => render!( div { class: "text-xl", "Diamonds" } ),
+        Some(_) => render!( div { class: "text-xl", "error getting bid" } ),
     }
 }
 

@@ -108,8 +108,8 @@ async fn post_game(
     use client_server_messages::GameAction::*;
     let result = match req.action {
         TakeAction(a) => handle_take_action(game_data, a, req.player_id),
-        ReadyTrickClear => handle_trick_clear(game_data, req.player_id),
-        ReadyBidClear => todo!(),
+        ReadyTrickClear | ReadyBidClear => handle_ready_clear(game_data, req.player_id),
+
         RegisterPlayer => handle_register_player(game_data, req.player_id),
     };
 
@@ -122,9 +122,10 @@ async fn post_game(
     HttpResponse::Ok().json(&game_data)
 }
 
-fn handle_trick_clear(game_data: &mut GameData, player_id: usize) -> Result<(), HttpResponse> {
+fn handle_ready_clear(game_data: &mut GameData, player_id: usize) -> Result<(), HttpResponse> {
     match &mut game_data.display_state {
-        GameProcessingState::WaitingTrickClear { ready_players } => {
+        GameProcessingState::WaitingTrickClear { ready_players }
+        | GameProcessingState::WaitingBidClear { ready_players } => {
             if !ready_players.contains(&player_id) {
                 ready_players.push(player_id);
             }
@@ -132,7 +133,7 @@ fn handle_trick_clear(game_data: &mut GameData, player_id: usize) -> Result<(), 
             Ok(())
         }
         _ => Err(HttpResponse::BadRequest().body(format!(
-            "can't clear trick in current state: {:?}",
+            "can't ready to clear in current state: {:?}",
             game_data.display_state
         ))),
     }
@@ -216,13 +217,17 @@ fn progress_game(game_data: &mut GameData, bot: &Mutex<CFRES<EuchreGameState>>) 
                     WaitingTrickClear {
                         ready_players: vec![],
                     }
+                } else if gs.bidding_ended() {
+                    WaitingBidClear {
+                        ready_players: vec![],
+                    }
                 } else if game_data.players[gs.cur_player()].is_none() {
                     WaitingMachineMoves
                 } else {
                     WaitingHumanMove
                 }
             }
-            WaitingTrickClear { ready_players } => {
+            WaitingTrickClear { ready_players } | WaitingBidClear { ready_players } => {
                 if ready_players.len() == num_humans {
                     if gs.is_terminal() {
                         let human_team = game_data
@@ -394,7 +399,7 @@ mod tests {
         let game_data: GameData = deserialize_body(resp).await;
 
         // try applying an action
-        let mut gs = EuchreGameState::from(game_data.gs.as_str());
+        let gs = EuchreGameState::from(game_data.gs.as_str());
         let action = actions!(gs)[0];
 
         let req = test::TestRequest::post()

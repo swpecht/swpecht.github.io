@@ -7,6 +7,7 @@ pub enum GameProcessingState {
     WaitingHumanMove,
     WaitingMachineMoves,
     WaitingTrickClear { ready_players: Vec<usize> },
+    WaitingBidClear { ready_players: Vec<usize> },
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
