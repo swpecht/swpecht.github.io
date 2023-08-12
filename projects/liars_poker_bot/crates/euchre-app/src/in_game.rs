@@ -349,24 +349,14 @@ fn LastBid<T>(cx: Scope<T>, gs: EuchreGameState, player: Player) -> Element {
 }
 
 fn OpponentHand<T>(cx: Scope<T>, num_cards: usize, is_north: bool) -> Element {
-    if is_north {
-        let mut s = String::new();
-        for _ in 0..num_cards {
-            s.push('🂠')
-        }
-
-        cx.render(rsx! {
-            div { class: "text-3xl lg:text-6xl", style: "text-align:center", s.as_str() }
-        })
-    } else {
-        cx.render(rsx! {
-            div { class: "grid grid-cols-2 gap-1 lg:gap-4",
-                for _ in 0..num_cards {
-                    div { class: "text-3xl lg:text-6xl text-center", "🂠" }
-                }
-            }
-        })
+    let mut s = String::new();
+    for _ in 0..num_cards {
+        s.push('🂠')
     }
+
+    cx.render(rsx! {
+        div { class: "text-3xl lg:text-6xl", style: "text-align:center", s.as_str() }
+    })
 }
 
 fn PlayedCard<T>(cx: Scope<T>, c: Option<Card>) -> Element {
