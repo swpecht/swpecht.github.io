@@ -237,13 +237,13 @@ fn PlayArea<T>(cx: Scope<T>, game_data: GameData, south_player: usize) -> Elemen
             // North area
             div { class: "col-start-2 col-span-3 grid",
                 div { class: "justify-self-center", north_label }
-                OpponentHand(cx, gs.get_hand(north_player).len(), true)
+                OpponentHand(cx, gs.get_hand(north_player).len())
             }
 
             // Middle area
             div { class: "row-start-2",
                 div { class: "text-center", west_label }
-                OpponentHand(cx, gs.get_hand(west_player).len(), false)
+                OpponentHand(cx, gs.get_hand(west_player).len())
             }
 
             div { class: "col-span-3 grid grid-cols-3 items-center justify-items-center space-y-4",
@@ -288,7 +288,7 @@ fn PlayArea<T>(cx: Scope<T>, game_data: GameData, south_player: usize) -> Elemen
             }
             div { class: "",
                 div { class: "text-center", east_label }
-                OpponentHand(cx, gs.get_hand(east_player).len(), false)
+                OpponentHand(cx, gs.get_hand(east_player).len())
             }
 
             // bottom area
@@ -348,7 +348,7 @@ fn LastBid<T>(cx: Scope<T>, gs: EuchreGameState, player: Player) -> Element {
     }
 }
 
-fn OpponentHand<T>(cx: Scope<T>, num_cards: usize, is_north: bool) -> Element {
+fn OpponentHand<T>(cx: Scope<T>, num_cards: usize) -> Element {
     let mut s = String::new();
     for _ in 0..num_cards {
         s.push('🂠')
