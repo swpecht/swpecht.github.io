@@ -124,7 +124,7 @@ fn build_and_deploy_app() {
     let sh = Shell::new().unwrap();
     sh.change_dir("crates/euchre-app");
 
-    let result = cmd!(sh, "dx build --release").run();
+    let result = cmd!(sh, "dx build --profile wasm").run();
     if let Err(e) = result {
         println!("Error: {:?}", e);
     }
@@ -143,7 +143,7 @@ fn deploy() -> anyhow::Result<()> {
     let sh = Shell::new()?;
     sh.change_dir("crates/euchre-app");
 
-    cmd!(sh, "dx build --release").run()?;
+    cmd!(sh, "dx build --profile wasm").run()?;
 
     // // build the wasm app
     // cmd!(
