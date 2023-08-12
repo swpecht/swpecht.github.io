@@ -408,14 +408,26 @@ fn CardIcon<T>(cx: Scope<T>, c: Card) -> Element {
 }
 
 fn PlayerActions<T>(cx: Scope<T>, gs: EuchreGameState, south_player: usize) -> Element {
-    if gs.cur_player() != south_player || gs.is_chance_node() {
+    if gs.is_chance_node() {
         return render!({});
     }
 
     let actions: Vec<EAction> = actions!(gs).into_iter().map(EAction::from).collect();
     let action_task = use_coroutine_handle::<GameAction>(cx).expect("error getting action task");
 
-    if actions.contains(&EAction::Pickup) {
+    if gs.cur_player() != south_player {
+        // if not out turn, just show our hand
+        let hand = gs.get_hand(south_player);
+        render!(
+            div { class: "grid gap-y-4 justify-items-center",
+                div { class: "flex gap-x-4",
+                    for c in hand.into_iter() {
+                        CardIcon(cx, c)
+                    }
+                }
+            }
+        )
+    } else if actions.contains(&EAction::Pickup) {
         // special case for play pickup and pass
         let hand = gs.get_hand(south_player);
         render!(
