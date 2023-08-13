@@ -126,7 +126,12 @@ fn GameFull<T>(cx: Scope<T>) -> Element {
 }
 
 fn UnknownError<'a, T>(cx: Scope<'a, T>, msg: &'a String) -> Element<'a> {
-    render!("Encountered an unexpected error: {msg}")
+    render!(
+        div { class: "max-w-xlg grid space-y-4 mx-4 my-4",
+            p { "Encountered an unexpected error. Try going back and trying again." }
+            p { "Error: {msg}" }
+        }
+    )
 }
 
 fn GameData<T>(cx: Scope<T>, gs: String, south_player: usize) -> Element {
