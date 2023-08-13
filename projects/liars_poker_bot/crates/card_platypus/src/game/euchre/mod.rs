@@ -727,7 +727,8 @@ impl GameState for EuchreGameState {
             istate.push(EAction::DiscardMarker.into())
         }
 
-        istate = normalize_suit(istate, self.face_up().map(|c| c.suit()));
+        // fix this
+        // istate = normalize_suit(istate, self.face_up().map(|c| c.suit()));
 
         istate
     }
