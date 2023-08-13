@@ -131,7 +131,9 @@ fn evaluate_highest_trump_first(gs: &EuchreGameState, actions: &mut Vec<Action>)
 }
 
 fn evaluate_picked_up_card_last(gs: &EuchreGameState, actions: &mut Vec<Action>) {
-    let face_up = gs.face_up();
+    let face_up = gs
+        .face_up()
+        .expect("can't call faceup before deal finished");
     let idx = actions
         .iter()
         .find_position(|&x| EAction::from(*x).card() != face_up)

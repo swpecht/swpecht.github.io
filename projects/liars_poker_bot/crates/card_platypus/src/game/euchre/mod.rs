@@ -17,7 +17,7 @@ use crate::{
 use self::{
     actions::{Card, EAction, Suit},
     deck::{CardLocation, Deck},
-    ismorphic::iso_deck,
+    ismorphic::{iso_deck, normalize_suit},
 };
 
 pub(super) const CARDS_PER_HAND: usize = 5;
@@ -235,13 +235,16 @@ impl EuchreGameState {
                 if self.cur_player == 3 {
                     self.phase = EPhase::ChooseTrump;
                     let face_up = self.face_up();
-                    self.deck[face_up] = CardLocation::None;
+                    self.deck[face_up.expect("can't call faceup before deal finished")] =
+                        CardLocation::None;
                 }
                 self.cur_player = (self.cur_player + 1) % self.num_players;
             }
             EAction::Pickup => {
                 self.trump_caller = self.cur_player;
-                let face_up = self.face_up();
+                let face_up = self
+                    .face_up()
+                    .expect("can't call faceup before deal finished");
                 self.trump = Some(face_up.suit());
                 self.cur_player = 3; // dealers turn
                 self.deck[face_up] = CardLocation::Player3;
@@ -263,7 +266,9 @@ impl EuchreGameState {
             _ => panic!("invalid action"),
         };
 
-        let face_up = self.face_up();
+        let face_up = self
+            .face_up()
+            .expect("can't call faceup before deal finished");
         if let Some(trump) = self.trump {
             // can't call the face up card as trump
             assert!(face_up.suit() != trump);
@@ -396,7 +401,10 @@ impl EuchreGameState {
             actions.push(EAction::Pass.into())
         }
 
-        let face_up = self.face_up().suit();
+        let face_up = self
+            .face_up()
+            .expect("can't call faceup before deal finished")
+            .suit();
         if face_up != Suit::Clubs {
             actions.push(EAction::Clubs.into());
         }
@@ -550,23 +558,23 @@ impl EuchreGameState {
         self.phase
     }
 
-    pub fn face_up(&self) -> Card {
+    pub fn face_up(&self) -> Option<Card> {
         // read the value from the deck
         // if it's not there, we're probably calling this to rewind, look through the
         // action history to find it
         for (c, loc) in self.deck.into_iter() {
             if loc == CardLocation::FaceUp {
-                return c;
+                return Some(c);
             }
         }
 
         for a in self.key {
             if let EAction::DealFaceUp { c } = EAction::from(a) {
-                return c;
+                return Some(c);
             }
         }
 
-        panic!("couldn't find a face up card in deck or action history")
+        None
     }
 
     /// Returns the number of future tricks each team is guaranteed to win
@@ -718,6 +726,8 @@ impl GameState for EuchreGameState {
         if player == 3 && self.phase == EPhase::Discard {
             istate.push(EAction::DiscardMarker.into())
         }
+
+        istate = normalize_suit(istate, self.face_up().map(|c| c.suit()));
 
         istate
     }
@@ -889,7 +899,9 @@ impl GameState for EuchreGameState {
                 // did we just undo the last pickup action?
                 if self.key.len() == 20 + 1 + 3 {
                     self.phase = EPhase::Pickup;
-                    let face_up = self.face_up();
+                    let face_up = self
+                        .face_up()
+                        .expect("can't call faceup before deal finished");
                     self.deck[face_up] = CardLocation::FaceUp;
                 }
             }
@@ -904,7 +916,9 @@ impl GameState for EuchreGameState {
                 // return to defaults
                 self.trump_caller = 0;
                 self.trump = None;
-                let face_up = self.face_up();
+                let face_up = self
+                    .face_up()
+                    .expect("can't call faceup before deal finished");
                 self.deck[face_up] = CardLocation::FaceUp;
             }
             EAction::DealPlayer { c } => {
@@ -1134,7 +1148,7 @@ mod tests {
 
         // Deal the face up card
         gs.apply_action(EAction::DealFaceUp { c: 21.into() }.into());
-        assert_eq!(gs.face_up(), 21.into());
+        assert_eq!(gs.face_up().unwrap(), 21.into());
 
         assert_eq!(
             actions!(gs),
@@ -1200,42 +1214,38 @@ mod tests {
 
     #[test]
     fn euchre_test_istate() {
-        let mut gs = Euchre::new_state();
-        // Deal the cards
-        for i in 0..20 {
-            gs.apply_action(EAction::DealPlayer { c: i.into() }.into());
-        }
+        let mut gs = EuchreGameState::from("9cTcJcQcKc|Ac9sTsJdQs|KsAs9hThJh|QhKhAh9dTd");
 
         assert_eq!(gs.istate_string(0), "9cTcJcQcKc");
-        assert_eq!(gs.istate_string(1), "Ac9sTsJsQs");
+        assert_eq!(gs.istate_string(1), "Ac9sTsQsJd");
         assert_eq!(gs.istate_string(2), "KsAs9hThJh");
         assert_eq!(gs.istate_string(3), "QhKhAh9dTd");
 
-        gs.apply_action(EAction::DealFaceUp { c: 20.into() }.into());
-        assert_eq!(gs.istate_string(0), "9cTcJcQcKc|Jd|");
-        assert_eq!(gs.istate_string(1), "Ac9sTsJsQs|Jd|");
-        assert_eq!(gs.istate_string(2), "KsAs9hThJh|Jd|");
-        assert_eq!(gs.istate_string(3), "QhKhAh9dTd|Jd|");
+        gs.apply_action(EAction::DealFaceUp { c: Card::JS }.into());
+        assert_eq!(gs.istate_string(0), "9cTcJcQcKc|Js|");
+        assert_eq!(gs.istate_string(1), "Ac9sTsQsJd|Js|");
+        assert_eq!(gs.istate_string(2), "KsAs9hThJh|Js|");
+        assert_eq!(gs.istate_string(3), "QhKhAh9dTd|Js|");
 
         let mut new_s = gs.clone(); // for alternative pickup parsing
 
         gs.apply_action(EAction::Pickup.into());
-        assert_eq!(gs.istate_string(0), "9cTcJcQcKc|Jd|T|0D");
+        assert_eq!(gs.istate_string(0), "9cTcJcQcKc|Js|T|0S");
 
         // Dealer discards the QH
-        assert_eq!(gs.istate_string(3), "QhKhAh9dTd|Jd|T|0D");
+        assert_eq!(gs.istate_string(3), "QhKhAh9dTd|Js|T|0S");
         gs.apply_action(EAction::Discard { c: Card::QH }.into());
-        assert_eq!(gs.istate_string(3), "QhKhAh9dTd|Jd|T|0D|Qh|");
+        assert_eq!(gs.istate_string(3), "QhKhAh9dTd|Js|T|0S|Qh|");
 
         for _ in 0..4 {
             let a = actions!(gs)[0];
             gs.apply_action(a);
         }
-        assert_eq!(gs.istate_string(0), "9cTcJcQcKc|Jd|T|0D|9cAcKsKh|");
-        assert_eq!(gs.istate_string(1), "Ac9sTsJsQs|Jd|T|0D|9cAcKsKh|");
-        assert_eq!(gs.istate_string(2), "KsAs9hThJh|Jd|T|0D|9cAcKsKh|");
-        assert_eq!(gs.istate_string(3), "QhKhAh9dTd|Jd|T|0D|Qh|9cAcKsKh|");
-        assert_eq!(gs.cur_player(), 1);
+        assert_eq!(gs.istate_string(0), "9cTcJcQcKc|Js|T|0S|9cAcKsJs|");
+        assert_eq!(gs.istate_string(1), "Ac9sTsQsJd|Js|T|0S|9cAcKsJs|");
+        assert_eq!(gs.istate_string(2), "KsAs9hThJh|Js|T|0S|9cAcKsJs|");
+        assert_eq!(gs.istate_string(3), "QhKhAh9dTd|Js|T|0S|Qh|9cAcKsJs|");
+        assert_eq!(gs.cur_player(), 3);
 
         while !gs.is_terminal() {
             let a = actions!(gs)[0];
@@ -1252,7 +1262,7 @@ mod tests {
             new_s.apply_action(EAction::Pass.into());
         }
         new_s.apply_action(EAction::Hearts.into());
-        assert_eq!(new_s.istate_string(0), "9cTcJcQcKc|Jd|PPPPPH|1H|");
+        assert_eq!(new_s.istate_string(0), "9cTcJcQcKc|Js|PPPPPH|1H|");
     }
 
     #[test]

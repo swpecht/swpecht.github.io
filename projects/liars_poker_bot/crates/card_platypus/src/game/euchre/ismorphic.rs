@@ -1,7 +1,9 @@
-use crate::game::euchre::deck::CardLocation;
+use itertools::Itertools;
+
+use crate::{game::euchre::deck::CardLocation, istate::IStateKey};
 
 use super::{
-    actions::{Card as C, Suit},
+    actions::{Card, EAction, Suit},
     deck::Deck,
 };
 
@@ -12,22 +14,23 @@ const MAX_WORDS: usize = 7;
 type Locations = u32;
 
 // Pre-computed ordering of cards by value
-const SPADES_NONE: &[C] = &[C::NS, C::TS, C::JS, C::QS, C::KS, C::AS];
-const CLUBS_NONE: &[C] = &[C::NC, C::TC, C::JC, C::QC, C::KC, C::AC];
-const HEARTS_NONE: &[C] = &[C::NH, C::TH, C::JH, C::QH, C::KH, C::AH];
-const DIAMONDS_NONE: &[C] = &[C::ND, C::TD, C::JD, C::QD, C::KD, C::AD];
+use Card::*;
+const SPADES_NONE: &[Card] = &[NS, TS, JS, QS, KS, AS];
+const CLUBS_NONE: &[Card] = &[NC, TC, JC, QC, KC, AC];
+const HEARTS_NONE: &[Card] = &[NH, TH, JH, QH, KH, AH];
+const DIAMONDS_NONE: &[Card] = &[ND, TD, JD, QD, KD, AD];
 
-const SPADES_CLUBS: &[C] = &[C::NS, C::TS, C::QS, C::KS, C::AS];
-const CLUBS_CLUBS: &[C] = &[C::NC, C::TC, C::QC, C::KC, C::AC, C::JS, C::JC];
+const SPADES_CLUBS: &[Card] = &[NS, TS, QS, KS, AS];
+const CLUBS_CLUBS: &[Card] = &[NC, TC, QC, KC, AC, JS, JC];
 
-const SPADES_SPADES: &[C] = &[C::NS, C::TS, C::QS, C::KS, C::AS, C::JC, C::JS];
-const CLUBS_SPADES: &[C] = &[C::NC, C::TC, C::QC, C::KC, C::AC];
+const SPADES_SPADES: &[Card] = &[NS, TS, QS, KS, AS, JC, JS];
+const CLUBS_SPADES: &[Card] = &[NC, TC, QC, KC, AC];
 
-const HEARTS_HEARTS: &[C] = &[C::NH, C::TH, C::QH, C::KH, C::AH, C::JD, C::JH];
-const DIAMONDS_HEARTS: &[C] = &[C::ND, C::TD, C::QD, C::KD, C::AD];
+const HEARTS_HEARTS: &[Card] = &[NH, TH, QH, KH, AH, JD, JH];
+const DIAMONDS_HEARTS: &[Card] = &[ND, TD, QD, KD, AD];
 
-const HEARTS_DIAMONDS: &[C] = &[C::NH, C::TH, C::QH, C::KH, C::AH];
-const DIAMONDS_DIAMONDS: &[C] = &[C::ND, C::TD, C::QD, C::KD, C::AD, C::JH, C::JD];
+const HEARTS_DIAMONDS: &[Card] = &[NH, TH, QH, KH, AH];
+const DIAMONDS_DIAMONDS: &[Card] = &[ND, TD, QD, KD, AD, JH, JD];
 
 pub(super) fn iso_deck(deck: Deck, trump: Option<Suit>) -> [Locations; 4] {
     let mut locations = [0; 4];
@@ -108,7 +111,7 @@ fn is_equal(l: &Locations, i: usize, loc: CardLocation) -> bool {
 }
 
 /// Return all cards, in order from lowest to highest of a suit for a given trump
-pub(super) fn get_cards(suit: Suit, trump: Option<Suit>) -> &'static [C] {
+pub(super) fn get_cards(suit: Suit, trump: Option<Suit>) -> &'static [Card] {
     match (suit, trump) {
         (Suit::Clubs, Some(Suit::Clubs)) => CLUBS_CLUBS,
         (Suit::Clubs, Some(Suit::Spades)) => CLUBS_SPADES,
@@ -123,6 +126,62 @@ pub(super) fn get_cards(suit: Suit, trump: Option<Suit>) -> &'static [C] {
         (Suit::Spades, _) => SPADES_NONE,
         (Suit::Diamonds, _) => DIAMONDS_NONE,
         (Suit::Hearts, _) => HEARTS_NONE,
+    }
+}
+
+/// Normalizes the suit to have Spades always be the faceup card.
+pub(super) fn normalize_suit(istate: IStateKey, face_up_suit: Option<Suit>) -> IStateKey {
+    if face_up_suit.is_none() {
+        return istate;
+    }
+
+    let face_up_suit = face_up_suit.unwrap();
+
+    use EAction::*;
+    let mut new_istate = IStateKey::default();
+
+    for a in istate {
+        let ea = EAction::from(a);
+        let new_action = match ea {
+            DealPlayer { c } => DealPlayer {
+                c: transform_card(c, face_up_suit),
+            },
+            DealFaceUp { c } => DealFaceUp {
+                c: transform_card(c, face_up_suit),
+            },
+            Discard { c } => Discard {
+                c: transform_card(c, face_up_suit),
+            },
+            Play { c } => Play {
+                c: transform_card(c, face_up_suit),
+            },
+            _ => ea,
+        };
+        new_istate.push(new_action.into());
+    }
+
+    new_istate
+}
+
+fn transform_card(c: Card, face_up_suit: Suit) -> Card {
+    use Suit::*;
+    match (face_up_suit, c.suit()) {
+        (Clubs, Clubs) => c.to_suit(Spades),
+        (Clubs, Spades) => c.to_suit(Clubs),
+        (Clubs, Hearts) => c.to_suit(Hearts),
+        (Clubs, Diamonds) => c.to_suit(Diamonds),
+        (Spades, Clubs) => c.to_suit(Clubs),
+        (Spades, Spades) => c.to_suit(Spades),
+        (Spades, Hearts) => c.to_suit(Hearts),
+        (Spades, Diamonds) => c.to_suit(Diamonds),
+        (Hearts, Clubs) => c.to_suit(Hearts),
+        (Hearts, Spades) => c.to_suit(Diamonds),
+        (Hearts, Hearts) => c.to_suit(Spades),
+        (Hearts, Diamonds) => c.to_suit(Clubs),
+        (Diamonds, Clubs) => c.to_suit(Hearts),
+        (Diamonds, Spades) => c.to_suit(Diamonds),
+        (Diamonds, Hearts) => c.to_suit(Clubs),
+        (Diamonds, Diamonds) => c.to_suit(Spades),
     }
 }
 
