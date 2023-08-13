@@ -13,5 +13,5 @@ lto = true
 opt-level = 's'
 
 [profile.release]
-debug = false
+debug = true
 # lto = true # increase compile times for better possible perf
