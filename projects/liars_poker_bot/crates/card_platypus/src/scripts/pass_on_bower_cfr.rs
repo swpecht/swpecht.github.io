@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs};
+use std::{collections::HashMap, fs, hash::Hash};
 
 use card_platypus::{
     agents::{Agent, Seedable},
@@ -18,6 +18,7 @@ use indicatif::ProgressBar;
 use itertools::Itertools;
 use log::info;
 use rand::{seq::SliceRandom, thread_rng, Rng, SeedableRng};
+use serde::Serialize;
 
 use super::benchmark::get_rng;
 
@@ -165,6 +166,13 @@ pub fn generate_jack_of_spades_deal() -> EuchreGameState {
     gs
 }
 
+#[derive(Serialize)]
+struct JSONRow {
+    infostate: String,
+    hand: Vec<String>,
+    policy: HashMap<String, f64>,
+}
+
 pub fn parse_weights(infostate_path: &str) {
     let generator = generate_jack_of_spades_deal;
     let mut alg = CFRES::new_euchre_bidding(generator, get_rng());
@@ -176,37 +184,35 @@ pub fn parse_weights(infostate_path: &str) {
     );
 
     let infostates = alg.get_infostates();
+    let mut json_infostates = Vec::new();
 
     for (k, v) in infostates.clone() {
         // filter for the istate keys that end in the right actions
-        if k[k.len() - 3..]
-            .iter()
-            .all(|&x| EAction::from(x) == EAction::Pass)
-            && EAction::from(k[k.len() - 4]) != EAction::Pass
+        if k[k.len() - 1] != EAction::DiscardMarker.into()
+        // k[k.len() - 3..]
+        //     .iter()
+        //     .all(|&x| EAction::from(x) == EAction::Pass)
+        //     && EAction::from(k[k.len() - 4]) != EAction::Pass
         {
-            let istate = k[..k.len() - 4]
+            let istate = k
                 .iter()
                 .map(|&x| EAction::from(x).to_string())
-                .collect_vec()
-                .join("\t");
+                .collect_vec();
 
             let policy_sum: f64 = v.avg_strategy().to_vec().iter().map(|(_, v)| *v).sum();
-            let take_prob = v.avg_strategy()[EAction::Pickup.into()] / policy_sum;
+            let mut policy = HashMap::new();
 
-            info!("\t{}\t{}\t{}", istate, take_prob, v.update_count());
+            for (a, w) in v.avg_strategy().to_vec() {
+                let action = EAction::from(a).to_string();
+                policy.insert(action, w / policy_sum);
+            }
+
+            json_infostates.push(JSONRow {
+                infostate: istate.join(""),
+                hand: istate[..5].to_vec(),
+                policy,
+            });
         }
-    }
-    println!("pass on bower take probs written to log file");
-
-    // convert to a key string
-    let mut json_infostates = HashMap::with_capacity(infostates.len());
-    for (k, v) in infostates {
-        let istate_string = k
-            .iter()
-            .map(|&x| EAction::from(x).to_string())
-            .collect_vec()
-            .join("");
-        json_infostates.insert(istate_string, v);
     }
 
     // Save a csv file

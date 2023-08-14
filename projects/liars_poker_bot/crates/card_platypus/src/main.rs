@@ -1,6 +1,9 @@
 use std::fs::OpenOptions;
 use std::mem;
 
+use card_platypus::algorithms::ismcts::ResampleFromInfoState;
+use card_platypus::cfragent::cfres::CFRES;
+use card_platypus::game::euchre::actions::EAction;
 use clap::{command, Parser, Subcommand, ValueEnum};
 
 use card_platypus::actions;
@@ -149,6 +152,39 @@ fn run_scratch(_args: Args) {
     println!("bluff size: {}", mem::size_of::<BluffGameState>());
     println!("kuhn poker size: {}", mem::size_of::<KPGameState>());
     println!("euchre size: {}", mem::size_of::<EuchreGameState>());
+
+    let istate = EuchreGameState::from("9sTsQsKsAs|9cTcKcAcTd|JdQdKdAd9h|JcQcJhAh9d|Js");
+    let mut rng = get_rng();
+    let mut agent = CFRES::new_euchre_bidding(Euchre::new_state, rng.clone());
+    let loaded = agent.load("infostates.open-hand-20m");
+    info!("loaded {}", loaded);
+
+    let mut pass_on_bower_games = Vec::new();
+    for _ in 0..10000 {
+        let mut gs = istate.resample_from_istate(3, &mut rng);
+
+        let mut always_pass = true;
+        for _ in 0..3 {
+            let a = agent.step(&gs);
+            let ea = EAction::from(a);
+            match ea {
+                EAction::Pass => {}
+                _ => {
+                    always_pass = false;
+                    break;
+                }
+            };
+
+            gs.apply_action(EAction::Pass.into());
+        }
+
+        if always_pass {
+            pass_on_bower_games.push(gs);
+        }
+    }
+
+    println!("{}", pass_on_bower_games.len());
+    println!("{}", pass_on_bower_games[0]);
 }
 
 fn run_analyze(args: Args) {
