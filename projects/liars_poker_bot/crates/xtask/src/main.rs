@@ -1,10 +1,11 @@
 use core::num;
-use std::{path::Path, thread};
+use std::{fs, path::Path, thread};
 
-use anyhow::Ok;
+use anyhow::{Context, Ok};
 use clap::{command, Parser, Subcommand};
 use itertools::Itertools;
 use notify::{RecursiveMode, Watcher};
+use toml::Table;
 use xshell::{cmd, Shell};
 
 const REMOTE_ADDR: &str = "static.222.71.9.5.clients.your-server.de";
@@ -16,6 +17,7 @@ enum Commands {
     Serve,
     Deploy,
     UpdateNginx,
+    PublishNotebook { name: String },
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -34,6 +36,7 @@ fn main() -> anyhow::Result<()> {
         Commands::Serve => serve(),
         Commands::Deploy => deploy(),
         Commands::UpdateNginx => update_nginx(),
+        Commands::PublishNotebook { name } => publish_notesbooks(&name),
     }
 }
 
@@ -183,6 +186,62 @@ fn update_nginx() -> anyhow::Result<()> {
     )
     .run()?;
     cmd!(sh, "ssh root@{REMOTE_ADDR} nginx -s reload").run()?;
+
+    Ok(())
+}
+
+fn publish_notesbooks(name: &str) -> anyhow::Result<()> {
+    let toml_str = fs::read_to_string("./notebooks.toml")?;
+    let toml = toml_str.parse::<Table>()?;
+    println!("{:?}", toml);
+    let config = toml
+        .get(name)
+        .context("Name not found")?
+        .as_table()
+        .context("error parsing table")?;
+    let input = config
+        .get("input")
+        .context("input not found")?
+        .as_str()
+        .context("error parsing input to string")?;
+
+    let output = config
+        .get("output")
+        .context("output not found")?
+        .as_str()
+        .context("error parsing output to string")?;
+
+    let title = config
+        .get("title")
+        .context("title not found")?
+        .as_str()
+        .context("error parsing title to string")?;
+
+    let sh = Shell::new()?;
+    cmd!(
+        sh,
+        "jupyter nbconvert --no-input --to html ./python/{input}.ipynb"
+    )
+    .run()?;
+
+    let html = sh.read_file(format!("./python/{}.html", input))?;
+
+    let mut contents = format!(
+        "---
+layout: post
+title:  \"{}\"
+categories: project-log
+---
+",
+        title
+    )
+    .to_string();
+
+    contents.push_str(html.as_str());
+
+    sh.write_file(format!("../../docs/_posts/{}.html", output), contents)?;
+
+    cmd!(sh, "rm ./python/{input}.html").run()?;
 
     Ok(())
 }
