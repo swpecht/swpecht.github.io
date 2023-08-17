@@ -54,7 +54,7 @@ Using [Minimal Cost-Complexity Pruning](https://scikit-learn.org/stable/modules/
 |   |--- 0 red jacks
 |       |--- <b>Pickup</b>
 |--- 2+ spades
-|    |--- <b>Pickup</b>
+|   |--- <b>Pickup</b>
 </pre>
 
 As expected, having more spades or offsuit aces is a strong indicator for picking up the jack of spades -- these are strong cards that can win tricks. 
