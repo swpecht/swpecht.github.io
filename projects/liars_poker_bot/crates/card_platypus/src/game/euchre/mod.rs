@@ -85,6 +85,13 @@ pub enum EPhase {
 }
 
 impl EuchreGameState {
+    pub fn trump_caller(&self) -> Option<Player> {
+        match self.phase() {
+            EPhase::Play | EPhase::Discard => Some(self.trump_caller),
+            _ => None,
+        }
+    }
+
     /// Returns true if the bidding phase just ended
     pub fn bidding_ended(&self) -> bool {
         self.phase() == EPhase::Discard

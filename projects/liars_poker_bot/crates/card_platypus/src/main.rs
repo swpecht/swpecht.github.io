@@ -1,9 +1,6 @@
 use std::fs::OpenOptions;
 use std::mem;
 
-use card_platypus::algorithms::ismcts::ResampleFromInfoState;
-use card_platypus::cfragent::cfres::CFRES;
-use card_platypus::game::euchre::actions::EAction;
 use clap::{command, Parser, Subcommand, ValueEnum};
 
 use card_platypus::actions;
@@ -32,7 +29,9 @@ use scripts::benchmark::{get_rng, run_benchmark, BenchmarkArgs};
 use scripts::estimate_euchre_game_tree::estimate_euchre_game_tree;
 use scripts::pass_on_bower::open_hand_score_pass_on_bower;
 use scripts::pass_on_bower_alpha::benchmark_pass_on_bower;
-use scripts::pass_on_bower_cfr::{parse_weights, run_pass_on_bower_cfr, PassOnBowerCFRArgs};
+use scripts::pass_on_bower_cfr::{
+    analyze_istate, parse_weights, run_pass_on_bower_cfr, PassOnBowerCFRArgs,
+};
 use scripts::tune::{run_tune, TuneArgs};
 use simplelog::{
     ColorChoice, CombinedLogger, ConfigBuilder, TermLogger, TerminalMode, WriteLogger,
@@ -61,6 +60,7 @@ enum Commands {
     PassOnBowerAlpha { num_games: usize },
     PassOnBowerCFRTrain(PassOnBowerCFRArgs),
     PassOnBowerCFRParseWeights { infostate_path: String },
+    PassOnBowerCFRAnalyzeIstate { num_games: usize },
     Tune(TuneArgs),
 }
 
@@ -145,6 +145,7 @@ fn main() {
         Commands::PassOnBowerCFRParseWeights { infostate_path } => {
             parse_weights(infostate_path.as_str())
         }
+        Commands::PassOnBowerCFRAnalyzeIstate { num_games } => analyze_istate(num_games),
     }
 }
 
@@ -152,39 +153,6 @@ fn run_scratch(_args: Args) {
     println!("bluff size: {}", mem::size_of::<BluffGameState>());
     println!("kuhn poker size: {}", mem::size_of::<KPGameState>());
     println!("euchre size: {}", mem::size_of::<EuchreGameState>());
-
-    let istate = EuchreGameState::from("9sTsQsKsAs|9cTcKcAcTd|JdQdKdAd9h|JcQcJhAh9d|Js");
-    let mut rng = get_rng();
-    let mut agent = CFRES::new_euchre_bidding(Euchre::new_state, rng.clone());
-    let loaded = agent.load("infostates.open-hand-20m");
-    info!("loaded {}", loaded);
-
-    let mut pass_on_bower_games = Vec::new();
-    for _ in 0..10000 {
-        let mut gs = istate.resample_from_istate(3, &mut rng);
-
-        let mut always_pass = true;
-        for _ in 0..3 {
-            let a = agent.step(&gs);
-            let ea = EAction::from(a);
-            match ea {
-                EAction::Pass => {}
-                _ => {
-                    always_pass = false;
-                    break;
-                }
-            };
-
-            gs.apply_action(EAction::Pass.into());
-        }
-
-        if always_pass {
-            pass_on_bower_games.push(gs);
-        }
-    }
-
-    println!("{}", pass_on_bower_games.len());
-    println!("{}", pass_on_bower_games[0]);
 }
 
 fn run_analyze(args: Args) {

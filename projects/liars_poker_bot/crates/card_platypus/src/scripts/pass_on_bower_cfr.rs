@@ -2,7 +2,9 @@ use std::{collections::HashMap, fs, hash::Hash};
 
 use card_platypus::{
     agents::{Agent, Seedable},
-    algorithms::{open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot},
+    algorithms::{
+        ismcts::ResampleFromInfoState, open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot,
+    },
     cfragent::cfres::CFRES,
     game::{
         euchre::{
@@ -221,4 +223,112 @@ pub fn parse_weights(infostate_path: &str) {
     json_path.push_str(".json");
     fs::write(json_path.clone(), json_data).unwrap();
     println!("json weights written to: {json_path}");
+}
+
+pub fn analyze_istate(num_games: usize) {
+    let istate = EuchreGameState::from("9sTsQsKsAs|9cTcKcAcTd|JdQdKdAd9h|JcQcJhAh9d|Js");
+    let mut rng = get_rng();
+    let mut agent = CFRES::new_euchre_bidding(Euchre::new_state, rng.clone());
+    let loaded = agent.load("infostates.open-hand-20m");
+    info!("loaded {}", loaded);
+
+    let mut pass_on_bower_games = Vec::new();
+    for _ in 0..num_games {
+        let mut gs = istate.resample_from_istate(3, &mut rng);
+
+        let mut always_pass = true;
+        for _ in 0..3 {
+            let a = agent.step(&gs);
+            let ea = EAction::from(a);
+            match ea {
+                EAction::Pass => {}
+                _ => {
+                    always_pass = false;
+                    break;
+                }
+            };
+
+            gs.apply_action(EAction::Pass.into());
+        }
+
+        if always_pass {
+            pass_on_bower_games.push(gs);
+        }
+    }
+
+    println!("{}", pass_on_bower_games.len());
+    println!("{}", pass_on_bower_games[0]);
+
+    // Get outcome distribution for pass games
+    let pass_counts = outcome_distribution(
+        pass_on_bower_games
+            .clone()
+            .into_iter()
+            .map(|mut gs| {
+                gs.apply_action(EAction::Pass.into());
+                gs
+            })
+            .collect_vec(),
+        &mut agent,
+    );
+
+    println!(
+        "pass counts:\n{}",
+        serde_json::to_string_pretty(&pass_counts).unwrap()
+    );
+
+    let take_counts = outcome_distribution(
+        pass_on_bower_games
+            .clone()
+            .into_iter()
+            .map(|mut gs| {
+                gs.apply_action(EAction::Pickup.into());
+                gs
+            })
+            .collect_vec(),
+        &mut agent,
+    );
+
+    println!(
+        "take counts:\n{}",
+        serde_json::to_string_pretty(&take_counts).unwrap()
+    );
+}
+
+fn outcome_distribution(
+    games: Vec<EuchreGameState>,
+    agent: &mut CFRES<EuchreGameState>,
+) -> HashMap<String, HashMap<i8, usize>> {
+    let mut counts = HashMap::new();
+    let pb = ProgressBar::new(games.len() as u64);
+    for mut gs in games {
+        loop {
+            let a = agent.step(&gs);
+            let ea = EAction::from(a);
+            gs.apply_action(a);
+            match ea {
+                EAction::Pass => {}
+                _ => {
+                    break;
+                }
+            };
+        }
+
+        let trump_call = gs.istate_string(3);
+
+        while !gs.is_terminal() {
+            let a = agent.step(&gs);
+            gs.apply_action(a);
+        }
+
+        let score = gs.evaluate(3) as i8;
+
+        let score_distribution: &mut HashMap<i8, usize> = counts.entry(trump_call).or_default();
+        let c = score_distribution.entry(score).or_default();
+        *c += 1;
+        pb.inc(1);
+    }
+
+    pb.finish_and_clear();
+    counts
 }

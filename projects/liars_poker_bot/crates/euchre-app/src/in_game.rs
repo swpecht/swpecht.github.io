@@ -269,7 +269,7 @@ fn PlayArea<T>(cx: Scope<T>, game_data: GameData, south_player: usize) -> Elemen
                 div { class: "row-start-2 col-start-2 grid justify-items-center",
                     FaceUpCard(cx, gs.displayed_face_up_card()),
                     if matches!(game_data.display_state, WaitingBidClear { ready_players: _ }) {
-                        FaceUpCard(cx, Some(gs.face_up()))
+                        FaceUpCard(cx, Some(gs.face_up().expect("invalid faceup call")))
                     }
                     TurnTracker(cx, gs.clone(), south_player),
                     ClearButton(cx, game_data.clone().display_state)
