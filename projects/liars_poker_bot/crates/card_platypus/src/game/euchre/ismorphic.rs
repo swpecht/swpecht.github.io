@@ -1,10 +1,12 @@
-use itertools::Itertools;
-
-use crate::{game::euchre::deck::CardLocation, istate::IStateKey};
+use crate::{
+    game::{euchre::deck::CardLocation, Action},
+    istate::NormalizedAction,
+};
 
 use super::{
     actions::{Card, EAction, Suit},
     deck::Deck,
+    EuchreGameState,
 };
 
 const JACK_RANK: usize = 2;
@@ -130,39 +132,69 @@ pub(super) fn get_cards(suit: Suit, trump: Option<Suit>) -> &'static [Card] {
 }
 
 /// Normalizes the suit to have Spades always be the faceup card.
-pub(super) fn normalize_suit(istate: IStateKey, face_up_suit: Option<Suit>) -> IStateKey {
+pub fn normalize_action(action: Action, gs: &EuchreGameState) -> NormalizedAction {
+    let face_up_suit = gs.face_up().map(|c| c.suit());
     if face_up_suit.is_none() {
-        return istate;
+        return NormalizedAction::new(action);
     }
 
     let face_up_suit = face_up_suit.unwrap();
 
     use EAction::*;
-    let mut new_istate = IStateKey::default();
+    // We can apply the transform again to denormalize the action
 
-    for a in istate {
-        let ea = EAction::from(a);
-        let new_action = match ea {
-            DealPlayer { c } => DealPlayer {
-                c: transform_card(c, face_up_suit),
-            },
-            DealFaceUp { c } => DealFaceUp {
-                c: transform_card(c, face_up_suit),
-            },
-            Discard { c } => Discard {
-                c: transform_card(c, face_up_suit),
-            },
-            Play { c } => Play {
-                c: transform_card(c, face_up_suit),
-            },
-            _ => ea,
-        };
-        new_istate.push(new_action.into());
-    }
+    let ea = EAction::from(action);
+    let new_action = match ea {
+        DealPlayer { c } => DealPlayer {
+            c: transform_card(c, face_up_suit),
+        },
+        DealFaceUp { c } => DealFaceUp {
+            c: transform_card(c, face_up_suit),
+        },
+        Discard { c } => Discard {
+            c: transform_card(c, face_up_suit),
+        },
+        Play { c } => Play {
+            c: transform_card(c, face_up_suit),
+        },
+        _ => ea,
+    };
 
-    new_istate
+    NormalizedAction::new(new_action.into())
 }
 
+pub fn denormalize_action(action: NormalizedAction, gs: &EuchreGameState) -> Action {
+    let face_up_suit = gs.face_up().map(|c| c.suit());
+    if face_up_suit.is_none() {
+        return action.get();
+    }
+
+    let face_up_suit = face_up_suit.unwrap();
+
+    // We can apply the transform again to denormalize the action
+    use EAction::*;
+    let ea = EAction::from(action.get());
+    let new_action = match ea {
+        DealPlayer { c } => DealPlayer {
+            c: transform_card(c, face_up_suit),
+        },
+        DealFaceUp { c } => DealFaceUp {
+            c: transform_card(c, face_up_suit),
+        },
+        Discard { c } => Discard {
+            c: transform_card(c, face_up_suit),
+        },
+        Play { c } => Play {
+            c: transform_card(c, face_up_suit),
+        },
+        _ => ea,
+    };
+
+    new_action.into()
+}
+
+/// Function to normalize and denormalize cards. Calling this function
+/// on an already normalized card reverses the normaliztion
 fn transform_card(c: Card, face_up_suit: Suit) -> Card {
     use Suit::*;
     match (face_up_suit, c.suit()) {
@@ -174,8 +206,8 @@ fn transform_card(c: Card, face_up_suit: Suit) -> Card {
         (Spades, Spades) => c.to_suit(Spades),
         (Spades, Hearts) => c.to_suit(Hearts),
         (Spades, Diamonds) => c.to_suit(Diamonds),
-        (Hearts, Clubs) => c.to_suit(Hearts),
-        (Hearts, Spades) => c.to_suit(Diamonds),
+        (Hearts, Clubs) => c.to_suit(Diamonds),
+        (Hearts, Spades) => c.to_suit(Hearts),
         (Hearts, Hearts) => c.to_suit(Spades),
         (Hearts, Diamonds) => c.to_suit(Clubs),
         (Diamonds, Clubs) => c.to_suit(Hearts),
@@ -189,9 +221,11 @@ fn transform_card(c: Card, face_up_suit: Suit) -> Card {
 mod tests {
     use crate::game::euchre::{
         actions::{Card, Suit},
-        deck::{CardLocation, Deck},
+        deck::{CardLocation, Deck, CARDS},
         ismorphic::{iso_deck, swap_loc},
     };
+
+    use super::transform_card;
 
     #[test]
     fn test_deck_iso_no_trump() {
@@ -281,5 +315,16 @@ mod tests {
         let mut l = 0;
         swap_loc(&mut l, 0, 1);
         assert_eq!(l, 0);
+    }
+
+    #[test]
+    fn test_normalize_denormalize() {
+        for suit in [Suit::Spades, Suit::Clubs, Suit::Hearts, Suit::Diamonds] {
+            for c in CARDS {
+                let normalized = transform_card(*c, suit);
+                let denormalized = transform_card(normalized, suit);
+                assert_eq!(denormalized, *c, "{} with face up suit {}", *c, suit)
+            }
+        }
     }
 }

@@ -6,7 +6,7 @@ use crate::game::Player;
 
 use super::actions::Card;
 
-const CARDS: &[Card] = &[
+pub const CARDS: &[Card] = &[
     Card::NC,
     Card::TC,
     Card::JC,

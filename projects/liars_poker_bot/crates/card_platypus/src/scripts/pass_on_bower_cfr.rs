@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs, hash::Hash};
+use std::{collections::HashMap, fs};
 
 use card_platypus::{
     agents::{Agent, Seedable},
@@ -204,8 +204,9 @@ pub fn parse_weights(infostate_path: &str) {
             let policy_sum: f64 = v.avg_strategy().to_vec().iter().map(|(_, v)| *v).sum();
             let mut policy = HashMap::new();
 
-            for (a, w) in v.avg_strategy().to_vec() {
-                let action = EAction::from(a).to_string();
+            for (a, w) in v.avg_strategy() {
+                // we can undo the normalization here
+                let action = EAction::from(a.get()).to_string();
                 policy.insert(action, w / policy_sum);
             }
 

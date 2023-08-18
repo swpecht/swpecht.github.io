@@ -17,14 +17,14 @@ use crate::{
 use self::{
     actions::{Card, EAction, Suit},
     deck::{CardLocation, Deck},
-    ismorphic::{iso_deck, normalize_suit},
+    ismorphic::iso_deck,
 };
 
 pub(super) const CARDS_PER_HAND: usize = 5;
 
 pub mod actions;
 mod deck;
-mod ismorphic;
+pub mod ismorphic;
 mod parser;
 pub mod processors;
 
@@ -733,9 +733,6 @@ impl GameState for EuchreGameState {
         if player == 3 && self.phase == EPhase::Discard {
             istate.push(EAction::DiscardMarker.into())
         }
-
-        // fix this
-        // istate = normalize_suit(istate, self.face_up().map(|c| c.suit()));
 
         istate
     }

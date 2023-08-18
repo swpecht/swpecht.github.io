@@ -120,5 +120,32 @@ impl Iterator for IStateKeyIterator {
 /// A key representing the state of the game (with perfect information). Used for transposition table lookups
 pub type IsomorphicHash = u64;
 
+/// Helper type to keep track of if a key has been normalized or not
+pub struct NormalizedIstate(IStateKey);
+
+impl NormalizedIstate {
+    pub fn new(istate: IStateKey) -> Self {
+        Self(istate)
+    }
+
+    pub fn get(&self) -> IStateKey {
+        self.0
+    }
+}
+
+/// Helper type to keep track of if an action is normalized or not
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Copy)]
+pub struct NormalizedAction(Action);
+
+impl NormalizedAction {
+    pub fn new(action: Action) -> Self {
+        Self(action)
+    }
+
+    pub fn get(self) -> Action {
+        self.0
+    }
+}
+
 #[cfg(test)]
 mod tests {}

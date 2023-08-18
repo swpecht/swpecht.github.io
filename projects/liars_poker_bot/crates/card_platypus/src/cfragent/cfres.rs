@@ -5,6 +5,7 @@ use std::{
     path::Path,
 };
 
+use itertools::Itertools;
 use log::{debug, warn};
 use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
 use rmp_serde::Serializer;
@@ -22,7 +23,7 @@ use crate::{
         euchre::{processors::post_discard_phase, EuchreGameState},
         Action, GameState, Player,
     },
-    istate::IStateKey,
+    istate::{IStateKey, NormalizedAction, NormalizedIstate},
     metrics::increment_counter,
     policy::Policy,
 };
@@ -38,41 +39,42 @@ enum AverageType {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct InfoState {
-    regrets: ActionVec<f64>,
-    avg_strategy: ActionVec<f64>,
+    actions: Vec<NormalizedAction>,
+    regrets: Vec<f64>,
+    avg_strategy: Vec<f64>,
     /// Number of times this infostate was updated during training
     update_count: usize,
 }
 
 impl InfoState {
-    pub(super) fn new(actions: &Vec<Action>) -> Self {
-        let mut regrets = ActionVec::new(actions);
-        let mut avg_strategy = ActionVec::new(actions);
-
-        // Start with a small amount of regret and total accumulation, to give a
-        // uniform policy: this will get erased fast.
-        for a in actions {
-            regrets[*a] = 1.0 / 1e6;
-            avg_strategy[*a] = 1.0 / 1e6;
-        }
-
+    pub fn new(normalized_actions: Vec<NormalizedAction>) -> Self {
+        let n = normalized_actions.len();
         Self {
-            regrets,
-            avg_strategy,
+            actions: normalized_actions,
+            regrets: vec![1.0 / 1e6; n],
+            avg_strategy: vec![1.0 / 1e6; n],
             update_count: 0,
         }
     }
 
-    pub fn regrets(&self) -> &ActionVec<f64> {
-        &self.regrets
-    }
-
-    pub fn avg_strategy(&self) -> &ActionVec<f64> {
-        &self.avg_strategy
-    }
-
     pub fn update_count(&self) -> usize {
         self.update_count
+    }
+
+    pub fn avg_strategy(&self) -> Vec<(NormalizedAction, f64)> {
+        self.actions
+            .clone()
+            .into_iter()
+            .zip(self.avg_strategy.clone())
+            .collect_vec()
+    }
+
+    pub fn regrets(&self) -> Vec<(NormalizedAction, f64)> {
+        self.actions
+            .clone()
+            .into_iter()
+            .zip(self.regrets.clone())
+            .collect_vec()
     }
 }
 
@@ -88,6 +90,8 @@ pub struct CFRES<G> {
     infostates: HashMap<IStateKey, InfoState>,
     /// determine if we are at the max depth and should use the rollout
     is_max_depth: fn(&G) -> bool,
+    normalize_action: fn(Action, &G) -> NormalizedAction,
+    denormalize_action: fn(NormalizedAction, &G) -> Action,
     play_bot: PIMCTSBot<G, OpenHandSolver<G>>,
     evaluator: OpenHandSolver<G>,
 }
@@ -122,6 +126,8 @@ impl CFRES<EuchreGameState> {
                 SeedableRng::seed_from_u64(pimcts_seed),
             ),
             evaluator: OpenHandSolver::new_euchre(),
+            normalize_action: crate::game::euchre::ismorphic::normalize_action,
+            denormalize_action: crate::game::euchre::ismorphic::denormalize_action,
         }
     }
 }
@@ -142,6 +148,8 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
                 SeedableRng::seed_from_u64(pimcts_seed),
             ),
             evaluator: OpenHandSolver::default(),
+            normalize_action: |action, _| NormalizedAction::new(action),
+            denormalize_action: |action, _| action.get(),
         }
     }
 
@@ -232,7 +240,7 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
         }
 
         let cur_player = gs.cur_player();
-        let info_state_key = gs.istate_key(cur_player);
+        let info_state_key = normalize_istate(gs.istate_key(cur_player), self.normalize_action, gs);
         let mut actions = self.vector_pool.detach();
         gs.legal_actions(&mut actions);
 
@@ -247,10 +255,21 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
         }
 
         increment_counter("cfr.cfres.nodes_touched");
+        let normalized_actions = actions
+            .iter()
+            .map(|&a| (self.normalize_action)(a, gs))
+            .collect_vec();
+
         let policy;
         {
-            let infostate_info = self.lookup_infostate_info(&info_state_key, &actions);
-            policy = regret_matching(&infostate_info.regrets);
+            let infostate_info = self.lookup_infostate_info(&info_state_key, &normalized_actions);
+            let regrets = infostate_info
+                .regrets()
+                .into_iter()
+                .map(|(a, v)| ((self.denormalize_action)(a, gs), v))
+                .collect_vec();
+
+            policy = regret_matching(&regrets);
         }
 
         let mut value = 0.0;
@@ -278,9 +297,11 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
 
         if cur_player == player {
             // update regrets
-            let infostate_info = self.lookup_infostate_info(&info_state_key, &actions);
+            let normalize = self.normalize_action;
+            let infostate_info = self.lookup_infostate_info(&info_state_key, &normalized_actions);
             for &a in actions.iter() {
-                add_regret(infostate_info, a, child_values[a] - value);
+                let norm_a = (normalize)(a, gs);
+                add_regret(infostate_info, norm_a, child_values[a] - value);
                 infostate_info.update_count += 1;
             }
         }
@@ -293,9 +314,11 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
         let cur_team = cur_player % 2;
         let player_team = player % 2;
         if matches!(self.average_type, AverageType::Simple) && cur_team != player_team {
-            let infostate_info = self.lookup_infostate_info(&info_state_key, &actions);
+            let normalize = self.normalize_action;
+            let infostate_info = self.lookup_infostate_info(&info_state_key, &normalized_actions);
             for &action in actions.iter() {
-                add_avstrat(infostate_info, action, policy[action]);
+                let norm_a = (normalize)(action, gs);
+                add_avstrat(infostate_info, norm_a, policy[action]);
             }
         }
 
@@ -306,10 +329,14 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
     }
 
     /// Looks up an information set table for the given key.
-    fn lookup_infostate_info(&mut self, key: &IStateKey, actions: &Vec<Action>) -> &mut InfoState {
+    fn lookup_infostate_info(
+        &mut self,
+        key: &NormalizedIstate,
+        actions: &[NormalizedAction],
+    ) -> &mut InfoState {
         self.infostates
-            .entry(*key)
-            .or_insert(InfoState::new(actions))
+            .entry(key.get())
+            .or_insert(InfoState::new(actions.to_vec()))
     }
 
     fn full_update_average(&mut self, gs: &mut G, reach_probs: &Vec<f64>) {
@@ -337,13 +364,23 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
         }
 
         let cur_player = gs.cur_player();
-        let info_state_key = gs.istate_key(cur_player);
+        let info_state_key = normalize_istate(gs.istate_key(cur_player), self.normalize_action, gs);
 
         let mut actions = self.vector_pool.detach();
         gs.legal_actions(&mut actions);
 
-        let infostate_info = self.lookup_infostate_info(&info_state_key, &actions);
-        let policy = regret_matching(&infostate_info.regrets);
+        let normalized_actions = actions
+            .iter()
+            .map(|&a| (self.normalize_action)(a, gs))
+            .collect_vec();
+
+        let infostate_info = self.lookup_infostate_info(&info_state_key, &normalized_actions);
+        let regrets = infostate_info
+            .regrets()
+            .into_iter()
+            .map(|(a, v)| ((self.denormalize_action)(a, gs), v))
+            .collect_vec();
+        let policy = regret_matching(&regrets);
 
         for a in actions.iter() {
             let mut new_reach_probs = reach_probs.clone();
@@ -354,9 +391,11 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
         }
 
         // Now update the cumulative policy
-        let infostate_info = self.lookup_infostate_info(&info_state_key, &actions);
+        let normalize = self.normalize_action;
+        let infostate_info = self.lookup_infostate_info(&info_state_key, &normalized_actions);
         for a in actions.iter() {
-            add_avstrat(infostate_info, *a, reach_probs[cur_player] * policy[*a])
+            let norm_a = (normalize)(*a, gs);
+            add_avstrat(infostate_info, norm_a, reach_probs[cur_player] * policy[*a])
         }
 
         actions.clear();
@@ -370,34 +409,58 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
 
 /// Applies regret matching to get a policy.
 ///
-/// Args:
-///   regrets: vector regrets for each action.
-///
 /// Returns:
 ///   probability of taking each action
-fn regret_matching(regrets: &ActionVec<f64>) -> ActionVec<f64> {
-    let sum_pos_regrets: f64 = regrets.to_vec().iter().map(|(_, b)| b.max(0.0)).sum();
-    let mut policy = ActionVec::new(regrets.actions());
+fn regret_matching(regrets: &Vec<(Action, f64)>) -> ActionVec<f64> {
+    let sum_pos_regrets: f64 = regrets.iter().map(|(_, b)| b.max(0.0)).sum();
+
+    let actions = regrets.iter().map(|(a, _)| *a).collect_vec();
+    let mut policy = ActionVec::new(&actions);
 
     if sum_pos_regrets <= 0.0 {
-        for a in regrets.actions() {
-            policy[*a] = 1.0 / regrets.actions().len() as f64;
+        for a in &actions {
+            policy[*a] = 1.0 / actions.len() as f64;
         }
     } else {
-        for a in regrets.actions() {
-            policy[*a] = regrets[*a].max(0.0) / sum_pos_regrets;
+        for (a, r) in regrets {
+            policy[*a] = r.max(0.0) / sum_pos_regrets;
         }
     }
 
     policy
 }
 
-fn add_regret(infostate: &mut InfoState, action: Action, amount: f64) {
-    infostate.regrets[action] += amount;
+fn add_regret(infostate: &mut InfoState, action: NormalizedAction, amount: f64) {
+    let idx = infostate
+        .actions
+        .iter()
+        .position(|&x| x == action)
+        .expect("couldn't find action");
+    infostate.regrets[idx] += amount;
 }
 
-fn add_avstrat(infostate: &mut InfoState, action: Action, amount: f64) {
-    infostate.avg_strategy[action] += amount;
+fn add_avstrat(infostate: &mut InfoState, action: NormalizedAction, amount: f64) {
+    let idx = infostate
+        .actions
+        .iter()
+        .position(|&x| x == action)
+        .expect("couldn't find action");
+    infostate.avg_strategy[idx] += amount;
+}
+
+fn normalize_istate<G>(
+    key: IStateKey,
+    normalizer: fn(Action, &G) -> NormalizedAction,
+    gs: &G,
+) -> NormalizedIstate {
+    let mut new_istate = IStateKey::default();
+
+    for a in key {
+        let norm_a = (normalizer)(a, gs);
+        new_istate.push(norm_a.get());
+    }
+
+    NormalizedIstate::new(new_istate)
 }
 
 impl<G: GameState + ResampleFromInfoState + Send> Policy<G> for CFRES<G> {
@@ -420,13 +483,13 @@ impl<G: GameState + ResampleFromInfoState + Send> Policy<G> for CFRES<G> {
         let mut policy = ActionVec::new(&actions);
         if let Some(retrieved_infostate) = retrieved_infostate {
             let policy_sum: f64 = retrieved_infostate
-                .avg_strategy
-                .to_vec()
+                .avg_strategy()
                 .iter()
                 .map(|(_, v)| *v)
                 .sum();
-            for a in actions.iter() {
-                policy[*a] = retrieved_infostate.avg_strategy[*a] / policy_sum;
+            for (norm_a, s) in retrieved_infostate.avg_strategy() {
+                let a = (self.denormalize_action)(norm_a, gs);
+                policy[a] = s / policy_sum;
             }
         } else {
             for a in actions.iter() {
