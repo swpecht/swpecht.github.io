@@ -433,7 +433,7 @@ fn eaction_fmt(v: &EAction, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
         EAction::DealPlayer { c: x } => f.write_str(&x.to_string()),
         EAction::Discard { c: x } => f.write_str(&x.to_string()),
         EAction::DealFaceUp { c: x } => f.write_str(&x.to_string()),
-        EAction::DiscardMarker => f.write_str(""),
+        EAction::DiscardMarker => f.write_str("|Dis|"),
     }
 }
 
