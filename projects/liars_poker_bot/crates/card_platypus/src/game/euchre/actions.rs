@@ -398,6 +398,17 @@ impl From<Action> for EAction {
     }
 }
 
+impl From<Suit> for EAction {
+    fn from(value: Suit) -> Self {
+        match value {
+            Suit::Clubs => EAction::Clubs,
+            Suit::Spades => EAction::Spades,
+            Suit::Hearts => EAction::Hearts,
+            Suit::Diamonds => EAction::Diamonds,
+        }
+    }
+}
+
 impl Display for EAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         eaction_fmt(self, f)

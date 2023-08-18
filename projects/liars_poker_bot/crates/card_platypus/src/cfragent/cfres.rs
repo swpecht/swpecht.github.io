@@ -270,6 +270,10 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
                 .collect_vec();
 
             policy = regret_matching(&regrets);
+
+            let mut sorted_actions = policy.actions().clone();
+            sorted_actions.sort();
+            assert_eq!(sorted_actions, actions, "{}", gs);
         }
 
         let mut value = 0.0;

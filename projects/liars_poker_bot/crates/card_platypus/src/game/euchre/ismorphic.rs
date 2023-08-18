@@ -138,11 +138,21 @@ pub fn normalize_action(action: Action, gs: &EuchreGameState) -> NormalizedActio
         return NormalizedAction::new(action);
     }
 
-    let face_up_suit = face_up_suit.unwrap();
+    NormalizedAction::new(transform(action, face_up_suit.unwrap()))
+}
 
-    use EAction::*;
+pub fn denormalize_action(action: NormalizedAction, gs: &EuchreGameState) -> Action {
+    let face_up_suit = gs.face_up().map(|c| c.suit());
+    if face_up_suit.is_none() {
+        return action.get();
+    }
+
+    transform(action.get(), face_up_suit.unwrap())
+}
+
+fn transform(action: Action, face_up_suit: Suit) -> Action {
     // We can apply the transform again to denormalize the action
-
+    use EAction::*;
     let ea = EAction::from(action);
     let new_action = match ea {
         DealPlayer { c } => DealPlayer {
@@ -157,36 +167,10 @@ pub fn normalize_action(action: Action, gs: &EuchreGameState) -> NormalizedActio
         Play { c } => Play {
             c: transform_card(c, face_up_suit),
         },
-        _ => ea,
-    };
-
-    NormalizedAction::new(new_action.into())
-}
-
-pub fn denormalize_action(action: NormalizedAction, gs: &EuchreGameState) -> Action {
-    let face_up_suit = gs.face_up().map(|c| c.suit());
-    if face_up_suit.is_none() {
-        return action.get();
-    }
-
-    let face_up_suit = face_up_suit.unwrap();
-
-    // We can apply the transform again to denormalize the action
-    use EAction::*;
-    let ea = EAction::from(action.get());
-    let new_action = match ea {
-        DealPlayer { c } => DealPlayer {
-            c: transform_card(c, face_up_suit),
-        },
-        DealFaceUp { c } => DealFaceUp {
-            c: transform_card(c, face_up_suit),
-        },
-        Discard { c } => Discard {
-            c: transform_card(c, face_up_suit),
-        },
-        Play { c } => Play {
-            c: transform_card(c, face_up_suit),
-        },
+        Spades => transform_suit(Suit::Spades, face_up_suit).into(),
+        Clubs => transform_suit(Suit::Clubs, face_up_suit).into(),
+        Hearts => transform_suit(Suit::Hearts, face_up_suit).into(),
+        Diamonds => transform_suit(Suit::Diamonds, face_up_suit).into(),
         _ => ea,
     };
 
@@ -196,36 +180,41 @@ pub fn denormalize_action(action: NormalizedAction, gs: &EuchreGameState) -> Act
 /// Function to normalize and denormalize cards. Calling this function
 /// on an already normalized card reverses the normaliztion
 fn transform_card(c: Card, face_up_suit: Suit) -> Card {
+    let new_suit = transform_suit(c.suit(), face_up_suit);
+    c.to_suit(new_suit)
+}
+
+fn transform_suit(s: Suit, face_up_suit: Suit) -> Suit {
     use Suit::*;
-    match (face_up_suit, c.suit()) {
-        (Clubs, Clubs) => c.to_suit(Spades),
-        (Clubs, Spades) => c.to_suit(Clubs),
-        (Clubs, Hearts) => c.to_suit(Hearts),
-        (Clubs, Diamonds) => c.to_suit(Diamonds),
-        (Spades, Clubs) => c.to_suit(Clubs),
-        (Spades, Spades) => c.to_suit(Spades),
-        (Spades, Hearts) => c.to_suit(Hearts),
-        (Spades, Diamonds) => c.to_suit(Diamonds),
-        (Hearts, Clubs) => c.to_suit(Diamonds),
-        (Hearts, Spades) => c.to_suit(Hearts),
-        (Hearts, Hearts) => c.to_suit(Spades),
-        (Hearts, Diamonds) => c.to_suit(Clubs),
-        (Diamonds, Clubs) => c.to_suit(Hearts),
-        (Diamonds, Spades) => c.to_suit(Diamonds),
-        (Diamonds, Hearts) => c.to_suit(Clubs),
-        (Diamonds, Diamonds) => c.to_suit(Spades),
+    match (face_up_suit, s) {
+        (Clubs, Clubs) => Spades,
+        (Clubs, Spades) => Clubs,
+        (Clubs, Hearts) => Hearts,
+        (Clubs, Diamonds) => Diamonds,
+        (Spades, Clubs) => Clubs,
+        (Spades, Spades) => Spades,
+        (Spades, Hearts) => Hearts,
+        (Spades, Diamonds) => Diamonds,
+        (Hearts, Clubs) => Diamonds,
+        (Hearts, Spades) => Hearts,
+        (Hearts, Hearts) => Spades,
+        (Hearts, Diamonds) => Clubs,
+        (Diamonds, Clubs) => Hearts,
+        (Diamonds, Spades) => Diamonds,
+        (Diamonds, Hearts) => Clubs,
+        (Diamonds, Diamonds) => Spades,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::game::euchre::{
-        actions::{Card, Suit},
+        actions::{Card, EAction, Suit},
         deck::{CardLocation, Deck, CARDS},
         ismorphic::{iso_deck, swap_loc},
     };
 
-    use super::transform_card;
+    use super::{transform, transform_card, transform_suit};
 
     #[test]
     fn test_deck_iso_no_trump() {
@@ -324,6 +313,19 @@ mod tests {
                 let normalized = transform_card(*c, suit);
                 let denormalized = transform_card(normalized, suit);
                 assert_eq!(denormalized, *c, "{} with face up suit {}", *c, suit)
+            }
+        }
+
+        for suit in [
+            EAction::Spades,
+            EAction::Clubs,
+            EAction::Hearts,
+            EAction::Diamonds,
+        ] {
+            for face_up in [Suit::Spades, Suit::Clubs, Suit::Hearts, Suit::Diamonds] {
+                let normalized = transform(suit.into(), face_up);
+                let denormalized = transform(normalized, face_up);
+                assert_eq!(denormalized, suit.into())
             }
         }
     }
