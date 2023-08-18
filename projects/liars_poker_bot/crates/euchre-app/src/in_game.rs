@@ -312,7 +312,7 @@ fn ClearButton<T>(cx: Scope<T>, display_state: GameProcessingState) -> Element {
     match display_state {
         GameProcessingState::WaitingTrickClear { ready_players } => {
             if ready_players.contains(&player_id) {
-                render!( div { "waiting on other players..." } )
+                render!( div { class: "text-center", "waiting on other players..." } )
             } else {
                 render!(
                     button {
@@ -325,7 +325,7 @@ fn ClearButton<T>(cx: Scope<T>, display_state: GameProcessingState) -> Element {
         }
         GameProcessingState::WaitingBidClear { ready_players } => {
             if ready_players.contains(&player_id) {
-                render!( div { "waiting on other players..." } )
+                render!( div { class: "text-center", "waiting on other players..." } )
             } else {
                 render!(
                     button {
