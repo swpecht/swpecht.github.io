@@ -39,7 +39,7 @@ fn App(cx: Scope) -> Element {
 
     let stored_id = local_storage.get_item(PLAYER_ID_KEY);
 
-    if let Ok((Some(player_id))) = stored_id {
+    if let Ok(Some(player_id)) = stored_id {
         use_shared_state_provider(cx, || PlayerId {
             id: player_id
                 .parse()

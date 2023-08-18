@@ -331,7 +331,7 @@ fn ClearButton<T>(cx: Scope<T>, display_state: GameProcessingState) -> Element {
                     button {
                         class: "bg-white outline outline-black hover:bg-slate-100 focus:outline-none focus:ring focus:bg-slate-100 active:bg-slate-200 px-5 py-2 text-sm leading-5 rounded-full font-semibold text-black",
                         onclick: move |_| { action_task.send(GameAction::ReadyBidClear) },
-                        "Clear"
+                        "Continue game"
                     }
                 )
             }
