@@ -194,8 +194,8 @@ fn RunningStats<T>(cx: Scope<T>, machine_score: usize, human_score: usize) -> El
         div {
             div { class: "pt-8 font-bold text-xl font-large text-black", "Running stats" }
             div { class: "grid grid-cols-2",
-                div { "humans" }
-                div { "machines" }
+                div { "Humans" }
+                div { "Machines" }
                 div { "{human_score}" }
                 div { "{machine_score}" }
             }
