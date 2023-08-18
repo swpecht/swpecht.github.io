@@ -138,6 +138,14 @@ fn GameData<T>(cx: Scope<T>, gs: String, south_player: usize) -> Element {
     let gs = EuchreGameState::from(gs.as_str());
     let trump_details = gs.trump();
 
+    let dealer_seat = match south_player {
+        0 => "East",
+        1 => "North",
+        2 => "West",
+        3 => "South",
+        _ => "Error finding dealer seat",
+    };
+
     let trump_string = if let Some((suit, caller)) = trump_details {
         let caller_seat = match caller {
             x if x == south_player => "South",
@@ -152,12 +160,21 @@ fn GameData<T>(cx: Scope<T>, gs: String, south_player: usize) -> Element {
         "Trump has not been called".to_string()
     };
 
+    let face_up = gs.face_up();
+    let face_up_str = if let Some(card) = face_up {
+        format!("Face up card is: {}", card.icon())
+    } else {
+        "Face up card not yet dealt".to_string()
+    };
+
     let south_trick_wins = gs.trick_score()[south_player % 2];
     let east_trick_wins = gs.trick_score()[(south_player + 1) % 2];
 
     render!(
         div {
             div { class: "pt-8 font-bold text-xl font-large text-black", "Game information" }
+            div { "Dealer is {dealer_seat}" }
+            div { face_up_str }
             div { trump_string }
             div { class: "font-bold", "Tricks taken:" }
             div { class: "grid grid-cols-2",

@@ -565,6 +565,9 @@ impl EuchreGameState {
         self.phase
     }
 
+    /// Return the face up card for the game if it has been dealt yet.
+    ///
+    /// This returns a card even if the face up card has since been picked up or discarded
     pub fn face_up(&self) -> Option<Card> {
         // read the value from the deck
         // if it's not there, we're probably calling this to rewind, look through the
