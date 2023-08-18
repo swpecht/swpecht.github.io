@@ -214,7 +214,7 @@ mod tests {
         ismorphic::{iso_deck, swap_loc},
     };
 
-    use super::{transform, transform_card, transform_suit};
+    use super::{transform, transform_card};
 
     #[test]
     fn test_deck_iso_no_trump() {
