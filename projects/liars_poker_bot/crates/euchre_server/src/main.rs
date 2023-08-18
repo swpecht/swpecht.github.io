@@ -13,7 +13,6 @@ use card_platypus::{
     agents::Agent,
     cfragent::cfres::CFRES,
     game::{
-        self,
         euchre::{Euchre, EuchreGameState},
         Action, GameState,
     },
@@ -256,9 +255,7 @@ fn progress_game(game_data: &mut GameData, bot: &Mutex<CFRES<EuchreGameState>>) 
                         WaitingHumanMove
                     }
                 } else {
-                    WaitingTrickClear {
-                        ready_players: ready_players.clone(),
-                    }
+                    game_data.display_state.clone()
                 }
             }
         };
