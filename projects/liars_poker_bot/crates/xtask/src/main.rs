@@ -1,5 +1,4 @@
-use core::num;
-use std::{fs, path::Path, thread};
+use std::{fs, path::Path};
 
 use anyhow::{Context, Ok};
 use clap::{command, Parser, Subcommand};
