@@ -2,14 +2,12 @@ use std::{
     collections::HashMap,
     fs::{self, File},
     io::BufWriter,
-    iter,
     path::Path,
 };
 
 use itertools::Itertools;
 use log::{debug, warn};
 use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
-use rayon::prelude::*;
 use rmp_serde::Serializer;
 use serde::{Deserialize, Serialize};
 
