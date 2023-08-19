@@ -17,6 +17,7 @@ enum Commands {
     Deploy,
     UpdateNginx,
     PublishNotebook { name: String },
+    Profile,
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -36,7 +37,18 @@ fn main() -> anyhow::Result<()> {
         Commands::Deploy => deploy(),
         Commands::UpdateNginx => update_nginx(),
         Commands::PublishNotebook { name } => publish_notesbooks(&name),
+        Commands::Profile => profile(),
     }
+}
+
+fn profile() -> anyhow::Result<()> {
+    let sh = Shell::new()?;
+
+    cmd!(sh, "sudo sh -c 'echo 0 > /proc/sys/kernel/kptr_restrict'").run()?;
+    let pid = cmd!(sh, "pidof card_platypus").read()?;
+    cmd!(sh, "perf record -p {pid} -F 99 --call-graph dwarf sleep 60").run()?;
+
+    Ok(())
 }
 
 fn get_train_logs() -> anyhow::Result<()> {

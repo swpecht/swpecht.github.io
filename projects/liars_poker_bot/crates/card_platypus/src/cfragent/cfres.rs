@@ -8,6 +8,7 @@ use std::{
 use itertools::Itertools;
 use log::{debug, warn};
 use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
+use rayon::prelude::*;
 use rmp_serde::Serializer;
 use serde::{Deserialize, Serialize};
 
@@ -36,7 +37,7 @@ use features::features;
 /// https://www.science.org/doi/10.1126/science.aay2400
 ///
 /// Stop doing the normalizations after a certain number of steps since no longer worth the effort
-const LINEAR_CFR_CUTOFF: usize = 10_000_000;
+const LINEAR_CFR_CUTOFF: usize = 30_000;
 
 features! {
     pub mod feature {
@@ -237,11 +238,10 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
             // Equivalently, one could multiply the accumulated regret by
             // t / t+1 on each iteration. We do this in
             //  our experiments to reduce the risk of numerical instability.
-            for (_, infostate) in self.infostates.iter_mut() {
-                for r in infostate.regrets.iter_mut() {
-                    *r = *r * self.iteration as f64 / (self.iteration as f64 + 1.0);
-                }
-            }
+            let factor = self.iteration as f64 / (self.iteration as f64 + 1.0);
+            self.infostates.par_iter_mut().for_each(|(_, s)| {
+                s.regrets.iter_mut().for_each(|r| *r *= factor);
+            });
         }
 
         if matches!(self.average_type, AverageType::_Full) {
