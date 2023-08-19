@@ -31,6 +31,13 @@ use crate::{
 use super::cfrnode::ActionVec;
 use features::features;
 
+/// Number of iterations to stop doing the linear CFR normalization
+///
+/// https://www.science.org/doi/10.1126/science.aay2400
+///
+/// Stop doing the normalizations after a certain number of steps since no longer worth the effort
+const LINEAR_CFR_CUTOFF: usize = 10_000_000;
+
 features! {
     pub mod feature {
         const NormalizeSuit = 0b10000000,
@@ -95,6 +102,7 @@ pub struct CFRES<G> {
     vector_pool: Pool<Vec<Action>>,
     game_generator: fn() -> G,
     average_type: AverageType,
+    iteration: usize,
     infostates: HashMap<IStateKey, InfoState>,
     /// determine if we are at the max depth and should use the rollout
     is_max_depth: fn(&G) -> bool,
@@ -144,6 +152,7 @@ impl CFRES<EuchreGameState> {
                 OpenHandSolver::new_euchre(),
                 SeedableRng::seed_from_u64(pimcts_seed),
             ),
+            iteration: 0,
             evaluator: OpenHandSolver::new_euchre(),
             normalize_action,
             denormalize_action,
@@ -169,6 +178,7 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
             evaluator: OpenHandSolver::default(),
             normalize_action: |action, _| NormalizedAction::new(action),
             denormalize_action: |action, _| action.get(),
+            iteration: 0,
         }
     }
 
@@ -215,6 +225,23 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
         let num_players = (self.game_generator)().num_players();
         for player in 0..num_players {
             self.update_regrets(&mut (self.game_generator)(), player, 0);
+        }
+
+        self.iteration += 1;
+
+        if feature::is_enabled(feature::LinearCFR) && self.iteration <= LINEAR_CFR_CUTOFF {
+            // Implement linear CFR for the early iterations
+            //
+            //https://www.science.org/doi/10.1126/science.aay2400
+            //
+            // Equivalently, one could multiply the accumulated regret by
+            // t / t+1 on each iteration. We do this in
+            //  our experiments to reduce the risk of numerical instability.
+            for (_, infostate) in self.infostates.iter_mut() {
+                for r in infostate.regrets.iter_mut() {
+                    *r = *r * self.iteration as f64 / (self.iteration as f64 + 1.0);
+                }
+            }
         }
 
         if matches!(self.average_type, AverageType::_Full) {
@@ -543,8 +570,13 @@ mod tests {
 
     use crate::{cfragent::cfres::CFRES, game::kuhn_poker::KuhnPoker};
 
+    use super::feature;
+
     #[test]
     fn cfres_train_test() {
+        feature::enable(feature::NormalizeSuit);
+        feature::enable(feature::LinearCFR);
+
         let mut alg = CFRES::new(|| (KuhnPoker::game().new)(), SeedableRng::seed_from_u64(43));
         alg.train(10);
     }

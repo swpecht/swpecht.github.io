@@ -94,6 +94,7 @@ pub struct Args {
 fn main() {
     // Set feature flags
     cfres::feature::enable(cfres::feature::NormalizeSuit);
+    cfres::feature::enable(cfres::feature::LinearCFR);
 
     let args = Args::parse();
 

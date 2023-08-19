@@ -5,7 +5,10 @@ use card_platypus::{
         alphamu::AlphaMuBot, exploitability::exploitability, ismcts::Evaluator,
         open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot,
     },
-    cfragent::{cfres::CFRES, CFRAgent, CFRAlgorithm},
+    cfragent::{
+        cfres::{self, CFRES},
+        CFRAgent, CFRAlgorithm,
+    },
     database::memory_node_store::MemoryNodeStore,
     game::{
         bluff::Bluff,
@@ -43,44 +46,6 @@ fn test_alg_open_hand_solver_euchre() {
         }
     });
 }
-
-// /// Confirm that alphamu gives the same results with and without optimizations.
-// #[test]
-// fn test_alpha_mu_optimizations_equivalent() {
-//     let mut rng: StdRng = SeedableRng::seed_from_u64(51);
-//     let mut actions = Vec::new();
-
-//     let num_worlds = 3;
-//     let m = 3;
-//     let mut optimized = AlphaMuBot::new(OpenHandSolver::new(), num_worlds, m, rng.clone());
-//     // optimized.use_optimizations = false;
-//     let mut no_optimized = AlphaMuBot::new(OpenHandSolver::new(), num_worlds, m, rng.clone());
-//     no_optimized.use_optimizations = false;
-
-//     for i in 0..100 {
-//         let mut gs = Euchre::new_state();
-//         // let mut gs = Bluff::new_state(1, 1);
-//         while gs.is_chance_node() {
-//             gs.legal_actions(&mut actions);
-//             let a = actions.choose(&mut rng).unwrap();
-//             gs.apply_action(*a);
-//         }
-
-//         while !gs.is_terminal() {
-//             let o = optimized.evaluate_player(&gs, gs.cur_player());
-//             let no_o = no_optimized.evaluate_player(&gs, gs.cur_player());
-//             if o != no_o {
-//                 println!("{}: {}", i, gs);
-//             }
-//             assert_eq!(o, no_o);
-//             gs.legal_actions(&mut actions);
-//             let a = actions.choose(&mut rng).unwrap();
-//             gs.apply_action(*a);
-//         }
-//     }
-
-//     todo!("re-enable optimizations");
-// }
 
 /// AlphaMu with M=1 should be equivalent to PIMCTS
 #[test]
@@ -153,23 +118,29 @@ fn test_cfr_exploitability() {
 
 #[test]
 fn test_cfr_euchre() {
+    cfres::feature::enable(cfres::feature::NormalizeSuit);
+    cfres::feature::enable(cfres::feature::LinearCFR);
+
     let mut alg = CFRES::new(|| (Euchre::game().new)(), SeedableRng::seed_from_u64(43));
     alg.train(1);
 }
 
 #[test]
 fn test_cfres_nash_kuhn_poker() {
+    cfres::feature::enable(cfres::feature::LinearCFR);
+
     // Verify the nash equilibrium is reached. From https://en.wikipedia.org/wiki/Kuhn_poker
     let mut alg = CFRES::new(|| (KuhnPoker::game().new)(), SeedableRng::seed_from_u64(43));
 
-    alg.train(1_000_000);
+    alg.train(100_000);
     let exploitability = exploitability(|| (KuhnPoker::game().new)(), &mut alg).nash_conv;
     assert_relative_eq!(exploitability, 0.0, epsilon = 0.01);
 }
 
 #[test]
 fn test_cfres_nash_bluff11() {
-    // Verify the nash equilibrium is reached. From https://en.wikipedia.org/wiki/Kuhn_poker
+    cfres::feature::enable(cfres::feature::LinearCFR);
+
     let mut alg = CFRES::new(|| (Bluff::game(1, 1).new)(), SeedableRng::seed_from_u64(43));
 
     alg.train(1_000_000);
