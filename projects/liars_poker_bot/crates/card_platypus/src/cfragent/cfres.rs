@@ -29,6 +29,14 @@ use crate::{
 };
 
 use super::cfrnode::ActionVec;
+use features::features;
+
+features! {
+    pub mod feature {
+        const NormalizeSuit = 0b10000000,
+        const LinearCFR = 0b01000000
+    }
+}
 
 #[derive(Default)]
 enum AverageType {
@@ -112,6 +120,17 @@ impl<G> Seedable for CFRES<G> {
 
 impl CFRES<EuchreGameState> {
     pub fn new_euchre_bidding(game_generator: fn() -> EuchreGameState, mut rng: StdRng) -> Self {
+        let normalize_action: fn(Action, &EuchreGameState) -> NormalizedAction;
+        let denormalize_action: fn(NormalizedAction, &EuchreGameState) -> Action;
+
+        if feature::is_enabled(feature::NormalizeSuit) {
+            normalize_action = crate::game::euchre::ismorphic::normalize_action;
+            denormalize_action = crate::game::euchre::ismorphic::denormalize_action;
+        } else {
+            normalize_action = |action, _gs: &EuchreGameState| NormalizedAction::new(action);
+            denormalize_action = |action, _| action.get();
+        }
+
         let pimcts_seed = rng.gen();
         Self {
             rng,
@@ -126,8 +145,8 @@ impl CFRES<EuchreGameState> {
                 SeedableRng::seed_from_u64(pimcts_seed),
             ),
             evaluator: OpenHandSolver::new_euchre(),
-            normalize_action: crate::game::euchre::ismorphic::normalize_action,
-            denormalize_action: crate::game::euchre::ismorphic::denormalize_action,
+            normalize_action,
+            denormalize_action,
         }
     }
 }

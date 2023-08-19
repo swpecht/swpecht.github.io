@@ -188,35 +188,33 @@ pub fn parse_weights(infostate_path: &str) {
     let infostates = alg.get_infostates();
     let mut json_infostates = Vec::new();
 
-    for (k, v) in infostates.clone() {
+    let pb = ProgressBar::new(infostates.len() as u64);
+    for (k, v) in infostates {
         // filter for the istate keys that end in the right actions
-        if k[k.len() - 1] != EAction::DiscardMarker.into()
-        // k[k.len() - 3..]
-        //     .iter()
-        //     .all(|&x| EAction::from(x) == EAction::Pass)
-        //     && EAction::from(k[k.len() - 4]) != EAction::Pass
-        {
-            let istate = k
-                .iter()
-                .map(|&x| EAction::from(x).to_string())
-                .collect_vec();
+        // if k[k.len() - 1] != EAction::DiscardMarker.into() {
+        let istate = k
+            .iter()
+            .map(|&x| EAction::from(x).to_string())
+            .collect_vec();
 
-            let policy_sum: f64 = v.avg_strategy().to_vec().iter().map(|(_, v)| *v).sum();
-            let mut policy = HashMap::new();
+        let policy_sum: f64 = v.avg_strategy().to_vec().iter().map(|(_, v)| *v).sum();
+        let mut policy = HashMap::new();
 
-            for (a, w) in v.avg_strategy() {
-                // we can undo the normalization here
-                let action = EAction::from(a.get()).to_string();
-                policy.insert(action, w / policy_sum);
-            }
-
-            json_infostates.push(JSONRow {
-                infostate: istate.join(""),
-                hand: istate[..5].to_vec(),
-                policy,
-            });
+        for (a, w) in v.avg_strategy() {
+            // we can undo the normalization here
+            let action = EAction::from(a.get()).to_string();
+            policy.insert(action, w / policy_sum);
         }
+
+        json_infostates.push(JSONRow {
+            infostate: istate.join(""),
+            hand: istate[..5].to_vec(),
+            policy,
+        });
+        // }
+        pb.inc(1);
     }
+    pb.finish_and_clear();
 
     // Save a csv file
     let json_data = serde_json::to_string(&json_infostates).unwrap();
