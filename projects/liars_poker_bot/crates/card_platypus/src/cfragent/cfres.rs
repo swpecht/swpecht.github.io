@@ -8,6 +8,7 @@ use std::{
 use itertools::Itertools;
 use log::{debug, warn};
 use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
+use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 use rmp_serde::Serializer;
 use serde::{Deserialize, Serialize};
 
@@ -205,6 +206,16 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
             let f = f.as_mut().unwrap();
             self.infostates = rmp_serde::from_read(f).unwrap();
             debug!("loaded weights for {} infostates", self.infostates.len());
+
+            // Get the last iteration by reading the max updated iteration
+            let iteration = self
+                .infostates
+                .par_iter()
+                .map(|(_, infostate)| infostate.last_iteration)
+                .max()
+                .unwrap_or(0);
+            self.iteration = iteration;
+
             self.infostates.len()
         } else {
             warn!("file not found, no infostates loaded");
@@ -482,8 +493,9 @@ fn add_regret(infostate: &mut InfoState, action: NormalizedAction, amount: f64, 
             factor *= f;
         }
         infostate.regrets.iter_mut().for_each(|r| *r *= factor);
-        infostate.last_iteration = iteration;
     }
+
+    infostate.last_iteration = iteration;
 
     let idx = infostate
         .actions
