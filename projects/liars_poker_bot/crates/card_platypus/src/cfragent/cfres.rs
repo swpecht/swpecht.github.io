@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     fs::{self, File},
     io::BufWriter,
+    iter,
     path::Path,
 };
 
@@ -37,7 +38,7 @@ use features::features;
 /// https://www.science.org/doi/10.1126/science.aay2400
 ///
 /// Stop doing the normalizations after a certain number of steps since no longer worth the effort
-const LINEAR_CFR_CUTOFF: usize = 30_000;
+const LINEAR_CFR_CUTOFF: usize = 10_000_000;
 
 features! {
     pub mod feature {
@@ -58,8 +59,7 @@ pub struct InfoState {
     actions: Vec<NormalizedAction>,
     regrets: Vec<f64>,
     avg_strategy: Vec<f64>,
-    /// Number of times this infostate was updated during training
-    update_count: usize,
+    last_iteration: usize,
 }
 
 impl InfoState {
@@ -69,12 +69,8 @@ impl InfoState {
             actions: normalized_actions,
             regrets: vec![1.0 / 1e6; n],
             avg_strategy: vec![1.0 / 1e6; n],
-            update_count: 0,
+            last_iteration: 0,
         }
-    }
-
-    pub fn update_count(&self) -> usize {
-        self.update_count
     }
 
     pub fn avg_strategy(&self) -> Vec<(NormalizedAction, f64)> {
@@ -223,27 +219,12 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
     /// An iteration consists of one episode for each player as the update
     /// player.
     fn iteration(&mut self) {
+        self.iteration += 1;
+
         let num_players = (self.game_generator)().num_players();
         for player in 0..num_players {
             self.update_regrets(&mut (self.game_generator)(), player, 0);
         }
-
-        self.iteration += 1;
-
-        if feature::is_enabled(feature::LinearCFR) && self.iteration <= LINEAR_CFR_CUTOFF {
-            // Implement linear CFR for the early iterations
-            //
-            //https://www.science.org/doi/10.1126/science.aay2400
-            //
-            // Equivalently, one could multiply the accumulated regret by
-            // t / t+1 on each iteration. We do this in
-            //  our experiments to reduce the risk of numerical instability.
-            let factor = self.iteration as f64 / (self.iteration as f64 + 1.0);
-            self.infostates.par_iter_mut().for_each(|(_, s)| {
-                s.regrets.iter_mut().for_each(|r| *r *= factor);
-            });
-        }
-
         if matches!(self.average_type, AverageType::_Full) {
             let reach_probs = vec![1.0; num_players];
             self.full_update_average(&mut (self.game_generator)(), &reach_probs);
@@ -348,11 +329,11 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
         if cur_player == player {
             // update regrets
             let normalize = self.normalize_action;
+            let iteration = self.iteration;
             let infostate_info = self.lookup_infostate_info(&info_state_key, &normalized_actions);
             for &a in actions.iter() {
                 let norm_a = (normalize)(a, gs);
-                add_regret(infostate_info, norm_a, child_values[a] - value);
-                infostate_info.update_count += 1;
+                add_regret(infostate_info, norm_a, child_values[a] - value, iteration);
             }
         }
 
@@ -480,7 +461,32 @@ fn regret_matching(regrets: &Vec<(Action, f64)>) -> ActionVec<f64> {
     policy
 }
 
-fn add_regret(infostate: &mut InfoState, action: NormalizedAction, amount: f64) {
+fn add_regret(infostate: &mut InfoState, action: NormalizedAction, amount: f64, iteration: usize) {
+    // Implement linear CFR for the early iterations.
+    //
+    // We do the update on write of regrets to avoid needing to touch nodes that haven't been updated
+    // in a given iteration
+    //
+    //https://www.science.org/doi/10.1126/science.aay2400
+    //
+    // Equivalently, one could multiply the accumulated regret by
+    // t / t+1 on each iteration. We do this in
+    //  our experiments to reduce the risk of numerical instability.
+    if feature::is_enabled(feature::LinearCFR)
+        && iteration <= LINEAR_CFR_CUTOFF
+        // We don't need to do this if the node has never been touched before. This is not only
+        // an optimization, but also ensures that we don't set the weights to 0 by accident
+        && infostate.last_iteration > 0
+    {
+        let mut factor = 1.0;
+        for i in (infostate.last_iteration)..iteration {
+            let f = i as f64 / (i as f64 + 1.0);
+            factor *= f;
+        }
+        infostate.regrets.iter_mut().for_each(|r| *r *= factor);
+        infostate.last_iteration = iteration;
+    }
+
     let idx = infostate
         .actions
         .iter()
