@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs};
+use std::{collections::HashMap, fs, ops::Deref};
 
 use card_platypus::{
     agents::{Agent, Seedable},
@@ -201,7 +201,9 @@ pub fn parse_weights(infostate_path: &str) {
     let mut json_infostates = Vec::new();
 
     let pb = ProgressBar::new(infostates.len() as u64);
-    for (k, v) in infostates {
+    for entry in infostates.deref() {
+        let k = entry.key();
+        let v = entry.value();
         // filter for the istate keys that end in the right actions
         // if k[k.len() - 1] != EAction::DiscardMarker.into() {
         let istate = k

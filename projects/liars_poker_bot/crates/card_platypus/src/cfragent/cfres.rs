@@ -1,14 +1,19 @@
 use std::{
-    collections::HashMap,
     fs::{self, File},
     io::BufWriter,
+    ops::Deref,
     path::Path,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
 };
 
+use dashmap::{mapref::one::RefMut, DashMap};
 use itertools::Itertools;
 use log::{debug, warn};
-use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
-use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
+use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, Rng, SeedableRng};
+use rayon::prelude::*;
 use rmp_serde::Serializer;
 use serde::{Deserialize, Serialize};
 
@@ -42,11 +47,12 @@ const LINEAR_CFR_CUTOFF: usize = 10_000_000;
 features! {
     pub mod feature {
         const NormalizeSuit = 0b10000000,
-        const LinearCFR = 0b01000000
+        const LinearCFR = 0b01000000,
+        const SingleThread = 0b00100000
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 enum AverageType {
     _Full,
     #[default]
@@ -93,13 +99,13 @@ impl InfoState {
 ///
 /// Based on implementation from: OpenSpiel:
 ///     https://github.com/deepmind/open_spiel/blob/master/open_spiel/python/algorithms/mccfr.py
+#[derive(Clone)]
 pub struct CFRES<G> {
-    rng: StdRng,
     vector_pool: Pool<Vec<Action>>,
     game_generator: fn() -> G,
     average_type: AverageType,
-    iteration: usize,
-    infostates: HashMap<IStateKey, InfoState>,
+    iteration: Arc<AtomicUsize>,
+    infostates: Arc<DashMap<IStateKey, InfoState>>,
     /// determine if we are at the max depth and should use the rollout
     is_max_depth: fn(&G) -> bool,
     normalize_action: fn(Action, &G) -> NormalizedAction,
@@ -110,7 +116,7 @@ pub struct CFRES<G> {
 
 impl<G> CFRES<G> {
     /// Gets the infostates of the agent for external analysis
-    pub fn get_infostates(&self) -> HashMap<IStateKey, InfoState> {
+    pub fn get_infostates(&self) -> Arc<DashMap<IStateKey, InfoState>> {
         self.infostates.clone()
     }
 }
@@ -137,18 +143,17 @@ impl CFRES<EuchreGameState> {
 
         let pimcts_seed = rng.gen();
         Self {
-            rng,
             vector_pool: Pool::new(Vec::new),
             game_generator,
             average_type: AverageType::default(),
-            infostates: HashMap::new(),
+            infostates: Arc::new(DashMap::default()),
             is_max_depth: post_discard_phase,
             play_bot: PIMCTSBot::new(
                 50,
                 OpenHandSolver::new_euchre(),
                 SeedableRng::seed_from_u64(pimcts_seed),
             ),
-            iteration: 0,
+            iteration: Arc::new(AtomicUsize::new(0)),
             evaluator: OpenHandSolver::new_euchre(),
             normalize_action,
             denormalize_action,
@@ -156,15 +161,14 @@ impl CFRES<EuchreGameState> {
     }
 }
 
-impl<G: GameState + ResampleFromInfoState> CFRES<G> {
+impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
     pub fn new(game_generator: fn() -> G, mut rng: StdRng) -> Self {
         let pimcts_seed = rng.gen();
         Self {
-            rng,
             vector_pool: Pool::new(Vec::new),
             game_generator,
             average_type: AverageType::default(),
-            infostates: HashMap::new(),
+            infostates: Arc::new(DashMap::default()),
             is_max_depth: |_: &G| false,
             play_bot: PIMCTSBot::new(
                 50,
@@ -174,14 +178,21 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
             evaluator: OpenHandSolver::default(),
             normalize_action: |action, _| NormalizedAction::new(action),
             denormalize_action: |action, _| action.get(),
-            iteration: 0,
+            iteration: Arc::new(AtomicUsize::new(0)),
         }
     }
 
     pub fn train(&mut self, n: usize) {
-        for _ in 0..n {
-            self.iteration();
+        if feature::is_enabled(feature::SingleThread) {
+            for _ in 0..n {
+                self.iteration();
+            }
+        } else {
+            (0..n)
+                .into_par_iter()
+                .for_each(|_| self.clone().iteration())
         }
+
         self.play_bot.reset();
         self.evaluator.reset();
     }
@@ -197,24 +208,27 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
         let f = BufWriter::new(f);
 
         debug!("saving weights for {} infostates...", self.infostates.len());
-        self.infostates.serialize(&mut Serializer::new(f)).unwrap();
+        self.infostates
+            .deref()
+            .serialize(&mut Serializer::new(f))
+            .unwrap();
     }
 
     pub fn load(&mut self, path: &str) -> usize {
         if Path::new(path).exists() {
             let f = &mut File::open(path);
             let f = f.as_mut().unwrap();
-            self.infostates = rmp_serde::from_read(f).unwrap();
+            self.infostates = Arc::new(rmp_serde::from_read(f).unwrap());
             debug!("loaded weights for {} infostates", self.infostates.len());
 
             // Get the last iteration by reading the max updated iteration
             let iteration = self
                 .infostates
-                .par_iter()
-                .map(|(_, infostate)| infostate.last_iteration)
+                .iter()
+                .map(|x| x.value().last_iteration)
                 .max()
                 .unwrap_or(0);
-            self.iteration = iteration;
+            self.iteration = Arc::new(AtomicUsize::new(iteration));
 
             self.infostates.len()
         } else {
@@ -228,11 +242,20 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
     /// An iteration consists of one episode for each player as the update
     /// player.
     fn iteration(&mut self) {
-        self.iteration += 1;
+        // We probably don't need this strict of ordering, but will start with this and relax if becomes performance
+        // issue.
+        self.iteration
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         let num_players = (self.game_generator)().num_players();
         for player in 0..num_players {
-            self.update_regrets(&mut (self.game_generator)(), player, 0);
+            self.update_regrets(
+                &mut (self.game_generator)(),
+                player,
+                0,
+                self.normalize_action,
+                self.denormalize_action,
+            );
         }
         if matches!(self.average_type, AverageType::_Full) {
             let reach_probs = vec![1.0; num_players];
@@ -250,7 +273,14 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
     ///     value: is the value of the state in the game
     ///     obtained as the weighted average of the values
     ///     of the children
-    fn update_regrets(&mut self, gs: &mut G, player: Player, _depth: usize) -> f64 {
+    fn update_regrets(
+        &mut self,
+        gs: &mut G,
+        player: Player,
+        _depth: usize,
+        normalizer: fn(Action, &G) -> NormalizedAction,
+        denormalizer: fn(NormalizedAction, &G) -> Action,
+    ) -> f64 {
         if gs.is_terminal() {
             return gs.evaluate(player);
         }
@@ -259,13 +289,13 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
             let mut actions = self.vector_pool.detach();
             gs.legal_actions(&mut actions);
             let outcome = *actions
-                .choose(&mut self.rng)
+                .choose(&mut thread_rng())
                 .expect("error choosing a random action for chance node");
             actions.clear();
             self.vector_pool.attach(actions);
 
             gs.apply_action(outcome);
-            let value = self.update_regrets(gs, player, _depth + 1);
+            let value = self.update_regrets(gs, player, _depth + 1, normalizer, denormalizer);
             gs.undo();
             return value;
         }
@@ -283,7 +313,7 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
         // don't store anything if only 1 valid action
         if actions.len() == 1 {
             gs.apply_action(actions[0]);
-            let v = self.update_regrets(gs, player, _depth + 1);
+            let v = self.update_regrets(gs, player, _depth + 1, normalizer, denormalizer);
             gs.undo();
             actions.clear();
             self.vector_pool.attach(actions);
@@ -298,11 +328,11 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
 
         let policy;
         {
-            let infostate_info = self.lookup_infostate_info(&info_state_key, &normalized_actions);
+            let infostate_info = self.lookup_entry(&info_state_key, &normalized_actions);
             let regrets = infostate_info
                 .regrets()
                 .into_iter()
-                .map(|(a, v)| ((self.denormalize_action)(a, gs), v))
+                .map(|(a, v)| ((denormalizer)(a, gs), v))
                 .collect_vec();
 
             policy = regret_matching(&regrets);
@@ -319,17 +349,18 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
             // sample at opponent node
             let a = policy
                 .to_vec()
-                .choose_weighted(&mut self.rng, |a| a.1)
+                .choose_weighted(&mut thread_rng(), |a| a.1)
                 .expect("error choosing weighted action")
                 .0;
             gs.apply_action(a);
-            value = self.update_regrets(gs, player, _depth + 1);
+            value = self.update_regrets(gs, player, _depth + 1, normalizer, denormalizer);
             gs.undo();
         } else {
             // walk over all actions at my node
             for &a in actions.iter() {
                 gs.apply_action(a);
-                child_values[a] = self.update_regrets(gs, player, _depth + 1);
+                child_values[a] =
+                    self.update_regrets(gs, player, _depth + 1, normalizer, denormalizer);
                 gs.undo();
                 value += policy[a] * child_values[a];
             }
@@ -337,11 +368,11 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
 
         if cur_player == player {
             // update regrets
-            let normalize = self.normalize_action;
-            let iteration = self.iteration;
-            let infostate_info = self.lookup_infostate_info(&info_state_key, &normalized_actions);
+            let iteration = self.iteration.load(Ordering::SeqCst);
+            let mut entry = self.lookup_entry(&info_state_key, &normalized_actions);
+            let infostate_info = entry.value_mut();
             for &a in actions.iter() {
-                let norm_a = (normalize)(a, gs);
+                let norm_a = (normalizer)(a, gs);
                 add_regret(infostate_info, norm_a, child_values[a] - value, iteration);
             }
         }
@@ -354,10 +385,10 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
         let cur_team = cur_player % 2;
         let player_team = player % 2;
         if matches!(self.average_type, AverageType::Simple) && cur_team != player_team {
-            let normalize = self.normalize_action;
-            let infostate_info = self.lookup_infostate_info(&info_state_key, &normalized_actions);
+            let mut entry = self.lookup_entry(&info_state_key, &normalized_actions);
+            let infostate_info = entry.value_mut();
             for &action in actions.iter() {
-                let norm_a = (normalize)(action, gs);
+                let norm_a = (normalizer)(action, gs);
                 add_avstrat(infostate_info, norm_a, policy[action]);
             }
         }
@@ -369,77 +400,19 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
     }
 
     /// Looks up an information set table for the given key.
-    fn lookup_infostate_info(
+    fn lookup_entry(
         &mut self,
         key: &NormalizedIstate,
         actions: &[NormalizedAction],
-    ) -> &mut InfoState {
+    ) -> RefMut<IStateKey, InfoState> {
         self.infostates
             .entry(key.get())
             .or_insert(InfoState::new(actions.to_vec()))
     }
 
-    fn full_update_average(&mut self, gs: &mut G, reach_probs: &Vec<f64>) {
-        if gs.is_terminal() {
-            return;
-        }
-
-        if gs.is_chance_node() {
-            let mut actions = self.vector_pool.detach();
-            gs.legal_actions(&mut actions);
-            for a in &actions {
-                gs.apply_action(*a);
-                self.full_update_average(gs, reach_probs);
-                gs.undo();
-            }
-            actions.clear();
-            self.vector_pool.attach(actions);
-            return;
-        }
-
-        // If all the probs are zero, no need to keep going.
-        let sum_reach_probs: f64 = reach_probs.iter().sum();
-        if sum_reach_probs == 0.0 {
-            return;
-        }
-
-        let cur_player = gs.cur_player();
-        let info_state_key = normalize_istate(gs.istate_key(cur_player), self.normalize_action, gs);
-
-        let mut actions = self.vector_pool.detach();
-        gs.legal_actions(&mut actions);
-
-        let normalized_actions = actions
-            .iter()
-            .map(|&a| (self.normalize_action)(a, gs))
-            .collect_vec();
-
-        let infostate_info = self.lookup_infostate_info(&info_state_key, &normalized_actions);
-        let regrets = infostate_info
-            .regrets()
-            .into_iter()
-            .map(|(a, v)| ((self.denormalize_action)(a, gs), v))
-            .collect_vec();
-        let policy = regret_matching(&regrets);
-
-        for a in actions.iter() {
-            let mut new_reach_probs = reach_probs.clone();
-            new_reach_probs[cur_player] *= policy[*a];
-            gs.apply_action(*a);
-            self.full_update_average(gs, &new_reach_probs);
-            gs.undo();
-        }
-
-        // Now update the cumulative policy
-        let normalize = self.normalize_action;
-        let infostate_info = self.lookup_infostate_info(&info_state_key, &normalized_actions);
-        for a in actions.iter() {
-            let norm_a = (normalize)(*a, gs);
-            add_avstrat(infostate_info, norm_a, reach_probs[cur_player] * policy[*a])
-        }
-
-        actions.clear();
-        self.vector_pool.attach(actions);
+    fn full_update_average(&mut self, _gs: &mut G, _reach_probs: &[f64]) {
+        // deleted implementation as too slow to use in practice
+        todo!("not supported")
     }
 
     pub fn num_info_states(&self) -> usize {
@@ -573,7 +546,7 @@ impl<G: GameState + ResampleFromInfoState + Send> Agent<G> for CFRES<G> {
     fn step(&mut self, s: &G) -> Action {
         let action_weights = self.action_probabilities(s).to_vec();
         action_weights
-            .choose_weighted(&mut self.rng, |item| item.1)
+            .choose_weighted(&mut thread_rng(), |item| item.1)
             .unwrap()
             .0
     }

@@ -143,7 +143,7 @@ fn test_cfres_nash_bluff11() {
 
     let mut alg = CFRES::new(|| (Bluff::game(1, 1).new)(), SeedableRng::seed_from_u64(43));
 
-    alg.train(1_000_000);
+    alg.train(2_000_000);
     let exploitability = exploitability(|| (Bluff::game(1, 1).new)(), &mut alg).nash_conv;
     assert_relative_eq!(exploitability, 0.0, epsilon = 0.01);
 }

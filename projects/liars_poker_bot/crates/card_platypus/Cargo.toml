@@ -19,7 +19,7 @@ serde-big-array = "0.5"
 rustc-hash = "1.1.0"
 approx = "0.5"
 rayon = "1.7"
-dashmap = "5.4.0"
+dashmap = {version = "5.4.0", features = ["serde"]}
 indicatif = "0.17.5"
 features = {version ="0.10", git = "https://github.com/swpecht/features-rs.git"}
 bitflags = "2.4"

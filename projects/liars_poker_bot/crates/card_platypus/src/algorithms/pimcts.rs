@@ -17,6 +17,7 @@ use super::{
     open_hand_solver::OpenHandSolver,
 };
 
+#[derive(Clone)]
 pub struct PIMCTSBot<G, E> {
     n_rollouts: usize,
     rng: StdRng,
