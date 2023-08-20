@@ -456,13 +456,13 @@ fn add_regret(infostate: &mut InfoState, action: NormalizedAction, amount: f64, 
     // t / t+1 on each iteration. We do this in
     //  our experiments to reduce the risk of numerical instability.
     if feature::is_enabled(feature::LinearCFR)
-        && iteration <= LINEAR_CFR_CUTOFF
         // We don't need to do this if the node has never been touched before. This is not only
         // an optimization, but also ensures that we don't set the weights to 0 by accident
         && infostate.last_iteration > 0
     {
         let mut factor = 1.0;
-        for i in (infostate.last_iteration)..iteration {
+        // We only apply the factor up to the cutoff amount
+        for i in (infostate.last_iteration)..iteration.min(LINEAR_CFR_CUTOFF) {
             let f = i as f64 / (i as f64 + 1.0);
             factor *= f;
         }
