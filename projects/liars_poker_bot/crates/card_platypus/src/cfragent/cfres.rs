@@ -320,7 +320,8 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
             return v;
         }
 
-        increment_counter("cfr.cfres.nodes_touched");
+        // Disable for now, doesn't work with multithreading
+        // increment_counter("cfr.cfres.nodes_touched");
         let normalized_actions = actions
             .iter()
             .map(|&a| (self.normalize_action)(a, gs))
