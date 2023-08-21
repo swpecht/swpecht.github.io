@@ -174,7 +174,7 @@ pub fn generate_jack_of_spades_deal() -> EuchreGameState {
         actions.clear();
     }
 
-    gs.apply_action(EAction::DealFaceUp { c: Card::JS }.into());
+    gs.apply_action(EAction::JS.into());
 
     gs
 }

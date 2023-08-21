@@ -33,11 +33,11 @@ impl From<&str> for EuchreGameState {
             }
 
             let a = match (gs.phase(), action_buffer.as_str()) {
-                (EPhase::DealHands, x) => EAction::DealPlayer { c: Card::from(x) },
-                (EPhase::DealFaceUp, x) => EAction::DealFaceUp { c: Card::from(x) },
+                (EPhase::DealHands, x) => EAction::private_action(Card::from(x)),
+                (EPhase::DealFaceUp, x) => EAction::public_action(Card::from(x)),
                 (EPhase::Pickup | EPhase::ChooseTrump, "P") => EAction::Pass,
                 (EPhase::Pickup, "T") => EAction::Pickup,
-                (EPhase::Discard, x) => EAction::Discard { c: Card::from(x) },
+                (EPhase::Discard, x) => EAction::private_action(Card::from(x)),
                 (EPhase::ChooseTrump, x) => match x {
                     "S" => EAction::Spades,
                     "C" => EAction::Clubs,
@@ -45,7 +45,7 @@ impl From<&str> for EuchreGameState {
                     "D" => EAction::Diamonds,
                     _ => panic!("invalid suit: {}", x),
                 },
-                (EPhase::Play, x) => EAction::Play { c: Card::from(x) },
+                (EPhase::Play, x) => EAction::public_action(Card::from(x)),
                 _ => panic!(
                     "invalid action: {} for phase: {:?}",
                     action_buffer,

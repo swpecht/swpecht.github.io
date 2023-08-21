@@ -201,6 +201,7 @@ impl EuchreGameState {
     }
 
     fn apply_action_deal_hands(&mut self, a: Action) {
+        assert!(!EAction::from(a).is_public());
         let card = EAction::from(a).card();
 
         if self.deck[card] != CardLocation::None {
@@ -221,7 +222,34 @@ impl EuchreGameState {
     }
 
     fn apply_action_deal_face_up(&mut self, a: Action) {
-        if let EAction::DealFaceUp { c } = a.into() {
+        use EAction::*;
+        if matches!(
+            a.into(),
+            NC | TC
+                | JC
+                | QC
+                | KC
+                | AC
+                | NS
+                | TS
+                | JS
+                | QS
+                | KS
+                | AS
+                | NH
+                | TH
+                | JH
+                | QH
+                | KH
+                | AH
+                | ND
+                | TD
+                | JD
+                | QD
+                | KD
+                | AD
+        ) {
+            let c = EAction::from(a).card();
             if self.deck[c] != CardLocation::None {
                 panic!(
                     "attempting to deal a card that was already dealt: {}, {:?}",
@@ -292,6 +320,7 @@ impl EuchreGameState {
 
     /// Can only be done by the dealer (player 3)
     fn apply_action_discard(&mut self, a: Action) {
+        assert!(!EAction::from(a).is_public());
         let discard = EAction::from(a).card();
         assert_eq!(
             self.deck[discard],
@@ -306,8 +335,7 @@ impl EuchreGameState {
     }
 
     fn apply_action_play(&mut self, a: Action) {
-        assert!(matches!(EAction::from(a), EAction::Play { c: _ }));
-
+        assert!(EAction::from(a).is_public());
         let card = EAction::from(a).card();
         // track the cards in play for isomorphic key
         self.deck[card] = CardLocation::Played(self.cur_player);
@@ -387,7 +415,7 @@ impl EuchreGameState {
     fn legal_actions_dealing(&self, actions: &mut Vec<Action>) {
         for (c, loc) in self.deck.into_iter() {
             if loc == CardLocation::None {
-                actions.push(EAction::DealPlayer { c }.into());
+                actions.push(EAction::private_action(c).into());
             }
         }
     }
@@ -395,7 +423,7 @@ impl EuchreGameState {
     fn legal_actions_deal_face_up(&self, actions: &mut Vec<Action>) {
         for (c, loc) in self.deck.into_iter() {
             if loc == CardLocation::None {
-                actions.push(EAction::DealFaceUp { c }.into());
+                actions.push(EAction::public_action(c).into());
             }
         }
     }
@@ -434,7 +462,7 @@ impl EuchreGameState {
         if self.is_start_of_trick() {
             for (c, loc) in self.deck.into_iter() {
                 if loc == player_loc {
-                    actions.push(EAction::Play { c }.into());
+                    actions.push(EAction::public_action(c).into());
                 }
             }
             return;
@@ -446,7 +474,7 @@ impl EuchreGameState {
             // We check if the player has the card before the suit to avoid the more
             // expensive get_suit call
             if loc == player_loc && self.get_suit(c) == leading_suit {
-                actions.push(EAction::Play { c }.into());
+                actions.push(EAction::public_action(c).into());
             }
         }
 
@@ -454,7 +482,7 @@ impl EuchreGameState {
             // no suit, can play any card
             for (c, loc) in self.deck.into_iter() {
                 if loc == player_loc {
-                    actions.push(EAction::Play { c }.into());
+                    actions.push(EAction::public_action(c).into());
                 }
             }
         }
@@ -578,10 +606,9 @@ impl EuchreGameState {
             }
         }
 
-        for a in self.key {
-            if let EAction::DealFaceUp { c } = EAction::from(a) {
-                return Some(c);
-            }
+        // 21st action will be the face up action
+        if self.key.len() >= 21 {
+            return Some(EAction::from(self.key[20]).card());
         }
 
         None
@@ -633,21 +660,25 @@ impl Display for EuchreGameState {
             let a = EAction::from(key[i]);
             write!(f, "{}", a).unwrap();
 
-            if matches!(a, EAction::Play { c: _ }) && first_play.is_none() {
-                first_play = Some(i);
-            }
-
             let append_pipe = match a {
-                EAction::DealPlayer { c: _ } => (i + 1) % 5 == 0,
-                EAction::DealFaceUp { c: _ } => true,
+                // dealing cards
+                _ if i < 20 => (i + 1) % 5 == 0,
+                // faceup
+                _ if i == 21 => true,
                 EAction::Pickup => true,
-                EAction::Clubs | EAction::Diamonds | EAction::Hearts | EAction::Spades => true,
-                EAction::Play { c: _ } => {
-                    ((i - first_play.unwrap() + 1) % 4 == 0) && (i != first_play.unwrap())
+                EAction::Clubs | EAction::Diamonds | EAction::Hearts | EAction::Spades => {
+                    first_play = Some(i + 1);
+                    true
                 }
-                EAction::Discard { c: _ } => true,
+                // discard action
+                _ if i > 20 && !a.is_public() => {
+                    first_play = Some(i + 1);
+                    true
+                }
                 EAction::Pass => false,
                 EAction::DiscardMarker => false,
+                // everything else is Play
+                _ => ((i - first_play.unwrap() + 1) % 4 == 0) && (i != first_play.unwrap()),
             };
             if append_pipe {
                 write!(f, "|").unwrap();
@@ -685,7 +716,7 @@ impl GameState for EuchreGameState {
                 // Dealer can discard any card
                 for (c, loc) in self.deck.into_iter() {
                     if loc == CardLocation::Player3 {
-                        actions.push(EAction::Discard { c }.into());
+                        actions.push(EAction::private_action(c).into());
                     }
                 }
             }
@@ -712,18 +743,11 @@ impl GameState for EuchreGameState {
         let mut istate = IStateKey::default();
 
         for (p, a) in self.play_order.iter().zip(self.key.iter()) {
+            let ea = EAction::from(*a);
             let is_visible = match EAction::from(*a) {
-                EAction::Pickup => true,
-                EAction::Pass => true,
-                EAction::Clubs => true,
-                EAction::Spades => true,
-                EAction::Hearts => true,
-                EAction::Diamonds => true,
-                EAction::DealPlayer { c: _ } => player == *p,
-                EAction::DealFaceUp { c: _ } => true,
-                EAction::Discard { c: _ } => player == 3, // dealer can see
-                EAction::Play { c: _ } => true,
                 EAction::DiscardMarker => false,
+                _ if ea.is_public() => true,
+                _ => player == *p,
             };
 
             if is_visible {
@@ -892,6 +916,7 @@ impl GameState for EuchreGameState {
 
     fn undo(&mut self) {
         self.cur_player = self.play_order.pop().unwrap();
+        let action_number = self.key.len();
         let applied_action = EAction::from(self.key.pop());
 
         // fix the trick winner counts
@@ -903,6 +928,19 @@ impl GameState for EuchreGameState {
         }
 
         match applied_action {
+            // dealing player cards
+            _ if action_number <= 20 => {
+                let c = applied_action.card();
+                self.deck[c] = CardLocation::None;
+                self.phase = EPhase::DealHands
+            }
+            // dealing face up card
+            _ if action_number == 21 => {
+                let c = applied_action.card();
+                self.deck[c] = CardLocation::None;
+                self.phase = EPhase::DealFaceUp;
+            }
+
             EAction::Pass => {
                 // did we just undo the last pickup action?
                 if self.key.len() == 20 + 1 + 3 {
@@ -929,19 +967,19 @@ impl GameState for EuchreGameState {
                     .expect("can't call faceup before deal finished");
                 self.deck[face_up] = CardLocation::FaceUp;
             }
-            EAction::DealPlayer { c } => {
-                self.deck[c] = CardLocation::None;
-                self.phase = EPhase::DealHands
-            }
-            EAction::DealFaceUp { c } => {
-                self.deck[c] = CardLocation::None;
-                self.phase = EPhase::DealFaceUp;
-            }
-            EAction::Discard { c } => {
+
+            // Private action after dealing cards must be discard
+            _ if action_number > 20 && !applied_action.is_public() => {
+                let c = applied_action.card();
                 self.deck[c] = CardLocation::Player3;
                 self.phase = EPhase::Discard;
             }
-            EAction::Play { c } => {
+            EAction::DiscardMarker => {
+                panic!("discard marker should never be in interanl game istate")
+            }
+            // all that's left are play actions
+            _ => {
+                let c = applied_action.card();
                 self.deck[c] = self.cur_player.into();
                 self.cards_played -= 1;
                 if self.cards_played % 4 == 3 {
@@ -957,9 +995,6 @@ impl GameState for EuchreGameState {
                         self.deck[c] = CardLocation::Played(*p);
                     }
                 }
-            }
-            EAction::DiscardMarker => {
-                panic!("discard marker should never be in interanl game istate")
             }
         }
     }
@@ -1001,11 +1036,17 @@ impl ResampleFromInfoState for EuchreGameState {
         // Collect known cards: those played, dealt face up, or dealt to the player whose istate we're recreating
         let face_up = EAction::from(self.key[20]).card(); // 21st card dealt
         let mut known_dealt_cards = Deck::default();
-        for (a, p) in self.key.iter().zip(self.play_order.iter()) {
+        for (i, (a, p)) in self.key.iter().zip(self.play_order.iter()).enumerate() {
             let a = EAction::from(*a);
-            if (matches!(a, EAction::Play { c: _ }) && a.card() != face_up)
-                || (matches!(a, EAction::DealPlayer { c: _ }) && *p == player)
-                || (matches!(a, EAction::Discard { c: _ }) && player == 3 && a.card() != face_up)
+
+            // deal players
+            let is_deal_target_player = i < 20 && *p == player;
+            let is_discard = i > 21 && !a.is_public();
+            let is_play_action = i >= (self.key.len() - self.cards_played);
+
+            if (is_play_action && a.card() != face_up)
+                || is_deal_target_player
+                || (is_discard && player == 3 && a.card() != face_up)
             // track the discard card for dealer
             {
                 known_dealt_cards[a.card()] = CardLocation::from(*p);
@@ -1037,14 +1078,14 @@ impl ResampleFromInfoState for EuchreGameState {
             actions.shuffle(rng);
             for c in actions.iter().map(|x| EAction::from(*x).card()) {
                 if known_dealt_cards[c] == CardLocation::None && c != face_up {
-                    ngs.apply_action(EAction::DealPlayer { c }.into());
+                    ngs.apply_action(EAction::private_action(c).into());
                     break;
                 }
             }
         }
 
         // deal the face up
-        ngs.apply_action(EAction::DealFaceUp { c: face_up }.into());
+        ngs.apply_action(EAction::public_action(face_up).into());
 
         // apply the non-deal actions
         for a in &self.key()[21..] {
@@ -1053,7 +1094,8 @@ impl ResampleFromInfoState for EuchreGameState {
             // card randomly.
             //
             // If it's not a discard, we apply the actions in the order we saw them.
-            if matches!(EAction::from(*a), EAction::Discard { c: _ }) && player != 3 {
+            // discard is the only private action after deal phase
+            if !EAction::from(*a).is_public() && player != 3 {
                 ngs.legal_actions(&mut actions);
                 actions.shuffle(rng);
                 for da in actions.iter().map(|x| EAction::from(*x)) {
@@ -1094,11 +1136,11 @@ mod tests {
 
         assert_eq!(s.phase(), EPhase::DealHands);
         for i in 0..20 {
-            s.apply_action(EAction::DealPlayer { c: Card::from(i) }.into());
+            s.apply_action(EAction::private_action(Card::from(i)).into());
         }
 
         assert_eq!(s.phase(), EPhase::DealFaceUp);
-        s.apply_action(EAction::DealFaceUp { c: Card::from(20) }.into());
+        s.apply_action(EAction::public_action(Card::from(20)).into());
 
         assert_eq!(s.phase(), EPhase::Pickup);
         assert!(!s.is_chance_node());
@@ -1122,11 +1164,11 @@ mod tests {
 
         assert_eq!(s.phase(), EPhase::DealHands);
         for i in 0..20 {
-            s.apply_action(EAction::DealPlayer { c: i.into() }.into());
+            s.apply_action(EAction::private_action(i.into()).into());
         }
 
         assert_eq!(s.phase(), EPhase::DealFaceUp);
-        s.apply_action(EAction::DealFaceUp { c: 20.into() }.into());
+        s.apply_action(EAction::public_action(20.into()).into());
 
         assert_eq!(s.phase(), EPhase::Pickup);
         assert!(!s.is_chance_node());
@@ -1136,7 +1178,7 @@ mod tests {
         s.apply_action(EAction::Pickup.into());
 
         assert_eq!(s.phase(), EPhase::Discard);
-        s.apply_action(EAction::Discard { c: Card::from(19) }.into());
+        s.apply_action(EAction::private_action(Card::from(19)).into());
 
         assert_eq!(s.phase(), EPhase::Play);
         assert_eq!(s.cur_player, 0);
@@ -1147,15 +1189,15 @@ mod tests {
         let mut gs = Euchre::new_state();
 
         for i in 0..20 {
-            gs.apply_action(EAction::DealPlayer { c: i.into() }.into());
+            gs.apply_action(EAction::private_action(i.into()).into());
             let legal = actions!(gs);
             for j in 0..i + 1 {
-                assert!(!legal.contains(&EAction::DealPlayer { c: j.into() }.into()));
+                assert!(!legal.contains(&EAction::private_action(j.into()).into()));
             }
         }
 
         // Deal the face up card
-        gs.apply_action(EAction::DealFaceUp { c: 21.into() }.into());
+        gs.apply_action(EAction::public_action(21.into()).into());
         assert_eq!(gs.face_up().unwrap(), 21.into());
 
         assert_eq!(
@@ -1173,7 +1215,7 @@ mod tests {
             vec!["Qh", "Kh", "Ah", "9d", "Td", "Qd"]
         );
         assert_eq!(gs.phase(), EPhase::Discard);
-        gs.apply_action(EAction::Discard { c: Card::QH }.into());
+        gs.apply_action(EAction::PrivateQH.into());
 
         // Cards player 0s hand
         assert_eq!(gs.phase(), EPhase::Play);
@@ -1185,7 +1227,7 @@ mod tests {
             vec!["9c", "Tc", "Jc", "Qc", "Kc"]
         );
 
-        gs.apply_action(EAction::Play { c: Card::NC }.into());
+        gs.apply_action(EAction::NC.into());
         // Player 1 must follow suit
         assert_eq!(
             actions!(gs)
@@ -1207,12 +1249,12 @@ mod tests {
 
         // Deal the cards
         for i in 1..21 {
-            s.apply_action(EAction::DealPlayer { c: i.into() }.into());
+            s.apply_action(EAction::private_action(i.into()).into());
         }
 
-        s.apply_action(EAction::DealFaceUp { c: Card::NC }.into()); // Deal the 9 face up
+        s.apply_action(EAction::NC.into()); // Deal the 9 face up
         s.apply_action(EAction::Pickup.into());
-        s.apply_action(EAction::Discard { c: 20.into() }.into());
+        s.apply_action(EAction::private_action(20.into()).into());
         assert_eq!(s.trump, Some(Suit::Clubs));
         assert_eq!(s.phase(), EPhase::Play);
         // Jack of spades is now a club since it's trump
@@ -1229,7 +1271,7 @@ mod tests {
         assert_eq!(gs.istate_string(2), "KsAs9hThJh");
         assert_eq!(gs.istate_string(3), "QhKhAh9dTd");
 
-        gs.apply_action(EAction::DealFaceUp { c: Card::JS }.into());
+        gs.apply_action(EAction::public_action(Card::JS).into());
         assert_eq!(gs.istate_string(0), "9cTcJcQcKc|Js|");
         assert_eq!(gs.istate_string(1), "Ac9sTsQsJd|Js|");
         assert_eq!(gs.istate_string(2), "KsAs9hThJh|Js|");
@@ -1242,7 +1284,7 @@ mod tests {
 
         // Dealer discards the QH
         assert_eq!(gs.istate_string(3), "QhKhAh9dTd|Js|T|0S");
-        gs.apply_action(EAction::Discard { c: Card::QH }.into());
+        gs.apply_action(EAction::private_action(Card::QH).into());
         assert_eq!(gs.istate_string(3), "QhKhAh9dTd|Js|T|0S|Qh|");
 
         for _ in 0..4 {

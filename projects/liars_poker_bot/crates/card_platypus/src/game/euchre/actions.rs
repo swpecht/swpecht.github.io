@@ -1,12 +1,14 @@
 use std::fmt::{Debug, Display, Write};
 
+use num_derive::{FromPrimitive, ToPrimitive};
+use num_traits::{FromPrimitive, ToPrimitive};
 use serde::{Deserialize, Serialize};
 
 use crate::game::Action;
 
 pub(super) const CARD_PER_SUIT: u8 = 6;
 
-#[derive(PartialEq, Clone, Copy, Serialize, Deserialize, Eq)]
+#[derive(PartialEq, Clone, Copy, Serialize, Deserialize, Eq, FromPrimitive, ToPrimitive)]
 pub enum EAction {
     Pickup,
     Pass,
@@ -14,31 +16,176 @@ pub enum EAction {
     Spades,
     Hearts,
     Diamonds,
-    DealPlayer {
-        c: Card,
-    },
-    DealFaceUp {
-        c: Card,
-    },
-    Discard {
-        c: Card,
-    },
-    Play {
-        c: Card,
-    },
+    NC,
+    TC,
+    JC,
+    QC,
+    KC,
+    AC,
+    NS,
+    TS,
+    JS,
+    QS,
+    KS,
+    AS,
+    NH,
+    TH,
+    JH,
+    QH,
+    KH,
+    AH,
+    ND,
+    TD,
+    JD,
+    QD,
+    KD,
+    AD,
+    PrivateNC,
+    PrivateTC,
+    PrivateJC,
+    PrivateQC,
+    PrivateKC,
+    PrivateAC,
+    PrivateNS,
+    PrivateTS,
+    PrivateJS,
+    PrivateQS,
+    PrivateKS,
+    PrivateAS,
+    PrivateNH,
+    PrivateTH,
+    PrivateJH,
+    PrivateQH,
+    PrivateKH,
+    PrivateAH,
+    PrivateND,
+    PrivateTD,
+    PrivateJD,
+    PrivateQD,
+    PrivateKD,
+    PrivateAD,
     /// Value to differentiate discard states from player 0 states
     DiscardMarker,
 }
 
 impl EAction {
     pub fn card(&self) -> Card {
+        use EAction::*;
         match self {
-            EAction::Discard { c }
-            | EAction::DealPlayer { c }
-            | EAction::Play { c }
-            | EAction::DealFaceUp { c } => *c,
+            NC | PrivateNC => Card::NC,
+            TC | PrivateTC => Card::TC,
+            JC | PrivateJC => Card::JC,
+            QC | PrivateQC => Card::QC,
+            KC | PrivateKC => Card::KC,
+            AC | PrivateAC => Card::AC,
+            NS | PrivateNS => Card::NS,
+            TS | PrivateTS => Card::TS,
+            JS | PrivateJS => Card::JS,
+            QS | PrivateQS => Card::QS,
+            KS | PrivateKS => Card::KS,
+            AS | PrivateAS => Card::AS,
+            NH | PrivateNH => Card::NH,
+            TH | PrivateTH => Card::TH,
+            JH | PrivateJH => Card::JH,
+            QH | PrivateQH => Card::QH,
+            KH | PrivateKH => Card::KH,
+            AH | PrivateAH => Card::AH,
+            ND | PrivateND => Card::ND,
+            TD | PrivateTD => Card::TD,
+            JD | PrivateJD => Card::JD,
+            QD | PrivateQD => Card::QD,
+            KD | PrivateKD => Card::KD,
+            AD | PrivateAD => Card::AD,
             _ => panic!("can't get card on: {:?}", self),
         }
+    }
+
+    pub fn public_action(card: Card) -> Self {
+        match card {
+            Card::NC => EAction::NC,
+            Card::TC => EAction::TC,
+            Card::JC => EAction::JC,
+            Card::QC => EAction::QC,
+            Card::KC => EAction::KC,
+            Card::AC => EAction::AC,
+            Card::NS => EAction::NS,
+            Card::TS => EAction::TS,
+            Card::JS => EAction::JS,
+            Card::QS => EAction::QS,
+            Card::KS => EAction::KS,
+            Card::AS => EAction::AS,
+            Card::NH => EAction::NH,
+            Card::TH => EAction::TH,
+            Card::JH => EAction::JH,
+            Card::QH => EAction::QH,
+            Card::KH => EAction::KH,
+            Card::AH => EAction::AH,
+            Card::ND => EAction::ND,
+            Card::TD => EAction::TD,
+            Card::JD => EAction::JD,
+            Card::QD => EAction::QD,
+            Card::KD => EAction::KD,
+            Card::AD => EAction::AD,
+        }
+    }
+
+    pub fn private_action(card: Card) -> Self {
+        match card {
+            Card::NC => EAction::PrivateNC,
+            Card::TC => EAction::PrivateTC,
+            Card::JC => EAction::PrivateJC,
+            Card::QC => EAction::PrivateQC,
+            Card::KC => EAction::PrivateKC,
+            Card::AC => EAction::PrivateAC,
+            Card::NS => EAction::PrivateNS,
+            Card::TS => EAction::PrivateTS,
+            Card::JS => EAction::PrivateJS,
+            Card::QS => EAction::PrivateQS,
+            Card::KS => EAction::PrivateKS,
+            Card::AS => EAction::PrivateAS,
+            Card::NH => EAction::PrivateNH,
+            Card::TH => EAction::PrivateTH,
+            Card::JH => EAction::PrivateJH,
+            Card::QH => EAction::PrivateQH,
+            Card::KH => EAction::PrivateKH,
+            Card::AH => EAction::PrivateAH,
+            Card::ND => EAction::PrivateND,
+            Card::TD => EAction::PrivateTD,
+            Card::JD => EAction::PrivateJD,
+            Card::QD => EAction::PrivateQD,
+            Card::KD => EAction::PrivateKD,
+            Card::AD => EAction::PrivateAD,
+        }
+    }
+
+    pub fn is_public(&self) -> bool {
+        !matches!(
+            self,
+            EAction::PrivateNC
+                | EAction::PrivateTC
+                | EAction::PrivateJC
+                | EAction::PrivateQC
+                | EAction::PrivateKC
+                | EAction::PrivateAC
+                | EAction::PrivateNS
+                | EAction::PrivateTS
+                | EAction::PrivateJS
+                | EAction::PrivateQS
+                | EAction::PrivateKS
+                | EAction::PrivateAS
+                | EAction::PrivateNH
+                | EAction::PrivateTH
+                | EAction::PrivateJH
+                | EAction::PrivateQH
+                | EAction::PrivateKH
+                | EAction::PrivateAH
+                | EAction::PrivateND
+                | EAction::PrivateTD
+                | EAction::PrivateJD
+                | EAction::PrivateQD
+                | EAction::PrivateKD
+                | EAction::PrivateAD
+        )
     }
 }
 
@@ -353,48 +500,14 @@ impl Display for Card {
 
 impl From<EAction> for Action {
     fn from(val: EAction) -> Self {
-        let v: u8 = match val {
-            EAction::Pickup => 0,
-            EAction::Pass => 1,
-            EAction::Clubs => 2,
-            EAction::Spades => 3,
-            EAction::Hearts => 4,
-            EAction::Diamonds => 5,
-            EAction::DealPlayer { c: x } => 50 + x as u8,
-            EAction::Play { c: x } => 100 + x as u8,
-            EAction::Discard { c: x } => 150 + x as u8,
-            EAction::DealFaceUp { c: x } => 200 + x as u8,
-            EAction::DiscardMarker => 255,
-        };
+        let v: u8 = ToPrimitive::to_u8(&val).unwrap();
         Action(v)
     }
 }
 
 impl From<Action> for EAction {
     fn from(value: Action) -> Self {
-        match value.0 {
-            0 => EAction::Pickup,
-            1 => EAction::Pass,
-            2 => EAction::Clubs,
-            3 => EAction::Spades,
-            4 => EAction::Hearts,
-            5 => EAction::Diamonds,
-            255 => EAction::DiscardMarker,
-            x if x >= 250 => panic!("invalid action: {}", x),
-            x if x >= 200 => EAction::DealFaceUp {
-                c: Card::from(x - 200),
-            },
-            x if x >= 150 => EAction::Discard {
-                c: Card::from(x - 150),
-            },
-            x if x >= 100 => EAction::Play {
-                c: Card::from(x - 100),
-            },
-            x if x >= 50 => EAction::DealPlayer {
-                c: Card::from(x - 50),
-            },
-            _ => panic!("invalid action to cast: {}", value),
-        }
+        FromPrimitive::from_u8(value.0).unwrap()
     }
 }
 
@@ -429,11 +542,8 @@ fn eaction_fmt(v: &EAction, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
         EAction::Diamonds => f.write_char('D'),
         EAction::Pickup => f.write_char('T'),
         EAction::Pass => f.write_char('P'),
-        EAction::Play { c: x } => f.write_str(&x.to_string()),
-        EAction::DealPlayer { c: x } => f.write_str(&x.to_string()),
-        EAction::Discard { c: x } => f.write_str(&x.to_string()),
-        EAction::DealFaceUp { c: x } => f.write_str(&x.to_string()),
         EAction::DiscardMarker => f.write_str("|Dis|"),
+        _ => f.write_str(&v.card().to_string()),
     }
 }
 

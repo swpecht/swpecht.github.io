@@ -194,12 +194,8 @@ mod tests {
     use itertools::Itertools;
 
     use crate::game::{
-        euchre::{
-            actions::{Card, EAction},
-            processors::evaluate_highest_trump_first,
-            EuchreGameState,
-        },
-        Action, GameState,
+        euchre::{actions::EAction, processors::evaluate_highest_trump_first, EuchreGameState},
+        GameState,
     };
 
     use super::remove_equivlent_cards;
@@ -220,8 +216,8 @@ mod tests {
         gs.legal_actions(&mut actions);
         evaluate_highest_trump_first(&gs, &mut actions);
         assert_eq!(
-            actions,
-            vec![Action(102), Action(103), Action(114), Action(115)]
+            actions.into_iter().map(EAction::from).collect_vec(),
+            vec![EAction::JC, EAction::QC, EAction::JH, EAction::QH]
         );
 
         // Not leading, so should just return all actions
@@ -255,10 +251,10 @@ mod tests {
         assert_eq!(
             actions.into_iter().map(EAction::from).collect_vec(),
             vec![
-                EAction::Play { c: Card::KC },
-                EAction::Play { c: Card::JS }, // a club since clubs is trump
-                EAction::Play { c: Card::QS },
-                EAction::Play { c: Card::AD }
+                EAction::KC,
+                EAction::JS, // a club since clubs is trump
+                EAction::QS,
+                EAction::AD
             ]
         );
     }

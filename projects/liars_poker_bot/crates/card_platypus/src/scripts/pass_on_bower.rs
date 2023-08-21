@@ -138,11 +138,11 @@ impl PassOnBowerIterator {
                                 continue;
                             }
                             hands.push([
-                                EAction::DealPlayer { c: a.into() },
-                                EAction::DealPlayer { c: b.into() },
-                                EAction::DealPlayer { c: c.into() },
-                                EAction::DealPlayer { c: d.into() },
-                                EAction::DealPlayer { c: e.into() },
+                                EAction::private_action(a.into()),
+                                EAction::private_action(b.into()),
+                                EAction::private_action(c.into()),
+                                EAction::private_action(d.into()),
+                                EAction::private_action(e.into()),
                             ])
                         }
                     }
@@ -164,7 +164,7 @@ impl Iterator for PassOnBowerIterator {
     type Item = EuchreGameState;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let jack = EAction::DealPlayer { c: Card::JS };
+        let jack = EAction::PrivateJS;
         if let Some(hand) = self.hands.pop() {
             let mut gs = Euchre::new_state();
             while gs.cur_player() != 3 {
@@ -183,7 +183,7 @@ impl Iterator for PassOnBowerIterator {
             }
 
             // deal the faceup card
-            gs.apply_action(EAction::DealFaceUp { c: Card::JS }.into());
+            gs.apply_action(EAction::JS.into());
             gs.apply_action(EAction::Pass.into());
             gs.apply_action(EAction::Pass.into());
             gs.apply_action(EAction::Pass.into());
