@@ -41,7 +41,3 @@ harness = false
 [[bench]]
 name = "pimcts_optimizations"
 harness = false
-
-[[bench]]
-name = "action_benchmark"
-harness = false

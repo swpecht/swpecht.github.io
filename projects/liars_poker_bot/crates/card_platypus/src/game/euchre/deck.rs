@@ -1,5 +1,6 @@
 use std::ops::{Index, IndexMut};
 
+use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
 
 use crate::game::Player;
@@ -79,13 +80,13 @@ impl Index<Card> for Deck {
     type Output = CardLocation;
 
     fn index(&self, index: Card) -> &Self::Output {
-        &self.locations[index as usize]
+        &self.locations[index.to_idx()]
     }
 }
 
 impl IndexMut<Card> for Deck {
     fn index_mut(&mut self, index: Card) -> &mut Self::Output {
-        &mut self.locations[index as usize]
+        &mut self.locations[index.to_idx()]
     }
 }
 
@@ -119,5 +120,45 @@ impl<'a> Iterator for DeckIterator<'a> {
         let loc = self.deck[c];
         self.index += 1;
         Some((c, loc))
+    }
+}
+
+/// Performant representation of collection of cards using a bit mask
+#[derive(Copy, Clone, Default)]
+pub struct Hand {
+    mask: u32,
+}
+
+impl Hand {
+    /// Adds a card to the hand
+    pub fn add(&mut self, card: Card) {
+        self.mask |= ToPrimitive::to_u32(&card).unwrap();
+    }
+
+    pub fn remove(&mut self, card: Card) {
+        self.mask &= !ToPrimitive::to_u32(&card).unwrap();
+    }
+
+    pub fn contains(&self, card: Card) -> bool {
+        self.mask & ToPrimitive::to_u32(&card).unwrap() > 0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::game::euchre::actions::Card::*;
+
+    use super::Hand;
+
+    #[test]
+    fn test_hand() {
+        let mut hand = Hand::default();
+
+        hand.add(JS);
+        hand.add(TD);
+
+        assert!(hand.contains(JS));
+        assert!(hand.contains(TD));
+        assert!(!hand.contains(QS));
     }
 }

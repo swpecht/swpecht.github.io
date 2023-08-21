@@ -189,46 +189,75 @@ impl EAction {
     }
 }
 
-#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Debug, Hash)]
+/// Represent cards in a deck, represented as a bitmask
+#[derive(
+    Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Debug, Hash, FromPrimitive, ToPrimitive,
+)]
+#[repr(u32)]
 pub enum Card {
-    NC,
-    TC,
-    JC,
-    QC,
-    KC,
-    AC,
-    NS,
-    TS,
-    JS,
-    QS,
-    KS,
-    AS,
-    NH,
-    TH,
-    JH,
-    QH,
-    KH,
-    AH,
-    ND,
-    TD,
-    JD,
-    QD,
-    KD,
-    AD,
+    NC = 0b1,
+    TC = 0b10,
+    JC = 0b100,
+    QC = 0b1000,
+    KC = 0b10000,
+    AC = 0b100000,
+    NS = 0b1000000,
+    TS = 0b10000000,
+    JS = 0b100000000,
+    QS = 0b1000000000,
+    KS = 0b10000000000,
+    AS = 0b100000000000,
+    NH = 0b1000000000000,
+    TH = 0b10000000000000,
+    JH = 0b100000000000000,
+    QH = 0b1000000000000000,
+    KH = 0b10000000000000000,
+    AH = 0b100000000000000000,
+    ND = 0b1000000000000000000,
+    TD = 0b10000000000000000000,
+    JD = 0b100000000000000000000,
+    QD = 0b1000000000000000000000,
+    KD = 0b10000000000000000000000,
+    AD = 0b100000000000000000000000,
 }
 
 impl Card {
     pub fn suit(&self) -> Suit {
-        match self {
-            Card::NS | Card::TS | Card::JS | Card::QS | Card::KS | Card::AS => Suit::Spades,
-            Card::NC | Card::TC | Card::JC | Card::QC | Card::KC | Card::AC => Suit::Clubs,
-            Card::NH | Card::TH | Card::JH | Card::QH | Card::KH | Card::AH => Suit::Hearts,
-            Card::ND | Card::TD | Card::JD | Card::QD | Card::KD | Card::AD => Suit::Diamonds,
-        }
+        let suit_id = (*self as u32).trailing_zeros() / 6;
+        FromPrimitive::from_u32(suit_id).unwrap()
     }
 
     pub(super) fn rank(&self) -> u8 {
-        *self as u8 % CARD_PER_SUIT
+        (*self as u32).trailing_zeros() as u8 % CARD_PER_SUIT
+    }
+
+    pub fn to_idx(&self) -> usize {
+        match self {
+            Card::NC => 0,
+            Card::TC => 1,
+            Card::JC => 2,
+            Card::QC => 3,
+            Card::KC => 4,
+            Card::AC => 5,
+            Card::NS => 6,
+            Card::TS => 7,
+            Card::JS => 8,
+            Card::QS => 9,
+            Card::KS => 10,
+            Card::AS => 11,
+            Card::NH => 12,
+            Card::TH => 13,
+            Card::JH => 14,
+            Card::QH => 15,
+            Card::KH => 16,
+            Card::AH => 17,
+            Card::ND => 18,
+            Card::TD => 19,
+            Card::JD => 20,
+            Card::QD => 21,
+            Card::KD => 22,
+            Card::AD => 23,
+        }
     }
 
     pub fn icon(&self) -> &str {
@@ -373,44 +402,6 @@ impl Card {
     }
 }
 
-impl From<u8> for Card {
-    fn from(value: u8) -> Self {
-        match value {
-            0 => Self::NC,
-            1 => Self::TC,
-            2 => Self::JC,
-            3 => Self::QC,
-            4 => Self::KC,
-            5 => Self::AC,
-            6 => Self::NS,
-            7 => Self::TS,
-            8 => Self::JS,
-            9 => Self::QS,
-            10 => Self::KS,
-            11 => Self::AS,
-            12 => Self::NH,
-            13 => Self::TH,
-            14 => Self::JH,
-            15 => Self::QH,
-            16 => Self::KH,
-            17 => Self::AH,
-            18 => Self::ND,
-            19 => Self::TD,
-            20 => Self::JD,
-            21 => Self::QD,
-            22 => Self::KD,
-            23 => Self::AD,
-            _ => panic!("invalid value to convert to card: {}", value),
-        }
-    }
-}
-
-impl From<Card> for u8 {
-    fn from(value: Card) -> Self {
-        value as u8
-    }
-}
-
 impl From<&str> for Card {
     fn from(value: &str) -> Self {
         match value {
@@ -547,7 +538,9 @@ fn eaction_fmt(v: &EAction, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Copy, Serialize, Deserialize, Hash)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Copy, Serialize, Deserialize, Hash, FromPrimitive, ToPrimitive,
+)]
 pub enum Suit {
     Clubs = 0,
     Spades,

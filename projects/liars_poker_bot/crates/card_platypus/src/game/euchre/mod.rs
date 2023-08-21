@@ -1125,7 +1125,7 @@ mod tests {
         actions,
         agents::{Agent, RandomAgent},
         algorithms::ismcts::ResampleFromInfoState,
-        game::euchre::{actions::Card, EAction, EPhase, Euchre, Suit},
+        game::euchre::{actions::Card, deck::CARDS, EAction, EPhase, Euchre, Suit},
     };
 
     use super::{EuchreGameState, GameState};
@@ -1135,12 +1135,17 @@ mod tests {
         let mut s = Euchre::new_state();
 
         assert_eq!(s.phase(), EPhase::DealHands);
-        for i in 0..20 {
-            s.apply_action(EAction::private_action(Card::from(i)).into());
+        use Card::*;
+        let cards_to_deal = [
+            NC, TC, JC, QC, KC, AC, NS, TS, JS, QS, KS, AS, NH, TH, JH, QH, KH, AH, ND, TD,
+        ];
+
+        for c in cards_to_deal {
+            s.apply_action(EAction::private_action(c).into());
         }
 
         assert_eq!(s.phase(), EPhase::DealFaceUp);
-        s.apply_action(EAction::public_action(Card::from(20)).into());
+        s.apply_action(EAction::JD.into());
 
         assert_eq!(s.phase(), EPhase::Pickup);
         assert!(!s.is_chance_node());
@@ -1163,12 +1168,18 @@ mod tests {
         let mut s = Euchre::new_state();
 
         assert_eq!(s.phase(), EPhase::DealHands);
-        for i in 0..20 {
-            s.apply_action(EAction::private_action(i.into()).into());
+
+        use Card::*;
+        let cards_to_deal = [
+            NC, TC, JC, QC, KC, AC, NS, TS, JS, QS, KS, AS, NH, TH, JH, QH, KH, AH, ND, TD,
+        ];
+
+        for c in cards_to_deal {
+            s.apply_action(EAction::private_action(c).into());
         }
 
         assert_eq!(s.phase(), EPhase::DealFaceUp);
-        s.apply_action(EAction::public_action(20.into()).into());
+        s.apply_action(EAction::public_action(Card::JD).into());
 
         assert_eq!(s.phase(), EPhase::Pickup);
         assert!(!s.is_chance_node());
@@ -1178,7 +1189,7 @@ mod tests {
         s.apply_action(EAction::Pickup.into());
 
         assert_eq!(s.phase(), EPhase::Discard);
-        s.apply_action(EAction::private_action(Card::from(19)).into());
+        s.apply_action(EAction::private_action(Card::QH).into());
 
         assert_eq!(s.phase(), EPhase::Play);
         assert_eq!(s.cur_player, 0);
@@ -1188,17 +1199,17 @@ mod tests {
     fn euchre_test_legal_actions() {
         let mut gs = Euchre::new_state();
 
-        for i in 0..20 {
-            gs.apply_action(EAction::private_action(i.into()).into());
+        for (i, c) in CARDS.iter().enumerate().take(20) {
+            gs.apply_action(EAction::private_action(*c).into());
             let legal = actions!(gs);
-            for j in 0..i + 1 {
-                assert!(!legal.contains(&EAction::private_action(j.into()).into()));
+            for j in CARDS.iter().take(i) {
+                assert!(!legal.contains(&EAction::private_action(*j).into()));
             }
         }
 
         // Deal the face up card
-        gs.apply_action(EAction::public_action(21.into()).into());
-        assert_eq!(gs.face_up().unwrap(), 21.into());
+        gs.apply_action(EAction::public_action(Card::QD).into());
+        assert_eq!(gs.face_up().unwrap(), Card::QD);
 
         assert_eq!(
             actions!(gs),
@@ -1248,13 +1259,17 @@ mod tests {
         assert_eq!(s.get_suit(Card::TS), Suit::Spades);
 
         // Deal the cards
-        for i in 1..21 {
-            s.apply_action(EAction::private_action(i.into()).into());
+        use Card::*;
+        let cards_to_deal = [
+            TC, JC, QC, KC, AC, NS, TS, JS, QS, KS, AS, NH, TH, JH, QH, KH, AH, ND, TD, JD,
+        ];
+        for c in cards_to_deal {
+            s.apply_action(EAction::private_action(c).into());
         }
 
         s.apply_action(EAction::NC.into()); // Deal the 9 face up
         s.apply_action(EAction::Pickup.into());
-        s.apply_action(EAction::private_action(20.into()).into());
+        s.apply_action(EAction::private_action(Card::TD).into());
         assert_eq!(s.trump, Some(Suit::Clubs));
         assert_eq!(s.phase(), EPhase::Play);
         // Jack of spades is now a club since it's trump

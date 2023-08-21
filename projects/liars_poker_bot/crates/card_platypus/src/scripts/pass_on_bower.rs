@@ -122,35 +122,36 @@ pub struct PassOnBowerIterator {
 
 impl PassOnBowerIterator {
     pub fn new() -> Self {
-        let mut hands = Vec::new();
-        // todo: rewrite with combination function?
-        for a in 0..20 {
-            for b in a + 1..21 {
-                for c in b + 1..22 {
-                    for d in c + 1..23 {
-                        for e in d + 1..24 {
-                            if a == u8::from(Card::JS)
-                                || b == u8::from(Card::JS)
-                                || c == u8::from(Card::JS)
-                                || d == u8::from(Card::JS)
-                                || e == u8::from(Card::JS)
-                            {
-                                continue;
-                            }
-                            hands.push([
-                                EAction::private_action(a.into()),
-                                EAction::private_action(b.into()),
-                                EAction::private_action(c.into()),
-                                EAction::private_action(d.into()),
-                                EAction::private_action(e.into()),
-                            ])
-                        }
-                    }
-                }
-            }
-        }
-        hands.reverse();
-        Self { hands }
+        todo!("re-implement with the card representation")
+        // let mut hands = Vec::new();
+        // // todo: rewrite with combination function?
+        // for a in 0..20 {
+        //     for b in a + 1..21 {
+        //         for c in b + 1..22 {
+        //             for d in c + 1..23 {
+        //                 for e in d + 1..24 {
+        //                     if a == u8::from(Card::JS)
+        //                         || b == u8::from(Card::JS)
+        //                         || c == u8::from(Card::JS)
+        //                         || d == u8::from(Card::JS)
+        //                         || e == u8::from(Card::JS)
+        //                     {
+        //                         continue;
+        //                     }
+        //                     hands.push([
+        //                         EAction::private_action(a.into()),
+        //                         EAction::private_action(b.into()),
+        //                         EAction::private_action(c.into()),
+        //                         EAction::private_action(d.into()),
+        //                         EAction::private_action(e.into()),
+        //                     ])
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
+        // hands.reverse();
+        // Self { hands }
     }
 }
 
