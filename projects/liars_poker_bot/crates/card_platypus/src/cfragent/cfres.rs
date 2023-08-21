@@ -42,7 +42,7 @@ use features::features;
 /// https://www.science.org/doi/10.1126/science.aay2400
 ///
 /// Stop doing the normalizations after a certain number of steps since no longer worth the effort
-const LINEAR_CFR_CUTOFF: usize = 10_000_000;
+const LINEAR_CFR_CUTOFF: usize = 1_000_000;
 
 counter!(nodes_touched);
 
@@ -221,7 +221,6 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
             let f = &mut File::open(path);
             let f = f.as_mut().unwrap();
             self.infostates = Arc::new(rmp_serde::from_read(f).unwrap());
-            debug!("loaded weights for {} infostates", self.infostates.len());
 
             // Get the last iteration by reading the max updated iteration
             let iteration = self
@@ -231,6 +230,11 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
                 .max()
                 .unwrap_or(0);
             self.iteration = Arc::new(AtomicUsize::new(iteration));
+            debug!(
+                "loaded weights for {} infostates with {} iterations",
+                self.infostates.len(),
+                iteration
+            );
 
             self.infostates.len()
         } else {
