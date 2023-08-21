@@ -25,12 +25,12 @@ use crate::{
         pimcts::PIMCTSBot,
     },
     alloc::Pool,
+    counter,
     game::{
         euchre::{processors::post_discard_phase, EuchreGameState},
         Action, GameState, Player,
     },
     istate::{IStateKey, NormalizedAction, NormalizedIstate},
-    metrics::increment_counter,
     policy::Policy,
 };
 
@@ -43,6 +43,8 @@ use features::features;
 ///
 /// Stop doing the normalizations after a certain number of steps since no longer worth the effort
 const LINEAR_CFR_CUTOFF: usize = 10_000_000;
+
+counter!(nodes_touched);
 
 features! {
     pub mod feature {
@@ -320,8 +322,7 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
             return v;
         }
 
-        // Disable for now, doesn't work with multithreading
-        // increment_counter("cfr.cfres.nodes_touched");
+        nodes_touched::increment();
         let normalized_actions = actions
             .iter()
             .map(|&a| (self.normalize_action)(a, gs))

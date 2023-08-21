@@ -1,20 +1,23 @@
-use std::{collections::HashMap, sync::Mutex};
+#[macro_export]
+macro_rules! counter {
+    // This macro takes an argument of designator `ident` and
+    // creates a function named `$func_name`.
+    // The `ident` designator is used for variable/function names.
+    ($name:ident) => {
+        pub mod $name {
+            use std::sync::atomic::AtomicUsize;
 
-use once_cell::sync::Lazy;
+            static mut COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-pub static mut COUNTERS: Mutex<Lazy<HashMap<String, usize>>> =
-    Mutex::new(Lazy::new(HashMap::default));
+            pub fn increment() {
+                unsafe {
+                    COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
+            }
 
-pub fn increment_counter(name: &str) {
-    unsafe {
-        *COUNTERS
-            .get_mut()
-            .unwrap()
-            .entry(name.to_string())
-            .or_insert(0) += 1;
-    }
-}
-
-pub fn read_counter(name: &str) -> usize {
-    unsafe { *COUNTERS.lock().unwrap().get(name).unwrap_or(&0) }
+            pub fn read() -> usize {
+                unsafe { COUNTER.load(std::sync::atomic::Ordering::Relaxed) }
+            }
+        }
+    };
 }

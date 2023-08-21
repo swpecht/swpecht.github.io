@@ -13,7 +13,6 @@ use card_platypus::{
         },
         GameState,
     },
-    metrics::read_counter,
 };
 use clap::{Args, ValueEnum};
 use indicatif::ProgressBar;
@@ -123,7 +122,7 @@ fn log_score(
     info!(
         "iteration:\t{}\tnodes touched:\t{}\tinfo_states:\t{}\tscore:\t{}\tbaseline:\t{}",
         iteration,
-        read_counter("cfr.cfres.nodes_touched"),
+        cfres::nodes_touched::read(),
         alg.num_info_states(),
         score,
         baseline_score,
