@@ -1,3 +1,5 @@
+use std::mem;
+
 use anyhow::{bail, Ok};
 use num_traits::{FromPrimitive, ToPrimitive};
 use serde::{Deserialize, Serialize};
@@ -266,7 +268,14 @@ impl Iterator for HandIterator {
         let bit_index = self.mask.trailing_zeros();
         let card_rep = 1 << bit_index;
         self.mask &= !card_rep;
-        Some(FromPrimitive::from_u32(card_rep).unwrap())
+
+        // For performance purposes, we directly case the memory in the constructed
+        // mask to a card
+        let card;
+        unsafe {
+            card = mem::transmute_copy(&card_rep);
+        }
+        Some(card)
     }
 }
 
