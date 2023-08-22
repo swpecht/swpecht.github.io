@@ -1,3 +1,4 @@
+use anyhow::{bail, Ok};
 use num_traits::{FromPrimitive, ToPrimitive};
 use serde::{Deserialize, Serialize};
 
@@ -153,6 +154,36 @@ impl Deck {
     pub fn get_all(&self, loc: CardLocation) -> Hand {
         self.locations[loc.idx()]
     }
+
+    /// Moves a card from the players hand to the play location
+    pub fn play(&mut self, card: Card, player: Player) -> anyhow::Result<()> {
+        let player_loc = CardLocation::from(player);
+
+        let none_hand = self.locations[CardLocation::None.idx()];
+        let player_hand = &mut self.locations[player_loc.idx()];
+        // TODO: this is a hack to support the current implementation of re-sampling from istates
+        if !player_hand.contains(card) && !none_hand.contains(card) {
+            let cards = player_hand.cards();
+            let loc = self.get(card);
+            bail!(
+                "Tried to play a card not in the players hand. Card: {}, location: {:?}, hand: {:?}",
+                card,
+                loc,
+                cards
+            );
+        }
+
+        player_hand.remove(card);
+
+        let played_hand = &mut self.locations[CardLocation::Played(player).idx()];
+        played_hand.add(card);
+
+        if !played_hand.len() == 1 {
+            bail!("Attempted to play more than one card");
+        }
+
+        Ok(())
+    }
 }
 
 /// Performant representation of collection of cards using a bit mask
@@ -172,7 +203,7 @@ impl Hand {
     }
 
     pub fn contains(&self, card: Card) -> bool {
-        self.mask & ToPrimitive::to_u32(&card).unwrap() > 0
+        self.mask & (card as u32) > 0
     }
 
     pub fn len(&self) -> usize {

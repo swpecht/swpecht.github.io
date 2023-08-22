@@ -321,9 +321,11 @@ impl EuchreGameState {
 
     fn apply_action_play(&mut self, a: Action) {
         assert!(EAction::from(a).is_public());
+
         let card = EAction::from(a).card();
+        // debug_assert_eq!(self.deck.get(card), CardLocation::from(self.cur_player));
         // track the cards in play for isomorphic key
-        self.deck.set(card, CardLocation::Played(self.cur_player));
+        self.deck.play(card, self.cur_player).unwrap();
         self.cards_played += 1;
 
         // Set acting player based on who won last trick
@@ -657,7 +659,7 @@ impl Display for EuchreGameState {
                 // dealing cards
                 _ if i < 20 => (i + 1) % 5 == 0,
                 // faceup
-                _ if i == 21 => true,
+                _ if i == 20 => true,
                 EAction::Pickup => true,
                 EAction::Clubs | EAction::Diamonds | EAction::Hearts | EAction::Spades => {
                     first_play = Some(i + 1);
@@ -672,6 +674,7 @@ impl Display for EuchreGameState {
                 EAction::DiscardMarker => false,
                 // everything else is Play
                 _ => ((i - first_play.unwrap() + 1) % 4 == 0) && (i != first_play.unwrap()),
+                // _ => false,
             };
             if append_pipe {
                 write!(f, "|").unwrap();
@@ -1070,7 +1073,7 @@ impl ResampleFromInfoState for EuchreGameState {
             for c in actions.iter().map(|x| EAction::from(*x).card()) {
                 if known_dealt_cards.get(c) == CardLocation::None && c != face_up {
                     ngs.apply_action(EAction::private_action(c).into());
-                    break;
+                    continue 'deals;
                 }
             }
         }
@@ -1087,6 +1090,7 @@ impl ResampleFromInfoState for EuchreGameState {
             // If it's not a discard, we apply the actions in the order we saw them.
             // discard is the only private action after deal phase
             if !EAction::from(*a).is_public() && player != 3 {
+                assert_eq!(ngs.cur_player(), 3);
                 ngs.legal_actions(&mut actions);
                 actions.shuffle(rng);
                 for da in actions.iter().map(|x| EAction::from(*x)) {
@@ -1106,7 +1110,7 @@ impl ResampleFromInfoState for EuchreGameState {
 }
 
 /// Returns a mask for filtering hands for all cards of a given suit
-fn suit_mask(suit: Suit, trump: Option<Suit>) -> u32 {
+pub(super) fn suit_mask(suit: Suit, trump: Option<Suit>) -> u32 {
     let mut mask = match suit {
         Suit::Clubs => CLUBS_MASK,
         Suit::Spades => SPADES_MASK,
@@ -1268,6 +1272,15 @@ mod tests {
                 .map(|x| EAction::from(*x).to_string())
                 .collect_vec(),
             vec!["Ac"]
+        );
+
+        let gs = EuchreGameState::from("TcQs9hJdQd|QcThJhKhKd|AcTsAhTdAd|9cKc9sKsQh|Jc|T|Kc|QdKd");
+        let actions = actions!(gs);
+        assert_eq!(gs.cur_player(), 2);
+        use EAction::*;
+        assert_eq!(
+            actions.into_iter().map(EAction::from).collect_vec(),
+            vec![TD, AD]
         );
     }
 
