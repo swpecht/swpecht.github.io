@@ -1,6 +1,4 @@
-use std::ops::{Index, IndexMut};
-
-use num_traits::ToPrimitive;
+use num_traits::{FromPrimitive, ToPrimitive};
 use serde::{Deserialize, Serialize};
 
 use crate::game::Player;
@@ -47,6 +45,39 @@ pub enum CardLocation {
 }
 
 impl CardLocation {
+    fn idx(&self) -> usize {
+        match self {
+            CardLocation::Player0 => 0,
+            CardLocation::Player1 => 1,
+            CardLocation::Player2 => 2,
+            CardLocation::Player3 => 3,
+            CardLocation::Played(0) => 4,
+            CardLocation::Played(1) => 5,
+            CardLocation::Played(2) => 6,
+            CardLocation::Played(3) => 7,
+            CardLocation::FaceUp => 8,
+            CardLocation::None => 9,
+            _ => panic!("invalid played"),
+        }
+    }
+
+    fn from_idx(idx: usize) -> Self {
+        use CardLocation::*;
+        match idx {
+            0 => Player0,
+            1 => Player1,
+            2 => Player2,
+            3 => Player3,
+            4 => Played(0),
+            5 => Played(1),
+            6 => Played(2),
+            7 => Played(3),
+            8 => FaceUp,
+            9 => None,
+            _ => panic!("invalid index"),
+        }
+    }
+
     pub fn to_player(self) -> Option<Player> {
         match self {
             CardLocation::Player0 => Some(0),
@@ -71,60 +102,61 @@ impl From<Player> for CardLocation {
 }
 
 /// Track location of all euchre cards
-#[derive(Default, Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize, Hash)]
 pub(super) struct Deck {
-    locations: [CardLocation; 24],
+    locations: [Hand; 10],
 }
 
-impl Index<Card> for Deck {
-    type Output = CardLocation;
-
-    fn index(&self, index: Card) -> &Self::Output {
-        &self.locations[index.to_idx()]
-    }
-}
-
-impl IndexMut<Card> for Deck {
-    fn index_mut(&mut self, index: Card) -> &mut Self::Output {
-        &mut self.locations[index.to_idx()]
-    }
-}
-
-impl<'a> IntoIterator for &'a Deck {
-    type Item = (Card, CardLocation);
-
-    type IntoIter = DeckIterator<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        DeckIterator {
-            deck: self,
-            index: 0,
-        }
-    }
-}
-
-pub struct DeckIterator<'a> {
-    deck: &'a Deck,
-    index: usize,
-}
-
-impl<'a> Iterator for DeckIterator<'a> {
-    type Item = (Card, CardLocation);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.index >= CARDS.len() {
-            return None;
+impl Default for Deck {
+    fn default() -> Self {
+        let mut locations: [Hand; 10] = Default::default();
+        for c in CARDS {
+            locations[CardLocation::None.idx()].add(*c)
         }
 
-        let c = CARDS[self.index];
-        let loc = self.deck[c];
-        self.index += 1;
-        Some((c, loc))
+        Self { locations }
+    }
+}
+
+impl Deck {
+    /// Return the face up card if it exists
+    pub fn face_up(&self) -> Option<Card> {
+        let hand = self.locations[CardLocation::FaceUp.idx()];
+        hand.card()
+    }
+
+    pub fn played(&self, player: Player) -> Option<Card> {
+        let hand = self.locations[CardLocation::Played(player).idx()];
+        hand.card()
+    }
+
+    pub fn set(&mut self, card: Card, loc: CardLocation) {
+        // remove the card everywhere
+        for locs in self.locations.iter_mut() {
+            locs.remove(card);
+        }
+
+        // then set its final spot
+        self.locations[loc.idx()].add(card);
+    }
+
+    pub fn get(&self, card: Card) -> CardLocation {
+        for (i, hand) in self.locations.iter().enumerate() {
+            if hand.contains(card) {
+                return CardLocation::from_idx(i);
+            }
+        }
+
+        panic!("Card not found in deck")
+    }
+
+    pub fn get_all(&self, loc: CardLocation) -> Hand {
+        self.locations[loc.idx()]
     }
 }
 
 /// Performant representation of collection of cards using a bit mask
-#[derive(Copy, Clone, Default)]
+#[derive(Copy, Clone, Default, Serialize, Deserialize, Debug, PartialEq, Eq, Hash)]
 pub struct Hand {
     mask: u32,
 }
@@ -142,6 +174,32 @@ impl Hand {
     pub fn contains(&self, card: Card) -> bool {
         self.mask & ToPrimitive::to_u32(&card).unwrap() > 0
     }
+
+    pub fn len(&self) -> usize {
+        self.mask.count_ones() as usize
+    }
+
+    pub fn cards(&self) -> Vec<Card> {
+        let mut mask = self.mask;
+        let mut cards = Vec::with_capacity(mask.count_ones() as usize);
+
+        while mask.count_ones() > 0 {
+            let bit_index = mask.trailing_zeros();
+            let card_rep = 1 << bit_index;
+            mask &= !card_rep;
+            cards.push(FromPrimitive::from_u32(card_rep).unwrap())
+        }
+
+        cards
+    }
+
+    /// Returns a single card if there is only one in the hand
+    pub fn card(&self) -> Option<Card> {
+        if self.len() != 1 {
+            return None;
+        }
+        FromPrimitive::from_u32(self.mask)
+    }
 }
 
 #[cfg(test)]
@@ -154,11 +212,15 @@ mod tests {
     fn test_hand() {
         let mut hand = Hand::default();
 
+        assert_eq!(hand.len(), 0);
         hand.add(JS);
         hand.add(TD);
 
+        assert_eq!(hand.len(), 2);
         assert!(hand.contains(JS));
         assert!(hand.contains(TD));
         assert!(!hand.contains(QS));
+
+        assert_eq!(hand.cards(), vec![JS, TD])
     }
 }

@@ -40,9 +40,9 @@ pub(super) fn iso_deck(deck: Deck, trump: Option<Suit>) -> [Locations; 4] {
     if trump.is_some() {
         for s in SUITS {
             for c in get_cards(*s, trump) {
-                if deck[*c] != CardLocation::None {
+                if deck.get(*c) != CardLocation::None {
                     locations[*s as usize] <<= WORD_SIZE;
-                    locations[*s as usize] |= location_mask(deck[*c])
+                    locations[*s as usize] |= location_mask(deck.get(*c))
                 }
             }
         }
@@ -52,7 +52,7 @@ pub(super) fn iso_deck(deck: Deck, trump: Option<Suit>) -> [Locations; 4] {
         for s in SUITS {
             for c in get_cards(*s, trump) {
                 locations[*s as usize] <<= WORD_SIZE;
-                locations[*s as usize] |= location_mask(deck[*c])
+                locations[*s as usize] |= location_mask(deck.get(*c))
             }
         }
 
@@ -220,15 +220,15 @@ mod tests {
     fn test_deck_iso_no_trump() {
         let mut d1 = Deck::default();
 
-        d1[Card::NS] = CardLocation::Player0;
+        d1.set(Card::NS, CardLocation::Player0);
 
         let mut d2 = d1;
 
         assert_eq!(iso_deck(d1, None), iso_deck(d2, None));
-        d2[Card::TS] = CardLocation::Player0;
+        d2.set(Card::TS, CardLocation::Player0);
 
         assert!(iso_deck(d1, None) != iso_deck(d2, None));
-        d2[Card::NS] = CardLocation::None;
+        d2.set(Card::NS, CardLocation::None);
 
         assert_eq!(iso_deck(d1, None), iso_deck(d1, None));
     }
@@ -236,14 +236,14 @@ mod tests {
     #[test]
     fn test_deck_iso_across_suit() {
         let mut d1 = Deck::default();
-        d1[Card::NS] = CardLocation::Player0;
-        d1[Card::TS] = CardLocation::Player0;
-        d1[Card::JC] = CardLocation::Player1;
+        d1.set(Card::NS, CardLocation::Player0);
+        d1.set(Card::TS, CardLocation::Player0);
+        d1.set(Card::JC, CardLocation::Player1);
 
         let mut d2 = Deck::default();
-        d2[Card::NH] = CardLocation::Player0;
-        d2[Card::TH] = CardLocation::Player0;
-        d2[Card::JD] = CardLocation::Player1;
+        d2.set(Card::NH, CardLocation::Player0);
+        d2.set(Card::TH, CardLocation::Player0);
+        d2.set(Card::JD, CardLocation::Player1);
 
         // both have 2 lowest cards across suit
         assert_eq!(iso_deck(d1, None), iso_deck(d2, None));
@@ -260,8 +260,8 @@ mod tests {
     fn test_deck_iso_trump() {
         let mut d1 = Deck::default();
 
-        d1[Card::NS] = CardLocation::Player0;
-        d1[Card::TS] = CardLocation::Player0;
+        d1.set(Card::NS, CardLocation::Player0);
+        d1.set(Card::TS, CardLocation::Player0);
 
         let mut d2 = d1;
 
@@ -269,17 +269,17 @@ mod tests {
             iso_deck(d1, Some(Suit::Spades)),
             iso_deck(d2, Some(Suit::Spades))
         );
-        d2[Card::JS] = CardLocation::Player0;
+        d2.set(Card::JS, CardLocation::Player0);
 
         assert!(iso_deck(d1, Some(Suit::Spades)) != iso_deck(d2, Some(Suit::Spades)));
-        d2[Card::NS] = CardLocation::None;
+        d2.set(Card::NS, CardLocation::None);
         // player 0  still has the 2 highest spades
         assert_eq!(
             iso_deck(d1, Some(Suit::Spades)),
             iso_deck(d2, Some(Suit::Spades))
         );
-        d2[Card::JC] = CardLocation::Player0;
-        d2[Card::TS] = CardLocation::None;
+        d2.set(Card::JC, CardLocation::Player0);
+        d2.set(Card::TS, CardLocation::None);
         // player 0  still has the 2 highest spades, JC and JS
         assert_eq!(
             iso_deck(d1, Some(Suit::Spades)),
@@ -287,8 +287,8 @@ mod tests {
         );
 
         // this persists even if we deal some other cards
-        d1[Card::TH] = CardLocation::Player1;
-        d2[Card::TH] = CardLocation::Player1;
+        d1.set(Card::TH, CardLocation::Player1);
+        d2.set(Card::TH, CardLocation::Player1);
         assert_eq!(
             iso_deck(d1, Some(Suit::Spades)),
             iso_deck(d2, Some(Suit::Spades))

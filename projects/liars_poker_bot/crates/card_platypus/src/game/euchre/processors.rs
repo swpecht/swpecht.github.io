@@ -90,7 +90,7 @@ fn get_n_highest_trump(gs: &EuchreGameState, n: usize) -> Option<(Player, Card)>
     let mut highest_trump = None;
     let mut count = 0;
     for c in get_cards(trump, gs.trump).iter().rev() {
-        let loc = deck[*c];
+        let loc = deck.get(*c);
 
         use deck::CardLocation::*;
         match loc {
@@ -165,7 +165,7 @@ fn find_next_card_owner(c: Card, gs: &EuchreGameState) -> Option<Player> {
         .0;
 
     for card in same_suit[idx + 1..].iter() {
-        let loc = gs.deck[*card];
+        let loc = gs.deck.get(*card);
         use deck::CardLocation::*;
         match loc {
             Player0 | Player1 | Player2 | Player3 => return loc.to_player(),
