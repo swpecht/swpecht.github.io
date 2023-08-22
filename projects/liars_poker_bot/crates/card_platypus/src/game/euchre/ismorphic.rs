@@ -38,9 +38,10 @@ pub(super) fn iso_deck(deck: Deck, trump: Option<Suit>) -> [Locations; 4] {
     let mut locations = [0; 4];
     // if we have trump, skip all the none locations, we can fully compress
     if trump.is_some() {
+        let none_cards = deck.get_all(CardLocation::None);
         for s in SUITS {
             for c in get_cards(*s, trump) {
-                if deck.get(*c) != CardLocation::None {
+                if !none_cards.contains(*c) {
                     locations[*s as usize] <<= WORD_SIZE;
                     locations[*s as usize] |= location_mask(deck.get(*c))
                 }
