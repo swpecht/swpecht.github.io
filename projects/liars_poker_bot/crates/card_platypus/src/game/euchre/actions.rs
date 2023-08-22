@@ -189,6 +189,11 @@ impl EAction {
     }
 }
 
+pub const CLUBS_MASK: u32 = 0b00000000000000000000000000111111;
+pub const SPADES_MASK: u32 = 0b00000000000000000000111111000000;
+pub const HEART_MASK: u32 = 0b00000000000000111111000000000000;
+pub const DIAMONDS_MASK: u32 = 0b00000000111111000000000000000000;
+
 /// Represent cards in a deck, represented as a bitmask
 #[derive(
     Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Debug, Hash, FromPrimitive, ToPrimitive,
@@ -222,6 +227,10 @@ pub enum Card {
 }
 
 impl Card {
+    pub fn mask(&self) -> u32 {
+        *self as u32
+    }
+
     pub fn suit(&self) -> Suit {
         let suit_id = (*self as u32).trailing_zeros() / 6;
         FromPrimitive::from_u32(suit_id).unwrap()

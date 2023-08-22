@@ -200,6 +200,43 @@ impl Hand {
         }
         FromPrimitive::from_u32(self.mask)
     }
+
+    pub fn mask(&self) -> u32 {
+        self.mask
+    }
+
+    pub fn from_mask(mask: u32) -> Self {
+        Self { mask }
+    }
+}
+
+impl IntoIterator for Hand {
+    type Item = Card;
+
+    type IntoIter = HandIterator;
+
+    fn into_iter(self) -> Self::IntoIter {
+        HandIterator { mask: self.mask }
+    }
+}
+
+pub struct HandIterator {
+    mask: u32,
+}
+
+impl Iterator for HandIterator {
+    type Item = Card;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.mask.count_ones() == 0 {
+            return None;
+        }
+
+        let bit_index = self.mask.trailing_zeros();
+        let card_rep = 1 << bit_index;
+        self.mask &= !card_rep;
+        Some(FromPrimitive::from_u32(card_rep).unwrap())
+    }
 }
 
 #[cfg(test)]

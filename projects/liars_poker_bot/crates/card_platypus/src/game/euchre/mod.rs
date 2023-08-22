@@ -5,6 +5,7 @@ use std::{
 };
 
 use itertools::Itertools;
+use num_traits::ToPrimitive;
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 
@@ -15,8 +16,8 @@ use crate::{
 };
 
 use self::{
-    actions::{Card, EAction, Suit},
-    deck::{CardLocation, Deck},
+    actions::{Card, EAction, Suit, CLUBS_MASK, DIAMONDS_MASK, HEART_MASK, SPADES_MASK},
+    deck::{CardLocation, Deck, Hand},
     ismorphic::iso_deck,
 };
 
@@ -435,9 +436,10 @@ impl EuchreGameState {
     /// Can only play cards from hand
     fn legal_actions_play(&self, actions: &mut Vec<Action>) {
         let player_loc = self.cur_player.into();
+        let hand = self.deck.get_all(player_loc);
         // If they are the first to act on a trick then can play any card in hand
         if self.is_start_of_trick() {
-            for c in self.deck.get_all(player_loc).cards() {
+            for c in hand {
                 actions.push(EAction::public_action(c).into());
             }
             return;
@@ -445,17 +447,17 @@ impl EuchreGameState {
 
         let leading_card = self.get_leading_card();
         let leading_suit = self.get_suit(leading_card);
-        for c in self.deck.get_all(player_loc).cards() {
-            // We check if the player has the card before the suit to avoid the more
-            // expensive get_suit call
-            if self.get_suit(c) == leading_suit {
+        let suit_mask = suit_mask(leading_suit, self.trump);
+
+        if suit_mask & hand.mask() == 0 {
+            // no suit, can play any card
+            for c in hand {
                 actions.push(EAction::public_action(c).into());
             }
-        }
-
-        if actions.is_empty() {
-            // no suit, can play any card
-            for c in self.deck.get_all(player_loc).cards() {
+        } else {
+            let mask = suit_mask & hand.mask();
+            let suited_hand = Hand::from_mask(mask);
+            for c in suited_hand {
                 actions.push(EAction::public_action(c).into());
             }
         }
@@ -1082,6 +1084,37 @@ impl ResampleFromInfoState for EuchreGameState {
 
         ngs
     }
+}
+
+/// Returns a mask for filtering hands for all cards of a given suit
+fn suit_mask(suit: Suit, trump: Option<Suit>) -> u32 {
+    let mut mask = match suit {
+        Suit::Clubs => CLUBS_MASK,
+        Suit::Spades => SPADES_MASK,
+        Suit::Hearts => HEART_MASK,
+        Suit::Diamonds => DIAMONDS_MASK,
+    };
+
+    if let Some(t) = trump {
+        use Card::*;
+        use Suit::*;
+        match (suit, t) {
+            (Clubs, Clubs) => mask |= JS.mask(),
+            (Clubs, Spades) => mask &= !JC.mask(),
+            (Clubs, _) => {}
+            (Spades, Clubs) => mask &= !JS.mask(),
+            (Spades, Spades) => mask |= JC.mask(),
+            (Spades, _) => {}
+            (Hearts, Hearts) => mask |= JD.mask(),
+            (Hearts, Diamonds) => mask &= !JH.mask(),
+            (Hearts, _) => {}
+            (Diamonds, Hearts) => mask &= !JD.mask(),
+            (Diamonds, Diamonds) => mask |= JH.mask(),
+            (Diamonds, _) => {}
+        }
+    }
+
+    mask
 }
 
 #[cfg(test)]
