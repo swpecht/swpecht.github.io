@@ -467,11 +467,30 @@ impl EuchreGameState {
     fn evaluate_trick(&self, cards: &[Card], trick_starter: Player) -> Player {
         assert_eq!(cards.len(), 4); // only support 4 players
 
+        let mut trick_mask: u32 = 0;
+        for c in cards {
+            trick_mask |= ToPrimitive::to_u32(c).unwrap();
+        }
+
+        let leading_suit = self.get_suit(cards[0]);
+        let leading_mask = suit_mask(leading_suit, self.trump);
+        let trump_mask = suit_mask(self.trump.unwrap(), self.trump);
+
+        // only cards matching the leading suit or trump can win
+        let valid_mask = leading_mask | trump_mask;
+        trick_mask &= valid_mask;
+
         let mut winner = 0;
         let mut winning_card = cards[0];
         let mut winning_suit = self.get_suit(cards[0]);
         // don't need to evaluate card 0
-        for (i, &c) in cards.iter().enumerate().skip(1) {
+        for (i, &c) in cards
+            .iter()
+            .enumerate()
+            .skip(1)
+            // filter out all cards that aren't trump or leading suit
+            .filter(|(_, x)| ToPrimitive::to_u32(*x).unwrap() & trick_mask > 0)
+        {
             let suit = self.get_suit(c);
             // Player can't win if not following suit or playing trump
             // The winning suit can only ever be trump or the lead suit
