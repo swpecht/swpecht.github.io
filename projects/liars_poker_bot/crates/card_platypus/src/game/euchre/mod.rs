@@ -1072,27 +1072,14 @@ impl ResampleFromInfoState for EuchreGameState {
             .iter_mut()
             .for_each(|x| x.remove_all(all_known));
 
-        // in a situation where the dealer discards a card that they would have otherwise been forced to play
-        // here we just choose a random non-known card for them to use
-        // tbd if this works in all cases
-        let mut discard_card = None;
-        if allowed_cards[3].len() + known_cards[3].len() < 5 {
-            let mut discard_options = Hand::all_cards();
-            discard_options.remove_all(all_known);
-            discard_options.remove(face_up);
-            discard_card = discard_options.into_iter().choose(rng);
-            known_cards[3].add(discard_card.unwrap());
-            allowed_cards
-                .iter_mut()
-                .for_each(|x| x.remove(discard_card.unwrap()))
-        }
-
         // ensure constraints give us enough cards to deal
         // otherwise it's unsolvable
         assert!(
             known_cards
                 .iter()
                 .zip(allowed_cards.iter())
+                // only check the first 3 players, player 4 can be unsolvable given then can discard a card
+                .take(3)
                 .all(|(k, a)| k.len() + a.len() >= 5),
             "Constraints aren't solvable. \nknown cards: {:?}\nallowed cards: {:?}",
             known_cards,
@@ -1102,7 +1089,7 @@ impl ResampleFromInfoState for EuchreGameState {
         let mut ngs = Euchre::new_state();
         let mut pool = Pool::new(Vec::new);
         assert!(
-            search_for_deal(&mut ngs, known_cards, allowed_cards, 0, rng, &mut pool),
+            search_for_deal(&mut ngs, known_cards, allowed_cards, face_up, 0, rng, &mut pool),
             "Failed to find a valid deal for resample of {} for {}\nknown cards: {:?}\nallowed cards: {:?}",
             self,
             player, known_cards, allowed_cards
@@ -1122,25 +1109,21 @@ impl ResampleFromInfoState for EuchreGameState {
             // discard is the only private action after deal phase
             if !EAction::from(*a).is_public() && player != 3 {
                 assert_eq!(ngs.cur_player(), 3);
-                if let Some(c) = discard_card {
-                    // discard the known discard if we have it
-                    ngs.apply_action(EAction::private_action(c).into());
-                } else {
-                    let played_cards = self
-                        .key
-                        .iter()
-                        .skip(key.len() - self.cards_played)
-                        .map(|a| EAction::from(*a).card())
-                        .collect_vec();
 
-                    ngs.legal_actions(&mut actions);
-                    actions.shuffle(rng);
-                    for da in actions.iter().map(|x| EAction::from(*x)) {
-                        let card = da.card();
-                        if !played_cards.contains(&card) {
-                            ngs.apply_action(da.into());
-                            break;
-                        }
+                let played_cards = self
+                    .key
+                    .iter()
+                    .skip(key.len() - self.cards_played)
+                    .map(|a| EAction::from(*a).card())
+                    .collect_vec();
+
+                ngs.legal_actions(&mut actions);
+                actions.shuffle(rng);
+                for da in actions.iter().map(|x| EAction::from(*x)) {
+                    let card = da.card();
+                    if !played_cards.contains(&card) {
+                        ngs.apply_action(da.into());
+                        break;
                     }
                 }
             } else {
@@ -1157,6 +1140,7 @@ fn search_for_deal<T: rand::Rng>(
     gs: &mut EuchreGameState,
     known: [Hand; 4],
     allowed: [Hand; 4],
+    face_up: Card,
     depth: usize,
     rng: &mut T,
     pool: &mut Pool<Vec<Action>>,
@@ -1188,9 +1172,24 @@ fn search_for_deal<T: rand::Rng>(
         known[cur_player].contains(c) || allowed[cur_player].contains(c)
     });
 
+    // We're in a situation where the dealer needs to be dealt a card
+    // they will ultimately discard
+    //
+    // We can give them any remaining card and skip constraint checking
+    if actions.is_empty() && depth == 19 {
+        assert_eq!(gs.cur_player, 3);
+        gs.legal_actions(&mut actions);
+        // don't deal the faceup card
+        actions.retain(|x| EAction::from(*x).card() != face_up);
+        let a = actions.choose(rng).unwrap();
+        gs.apply_action(*a);
+        pool.attach(actions);
+        return true;
+    }
+
     for a in actions.iter() {
         gs.apply_action(*a);
-        if !search_for_deal(gs, known, allowed, depth + 1, rng, pool) {
+        if !search_for_deal(gs, known, allowed, face_up, depth + 1, rng, pool) {
             gs.undo()
         } else {
             pool.attach(actions);
@@ -1533,11 +1532,16 @@ mod tests {
             }
         }
 
-        // this is a hard case where the dealer discards a card and doesn't follow suit because of it
-        let gs =
+        for _ in 0..100 {
+            // this is a hard case where the dealer discards a card and doesn't follow suit because of it
+            let gs =
         EuchreGameState::from("AcTsThTdJd|QcJs9hKh9d|Kc9sAsQdAd|9cTcJcQsJh|Ks|PPPT|Tc|Td9dAdJh|QdJcJdKh|QsTsJs9s|9hAs9cTh|KcKs");
+            gs.resample_from_istate(2, &mut thread_rng());
 
-        gs.resample_from_istate(2, &mut thread_rng());
+            let gs =
+        EuchreGameState::from("9cTcAc9s9d|Jc9hJhTdKd|TsQsKsJdQd|QcKcAsQhAd|Js|PPPT|Qh|9dKdJdAd|QcAcJcQd|9hTsJs9c|As9sJhQs|KcTc");
+            gs.resample_from_istate(2, &mut thread_rng());
+        }
     }
 
     #[test]
