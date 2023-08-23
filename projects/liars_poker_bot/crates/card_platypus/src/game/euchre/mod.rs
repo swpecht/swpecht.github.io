@@ -323,7 +323,7 @@ impl EuchreGameState {
         assert!(EAction::from(a).is_public());
 
         let card = EAction::from(a).card();
-        // debug_assert_eq!(self.deck.get(card), CardLocation::from(self.cur_player));
+        debug_assert_eq!(self.deck.get(card), CardLocation::from(self.cur_player));
         // track the cards in play for isomorphic key
         self.deck.play(card, self.cur_player).unwrap();
         self.cards_played += 1;
@@ -1027,56 +1027,52 @@ impl GameState for EuchreGameState {
 /// It's not yet clear what impact this has on the results of downstream algorithms
 impl ResampleFromInfoState for EuchreGameState {
     fn resample_from_istate<T: rand::Rng>(&self, player: Player, rng: &mut T) -> Self {
-        // Collect known cards: those played, dealt face up, or dealt to the player whose istate we're recreating
-        let face_up = EAction::from(self.key[20]).card(); // 21st card dealt
-        let mut known_dealt_cards = Deck::default();
-        for (i, (a, p)) in self.key.iter().zip(self.play_order.iter()).enumerate() {
-            let a = EAction::from(*a);
-
-            // deal players
-            let is_deal_target_player = i < 20 && *p == player;
-            let is_discard = i > 21 && !a.is_public();
-            let is_play_action = i >= (self.key.len() - self.cards_played);
-
-            if (is_play_action && a.card() != face_up)
-                || is_deal_target_player
-                || (is_discard && player == 3 && a.card() != face_up)
-            // track the discard card for dealer
-            {
-                known_dealt_cards.set(a.card(), CardLocation::from(*p));
-            }
-        }
-
         if self.phase() == EPhase::DealHands || self.phase() == EPhase::DealFaceUp {
             panic!("don't yet support resampling of deal phase gamestates")
         }
 
+        // Masks that track which cards players are allowed to have
+        let mut allowed_cards = [Hand::all_cards(); 4];
+        let mut known_cards = [Hand::default(); 4];
+        let face_up = self.face_up().unwrap();
+        let key = self.key();
+
+        // collect the played cards from all players
+        self.key
+            .iter()
+            .zip(self.play_order.iter())
+            .skip(key.len() - self.cards_played)
+            .map(|(a, p)| (EAction::from(*a).card(), p))
+            .for_each(|(c, p)| known_cards[*p].add(c));
+
+        // remove the face up card from every player
+        allowed_cards.iter_mut().for_each(|p| p.remove(face_up));
+
+        // and ensure the dealer isn't dealt the face up card, even if they played it
+        known_cards[3].remove(face_up);
+
+        // collect the players own dealt cards
+        self.key
+            .iter()
+            .zip(self.play_order.iter())
+            .take(20)
+            .map(|(a, p)| (EAction::from(*a).card(), p))
+            .filter(|(_, p)| **p == player)
+            .for_each(|(c, _)| known_cards[player].add(c));
+
+        // remove the known cards for all players
+        let mut all_known = Hand::default();
+        known_cards.iter().for_each(|x| all_known.add_all(*x));
+        allowed_cards
+            .iter_mut()
+            .for_each(|x| x.remove_all(all_known));
+
         let mut ngs = Euchre::new_state();
-
+        assert!(
+            search_for_deal(&mut ngs, known_cards, allowed_cards, 0, rng),
+            "Failed to find a valid deal"
+        );
         let mut actions = Vec::new();
-        // deal player cards
-        'deals: for _ in 0..20 {
-            // if we have a known card, deal that first
-            ngs.legal_actions(&mut actions);
-            let p = ngs.cur_player();
-
-            for a in actions.iter().map(|x| EAction::from(*x)) {
-                let card = a.card();
-                if known_dealt_cards.get(card) == p.into() {
-                    ngs.apply_action(a.into());
-                    continue 'deals;
-                }
-            }
-
-            // no known card, so deal a random one.
-            actions.shuffle(rng);
-            for c in actions.iter().map(|x| EAction::from(*x).card()) {
-                if known_dealt_cards.get(c) == CardLocation::None && c != face_up {
-                    ngs.apply_action(EAction::private_action(c).into());
-                    continue 'deals;
-                }
-            }
-        }
 
         // deal the face up
         ngs.apply_action(EAction::public_action(face_up).into());
@@ -1091,11 +1087,19 @@ impl ResampleFromInfoState for EuchreGameState {
             // discard is the only private action after deal phase
             if !EAction::from(*a).is_public() && player != 3 {
                 assert_eq!(ngs.cur_player(), 3);
+
+                let played_cards = self
+                    .key
+                    .iter()
+                    .skip(key.len() - self.cards_played)
+                    .map(|a| EAction::from(*a).card())
+                    .collect_vec();
+
                 ngs.legal_actions(&mut actions);
                 actions.shuffle(rng);
                 for da in actions.iter().map(|x| EAction::from(*x)) {
                     let card = da.card();
-                    if known_dealt_cards.get(card) == CardLocation::None {
+                    if !played_cards.contains(&card) {
                         ngs.apply_action(da.into());
                         break;
                     }
@@ -1107,6 +1111,58 @@ impl ResampleFromInfoState for EuchreGameState {
 
         ngs
     }
+}
+
+/// Searches the game tree for a deal that meets all constraints
+fn search_for_deal<T: rand::Rng>(
+    gs: &mut EuchreGameState,
+    known: [Hand; 4],
+    allowed: [Hand; 4],
+    depth: usize,
+    rng: &mut T,
+) -> bool {
+    if !meets_constraints(gs, known, allowed) {
+        return false;
+    }
+
+    if depth == 20 {
+        return true;
+    }
+
+    let mut actions = Vec::new();
+    gs.legal_actions(&mut actions);
+    actions.shuffle(rng);
+
+    for a in actions.iter() {
+        gs.apply_action(*a);
+        if !search_for_deal(gs, known, allowed, depth + 1, rng) {
+            gs.undo()
+        } else {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn meets_constraints(gs: &EuchreGameState, known: [Hand; 4], allowed: [Hand; 4]) -> bool {
+    for p in 0..4 {
+        let hand = gs.deck.get_all(p.into());
+        let all_allowed = hand
+            .into_iter()
+            .all(|c| allowed[p].contains(c) || known[p].contains(c));
+        if !all_allowed {
+            return false;
+        }
+
+        let dealt_known = hand.into_iter().filter(|c| known[p].contains(*c)).count();
+        let dealt_known_first = dealt_known == hand.len() || dealt_known == known[p].len();
+        if !dealt_known_first {
+            return false;
+        }
+    }
+
+    true
 }
 
 /// Returns a mask for filtering hands for all cards of a given suit

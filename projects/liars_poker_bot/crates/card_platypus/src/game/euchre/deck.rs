@@ -195,6 +195,13 @@ pub struct Hand {
 }
 
 impl Hand {
+    /// Return a hand containing all cards
+    pub fn all_cards() -> Self {
+        Self {
+            mask: 0b00000000111111111111111111111111,
+        }
+    }
+
     /// Adds a card to the hand
     pub fn add(&mut self, card: Card) {
         self.mask |= ToPrimitive::to_u32(&card).unwrap();
@@ -204,12 +211,25 @@ impl Hand {
         self.mask &= !ToPrimitive::to_u32(&card).unwrap();
     }
 
+    /// Remove all cards in hand from self
+    pub fn remove_all(&mut self, hand: Hand) {
+        self.mask &= !hand.mask;
+    }
+
+    pub fn add_all(&mut self, hand: Hand) {
+        self.mask |= hand.mask;
+    }
+
     pub fn contains(&self, card: Card) -> bool {
         self.mask & (card as u32) > 0
     }
 
     pub fn len(&self) -> usize {
         self.mask.count_ones() as usize
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub fn cards(&self) -> Vec<Card> {
@@ -234,6 +254,7 @@ impl Hand {
         FromPrimitive::from_u32(self.mask)
     }
 
+    #[deprecated]
     pub fn mask(&self) -> u32 {
         self.mask
     }
