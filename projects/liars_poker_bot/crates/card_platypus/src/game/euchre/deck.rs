@@ -161,10 +161,8 @@ impl Deck {
     pub fn play(&mut self, card: Card, player: Player) -> anyhow::Result<()> {
         let player_loc = CardLocation::from(player);
 
-        let none_hand = self.locations[CardLocation::None.idx()];
         let player_hand = &mut self.locations[player_loc.idx()];
-        // TODO: this is a hack to support the current implementation of re-sampling from istates
-        if !player_hand.contains(card) && !none_hand.contains(card) {
+        if !player_hand.contains(card) {
             let cards = player_hand.cards();
             let loc = self.get(card);
             bail!(
