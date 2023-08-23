@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "Pass on a bower lose for an hour, part 2"
+title:  "Euchre wisdom: pass on the bower, lose for an hour? Part 2"
 categories: project-log
 ---
 
