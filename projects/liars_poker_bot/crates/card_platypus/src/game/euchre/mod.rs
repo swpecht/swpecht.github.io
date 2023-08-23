@@ -471,13 +471,6 @@ impl EuchreGameState {
 
     /// Returns the player who won the trick
     fn evaluate_trick(&self, cards: &[Card], trick_starter: Player) -> Player {
-        assert_eq!(cards.len(), 4); // only support 4 players
-
-        let mut trick_mask: u32 = 0;
-        for c in cards {
-            trick_mask |= ToPrimitive::to_u32(c).unwrap();
-        }
-
         use Card::*;
         let (left, right) = match self.trump.unwrap() {
             Suit::Clubs => (JS, JC),
