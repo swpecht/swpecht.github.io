@@ -324,7 +324,8 @@ impl EuchreGameState {
         assert!(EAction::from(a).is_public());
 
         let card = EAction::from(a).card();
-        debug_assert_eq!(self.deck.get(card), CardLocation::from(self.cur_player));
+        assert!(self.deck.get_all(self.cur_player.into()).contains(card));
+
         // track the cards in play for isomorphic key
         self.deck.play(card, self.cur_player).unwrap();
         self.cards_played += 1;
