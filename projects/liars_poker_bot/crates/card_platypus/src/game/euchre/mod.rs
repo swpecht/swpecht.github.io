@@ -324,7 +324,10 @@ impl EuchreGameState {
         assert!(EAction::from(a).is_public());
 
         let card = EAction::from(a).card();
-        assert!(self.deck.get_all(self.cur_player.into()).contains(card));
+        assert!(
+            self.deck.get_all(self.cur_player.into()).contains(card),
+            "Attempted to play card not in players hand"
+        );
 
         // track the cards in play for isomorphic key
         self.deck.play(card, self.cur_player).unwrap();
@@ -453,14 +456,13 @@ impl EuchreGameState {
         let leading_suit = self.get_suit(leading_card);
         let suit_mask = suit_mask(leading_suit, self.trump);
 
-        if suit_mask & hand.mask() == 0 {
+        if (suit_mask & hand).is_empty() {
             // no suit, can play any card
             for c in hand {
                 actions.push(EAction::public_action(c).into());
             }
         } else {
-            let mask = suit_mask & hand.mask();
-            let suited_hand = Hand::from_mask(mask);
+            let suited_hand = suit_mask & hand;
             for c in suited_hand {
                 actions.push(EAction::public_action(c).into());
             }
@@ -476,12 +478,38 @@ impl EuchreGameState {
             trick_mask |= ToPrimitive::to_u32(c).unwrap();
         }
 
-        let leading_suit = self.get_suit(cards[0]);
-        let leading_mask = suit_mask(leading_suit, self.trump);
+        use Card::*;
+        let (left, right) = match self.trump.unwrap() {
+            Suit::Clubs => (JS, JC),
+            Suit::Spades => (JC, JS),
+            Suit::Hearts => (JD, JH),
+            Suit::Diamonds => (JH, JD),
+        };
+
+        // right always wins
+        if let Some(winner) = cards.iter().position(|c| *c == right) {
+            return (trick_starter + winner) % self.num_players;
+        }
+
+        // if no right, left always wins
+        if let Some(winner) = cards.iter().position(|c| *c == left) {
+            return (trick_starter + winner) % self.num_players;
+        }
+
+        // otherwise we can just evaluate by rank
+        let card_mask = Hand::from(cards);
         let trump_mask = suit_mask(self.trump.unwrap(), self.trump);
 
+        let trumps = card_mask & trump_mask;
+        if !trumps.is_empty() {
+            // todo --how to get highest
+        }
+
+        let leading_suit = self.get_suit(cards[0]);
+        let leading_mask = suit_mask(leading_suit, self.trump);
+
         // only cards matching the leading suit or trump can win
-        let valid_mask = leading_mask | trump_mask;
+        let valid_mask = leading_mask.mask() | trump_mask.mask();
         trick_mask &= valid_mask;
 
         let mut winner = 0;
@@ -1080,7 +1108,7 @@ impl ResampleFromInfoState for EuchreGameState {
                 {
                     let played_suit = self.get_suit(played_card);
                     if played_suit != lead_suit {
-                        let suit_cards = Hand::from_mask(suit_mask(lead_suit, self.trump));
+                        let suit_cards = suit_mask(lead_suit, self.trump);
                         allowed_cards[(lead_player + i) % 4].remove_all(suit_cards);
                     }
                 }
@@ -1101,6 +1129,7 @@ impl ResampleFromInfoState for EuchreGameState {
         if allowed_cards[3].len() + known_cards[3].len() < 5 {
             let mut discard_options = Hand::all_cards();
             discard_options.remove_all(all_known);
+            discard_options.remove(face_up);
             discard_card = discard_options.into_iter().choose(rng);
             known_cards[3].add(discard_card.unwrap());
             allowed_cards
@@ -1244,7 +1273,7 @@ fn meets_constraints(gs: &EuchreGameState, known: [Hand; 4], allowed: [Hand; 4])
 }
 
 /// Returns a mask for filtering hands for all cards of a given suit
-pub(super) fn suit_mask(suit: Suit, trump: Option<Suit>) -> u32 {
+pub(super) fn suit_mask(suit: Suit, trump: Option<Suit>) -> Hand {
     let mut mask = match suit {
         Suit::Clubs => CLUBS_MASK,
         Suit::Spades => SPADES_MASK,
@@ -1271,7 +1300,7 @@ pub(super) fn suit_mask(suit: Suit, trump: Option<Suit>) -> u32 {
         }
     }
 
-    mask
+    Hand::from_mask(mask)
 }
 
 #[cfg(test)]
@@ -1395,7 +1424,9 @@ mod tests {
                 .iter()
                 .map(|x| EAction::from(*x).to_string())
                 .collect_vec(),
-            vec!["9c", "Tc", "Jc", "Qc", "Kc"]
+            vec!["9c", "Tc", "Jc", "Qc", "Kc"],
+            "gs: {}",
+            gs
         );
 
         gs.apply_action(EAction::NC.into());
@@ -1405,7 +1436,9 @@ mod tests {
                 .iter()
                 .map(|x| EAction::from(*x).to_string())
                 .collect_vec(),
-            vec!["Ac"]
+            vec!["Ac"],
+            "gs: {}",
+            gs
         );
 
         let gs = EuchreGameState::from("TcQs9hJdQd|QcThJhKhKd|AcTsAhTdAd|9cKc9sKsQh|Jc|T|Kc|QdKd");
