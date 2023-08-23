@@ -1136,6 +1136,21 @@ fn search_for_deal<T: rand::Rng>(
     gs.legal_actions(&mut actions);
     actions.shuffle(rng);
 
+    // move a known card to the front if one exists
+    let cur_player = gs.cur_player();
+    let idx = actions
+        .iter()
+        .map(|x| EAction::from(*x).card())
+        .position(|x| known[cur_player].contains(x))
+        .unwrap_or(0);
+    actions.swap(0, idx);
+
+    // filter out illegal moves
+    actions.retain(|x| {
+        let c = EAction::from(*x).card();
+        known[cur_player].contains(c) || allowed[cur_player].contains(c)
+    });
+
     for a in actions.iter() {
         gs.apply_action(*a);
         if !search_for_deal(gs, known, allowed, depth + 1, rng, pool) {
