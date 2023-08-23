@@ -252,11 +252,6 @@ impl Hand {
         FromPrimitive::from_u32(self.mask)
     }
 
-    #[deprecated]
-    pub fn mask(&self) -> u32 {
-        self.mask
-    }
-
     pub fn from_mask(mask: u32) -> Self {
         Self { mask }
     }
