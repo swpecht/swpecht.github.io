@@ -121,7 +121,7 @@ fn log_score(
     let score = score_vs_defender(alg, 1, worlds);
     info!(
         "iteration:\t{}\tnodes touched:\t{}\tinfo_states:\t{}\tscore:\t{}\tbaseline:\t{}",
-        iteration,
+        alg.iter,
         cfres::nodes_touched::read(),
         alg.num_info_states(),
         score,
