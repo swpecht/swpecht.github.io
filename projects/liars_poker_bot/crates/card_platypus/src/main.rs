@@ -1,6 +1,7 @@
 use std::fs::OpenOptions;
 use std::mem;
 
+use card_platypus::game::euchre::actions::EAction;
 use clap::{command, Parser, Subcommand, ValueEnum};
 
 use card_platypus::actions;
@@ -20,6 +21,7 @@ use card_platypus::game::euchre::{Euchre, EuchreGameState};
 use card_platypus::game::kuhn_poker::KPGameState;
 use card_platypus::game::GameState;
 
+use itertools::Itertools;
 use log::{debug, info, set_max_level, LevelFilter};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
@@ -157,6 +159,12 @@ fn run_scratch(_args: Args) {
     println!("bluff size: {}", mem::size_of::<BluffGameState>());
     println!("kuhn poker size: {}", mem::size_of::<KPGameState>());
     println!("euchre size: {}", mem::size_of::<EuchreGameState>());
+
+    let gs =
+        EuchreGameState::from("JcTsJsAs9d|Kc9hThQhJd|QcKsAhQdAd|Ac9sQsTdKd|Kh|T|Td|TsThKsQs|Jd");
+
+    let actions = actions!(gs);
+    println!("{:?}", actions.into_iter().map(EAction::from).collect_vec());
 }
 
 fn run_analyze(args: Args) {

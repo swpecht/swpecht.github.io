@@ -1061,6 +1061,31 @@ impl ResampleFromInfoState for EuchreGameState {
             .filter(|(_, p)| **p == player)
             .for_each(|(c, _)| known_cards[player].add(c));
 
+        // Remove a suit from allowed cards if player didn't previously follow suit
+        let offset = key.len() - self.cards_played;
+        for t in 0..5 {
+            let trick_start = offset + t * 4;
+            let lead = key.get(trick_start).map(|x| EAction::from(*x).card());
+            if lead.is_none() {
+                break;
+            }
+            let lead = lead.unwrap();
+            let lead_player = self.play_order[trick_start];
+
+            for i in 1..3 {
+                if let Some(played_card) =
+                    key.get(trick_start + i).map(|x| EAction::from(*x).card())
+                {
+                    let lead_suit = self.get_suit(lead);
+                    let played_suit = self.get_suit(played_card);
+                    if played_suit != lead_suit {
+                        let suit_cards = Hand::from_mask(suit_mask(lead_suit, self.trump));
+                        allowed_cards[(lead_player + i) % 4].remove_all(suit_cards);
+                    }
+                }
+            }
+        }
+
         // remove the known cards for all players
         let mut all_known = Hand::default();
         known_cards.iter().for_each(|x| all_known.add_all(*x));
@@ -1072,7 +1097,9 @@ impl ResampleFromInfoState for EuchreGameState {
         let mut pool = Pool::new(Vec::new);
         assert!(
             search_for_deal(&mut ngs, known_cards, allowed_cards, 0, rng, &mut pool),
-            "Failed to find a valid deal"
+            "Failed to find a valid deal for resample of {} for {}",
+            self,
+            player
         );
         let mut actions = Vec::new();
 
