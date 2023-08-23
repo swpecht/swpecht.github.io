@@ -1,6 +1,7 @@
 use std::fs::OpenOptions;
 use std::mem;
 
+use card_platypus::algorithms::ismcts::ResampleFromInfoState;
 use card_platypus::game::euchre::actions::EAction;
 use clap::{command, Parser, Subcommand, ValueEnum};
 
@@ -25,7 +26,7 @@ use itertools::Itertools;
 use log::{debug, info, set_max_level, LevelFilter};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
-use rand::SeedableRng;
+use rand::{thread_rng, SeedableRng};
 use scripts::agent_exploitability::calcualte_agent_exploitability;
 use scripts::benchmark::{get_rng, run_benchmark, BenchmarkArgs};
 use scripts::estimate_euchre_game_tree::estimate_euchre_game_tree;
@@ -161,10 +162,9 @@ fn run_scratch(_args: Args) {
     println!("euchre size: {}", mem::size_of::<EuchreGameState>());
 
     let gs =
-        EuchreGameState::from("JcTsJsAs9d|Kc9hThQhJd|QcKsAhQdAd|Ac9sQsTdKd|Kh|T|Td|TsThKsQs|Jd");
+        EuchreGameState::from("AcTsThTdJd|QcJs9hKh9d|Kc9sAsQdAd|9cTcJcQsJh|Ks|PPPT|Tc|Td9dAdJh|QdJcJdKh|QsTsJs9s|9hAs9cTh|KcKs");
 
-    let actions = actions!(gs);
-    println!("{:?}", actions.into_iter().map(EAction::from).collect_vec());
+    gs.resample_from_istate(2, &mut thread_rng());
 }
 
 fn run_analyze(args: Args) {

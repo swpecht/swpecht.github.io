@@ -1,4 +1,4 @@
-use std::mem;
+use std::{fmt::Debug, mem};
 
 use anyhow::{bail, Ok};
 use num_traits::{FromPrimitive, ToPrimitive};
@@ -187,7 +187,7 @@ impl Deck {
 }
 
 /// Performant representation of collection of cards using a bit mask
-#[derive(Copy, Clone, Default, Serialize, Deserialize, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Hand {
     mask: u32,
 }
@@ -259,6 +259,12 @@ impl Hand {
 
     pub fn from_mask(mask: u32) -> Self {
         Self { mask }
+    }
+}
+
+impl Debug for Hand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{:?}", self.cards()))
     }
 }
 

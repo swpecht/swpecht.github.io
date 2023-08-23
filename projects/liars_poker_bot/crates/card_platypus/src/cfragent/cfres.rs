@@ -121,6 +121,10 @@ impl<G> CFRES<G> {
     pub fn get_infostates(&self) -> Arc<DashMap<IStateKey, InfoState>> {
         self.infostates.clone()
     }
+
+    pub fn iterations(&self) -> usize {
+        self.iteration.load(Ordering::Relaxed)
+    }
 }
 
 impl<G> Seedable for CFRES<G> {
