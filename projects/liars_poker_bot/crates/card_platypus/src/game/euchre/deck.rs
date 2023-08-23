@@ -1,6 +1,6 @@
 use std::{fmt::Debug, mem, ops::BitAnd};
 
-use anyhow::{bail, Ok};
+use anyhow::{bail, Context, Ok};
 use num_traits::{FromPrimitive, ToPrimitive};
 use serde::{Deserialize, Serialize};
 
@@ -259,6 +259,16 @@ impl Hand {
 
     pub fn from_mask(mask: u32) -> Self {
         Self { mask }
+    }
+
+    /// Returns the highest card, this should only be called if there is a single
+    /// suit in the hand otherwise behavior is underfined
+    pub fn highest(&self) -> anyhow::Result<Card> {
+        let bit_index = self.mask.leading_zeros();
+        let card_rep = 0b10000000000000000000000000000000 >> bit_index;
+
+        let c = FromPrimitive::from_u32(card_rep).context("Failed to convert card rep to Card")?;
+        Ok(c)
     }
 }
 

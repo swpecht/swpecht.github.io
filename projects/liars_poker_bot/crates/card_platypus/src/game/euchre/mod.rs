@@ -502,67 +502,17 @@ impl EuchreGameState {
 
         let trumps = card_mask & trump_mask;
         if !trumps.is_empty() {
-            // todo --how to get highest
+            let highest_card = trumps.highest().unwrap();
+            return (trick_starter + cards.iter().position(|c| *c == highest_card).unwrap())
+                % self.num_players;
         }
 
         let leading_suit = self.get_suit(cards[0]);
         let leading_mask = suit_mask(leading_suit, self.trump);
-
-        // only cards matching the leading suit or trump can win
-        let valid_mask = leading_mask.mask() | trump_mask.mask();
-        trick_mask &= valid_mask;
-
-        let mut winner = 0;
-        let mut winning_card = cards[0];
-        let mut winning_suit = self.get_suit(cards[0]);
-        // don't need to evaluate card 0
-        for (i, &c) in cards
-            .iter()
-            .enumerate()
-            .skip(1)
-            // filter out all cards that aren't trump or leading suit
-            .filter(|(_, x)| ToPrimitive::to_u32(*x).unwrap() & trick_mask > 0)
-        {
-            let suit = self.get_suit(c);
-            // Player can't win if not following suit or playing trump
-            // The winning suit can only ever be trump or the lead suit
-            if suit != winning_suit && suit != self.trump.unwrap() {
-                continue;
-            }
-
-            // Simple case where we don't need to worry about weird trump scoring
-            if suit == winning_suit
-                && suit != self.trump.unwrap()
-                && self.get_card_value(c) > self.get_card_value(winning_card)
-            {
-                winner = i;
-                winning_card = c;
-                winning_suit = suit;
-                continue;
-            }
-
-            // Play trump over lead suit
-            if suit == self.trump.unwrap() && winning_suit != self.trump.unwrap() {
-                winner = i;
-                winning_card = c;
-                winning_suit = suit;
-                continue;
-            }
-
-            // Handle trump scoring. Need to differentiate the left and right
-            if suit == self.trump.unwrap() && winning_suit == self.trump.unwrap() {
-                let winning_card_value = self.get_card_value(winning_card);
-                let cur_card_value = self.get_card_value(c);
-                if cur_card_value > winning_card_value {
-                    winner = i;
-                    winning_card = c;
-                    winning_suit = suit;
-                    continue;
-                }
-            }
-        }
-
-        (trick_starter + winner) % self.num_players
+        let follow_suits = card_mask & leading_mask;
+        let highest_card = follow_suits.highest().unwrap();
+        return (trick_starter + cards.iter().position(|c| *c == highest_card).unwrap())
+            % self.num_players;
     }
 
     /// Gets the suit of a given card. Accounts for the weird scoring of the trump suit
