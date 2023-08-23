@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     algorithms::ismcts::ResampleFromInfoState,
+    alloc::Pool,
     game::{Action, Game, GameState, Player},
     istate::IStateKey,
 };
@@ -1068,8 +1069,9 @@ impl ResampleFromInfoState for EuchreGameState {
             .for_each(|x| x.remove_all(all_known));
 
         let mut ngs = Euchre::new_state();
+        let mut pool = Pool::new(Vec::new);
         assert!(
-            search_for_deal(&mut ngs, known_cards, allowed_cards, 0, rng),
+            search_for_deal(&mut ngs, known_cards, allowed_cards, 0, rng, &mut pool),
             "Failed to find a valid deal"
         );
         let mut actions = Vec::new();
@@ -1120,6 +1122,7 @@ fn search_for_deal<T: rand::Rng>(
     allowed: [Hand; 4],
     depth: usize,
     rng: &mut T,
+    pool: &mut Pool<Vec<Action>>,
 ) -> bool {
     if !meets_constraints(gs, known, allowed) {
         return false;
@@ -1129,19 +1132,21 @@ fn search_for_deal<T: rand::Rng>(
         return true;
     }
 
-    let mut actions = Vec::new();
+    let mut actions = pool.detach();
     gs.legal_actions(&mut actions);
     actions.shuffle(rng);
 
     for a in actions.iter() {
         gs.apply_action(*a);
-        if !search_for_deal(gs, known, allowed, depth + 1, rng) {
+        if !search_for_deal(gs, known, allowed, depth + 1, rng, pool) {
             gs.undo()
         } else {
+            pool.attach(actions);
             return true;
         }
     }
 
+    pool.attach(actions);
     false
 }
 
