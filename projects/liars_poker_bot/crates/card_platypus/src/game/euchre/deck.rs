@@ -1,4 +1,4 @@
-use std::{fmt::Debug, mem};
+use std::{fmt::Debug, mem, ops::BitAnd};
 
 use anyhow::{bail, Ok};
 use num_traits::{FromPrimitive, ToPrimitive};
@@ -265,6 +265,26 @@ impl Hand {
 impl Debug for Hand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!("{:?}", self.cards()))
+    }
+}
+
+impl From<&[Card]> for Hand {
+    fn from(value: &[Card]) -> Self {
+        let mut hand = Self::default();
+        for c in value {
+            hand.add(*c);
+        }
+
+        hand
+    }
+}
+
+impl BitAnd for Hand {
+    type Output = Hand;
+
+    fn bitand(mut self, rhs: Self) -> Self::Output {
+        self.mask &= rhs.mask;
+        self
     }
 }
 
