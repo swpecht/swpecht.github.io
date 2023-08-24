@@ -21,37 +21,17 @@ Going to use Liar's poker bots to illustrate why.
 Todos:
 
 [ ] Play euchre against bots
-    [*] Always show cards, just have buttons disabled
-    [*] Make opponent cards closer together on sides
-    [*] Make sure bid clearing workds for player 2
-    [ ] Face up card disapparead after showing trick
-    [ ] Show the chosen card in the game summary section? -- Or show what the faceup card was
-        [ ] Could check the trump suit and face up card to see if they match -- then can show card
-    [ ] Add who is dealer to the game information
-    [ ] Change button for clearing bidding to say "start game" or something similar
     [ ] Use label "east wins" instead of the turn tracker on clearing trick
-    [ ] Center text for waiting on other players
     [ ] Add something showing the game is over before going to the next one?
-    [ ] Bug -- switches to clear trick from clear after I click the button
-    [ ] Capitalize humand and machines in running stats
     [ ] Show players bid actions while waiting for other human to go
     [ ] Add click to say ready for game end, including tricks taken, running score, etc.
     [ ] Update text for dealer pickup to say "take card"
     [ ] Show all bid actions for players, e.g. if passed twice, show pass, pass
-    [ ] Add support for recovering from bad request (although can just refresh the page)
-    [*] Make WASM smaller
     [ ] Add icon to show which players are computers versus humans
-    [ ] Move dealer button to separate line and make bold
     [ ] Switch to pre-rendering pages
     [ ] Switch to cfr as the agent -- update with latest weights
     [ ] Add gamestate key to action request
-[ ] Implement isomorphic suit
-    * How to make this reversible? -- need to get the actual cards to choose an action
-    * Do we actually normalize the entire game? Not just the istates?
 
-[ ] https://www.science.org/doi/10.1126/science.aay2400 -- linear CFR to speed things up?
-    * Need to add number of training iterations to the serialized weights for easier resume
-[ ] Change istates to be more suit agnostic -- e.g. face up card is always spades, 
 
 
 Improving exploitability and CFR
