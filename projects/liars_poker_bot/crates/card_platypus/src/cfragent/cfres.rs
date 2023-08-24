@@ -497,7 +497,7 @@ fn add_avstrat(infostate: &mut InfoState, action: NormalizedAction, amount: f64)
     infostate.avg_strategy[idx] += amount;
 }
 
-fn normalize_istate<G>(
+pub fn normalize_istate<G>(
     key: IStateKey,
     normalizer: fn(Action, &G) -> NormalizedAction,
     gs: &G,
@@ -508,6 +508,9 @@ fn normalize_istate<G>(
         let norm_a = (normalizer)(a, gs);
         new_istate.push(norm_a.get());
     }
+
+    // re-sort the hand
+    new_istate.sort_range(0, 5.min(new_istate.len()));
 
     NormalizedIstate::new(new_istate)
 }
