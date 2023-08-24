@@ -44,7 +44,10 @@ fn main() -> anyhow::Result<()> {
 fn profile() -> anyhow::Result<()> {
     let sh = Shell::new()?;
 
-    cmd!(sh, "sudo sh -c 'echo 0 > /proc/sys/kernel/kptr_restrict'").run()?;
+    let kptr_restrict = cmd!(sh, "cat /proc/sys/kernel/kptr_restrict").read()?;
+    if kptr_restrict != "0" {
+        cmd!(sh, "sudo sh -c 'echo 0 > /proc/sys/kernel/kptr_restrict'").run()?;
+    }
     let pid = cmd!(sh, "pidof card_platypus").read()?;
     cmd!(sh, "perf record -p {pid} -F 99 --call-graph dwarf sleep 60").run()?;
 
