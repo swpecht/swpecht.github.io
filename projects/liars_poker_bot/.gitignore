@@ -22,3 +22,7 @@ flamegraph.svg
 perf.data
 perf.data.old
 callgrind.out.*
+heaptrack.*
+
+# generated infostates
+infostates.*
