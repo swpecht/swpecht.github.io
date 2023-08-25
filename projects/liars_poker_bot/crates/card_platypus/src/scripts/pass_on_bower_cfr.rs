@@ -95,12 +95,7 @@ pub fn train_cfr(args: PassOnBowerCFRArgs, generator: fn() -> EuchreGameState) {
         }
 
         if (i * TRAINING_PER_ITERATION) % args.scoring_freq == 0 {
-            log_score(
-                &mut alg,
-                i * TRAINING_PER_ITERATION,
-                worlds.clone(),
-                baseline_score,
-            );
+            log_score(&mut alg, worlds.clone(), baseline_score);
             // reset to a random seed for future training evaluation
             alg.set_seed(get_rng().gen());
         }
@@ -109,15 +104,10 @@ pub fn train_cfr(args: PassOnBowerCFRArgs, generator: fn() -> EuchreGameState) {
     alg.save(infostate_path);
     println!("num info states: {}", alg.num_info_states());
 
-    log_score(&mut alg, args.training_iterations, worlds, baseline_score);
+    log_score(&mut alg, worlds, baseline_score);
 }
 
-fn log_score(
-    alg: &mut CFRES<EuchreGameState>,
-    iteration: usize,
-    worlds: Vec<EuchreGameState>,
-    baseline_score: f64,
-) {
+fn log_score(alg: &mut CFRES<EuchreGameState>, worlds: Vec<EuchreGameState>, baseline_score: f64) {
     let score = score_vs_defender(alg, 1, worlds);
     info!(
         "iteration:\t{}\tnodes touched:\t{}\tinfo_states:\t{}\tscore:\t{}\tbaseline:\t{}",

@@ -135,13 +135,12 @@ impl<G> Seedable for CFRES<G> {
 
 impl CFRES<EuchreGameState> {
     pub fn new_euchre_bidding(game_generator: fn() -> EuchreGameState, mut rng: StdRng) -> Self {
-        let normalizer: Box<dyn IStateNormalizer<EuchreGameState>>;
-
-        if feature::is_enabled(feature::NormalizeSuit) {
-            normalizer = Box::new(EuchreNormalizer::default());
-        } else {
-            normalizer = Box::new(NoOpNormalizer::default());
-        }
+        let normalizer: Box<dyn IStateNormalizer<EuchreGameState>> =
+            if feature::is_enabled(feature::NormalizeSuit) {
+                Box::<EuchreNormalizer>::default()
+            } else {
+                Box::<NoOpNormalizer>::default()
+            };
 
         let pimcts_seed = rng.gen();
         Self {
@@ -177,7 +176,7 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
                 SeedableRng::seed_from_u64(pimcts_seed),
             ),
             evaluator: OpenHandSolver::default(),
-            normalizer: Box::new(NoOpNormalizer::default()),
+            normalizer: Box::<NoOpNormalizer>::default(),
             iteration: Arc::new(AtomicUsize::new(0)),
         }
     }

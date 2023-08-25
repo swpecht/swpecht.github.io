@@ -126,7 +126,7 @@ fn score_games<G: GameState + ResampleFromInfoState + Send>(
             };
 
             debug!("starting play for {} vs {}", a1_name, a2_name);
-            let mut games_won = vec![0; 2];
+            let mut games_won = [0; 2];
 
             // Make sure that each "game" to 10 is identical, we may need up to 20 games for this to happen
             let mut chunked_games = Vec::new();

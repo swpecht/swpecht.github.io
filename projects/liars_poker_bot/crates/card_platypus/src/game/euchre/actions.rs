@@ -6,8 +6,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::game::Action;
 
-pub(super) const CARD_PER_SUIT: u8 = 6;
-
 #[derive(PartialEq, Clone, Copy, Serialize, Deserialize, Eq, FromPrimitive, ToPrimitive)]
 pub enum EAction {
     Pickup,
@@ -234,10 +232,6 @@ impl Card {
     pub fn suit(&self) -> Suit {
         let suit_id = (*self as u32).trailing_zeros() / 6;
         FromPrimitive::from_u32(suit_id).unwrap()
-    }
-
-    pub(super) fn rank(&self) -> u8 {
-        (*self as u32).trailing_zeros() as u8 % CARD_PER_SUIT
     }
 
     pub fn to_idx(&self) -> usize {

@@ -2,10 +2,7 @@
 
 use client_server_messages::{NewGameRequest, NewGameResponse};
 // import the prelude to get access to the `rsx!` macro and the `Scope` and `Element` types
-use dioxus::{
-    html::{button, table, tr},
-    prelude::*,
-};
+use dioxus::prelude::*;
 use dioxus_router::prelude::*;
 
 use euchre_app::{base_url, in_game::InGame, PlayerId, ACTION_BUTTON_CLASS, SERVER};

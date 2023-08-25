@@ -2,10 +2,7 @@ use card_platypus::{
     actions,
     algorithms::{ismcts::Evaluator, open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot},
     game::{
-        euchre::{
-            actions::{Card, EAction},
-            Euchre, EuchreGameState,
-        },
+        euchre::{actions::EAction, Euchre, EuchreGameState},
         GameState,
     },
 };

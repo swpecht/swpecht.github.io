@@ -117,7 +117,7 @@ impl KuhnPoker {
 
 impl KPGameState {
     fn apply_action_dealing(&mut self, card: Action) {
-        assert!(vec![
+        assert!([
             KPAction::Jack.into(),
             KPAction::Queen.into(),
             KPAction::King.into()

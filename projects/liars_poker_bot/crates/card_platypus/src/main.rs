@@ -2,7 +2,7 @@ use std::fs::OpenOptions;
 use std::mem;
 
 use card_platypus::algorithms::ismcts::ResampleFromInfoState;
-use card_platypus::game::euchre::actions::EAction;
+
 use clap::{command, Parser, Subcommand, ValueEnum};
 
 use card_platypus::actions;
@@ -22,7 +22,6 @@ use card_platypus::game::euchre::{Euchre, EuchreGameState};
 use card_platypus::game::kuhn_poker::KPGameState;
 use card_platypus::game::GameState;
 
-use itertools::Itertools;
 use log::{debug, info, set_max_level, LevelFilter};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;

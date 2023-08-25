@@ -5,8 +5,8 @@ use std::{
 };
 
 use itertools::Itertools;
-use num_traits::ToPrimitive;
-use rand::seq::{IteratorRandom, SliceRandom};
+
+use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -529,29 +529,6 @@ impl EuchreGameState {
             }
         }
         suit
-    }
-
-    /// Returns a relative value for cards. The absolute values are meaningyless
-    /// but can be used to compare card values of the same suit. It accounts for
-    /// left and right jack.
-    fn get_card_value(&self, card: Card) -> usize {
-        let rank = card.rank();
-
-        if self.phase() != EPhase::Play {
-            return rank as usize;
-        }
-
-        match (self.trump.unwrap(), card) {
-            (Suit::Clubs, Card::JC) => 100,
-            (Suit::Clubs, Card::JS) => 99,
-            (Suit::Spades, Card::JS) => 100,
-            (Suit::Spades, Card::JC) => 99,
-            (Suit::Hearts, Card::JH) => 100,
-            (Suit::Hearts, Card::JD) => 99,
-            (Suit::Diamonds, Card::JD) => 100,
-            (Suit::Diamonds, Card::JH) => 99,
-            _ => rank as usize,
-        }
     }
 
     fn update_keys(&mut self, a: Action) {

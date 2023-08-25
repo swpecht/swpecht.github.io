@@ -81,7 +81,7 @@ pub fn benchmark_pass_on_bower(num_games: usize) {
             SeedableRng::seed_from_u64(101),
         );
 
-        let mut returns = vec![0.0; 4];
+        let mut returns = [0.0; 4];
 
         // all agents play the same games
         for gs in worlds.clone().iter_mut() {

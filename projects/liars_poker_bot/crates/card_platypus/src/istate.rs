@@ -4,7 +4,7 @@ use serde_big_array::BigArray;
 
 use std::{fmt::Debug, hash::Hash, ops::Deref, usize};
 
-use crate::game::{euchre::EuchreGameState, Action};
+use crate::game::Action;
 
 #[derive(Clone, Copy, Serialize, Deserialize, PartialOrd, Ord)]
 pub struct IStateKey {

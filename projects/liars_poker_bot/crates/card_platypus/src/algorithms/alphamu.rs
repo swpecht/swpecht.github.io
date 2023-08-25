@@ -212,23 +212,22 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G> + Clone + Sync> Alpha
             // min node
             let mut min_score = f64::INFINITY;
 
-            if table_value.is_some()
-                && self.use_optimizations
-                && alpha.is_some()
-                && table_value
-                    .unwrap()
-                    .front
-                    .less_than_or_equal(&alpha.clone().unwrap())
-            {
-                trace!(
-                    "early min cut: s: {:?}, t: {:?}, alpha: {:?}",
-                    s,
-                    table_value.unwrap().front,
-                    &alpha.unwrap()
-                );
-                // We return previous dominated result here since
-                // we don't want to return empty fronts
-                return (table_value.unwrap().front.clone(), None);
+            if let Some(v) = table_value {
+                if self.use_optimizations
+                    && alpha.is_some()
+                    && v.front.less_than_or_equal(&alpha.clone().unwrap())
+                {
+                    trace!(
+                        "early min cut: s: {:?}, t: {:?}, alpha: {:?}",
+                        s,
+                        table_value.unwrap().front,
+                        &alpha.unwrap()
+                    );
+                    // We return previous dominated result here since
+                    // we don't want to return empty fronts
+
+                    return (v.front.clone(), None);
+                }
             }
 
             if let Some(t) = table_value {
