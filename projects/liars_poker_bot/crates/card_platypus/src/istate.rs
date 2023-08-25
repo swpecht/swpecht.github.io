@@ -1,9 +1,10 @@
+use dyn_clone::DynClone;
 use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;
 
 use std::{fmt::Debug, hash::Hash, ops::Deref, usize};
 
-use crate::game::Action;
+use crate::game::{euchre::EuchreGameState, Action};
 
 #[derive(Clone, Copy, Serialize, Deserialize, PartialOrd, Ord)]
 pub struct IStateKey {
@@ -144,6 +145,31 @@ impl NormalizedAction {
 
     pub fn get(self) -> Action {
         self.0
+    }
+}
+
+pub trait IStateNormalizer<G>: Sync + Send + DynClone {
+    fn normalize_action(&self, action: Action, gs: &G) -> NormalizedAction;
+    fn denormalize_action(&self, action: NormalizedAction, gs: &G) -> Action;
+    fn normalize_istate(&self, istate: &IStateKey, gs: &G) -> NormalizedIstate;
+}
+
+dyn_clone::clone_trait_object!(<G>IStateNormalizer<G>);
+
+#[derive(Default, Clone)]
+pub struct NoOpNormalizer {}
+
+impl<G> IStateNormalizer<G> for NoOpNormalizer {
+    fn normalize_action(&self, action: Action, _: &G) -> NormalizedAction {
+        NormalizedAction(action)
+    }
+
+    fn denormalize_action(&self, action: NormalizedAction, _: &G) -> Action {
+        action.get()
+    }
+
+    fn normalize_istate(&self, istate: &IStateKey, _: &G) -> NormalizedIstate {
+        NormalizedIstate(*istate)
     }
 }
 

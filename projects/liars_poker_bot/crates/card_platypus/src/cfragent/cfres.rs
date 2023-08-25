@@ -27,10 +27,10 @@ use crate::{
     alloc::Pool,
     counter,
     game::{
-        euchre::{processors::post_discard_phase, EuchreGameState},
+        euchre::{ismorphic::EuchreNormalizer, processors::post_discard_phase, EuchreGameState},
         Action, GameState, Player,
     },
-    istate::{IStateKey, NormalizedAction, NormalizedIstate},
+    istate::{IStateKey, IStateNormalizer, NoOpNormalizer, NormalizedAction, NormalizedIstate},
     policy::Policy,
 };
 
@@ -110,8 +110,7 @@ pub struct CFRES<G> {
     infostates: Arc<DashMap<IStateKey, InfoState>>,
     /// determine if we are at the max depth and should use the rollout
     is_max_depth: fn(&G) -> bool,
-    normalize_action: fn(Action, &G) -> NormalizedAction,
-    denormalize_action: fn(NormalizedAction, &G) -> Action,
+    normalizer: Box<dyn IStateNormalizer<G>>,
     play_bot: PIMCTSBot<G, OpenHandSolver<G>>,
     evaluator: OpenHandSolver<G>,
 }
@@ -136,15 +135,12 @@ impl<G> Seedable for CFRES<G> {
 
 impl CFRES<EuchreGameState> {
     pub fn new_euchre_bidding(game_generator: fn() -> EuchreGameState, mut rng: StdRng) -> Self {
-        let normalize_action: fn(Action, &EuchreGameState) -> NormalizedAction;
-        let denormalize_action: fn(NormalizedAction, &EuchreGameState) -> Action;
+        let normalizer: Box<dyn IStateNormalizer<EuchreGameState>>;
 
         if feature::is_enabled(feature::NormalizeSuit) {
-            normalize_action = crate::game::euchre::ismorphic::normalize_action;
-            denormalize_action = crate::game::euchre::ismorphic::denormalize_action;
+            normalizer = Box::new(EuchreNormalizer::default());
         } else {
-            normalize_action = |action, _gs: &EuchreGameState| NormalizedAction::new(action);
-            denormalize_action = |action, _| action.get();
+            normalizer = Box::new(NoOpNormalizer::default());
         }
 
         let pimcts_seed = rng.gen();
@@ -161,8 +157,7 @@ impl CFRES<EuchreGameState> {
             ),
             iteration: Arc::new(AtomicUsize::new(0)),
             evaluator: OpenHandSolver::new_euchre(),
-            normalize_action,
-            denormalize_action,
+            normalizer,
         }
     }
 }
@@ -182,8 +177,7 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
                 SeedableRng::seed_from_u64(pimcts_seed),
             ),
             evaluator: OpenHandSolver::default(),
-            normalize_action: |action, _| NormalizedAction::new(action),
-            denormalize_action: |action, _| action.get(),
+            normalizer: Box::new(NoOpNormalizer::default()),
             iteration: Arc::new(AtomicUsize::new(0)),
         }
     }
@@ -259,13 +253,7 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
 
         let num_players = (self.game_generator)().num_players();
         for player in 0..num_players {
-            self.update_regrets(
-                &mut (self.game_generator)(),
-                player,
-                0,
-                self.normalize_action,
-                self.denormalize_action,
-            );
+            self.update_regrets(&mut (self.game_generator)(), player, 0);
         }
         if matches!(self.average_type, AverageType::_Full) {
             let reach_probs = vec![1.0; num_players];
@@ -283,14 +271,7 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
     ///     value: is the value of the state in the game
     ///     obtained as the weighted average of the values
     ///     of the children
-    fn update_regrets(
-        &mut self,
-        gs: &mut G,
-        player: Player,
-        _depth: usize,
-        normalizer: fn(Action, &G) -> NormalizedAction,
-        denormalizer: fn(NormalizedAction, &G) -> Action,
-    ) -> f64 {
+    fn update_regrets(&mut self, gs: &mut G, player: Player, _depth: usize) -> f64 {
         if gs.is_terminal() {
             return gs.evaluate(player);
         }
@@ -305,7 +286,7 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
             self.vector_pool.attach(actions);
 
             gs.apply_action(outcome);
-            let value = self.update_regrets(gs, player, _depth + 1, normalizer, denormalizer);
+            let value = self.update_regrets(gs, player, _depth + 1);
             gs.undo();
             return value;
         }
@@ -316,14 +297,16 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
         }
 
         let cur_player = gs.cur_player();
-        let info_state_key = normalize_istate(gs.istate_key(cur_player), self.normalize_action, gs);
+        let info_state_key = self
+            .normalizer
+            .normalize_istate(&gs.istate_key(cur_player), gs);
         let mut actions = self.vector_pool.detach();
         gs.legal_actions(&mut actions);
 
         // don't store anything if only 1 valid action
         if actions.len() == 1 {
             gs.apply_action(actions[0]);
-            let v = self.update_regrets(gs, player, _depth + 1, normalizer, denormalizer);
+            let v = self.update_regrets(gs, player, _depth + 1);
             gs.undo();
             actions.clear();
             self.vector_pool.attach(actions);
@@ -333,16 +316,17 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
         nodes_touched::increment();
         let normalized_actions = actions
             .iter()
-            .map(|&a| (self.normalize_action)(a, gs))
+            .map(|&a| self.normalizer.normalize_action(a, gs))
             .collect_vec();
 
         let policy;
         {
+            let normalizer = self.normalizer.clone();
             let infostate_info = self.lookup_entry(&info_state_key, &normalized_actions);
             let regrets = infostate_info
                 .regrets()
                 .into_iter()
-                .map(|(a, v)| ((denormalizer)(a, gs), v))
+                .map(|(a, v)| (normalizer.denormalize_action(a, gs), v))
                 .collect_vec();
 
             policy = regret_matching(&regrets);
@@ -363,14 +347,13 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
                 .expect("error choosing weighted action")
                 .0;
             gs.apply_action(a);
-            value = self.update_regrets(gs, player, _depth + 1, normalizer, denormalizer);
+            value = self.update_regrets(gs, player, _depth + 1);
             gs.undo();
         } else {
             // walk over all actions at my node
             for &a in actions.iter() {
                 gs.apply_action(a);
-                child_values[a] =
-                    self.update_regrets(gs, player, _depth + 1, normalizer, denormalizer);
+                child_values[a] = self.update_regrets(gs, player, _depth + 1);
                 gs.undo();
                 value += policy[a] * child_values[a];
             }
@@ -379,10 +362,11 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
         if cur_player == player {
             // update regrets
             let iteration = self.iteration.load(Ordering::SeqCst);
+            let normalizer = self.normalizer.clone();
             let mut entry = self.lookup_entry(&info_state_key, &normalized_actions);
             let infostate_info = entry.value_mut();
             for &a in actions.iter() {
-                let norm_a = (normalizer)(a, gs);
+                let norm_a = normalizer.normalize_action(a, gs);
                 add_regret(infostate_info, norm_a, child_values[a] - value, iteration);
             }
         }
@@ -395,10 +379,11 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
         let cur_team = cur_player % 2;
         let player_team = player % 2;
         if matches!(self.average_type, AverageType::Simple) && cur_team != player_team {
+            let normalizer = self.normalizer.clone();
             let mut entry = self.lookup_entry(&info_state_key, &normalized_actions);
             let infostate_info = entry.value_mut();
             for &action in actions.iter() {
-                let norm_a = (normalizer)(action, gs);
+                let norm_a = normalizer.normalize_action(action, gs);
                 add_avstrat(infostate_info, norm_a, policy[action]);
             }
         }
@@ -497,24 +482,6 @@ fn add_avstrat(infostate: &mut InfoState, action: NormalizedAction, amount: f64)
     infostate.avg_strategy[idx] += amount;
 }
 
-pub fn normalize_istate<G>(
-    key: IStateKey,
-    normalizer: fn(Action, &G) -> NormalizedAction,
-    gs: &G,
-) -> NormalizedIstate {
-    let mut new_istate = IStateKey::default();
-
-    for a in key {
-        let norm_a = (normalizer)(a, gs);
-        new_istate.push(norm_a.get());
-    }
-
-    // re-sort the hand
-    new_istate.sort_range(0, 5.min(new_istate.len()));
-
-    NormalizedIstate::new(new_istate)
-}
-
 impl<G: GameState + ResampleFromInfoState + Send> Policy<G> for CFRES<G> {
     /// Returns the MCCFR average policy for a player in a state.
     ///
@@ -540,7 +507,7 @@ impl<G: GameState + ResampleFromInfoState + Send> Policy<G> for CFRES<G> {
                 .map(|(_, v)| *v)
                 .sum();
             for (norm_a, s) in retrieved_infostate.avg_strategy() {
-                let a = (self.denormalize_action)(norm_a, gs);
+                let a = self.normalizer.denormalize_action(norm_a, gs);
                 policy[a] = s / policy_sum;
             }
         } else {

@@ -1,6 +1,6 @@
 use crate::{
     game::{euchre::deck::CardLocation, Action},
-    istate::NormalizedAction,
+    istate::{IStateKey, IStateNormalizer, NormalizedAction, NormalizedIstate},
 };
 
 use super::{
@@ -132,23 +132,46 @@ pub(super) fn get_cards(suit: Suit, trump: Option<Suit>) -> &'static [Card] {
     }
 }
 
-/// Normalizes the suit to have Spades always be the faceup card.
-pub fn normalize_action(action: Action, gs: &EuchreGameState) -> NormalizedAction {
-    let face_up_suit = gs.face_up().map(|c| c.suit());
-    if face_up_suit.is_none() {
-        return NormalizedAction::new(action);
+#[derive(Default, Clone)]
+pub struct EuchreNormalizer {}
+
+impl IStateNormalizer<EuchreGameState> for EuchreNormalizer {
+    /// Normalizes the suit to have Spades always be the faceup card.
+    fn normalize_action(&self, action: Action, gs: &EuchreGameState) -> NormalizedAction {
+        let face_up_suit = gs.face_up().map(|c| c.suit());
+        if face_up_suit.is_none() {
+            return NormalizedAction::new(action);
+        }
+
+        NormalizedAction::new(transform(action, face_up_suit.unwrap()))
     }
 
-    NormalizedAction::new(transform(action, face_up_suit.unwrap()))
-}
+    fn denormalize_action(&self, action: NormalizedAction, gs: &EuchreGameState) -> Action {
+        let face_up_suit = gs.face_up().map(|c| c.suit());
+        if face_up_suit.is_none() {
+            return action.get();
+        }
 
-pub fn denormalize_action(action: NormalizedAction, gs: &EuchreGameState) -> Action {
-    let face_up_suit = gs.face_up().map(|c| c.suit());
-    if face_up_suit.is_none() {
-        return action.get();
+        transform(action.get(), face_up_suit.unwrap())
     }
 
-    transform(action.get(), face_up_suit.unwrap())
+    fn normalize_istate(
+        &self,
+        istate: &crate::istate::IStateKey,
+        gs: &EuchreGameState,
+    ) -> crate::istate::NormalizedIstate {
+        let mut new_istate = IStateKey::default();
+
+        for a in *istate {
+            let norm_a = self.normalize_action(a, gs);
+            new_istate.push(norm_a.get());
+        }
+
+        // re-sort the hand
+        new_istate.sort_range(0, 5.min(new_istate.len()));
+
+        NormalizedIstate::new(new_istate)
+    }
 }
 
 fn transform(action: Action, face_up_suit: Suit) -> Action {
