@@ -42,18 +42,18 @@ pub struct PassOnBowerCFRArgs {
     weight_file: String,
     #[clap(long, value_enum, default_value_t=DealType::All)]
     deal_type: DealType,
-    #[clap(long, default_value_t = true)]
-    normalize_suit: bool,
-    #[clap(long, default_value_t = true)]
-    linear_cfr: bool,
+    #[clap(long, default_value_t = false)]
+    no_normalize_suit: bool,
+    #[clap(long, default_value_t = false)]
+    no_linear_cfr: bool,
 }
 
 pub fn run_pass_on_bower_cfr(args: PassOnBowerCFRArgs) {
-    if args.linear_cfr {
+    if !args.no_linear_cfr {
         cfres::feature::enable(cfres::feature::LinearCFR);
     }
 
-    if args.normalize_suit {
+    if !args.no_normalize_suit {
         cfres::feature::enable(cfres::feature::NormalizeSuit);
     }
 
