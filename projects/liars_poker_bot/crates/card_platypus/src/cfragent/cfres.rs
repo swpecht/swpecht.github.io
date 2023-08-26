@@ -453,12 +453,11 @@ fn add_regret(infostate: &mut InfoState, action: NormalizedAction, amount: f64, 
         // an optimization, but also ensures that we don't set the weights to 0 by accident
         && infostate.last_iteration > 0
     {
-        let mut factor = 1.0;
         // We only apply the factor up to the cutoff amount
-        for i in (infostate.last_iteration)..iteration.min(LINEAR_CFR_CUTOFF) {
-            let f = i as f64 / (i as f64 + 1.0);
-            factor *= f;
-        }
+        let factor: f64 = (infostate.last_iteration..iteration.min(LINEAR_CFR_CUTOFF))
+            .map(|i| i as f64 / (i as f64 + 1.0))
+            .product();
+
         infostate.regrets.iter_mut().for_each(|r| *r *= factor);
     }
 
