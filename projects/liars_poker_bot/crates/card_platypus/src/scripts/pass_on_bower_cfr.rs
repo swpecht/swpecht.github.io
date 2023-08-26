@@ -46,6 +46,8 @@ pub struct PassOnBowerCFRArgs {
     no_normalize_suit: bool,
     #[clap(long, default_value_t = false)]
     no_linear_cfr: bool,
+    #[clap(long, default_value_t = false)]
+    single_thread: bool,
 }
 
 pub fn run_pass_on_bower_cfr(args: PassOnBowerCFRArgs) {
@@ -55,6 +57,10 @@ pub fn run_pass_on_bower_cfr(args: PassOnBowerCFRArgs) {
 
     if !args.no_normalize_suit {
         cfres::feature::enable(cfres::feature::NormalizeSuit);
+    }
+
+    if args.single_thread {
+        cfres::feature::enable(cfres::feature::SingleThread);
     }
 
     match args.deal_type {
