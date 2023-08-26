@@ -53,14 +53,20 @@ pub struct PassOnBowerCFRArgs {
 pub fn run_pass_on_bower_cfr(args: PassOnBowerCFRArgs) {
     if !args.no_linear_cfr {
         cfres::feature::enable(cfres::feature::LinearCFR);
+    } else {
+        cfres::feature::disable(cfres::feature::LinearCFR);
     }
 
     if !args.no_normalize_suit {
         cfres::feature::enable(cfres::feature::NormalizeSuit);
+    } else {
+        cfres::feature::disable(cfres::feature::NormalizeSuit);
     }
 
     if args.single_thread {
         cfres::feature::enable(cfres::feature::SingleThread);
+    } else {
+        cfres::feature::disable(cfres::feature::SingleThread);
     }
 
     match args.deal_type {
