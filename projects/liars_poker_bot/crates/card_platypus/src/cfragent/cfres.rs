@@ -27,7 +27,11 @@ use crate::{
     alloc::Pool,
     counter,
     game::{
-        euchre::{ismorphic::EuchreNormalizer, processors::post_discard_phase, EuchreGameState},
+        euchre::{
+            ismorphic::EuchreNormalizer,
+            processors::{post_discard_phase, post_first_card_played},
+            EuchreGameState,
+        },
         Action, GameState, Player,
     },
     istate::{IStateKey, IStateNormalizer, NoOpNormalizer, NormalizedAction, NormalizedIstate},
@@ -148,7 +152,8 @@ impl CFRES<EuchreGameState> {
             game_generator,
             average_type: AverageType::default(),
             infostates: Arc::new(DashMap::default()),
-            is_max_depth: post_discard_phase,
+            // is_max_depth: post_discard_phase,
+            is_max_depth: post_first_card_played,
             play_bot: PIMCTSBot::new(
                 50,
                 OpenHandSolver::new_euchre(),

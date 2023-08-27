@@ -1,0 +1,530 @@
+#![allow(non_snake_case)]
+
+use dioxus_fullstack::prelude::*;
+use std::time::Duration;
+
+use async_std::task;
+use card_platypus::{
+    actions,
+    game::{
+        euchre::{
+            actions::{Card, EAction, Suit},
+            EuchreGameState,
+        },
+        GameState, Player,
+    },
+};
+use client_server_messages::{ActionRequest, GameAction, GameData, GameProcessingState};
+use dioxus::prelude::*;
+use futures_util::StreamExt;
+
+use crate::{PlayerId, ACTION_BUTTON_CLASS};
+
+#[derive(Debug, Clone)]
+pub enum InGameState {
+    Loading,
+    NotFound,
+    GameFull,
+    UnknownError(String),
+    Ok(GameData),
+}
+
+#[server]
+async fn make_game_request(game_id: String) -> Result<GameData, ServerFnError> {
+    Ok(())
+}
+
+#[server]
+async fn register_player(player_id: usize, game_id: String) -> Result<(), ServerFnError> {
+    Ok(())
+}
+
+#[inline_props]
+pub fn InGame(cx: Scope, game_id: String) -> Element {
+    let player_id = use_shared_state::<PlayerId>(cx).unwrap().read().id;
+    let game_id = game_id.clone();
+
+    let state = use_state(cx, || InGameState::Loading);
+    let _gs_polling_task = use_coroutine(cx, |_rx: UnboundedReceiver<()>| {
+        let game_data = state.to_owned();
+        async move {
+            loop {
+                // get the latest state
+                let gd = make_game_request(String::new()).await;
+
+                // make sure we're an active player, and try to register as one if we can
+                let new_state = match gd {
+                    Ok(gd) if gd.players.contains(&Some(player_id)) => InGameState::Ok(gd),
+                    Ok(gd) if gd.players.len() < 2 => InGameState::Ok(gd),
+                    // Ok(_) => {
+                    //     todo!();
+                    //     // register_player(player_id, game_id).await;
+                    //     // make_game_request(game_id).await;
+                    // }
+                    _ => InGameState::UnknownError("uknown error".to_string()),
+                };
+
+                game_data.set(new_state);
+                task::sleep(Duration::from_secs(5)).await;
+            }
+        }
+    });
+
+    match state.get() {
+        InGameState::Ok(gd) => {
+            let south_player = gd
+                .players
+                .iter()
+                .position(|x| x.is_some() && x.unwrap() == player_id)
+                .unwrap();
+
+            render!(
+                div { class: "h-screen grid sm:flex sm:flex-row m-1",
+                    div { class: "sm:basis-3/4", PlayArea(cx, gd.clone(), south_player) }
+                    div { class: "sm:basis-1/4",
+                        GameData(cx, gd.gs.clone(), south_player),
+                        RunningStats(cx, gd.computer_score, gd.human_score)
+                    }
+                }
+            )
+        }
+        InGameState::NotFound => GameNotFound(cx),
+        InGameState::Loading => Loading(cx),
+        InGameState::UnknownError(msg) => UnknownError(cx, msg),
+        InGameState::GameFull => GameFull(cx),
+    }
+}
+
+fn Loading<T>(cx: Scope<T>) -> Element {
+    render!("loading...")
+}
+
+fn GameNotFound<T>(cx: Scope<T>) -> Element {
+    render!("error, the request game wasn't found. Try going back and starting a new one...")
+}
+
+fn GameFull<T>(cx: Scope<T>) -> Element {
+    render!("game is full. Try creating a new game instead")
+}
+
+fn UnknownError<'a, T>(cx: Scope<'a, T>, msg: &'a String) -> Element<'a> {
+    render!(
+        div { class: "max-w-xlg grid space-y-4 mx-4 my-4",
+            p { "Encountered an unexpected error. Try going back and trying again." }
+            p { "Error: {msg}" }
+        }
+    )
+}
+
+fn GameData<T>(cx: Scope<T>, gs: String, south_player: usize) -> Element {
+    let gs = EuchreGameState::from(gs.as_str());
+    let trump_details = gs.trump();
+
+    let dealer_seat = match south_player {
+        0 => "East",
+        1 => "North",
+        2 => "West",
+        3 => "South",
+        _ => "Error finding dealer seat",
+    };
+
+    let trump_string = if let Some((suit, caller)) = trump_details {
+        let caller_seat = match caller {
+            x if x == south_player => "South",
+            x if x == (south_player + 1) % 4 => "West",
+            x if x == (south_player + 2) % 4 => "North",
+            x if x == (south_player + 3) % 4 => "East",
+            _ => "Error finding caller seat",
+        };
+
+        format!("Trump is {}. Called by {caller_seat}", suit.icon())
+    } else {
+        "Trump has not been called".to_string()
+    };
+
+    let face_up = gs.face_up();
+    let face_up_str = if let Some(card) = face_up {
+        format!("Face up card is: {}", card.icon())
+    } else {
+        "Face up card not yet dealt".to_string()
+    };
+
+    let south_trick_wins = gs.trick_score()[south_player % 2];
+    let east_trick_wins = gs.trick_score()[(south_player + 1) % 2];
+
+    render!(
+        div {
+            div { class: "pt-8 font-bold text-xl font-large text-black", "Game information" }
+            div { "Dealer is {dealer_seat}" }
+            div { face_up_str }
+            div { trump_string }
+            div { class: "font-bold", "Tricks taken:" }
+            div { class: "grid grid-cols-2",
+                div { "North/South" }
+                div { "East/West" }
+                div { "{south_trick_wins}" }
+                div { "{east_trick_wins}" }
+            }
+        }
+    )
+}
+
+fn LastTrick<T>(cx: Scope<T>, game_data: GameData, player: Player) -> Element {
+    let gs = EuchreGameState::from(game_data.gs.as_str());
+    if !matches!(
+        game_data.display_state,
+        GameProcessingState::WaitingTrickClear { ready_players: _ }
+    ) {
+        return None;
+    }
+
+    let last_trick = gs.last_trick();
+    if let Some((starter, mut trick)) = last_trick {
+        trick.rotate_left(4 - starter);
+
+        render!(CardIcon(cx, trick[player]))
+    } else {
+        None
+    }
+}
+
+fn RunningStats<T>(cx: Scope<T>, machine_score: usize, human_score: usize) -> Element {
+    render!(
+        div {
+            div { class: "pt-8 font-bold text-xl font-large text-black", "Running stats" }
+            div { class: "grid grid-cols-2",
+                div { "Humans" }
+                div { "Machines" }
+                div { "{human_score}" }
+                div { "{machine_score}" }
+            }
+        }
+    )
+}
+
+fn PlayArea<T>(cx: Scope<T>, game_data: GameData, south_player: usize) -> Element {
+    let gs = EuchreGameState::from(game_data.gs.as_str());
+
+    let west_player = (south_player + 1) % 4;
+    let north_player = (south_player + 2) % 4;
+    let east_player = (south_player + 3) % 4;
+
+    let north_label = if north_player == 3 {
+        "North (Dealer)"
+    } else {
+        "North"
+    };
+
+    let south_label = if south_player == 3 {
+        "South (Dealer)"
+    } else {
+        "South"
+    };
+
+    let east_label = if east_player == 3 {
+        "East (Dealer)"
+    } else {
+        "East"
+    };
+
+    let west_label = if west_player == 3 {
+        "West (Dealer)"
+    } else {
+        "West"
+    };
+
+    use GameProcessingState::*;
+
+    cx.render(rsx! {
+
+        div { class: "grid grid-cols-5 content-between gap-2",
+            // North area
+            div { class: "col-start-2 col-span-3 grid",
+                div { class: "justify-self-center", north_label }
+                OpponentHand(cx, gs.get_hand(north_player).len())
+            }
+
+            // Middle area
+            div { class: "row-start-2",
+                div { class: "text-center", west_label }
+                OpponentHand(cx, gs.get_hand(west_player).len())
+            }
+
+            div { class: "col-span-3 grid grid-cols-3 items-center justify-items-center space-y-4",
+                div { class: "col-start-2",
+                    PlayedCard(cx, gs.played_card(north_player)),
+                    LastTrick(cx, game_data.clone(), north_player),
+                    if matches!(game_data.display_state, WaitingBidClear { ready_players: _ }) {
+                        LastBid(cx, gs.clone(), north_player)
+                    }
+                }
+                div { class: "row-start-2",
+                    PlayedCard(cx, gs.played_card(west_player)),
+                    LastTrick(cx, game_data.clone(), west_player),
+                    if matches!(game_data.display_state, WaitingBidClear { ready_players: _ }) {
+                        LastBid(cx, gs.clone(), west_player)
+                    }
+                }
+                div { class: "row-start-2 col-start-2 grid justify-items-center",
+                    FaceUpCard(cx, gs.displayed_face_up_card()),
+                    if matches!(game_data.display_state, WaitingBidClear { ready_players: _ }) {
+                        FaceUpCard(cx, Some(gs.face_up().expect("invalid faceup call")))
+                    }
+                    TurnTracker(cx, gs.clone(), south_player),
+                    ClearButton(cx, game_data.clone().display_state)
+                }
+
+                div { class: "row-start-2 col-start-3",
+                    PlayedCard(cx, gs.played_card(east_player)),
+                    LastTrick(cx, game_data.clone(), east_player),
+                    if matches!(game_data.display_state, WaitingBidClear { ready_players: _ }) {
+                        LastBid(cx, gs.clone(), east_player)
+                    }
+                }
+
+                div { class: "row-start-3 col-start-2",
+                    PlayedCard(cx, gs.played_card(south_player)),
+                    LastTrick(cx, game_data.clone(), south_player),
+                    if matches!(game_data.display_state, WaitingBidClear { ready_players: _ }) {
+                        LastBid(cx, gs.clone(), south_player)
+                    }
+                }
+            }
+            div { class: "",
+                div { class: "text-center", east_label }
+                OpponentHand(cx, gs.get_hand(east_player).len())
+            }
+
+            // bottom area
+            div { class: "row-start-3 col-span-5 grid justify-items-center",
+                div { class: "self-end", south_label }
+                PlayerActions(cx, gs.clone(), south_player)
+            }
+        }
+    })
+}
+
+fn ClearButton<T>(cx: Scope<T>, display_state: GameProcessingState) -> Element {
+    let action_task = use_coroutine_handle::<GameAction>(cx).expect("error getting action task");
+    let player_id = use_shared_state::<PlayerId>(cx).unwrap().read().id;
+
+    match display_state {
+        GameProcessingState::WaitingTrickClear { ready_players } => {
+            if ready_players.contains(&player_id) {
+                render!( div { class: "text-center", "waiting on other players..." } )
+            } else {
+                render!(
+                    button {
+                        class: "bg-white outline outline-black hover:bg-slate-100 focus:outline-none focus:ring focus:bg-slate-100 active:bg-slate-200 px-5 py-2 text-sm leading-5 rounded-full font-semibold text-black",
+                        onclick: move |_| { action_task.send(GameAction::ReadyTrickClear) },
+                        "Clear trick"
+                    }
+                )
+            }
+        }
+        GameProcessingState::WaitingBidClear { ready_players } => {
+            if ready_players.contains(&player_id) {
+                render!( div { class: "text-center", "waiting on other players..." } )
+            } else {
+                render!(
+                    button {
+                        class: "bg-white outline outline-black hover:bg-slate-100 focus:outline-none focus:ring focus:bg-slate-100 active:bg-slate-200 px-5 py-2 text-sm leading-5 rounded-full font-semibold text-black",
+                        onclick: move |_| { action_task.send(GameAction::ReadyBidClear) },
+                        "Continue game"
+                    }
+                )
+            }
+        }
+        _ => render!({}),
+    }
+}
+
+fn LastBid<T>(cx: Scope<T>, gs: EuchreGameState, player: Player) -> Element {
+    match gs.last_bid(player) {
+        None => None,
+        Some(EAction::Pass) => render!( div { class: "text-xl", "Pass" } ),
+        Some(EAction::Pickup) => render!( div { class: "text-xl", "Pickup" } ),
+        Some(EAction::Clubs) => render!( div { class: "text-xl", "Clubs" } ),
+        Some(EAction::Spades) => render!( div { class: "text-xl", "Spades" } ),
+        Some(EAction::Hearts) => render!( div { class: "text-xl", "Hearts" } ),
+        Some(EAction::Diamonds) => render!( div { class: "text-xl", "Diamonds" } ),
+        Some(_) => render!( div { class: "text-xl", "error getting bid" } ),
+    }
+}
+
+fn OpponentHand<T>(cx: Scope<T>, num_cards: usize) -> Element {
+    let mut s = String::new();
+    for _ in 0..num_cards {
+        s.push('🂠')
+    }
+
+    cx.render(rsx! {
+        div { class: "text-3xl lg:text-6xl", style: "text-align:center", s.as_str() }
+    })
+}
+
+fn PlayedCard<T>(cx: Scope<T>, c: Option<Card>) -> Element {
+    if let Some(c) = c {
+        cx.render(rsx! {CardIcon(cx, c)})
+    } else {
+        cx.render(rsx! { div { font_size: "60px" } })
+    }
+}
+
+fn TurnTracker<T>(cx: Scope<T>, gs: EuchreGameState, south_player: usize) -> Element {
+    let arrow = match gs.cur_player() {
+        x if x == (south_player + 1) % 4 => "←",
+        x if x == (south_player + 2) % 4 => "↑",
+        x if x == (south_player + 3) % 4 => "→",
+        _ => "↓",
+    };
+    cx.render(rsx! { div { class: "text-4xl lg:text-6xl", "{arrow}" } })
+}
+
+fn FaceUpCard<T>(cx: Scope<T>, c: Option<Card>) -> Element {
+    if let Some(c) = c {
+        cx.render(rsx! {CardIcon(cx, c)})
+    } else {
+        render!({})
+    }
+}
+
+fn CardIcon<T>(cx: Scope<T>, c: Card) -> Element {
+    use card_platypus::game::euchre::actions::Suit::*;
+    let color = match c.suit() {
+        Clubs | Spades => "black",
+        Hearts | Diamonds => "red",
+    };
+
+    cx.render(rsx! {
+        span { class: "text-7xl", color: color, c.icon() }
+    })
+}
+
+fn PlayerActions<T>(cx: Scope<T>, gs: EuchreGameState, south_player: usize) -> Element {
+    if gs.is_chance_node() {
+        return render!({});
+    }
+
+    let actions: Vec<EAction> = actions!(gs).into_iter().map(EAction::from).collect();
+    let action_task = use_coroutine_handle::<GameAction>(cx).expect("error getting action task");
+
+    if gs.cur_player() != south_player {
+        // if not out turn, just show our hand
+        let hand = gs.get_hand(south_player);
+        render!(
+            div { class: "grid gap-y-4 justify-items-center",
+                div { class: "flex gap-x-4",
+                    for c in hand.into_iter() {
+                        CardIcon(cx, c)
+                    }
+                }
+            }
+        )
+    } else if actions.contains(&EAction::Pickup) {
+        // special case for play pickup and pass
+        let hand = gs.get_hand(south_player);
+        render!(
+            div { class: "grid gap-y-4 justify-items-center",
+                div { class: "flex gap-x-4",
+                    for c in hand.into_iter() {
+                        CardIcon(cx, c)
+                    }
+                }
+                div { class: "flex gap-x-4",
+                    button {
+                        class: "basis-1/2 text-xl {ACTION_BUTTON_CLASS}",
+                        onclick: move |_| { action_task.send(GameAction::TakeAction(EAction::Pickup.into())) },
+                        "Tell dealer to take card"
+                    }
+
+                    button {
+                        class: "basis-1/2 text-xl {ACTION_BUTTON_CLASS}",
+                        onclick: move |_| { action_task.send(GameAction::TakeAction(EAction::Pass.into())) },
+                        "Pass"
+                    }
+                }
+            }
+        )
+    } else if actions.contains(&EAction::Clubs) {
+        // special case for choosing suit
+        let hand = gs.get_hand(south_player);
+        render!(
+            div { class: "grid gap-y-4",
+                div { class: "flex gap-x-4",
+                    for c in hand.into_iter() {
+                        CardIcon(cx, c)
+                    }
+                }
+                div { class: "flex gap-x-4",
+                    button {
+                        class: "text-xl text-black {ACTION_BUTTON_CLASS}",
+                        onclick: move |_| { action_task.send(GameAction::TakeAction(EAction::Spades.into())) },
+                        Suit::Spades.icon()
+                    }
+
+                    button {
+                        class: "text-xl text-black {ACTION_BUTTON_CLASS}",
+                        onclick: move |_| { action_task.send(GameAction::TakeAction(EAction::Clubs.into())) },
+                        Suit::Clubs.icon()
+                    }
+
+                    button {
+                        class: "text-xl text-red-500 {ACTION_BUTTON_CLASS}",
+                        onclick: move |_| { action_task.send(GameAction::TakeAction(EAction::Hearts.into())) },
+                        Suit::Hearts.icon()
+                    }
+
+                    button {
+                        class: "text-xl text-red-500 {ACTION_BUTTON_CLASS}",
+                        onclick: move |_| { action_task.send(GameAction::TakeAction(EAction::Diamonds.into())) },
+                        Suit::Diamonds.icon()
+                    }
+
+                    button {
+                        class: "text-xl {ACTION_BUTTON_CLASS}",
+                        onclick: move |_| { action_task.send(GameAction::TakeAction(EAction::Pass.into())) },
+                        "Pass"
+                    }
+                }
+            }
+        )
+    } else {
+        let hand: Vec<(Card, Option<EAction>)> = gs
+            .get_hand(south_player)
+            .into_iter()
+            .map(|c| (c, actions.iter().find(|a| a.card() == c).cloned()))
+            .collect();
+
+        render!(
+            div { class: "flex flex-wrap space-x-4",
+                for (c , a) in hand.into_iter() {
+                    ActionButton(cx, c, a)
+                }
+            }
+        )
+    }
+}
+
+fn ActionButton<T>(cx: Scope<T>, card: Card, action: Option<EAction>) -> Element {
+    use card_platypus::game::euchre::actions::Suit::*;
+    let color = match card.suit() {
+        Clubs | Spades => "text-black",
+        Hearts | Diamonds => "text-red-500",
+    };
+    let action_task = use_coroutine_handle::<GameAction>(cx).expect("error getting action task");
+
+    if let Some(a) = action {
+        render!(
+            button {
+                class: "text-7xl py-2 {ACTION_BUTTON_CLASS} {color}",
+                onclick: move |_| { action_task.send(GameAction::TakeAction(a.into())) },
+                card.icon()
+            }
+        )
+    } else {
+        render!(
+            button { disabled: "true", class: "text-7xl py-2 {ACTION_BUTTON_CLASS} {color}", card.icon() }
+        )
+    }
+}

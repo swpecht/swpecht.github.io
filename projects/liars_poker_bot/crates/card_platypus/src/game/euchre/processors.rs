@@ -189,6 +189,10 @@ pub fn post_discard_phase(gs: &EuchreGameState) -> bool {
     }
 }
 
+pub fn post_first_card_played(gs: &EuchreGameState) -> bool {
+    gs.cards_played > 0
+}
+
 #[cfg(test)]
 mod tests {
     use itertools::Itertools;
