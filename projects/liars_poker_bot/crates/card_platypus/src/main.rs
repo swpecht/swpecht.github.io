@@ -97,6 +97,7 @@ fn main() {
     // Set feature flags
     cfres::feature::enable(cfres::feature::NormalizeSuit);
     cfres::feature::enable(cfres::feature::LinearCFR);
+    cfres::feature::disable(cfres::feature::SingleThread);
 
     let args = Args::parse();
 
