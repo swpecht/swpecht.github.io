@@ -125,10 +125,11 @@ fn serve() -> anyhow::Result<()> {
         Path::new("./crates/euchre-app/src"),
         RecursiveMode::Recursive,
     )?;
-    // watcher.watch(
-    //     Path::new("./crates/euchre-app/dist"),
-    //     RecursiveMode::Recursive,
-    // )?;
+
+    watcher.watch(
+        Path::new("./crates/euchre-app/index.html"),
+        RecursiveMode::Recursive,
+    )?;
 
     let sh = Shell::new()?;
     sh.change_dir("crates/euchre_server");
