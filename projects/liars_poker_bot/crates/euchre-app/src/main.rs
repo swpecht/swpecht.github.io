@@ -5,7 +5,9 @@ use client_server_messages::{NewGameRequest, NewGameResponse};
 use dioxus::prelude::*;
 use dioxus_router::prelude::*;
 
-use euchre_app::{base_url, in_game::InGame, PlayerId, ACTION_BUTTON_CLASS, SERVER};
+use euchre_app::{
+    base_url, hide_element, in_game::InGame, show_element, PlayerId, ACTION_BUTTON_CLASS, SERVER,
+};
 use rand::{thread_rng, Rng};
 
 const PLAYER_ID_KEY: &str = "PLAYER_ID";
@@ -32,6 +34,7 @@ fn main() {
 }
 
 fn App(cx: Scope) -> Element {
+    hide_element("loading");
     let local_storage = web_sys::window().unwrap().local_storage().unwrap().unwrap();
 
     let stored_id = local_storage.get_item(PLAYER_ID_KEY);
@@ -62,51 +65,9 @@ fn NotFound(cx: Scope, route: Vec<String>) -> Element {
 
 #[inline_props]
 fn Index(cx: Scope) -> Element {
+    show_element("intro");
     render!(
         div { class: "max-w-xlg grid space-y-4 mx-4 my-4",
-            p {
-                p { class: "font-bold", "Play euchre against ai bots" }
-                p {
-                    "Euchre is a card game where you and a partner try to take more tricks than the opponent team.
-                    The game is two phases. In the first, trump is decided. In the second, cards are played to take tricks"
-                }
-            }
-
-            p {
-                "For an overview of the rules, see Wikipedia: "
-                a {
-                    href: "https://en.wikipedia.org/wiki/Euchre",
-                    class: "text-blue-600 visited:text-purple-600",
-                    "Euchre"
-                }
-            }
-
-            p {
-                p { class: "font-bold", "Optionally play with a friend" }
-                "You can play with a friend against the ai bots by sharing the url after you create a game. If you play alone,
-                you'll get an ai agent as a teammate."
-            }
-
-            p {
-                p { class: "font-bold",
-                    "Agents use counter factual regret minimization (CFR) and perfect information monte carlo tree search (PIMCT)"
-                }
-                p {
-                    "Using counter factual regret minimization (CFR) alone would result in a stronger agent.
-                        But CFR cannot be naively applied to euchre -- the game is too large."
-                }
-            }
-            p {
-                "Instead, I use CFR for the first phase where trump is chosen and PIMCTS for the second phase where cards are played."
-            }
-            p {
-                "More detail on the approach can be found on by blog: "
-                a {
-                    href: "https://fewworddotrick.com/project-log/2023/07/30/cfr-for-euchre.html",
-                    class: "text-blue-600 visited:text-purple-600",
-                    "CFR for euchre"
-                }
-            }
 
             div { class: "grid justify-items-center",
                 button {
@@ -124,6 +85,8 @@ fn Index(cx: Scope) -> Element {
 
 #[inline_props]
 fn NewGame(cx: Scope) -> Element {
+    hide_element("intro");
+
     let player_id = use_shared_state::<PlayerId>(cx).unwrap().read().id;
     let new_game_req = NewGameRequest::new(player_id);
 

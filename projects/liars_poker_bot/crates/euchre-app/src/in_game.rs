@@ -17,7 +17,9 @@ use client_server_messages::{ActionRequest, GameAction, GameData, GameProcessing
 use dioxus::prelude::*;
 use futures_util::StreamExt;
 
-use crate::{base_url, requests::make_game_request, PlayerId, ACTION_BUTTON_CLASS, SERVER};
+use crate::{
+    base_url, hide_element, requests::make_game_request, PlayerId, ACTION_BUTTON_CLASS, SERVER,
+};
 
 #[derive(Debug, Clone)]
 pub enum InGameState {
@@ -30,6 +32,8 @@ pub enum InGameState {
 
 #[inline_props]
 pub fn InGame(cx: Scope, game_id: String) -> Element {
+    hide_element("intro");
+
     let player_id = use_shared_state::<PlayerId>(cx).unwrap().read().id;
     let client = reqwest::Client::new();
     let game_url = format!("{}/{}/{}", base_url(), SERVER, game_id);
