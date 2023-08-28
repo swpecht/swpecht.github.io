@@ -8,7 +8,7 @@ use card_platypus::{
     },
     cfragent::cfres::CFRES,
     game::{
-        euchre::{actions::EAction, processors::post_discard_phase, Euchre, EuchreGameState},
+        euchre::{actions::EAction, processors::post_cards_played, Euchre, EuchreGameState},
         get_games, GameState,
     },
 };
@@ -208,7 +208,7 @@ fn compare_agents(args: TuneArgs) {
     let mut test_agent = PolicyAgent::new(test_agent, get_rng());
 
     for mut gs in games {
-        while !post_discard_phase(&gs) {
+        while !post_cards_played(&gs, 0) {
             let baseline_a = pimcts.step(&gs);
             let test_a = test_agent.step(&gs);
 

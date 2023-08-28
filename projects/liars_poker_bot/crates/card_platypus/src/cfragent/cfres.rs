@@ -27,11 +27,7 @@ use crate::{
     alloc::Pool,
     counter,
     game::{
-        euchre::{
-            ismorphic::EuchreNormalizer,
-            processors::{post_cards_played, post_discard_phase},
-            EuchreGameState,
-        },
+        euchre::{ismorphic::EuchreNormalizer, processors::post_cards_played, EuchreGameState},
         Action, GameState, Player,
     },
     istate::{IStateKey, IStateNormalizer, NoOpNormalizer, NormalizedAction, NormalizedIstate},

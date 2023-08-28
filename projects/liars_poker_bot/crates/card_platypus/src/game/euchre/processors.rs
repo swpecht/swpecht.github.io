@@ -178,19 +178,10 @@ fn find_next_card_owner(c: Card, gs: &EuchreGameState) -> Option<Player> {
     None
 }
 
-pub fn post_discard_phase(gs: &EuchreGameState) -> bool {
-    match gs.phase() {
-        EPhase::DealHands => false,
-        EPhase::DealFaceUp => false,
-        EPhase::Pickup => false,
-        EPhase::ChooseTrump => false,
-        EPhase::Discard => false,
-        EPhase::Play => true,
-    }
-}
-
+/// Returns true if >= n cards have been played in the play phase. If n=0
+/// returns true as soon as entering the play phase
 pub fn post_cards_played(gs: &EuchreGameState, n: usize) -> bool {
-    gs.cards_played >= n
+    gs.phase() == EPhase::Play && gs.cards_played >= n
 }
 
 #[cfg(test)]
