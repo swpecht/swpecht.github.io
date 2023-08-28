@@ -189,8 +189,8 @@ pub fn post_discard_phase(gs: &EuchreGameState) -> bool {
     }
 }
 
-pub fn post_first_card_played(gs: &EuchreGameState) -> bool {
-    gs.cards_played > 0
+pub fn post_cards_played(gs: &EuchreGameState, n: usize) -> bool {
+    gs.cards_played >= n
 }
 
 #[cfg(test)]
