@@ -153,7 +153,7 @@ impl CFRES<EuchreGameState> {
             average_type: AverageType::default(),
             infostates: Arc::new(DashMap::default()),
             // is_max_depth: post_discard_phase,
-            is_max_depth: |gs: &EuchreGameState| post_cards_played(gs, 2),
+            is_max_depth: |gs: &EuchreGameState| post_cards_played(gs, 4),
             play_bot: PIMCTSBot::new(
                 50,
                 OpenHandSolver::new_euchre(),
