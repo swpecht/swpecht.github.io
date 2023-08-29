@@ -28,9 +28,13 @@ Todos:
     [ ] Update text for dealer pickup to say "take card"
     [ ] Show all bid actions for players, e.g. if passed twice, show pass, pass
     [ ] Add icon to show which players are computers versus humans
-    [ ] Switch to pre-rendering pages
+    [*] Switch to pre-rendering pages -- seems pretty complex and not well supported -- can we get rid of the router?
+        * Alternative is to move the origingal page to html -- and then just have the button say loading, button and text are replaced when we move to the different pages -- e.g. hide and show the context div on certain page loads
+        * Can use the dioxus cli to convert to html
+        * Make sure tailwind sees the page
     [ ] Switch to cfr as the agent -- update with latest weights
     [ ] Add gamestate key to action request
+    [ ] Change server to run as a service
 
 
 
@@ -38,8 +42,6 @@ Improving exploitability and CFR
 [ ] Do we actually need to pre-compute everything for tabular exploitability? Instead can we 'search' and compute on the fly?
     * Is there not some way to "filter" for this?
     * Confirm why the MC chance sampled version doesn't converge
-[ ] Look at alternative sampling algorithms for CFR -- might change the read-write characteristics -- external sampling?
-    * Marc mentioned this dominates chance sampling across all dimensions
 [ ] What people are doing these days for approximate best response is running "DQN-BR" (use reinforcement learning as an exploiter). See, for example, the MMD paper: https://arxiv.org/pdf/2206.05825.pdf. There's an example of this in OpenSpiel:  https://github.com/deepmind/open_spiel/blob/master/open_spiel/python/examples/rl_response.py. This idea is the basis of PSRO, btw, which is a paper which may interest you: https://arxiv.org/abs/1711.00832. Anyway, there are even more sophisticated methods that add MCTS search on top of it (see our ABR paper: https://arxiv.org/abs/2004.09677) but it is a bit heavy and compute-hungry so I'd recommend starting with DQN-BR.
 
 
