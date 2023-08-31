@@ -400,8 +400,7 @@ impl EuchreGameState {
     }
 
     fn legal_actions_dealing(&self, actions: &mut Vec<Action>) {
-        let cards = self.deck.get_all(CardLocation::None).cards();
-        for c in cards {
+        for c in self.deck.get_all(CardLocation::None) {
             actions.push(EAction::private_action(c).into());
         }
     }
