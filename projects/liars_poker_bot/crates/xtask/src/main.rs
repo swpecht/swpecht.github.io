@@ -61,7 +61,7 @@ fn get_train_logs() -> anyhow::Result<()> {
     let sh = Shell::new()?;
     cmd!(
         sh,
-        "rsync root@{REMOTE_ADDR}:~/swpecht.github.io/projects/liars_poker_bot/crates/card_platypus/{remote_log_file} {local_log_file}"
+        "rsync root@{REMOTE_ADDR}:~/swpecht.github.io/projects/liars_poker_bot/{remote_log_file} {local_log_file}"
     )
     .run()?;
 
