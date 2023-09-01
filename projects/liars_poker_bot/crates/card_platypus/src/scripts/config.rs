@@ -12,7 +12,7 @@ struct Config {
     agents: HashMap<String, PassOnBowerCFRArgs>,
 }
 
-pub fn load_cfr_config(profile: &str) -> anyhow::Result<()> {
+pub fn train_cfr_from_config(profile: &str) -> anyhow::Result<()> {
     let toml_str = fs::read_to_string(CONFIG_LOCATION)?;
     let toml: Config = toml::from_str(&toml_str)?;
 

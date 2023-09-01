@@ -3,6 +3,8 @@ use std::mem;
 
 use card_platypus::algorithms::ismcts::ResampleFromInfoState;
 
+use card_platypus::cfragent::cfres::InfoState;
+use card_platypus::istate::IStateKey;
 use clap::{command, Parser, Subcommand, ValueEnum};
 
 use card_platypus::actions;
@@ -39,6 +41,8 @@ use simplelog::{
     ColorChoice, CombinedLogger, ConfigBuilder, TermLogger, TerminalMode, WriteLogger,
 };
 
+use crate::scripts::config::train_cfr_from_config;
+
 pub mod scripts;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, ValueEnum)]
@@ -60,6 +64,7 @@ enum Commands {
     Exploitability,
     PassOnBowerOpenHand,
     PassOnBowerAlpha { num_games: usize },
+    EuchreCFRTrain { profile: String },
     PassOnBowerCFRTrain(PassOnBowerCFRArgs),
     PassOnBowerCFRParseWeights { infostate_path: String },
     PassOnBowerCFRAnalyzeIstate { num_games: usize },
@@ -153,6 +158,7 @@ fn main() {
             parse_weights(infostate_path.as_str())
         }
         Commands::PassOnBowerCFRAnalyzeIstate { num_games } => analyze_istate(num_games),
+        Commands::EuchreCFRTrain { profile } => train_cfr_from_config(profile.as_str()).unwrap(),
     }
 }
 
@@ -161,10 +167,9 @@ fn run_scratch(_args: Args) {
     println!("kuhn poker size: {}", mem::size_of::<KPGameState>());
     println!("euchre size: {}", mem::size_of::<EuchreGameState>());
 
-    let gs =
-        EuchreGameState::from("AcTsThTdJd|QcJs9hKh9d|Kc9sAsQdAd|9cTcJcQsJh|Ks|PPPT|Tc|Td9dAdJh|QdJcJdKh|QsTsJs9s|9hAs9cTh|KcKs");
+    println!("cfres node {}", mem::size_of::<usize>());
 
-    gs.resample_from_istate(2, &mut thread_rng());
+    train_cfr_from_config("baseline").unwrap();
 }
 
 fn run_analyze(args: Args) {
