@@ -210,6 +210,9 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
             fs::rename(path, target.as_str()).expect("error backing up previous file");
         }
 
+        let path = std::path::Path::new(path);
+        let prefix = path.parent().unwrap();
+        fs::create_dir_all(prefix).unwrap();
         let f = File::create(path).unwrap();
         let f = BufWriter::new(f);
 
