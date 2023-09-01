@@ -28,6 +28,7 @@ num-traits = "0.2"
 num-derive = "0.4"
 anyhow = "1.0"
 dyn-clone = "1.0"
+toml = "0.7"
 
 [dev-dependencies]
 criterion = "0.4"

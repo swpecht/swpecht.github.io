@@ -284,7 +284,7 @@ fn run_jack_face_up_benchmark(args: BenchmarkArgs) {
     );
     agents.push(("pimcts, 50 worlds".to_string(), Rc::new(RefCell::new(a))));
 
-    let mut cfr = CFRES::new_euchre_bidding(generate_jack_of_spades_deal, get_rng());
+    let mut cfr = CFRES::new_euchre_bidding(generate_jack_of_spades_deal, get_rng(), 0);
     let loaded = cfr.load("infostates.open-hand-20m");
     println!("loaded {loaded} infostates");
     agents.push(("pre-play cfr, 20m".to_string(), Rc::new(RefCell::new(cfr))));

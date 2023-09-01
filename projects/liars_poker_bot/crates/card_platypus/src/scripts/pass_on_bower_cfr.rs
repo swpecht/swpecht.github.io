@@ -19,17 +19,17 @@ use indicatif::ProgressBar;
 use itertools::Itertools;
 use log::info;
 use rand::{seq::SliceRandom, thread_rng, Rng, SeedableRng};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::benchmark::get_rng;
 
-#[derive(ValueEnum, Copy, Clone, Debug)]
+#[derive(ValueEnum, Copy, Clone, Debug, Deserialize)]
 enum DealType {
     JackOfSpadesOnly,
     All,
 }
 
-#[derive(Args, Clone, Debug)]
+#[derive(Args, Clone, Debug, Deserialize)]
 pub struct PassOnBowerCFRArgs {
     training_iterations: usize,
     #[clap(short, long, default_value_t = 200)]
@@ -48,6 +48,8 @@ pub struct PassOnBowerCFRArgs {
     no_linear_cfr: bool,
     #[clap(long, default_value_t = false)]
     single_thread: bool,
+    #[clap(long, default_value_t = 0)]
+    max_cards_played: usize,
 }
 
 pub fn run_pass_on_bower_cfr(args: PassOnBowerCFRArgs) {
@@ -79,7 +81,7 @@ pub fn train_cfr(args: PassOnBowerCFRArgs, generator: fn() -> EuchreGameState) {
     info!("starting new run of pass on bower cfr. args {:?}", args);
 
     let pb = ProgressBar::new(args.training_iterations as u64);
-    let mut alg = CFRES::new_euchre_bidding(generator, get_rng());
+    let mut alg = CFRES::new_euchre_bidding(generator, get_rng(), args.max_cards_played);
 
     let infostate_path = args.weight_file.as_str();
     let loaded_states = alg.load(infostate_path);
@@ -190,7 +192,7 @@ struct JSONRow {
 
 pub fn parse_weights(infostate_path: &str) {
     let generator = generate_jack_of_spades_deal;
-    let mut alg = CFRES::new_euchre_bidding(generator, get_rng());
+    let mut alg = CFRES::new_euchre_bidding(generator, get_rng(), 0);
 
     let loaded_states = alg.load(infostate_path);
     println!(
@@ -242,7 +244,7 @@ pub fn parse_weights(infostate_path: &str) {
 pub fn analyze_istate(num_games: usize) {
     let istate = EuchreGameState::from("9sTsQsKsAs|9cTcKcAcTd|JdQdKdAd9h|JcQcJhAh9d|Js");
     let mut rng = get_rng();
-    let mut agent = CFRES::new_euchre_bidding(Euchre::new_state, rng.clone());
+    let mut agent = CFRES::new_euchre_bidding(Euchre::new_state, rng.clone(), 0);
     let loaded = agent.load("infostates.open-hand-20m");
     info!("loaded {}", loaded);
 
