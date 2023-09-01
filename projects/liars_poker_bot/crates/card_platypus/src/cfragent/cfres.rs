@@ -10,6 +10,7 @@ use std::{
 };
 
 use dashmap::{mapref::one::RefMut, DashMap};
+use dyn_clone::DynClone;
 use itertools::Itertools;
 use log::{debug, warn};
 use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, Rng, SeedableRng};
@@ -109,7 +110,7 @@ pub struct CFRES<G> {
     iteration: Arc<AtomicUsize>,
     infostates: Arc<DashMap<IStateKey, InfoState>>,
     /// determine if we are at the max depth and should use the rollout
-    is_max_depth: fn(&G) -> bool,
+    depth_checker: Box<dyn DepthChecker<G>>,
     normalizer: Box<dyn IStateNormalizer<G>>,
     play_bot: PIMCTSBot<G, OpenHandSolver<G>>,
     evaluator: OpenHandSolver<G>,
@@ -134,7 +135,11 @@ impl<G> Seedable for CFRES<G> {
 }
 
 impl CFRES<EuchreGameState> {
-    pub fn new_euchre_bidding(game_generator: fn() -> EuchreGameState, mut rng: StdRng) -> Self {
+    pub fn new_euchre_bidding(
+        game_generator: fn() -> EuchreGameState,
+        mut rng: StdRng,
+        max_cards_played: usize,
+    ) -> Self {
         let normalizer: Box<dyn IStateNormalizer<EuchreGameState>> =
             if feature::is_enabled(feature::NormalizeSuit) {
                 Box::<EuchreNormalizer>::default()
@@ -143,13 +148,14 @@ impl CFRES<EuchreGameState> {
             };
 
         let pimcts_seed = rng.gen();
+
         Self {
             vector_pool: Pool::new(Vec::new),
             game_generator,
             average_type: AverageType::default(),
             infostates: Arc::new(DashMap::default()),
             // is_max_depth: post_discard_phase,
-            is_max_depth: |gs: &EuchreGameState| post_cards_played(gs, 2),
+            depth_checker: Box::new(EuchreDepthChecker { max_cards_played }),
             play_bot: PIMCTSBot::new(
                 50,
                 OpenHandSolver::new_euchre(),
@@ -170,7 +176,7 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
             game_generator,
             average_type: AverageType::default(),
             infostates: Arc::new(DashMap::default()),
-            is_max_depth: |_: &G| false,
+            depth_checker: Box::new(NoOpDepthChecker {}),
             play_bot: PIMCTSBot::new(
                 50,
                 OpenHandSolver::default(),
@@ -292,7 +298,7 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
         }
 
         // If we're at max depth, do the rollout
-        if (self.is_max_depth)(gs) {
+        if self.depth_checker.is_max_depth(gs) {
             return self.evaluator.evaluate_player(gs, player);
         }
 
@@ -489,7 +495,7 @@ impl<G: GameState + ResampleFromInfoState + Send> Policy<G> for CFRES<G> {
     fn action_probabilities(&mut self, gs: &G) -> ActionVec<f64> {
         let player = gs.cur_player();
 
-        if (self.is_max_depth)(gs) {
+        if self.depth_checker.is_max_depth(gs) {
             return self.play_bot.action_probabilities(gs);
         }
 
@@ -528,6 +534,30 @@ impl<G: GameState + ResampleFromInfoState + Send> Agent<G> for CFRES<G> {
             .choose_weighted(&mut thread_rng(), |item| item.1)
             .unwrap()
             .0
+    }
+}
+
+pub trait DepthChecker<G>: Sync + Send + DynClone {
+    fn is_max_depth(&self, gs: &G) -> bool;
+}
+dyn_clone::clone_trait_object!(<G>DepthChecker<G>);
+
+#[derive(Clone)]
+struct NoOpDepthChecker;
+impl<G> DepthChecker<G> for NoOpDepthChecker {
+    fn is_max_depth(&self, _: &G) -> bool {
+        false
+    }
+}
+
+#[derive(Clone)]
+struct EuchreDepthChecker {
+    max_cards_played: usize,
+}
+
+impl DepthChecker<EuchreGameState> for EuchreDepthChecker {
+    fn is_max_depth(&self, gs: &EuchreGameState) -> bool {
+        post_cards_played(gs, self.max_cards_played)
     }
 }
 
