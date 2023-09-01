@@ -163,19 +163,6 @@ fn deploy() -> anyhow::Result<()> {
 
     cmd!(sh, "dx build --profile wasm").run()?;
 
-    // // build the wasm app
-    // cmd!(
-    //     sh,
-    //     "cargo build --target wasm32-unknown-unknown --profile wasm"
-    // )
-    // .run()?;
-    // // move it to the dist folder
-    // cmd!(
-    //     sh,
-    //     "cp ../../target/wasm32-unknown-unknown/wasm/euchre-app.wasm ./dist/assets/dioxus/euchre-app_bg.wasm"
-    // )
-    // .run()?;
-
     cmd!(sh, "npx tailwindcss -i ./input.css -o ./dist/tailwind.css").run()?;
 
     cmd!(sh, "rsync -r ./dist/. root@{REMOTE_ADDR}:~/deploy/static").run()?;
