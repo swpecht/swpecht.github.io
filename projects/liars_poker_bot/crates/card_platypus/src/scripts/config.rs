@@ -1,6 +1,7 @@
 use std::{collections::HashMap, fs};
 
 use anyhow::Context;
+use log::info;
 use serde::Deserialize;
 
 use super::pass_on_bower_cfr::{run_pass_on_bower_cfr, PassOnBowerCFRArgs};
@@ -13,6 +14,7 @@ struct Config {
 }
 
 pub fn train_cfr_from_config(profile: &str) -> anyhow::Result<()> {
+    info!("starting config: {}", profile);
     let toml_str = fs::read_to_string(CONFIG_LOCATION)?;
     let toml: Config = toml::from_str(&toml_str)?;
 
