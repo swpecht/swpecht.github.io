@@ -8,10 +8,7 @@ use std::sync::RwLock;
 
 use crate::game::Action;
 
-use self::{
-    entry::Entry,
-    treeref::{Ref, RefMut},
-};
+use self::treeref::{Ref, RefMut};
 
 pub mod entry;
 pub mod treeref;
@@ -209,6 +206,17 @@ mod tests {
         }
 
         assert_eq!(*tree.get(&[Action(0), Action(2)]).unwrap(), 1);
+
+        {
+            let mut c = tree.get_or_create_mut(&[Action(0), Action(2)], 0);
+            assert_eq!(*c, 1);
+            *c += 5;
+        }
+
+        // touch a different part of the tree
+        tree.insert(&[Action(0), Action(1)], 0);
+
+        assert_eq!(*tree.get(&[Action(0), Action(2)]).unwrap(), 6);
     }
 
     #[test]

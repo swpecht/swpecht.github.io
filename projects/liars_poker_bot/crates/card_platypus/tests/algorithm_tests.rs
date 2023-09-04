@@ -132,7 +132,8 @@ fn test_cfres_nash_kuhn_poker() {
     // Verify the nash equilibrium is reached. From https://en.wikipedia.org/wiki/Kuhn_poker
     let mut alg = CFRES::new(|| (KuhnPoker::game().new)(), SeedableRng::seed_from_u64(43));
 
-    alg.train(100_000);
+    alg.train(50_000);
+    alg.train(50_000);
     let exploitability = exploitability(|| (KuhnPoker::game().new)(), &mut alg).nash_conv;
     assert_relative_eq!(exploitability, 0.0, epsilon = 0.01);
 }

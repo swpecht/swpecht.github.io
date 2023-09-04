@@ -407,26 +407,6 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
         value
     }
 
-    /// Looks up an information set table for the given key.
-    fn lookup_entry_mut(
-        &mut self,
-        key: &NormalizedIstate,
-        actions: &[NormalizedAction],
-    ) -> RefMut<IStateKey, InfoState> {
-        self.infostates_tree
-            .get_or_create_mut(&key.get(), InfoState::new(actions.to_vec()));
-
-        self.infostates
-            .entry(key.get())
-            .or_insert(InfoState::new(actions.to_vec()))
-    }
-
-    /// We take &mut self to avoid accidently deadlocking the underling map, this way, we can only ever have a single handle
-    /// from the infostate map in a given thread
-    fn lookup_entry(&mut self, key: &NormalizedIstate) -> Option<Ref<InfoState>> {
-        todo!()
-    }
-
     fn full_update_average(&mut self, _gs: &mut G, _reach_probs: &[f64]) {
         // deleted implementation as too slow to use in practice
         todo!("not supported")
@@ -434,6 +414,27 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
 
     pub fn num_info_states(&self) -> usize {
         self.infostates.len()
+    }
+}
+
+impl<G> CFRES<G> {
+    /// Looks up an information set table for the given key.
+    fn lookup_entry_mut(
+        &mut self,
+        key: &NormalizedIstate,
+        actions: &[NormalizedAction],
+    ) -> crate::collections::arraytree::treeref::RefMut<InfoState> {
+        self.infostates_tree
+            .get_or_create_mut(&key.get(), InfoState::new(actions.to_vec()))
+
+        // self.infostates
+        //     .entry(key.get())
+        //     .or_insert(InfoState::new(actions.to_vec()))
+    }
+
+    /// Can deadlock if we hold onto handle
+    fn lookup_entry(&self, key: &NormalizedIstate) -> Option<Ref<InfoState>> {
+        self.infostates_tree.get(&key.get())
     }
 }
 
@@ -517,23 +518,26 @@ impl<G: GameState + ResampleFromInfoState + Send> Policy<G> for CFRES<G> {
 
         let mut actions = self.vector_pool.detach();
         gs.legal_actions(&mut actions);
-        let info_state_key = gs.istate_key(player);
-        let retrieved_infostate = self.infostates.get(&info_state_key);
+        let info_state_key = self.normalizer.normalize_istate(&gs.istate_key(player), gs);
 
         let mut policy = ActionVec::new(&actions);
-        if let Some(retrieved_infostate) = retrieved_infostate {
-            let policy_sum: f64 = retrieved_infostate
-                .avg_strategy()
-                .iter()
-                .map(|(_, v)| *v)
-                .sum();
-            for (norm_a, s) in retrieved_infostate.avg_strategy() {
-                let a = self.normalizer.denormalize_action(norm_a, gs);
-                policy[a] = s / policy_sum;
-            }
-        } else {
-            for a in actions.iter() {
-                policy[*a] = 1.0 / actions.len() as f64;
+
+        {
+            let retrieved_infostate = self.lookup_entry(&info_state_key);
+            if let Some(retrieved_infostate) = retrieved_infostate {
+                let policy_sum: f64 = retrieved_infostate
+                    .avg_strategy()
+                    .iter()
+                    .map(|(_, v)| *v)
+                    .sum();
+                for (norm_a, s) in retrieved_infostate.avg_strategy() {
+                    let a = self.normalizer.denormalize_action(norm_a, gs);
+                    policy[a] = s / policy_sum;
+                }
+            } else {
+                for a in actions.iter() {
+                    policy[*a] = 1.0 / actions.len() as f64;
+                }
             }
         }
 
