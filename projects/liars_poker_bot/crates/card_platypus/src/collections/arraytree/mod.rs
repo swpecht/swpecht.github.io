@@ -6,6 +6,8 @@ use std::{
 
 use std::sync::RwLock;
 
+use crate::game::Action;
+
 use self::{
     entry::Entry,
     treeref::{Ref, RefMut},
@@ -25,7 +27,7 @@ pub struct ArrayTree<T> {
 
 impl<T> ArrayTree<T> {
     /// Insert a new element into the tree
-    pub fn insert(&self, k: &[u8], v: T) {
+    pub fn insert(&self, k: &[Action], v: T) {
         assert!(!k.is_empty());
 
         let mut root = self.get_shard_mut(k);
@@ -41,7 +43,7 @@ impl<T> ArrayTree<T> {
         cur_node.value = Some(v);
     }
 
-    pub fn get(&self, k: &[u8]) -> Option<Ref<T>> {
+    pub fn get(&self, k: &[Action]) -> Option<Ref<T>> {
         assert!(!k.is_empty());
         let root = self.get_shard(k);
 
@@ -68,7 +70,7 @@ impl<T> ArrayTree<T> {
         }
     }
 
-    pub fn get_or_create_mut(&self, k: &[u8], default: T) -> RefMut<T> {
+    pub fn get_or_create_mut(&self, k: &[Action], default: T) -> RefMut<T> {
         assert!(!k.is_empty());
         let mut root = self.get_shard_mut(k);
 
@@ -91,7 +93,7 @@ impl<T> ArrayTree<T> {
     }
 
     /// Returns the a read only root shard
-    fn get_shard(&self, k: &[u8]) -> RwLockReadGuard<Node<T>> {
+    fn get_shard(&self, k: &[Action]) -> RwLockReadGuard<Node<T>> {
         let mut hasher = DefaultHasher::new();
         k.hash(&mut hasher);
         let hash = hasher.finish();
@@ -102,7 +104,7 @@ impl<T> ArrayTree<T> {
     }
 
     /// Returns the a read only root shard
-    fn get_shard_mut(&self, k: &[u8]) -> RwLockWriteGuard<Node<T>> {
+    fn get_shard_mut(&self, k: &[Action]) -> RwLockWriteGuard<Node<T>> {
         let mut hasher = DefaultHasher::new();
         k.hash(&mut hasher);
         let hash = hasher.finish();
@@ -129,7 +131,8 @@ pub(super) struct Node<T> {
 
 impl<T> Node<T> {
     // how to make this only take &self and not need mut?
-    fn child(&self, id: u8) -> Option<&Node<T>> {
+    fn child(&self, id: Action) -> Option<&Node<T>> {
+        let id = u8::from(id);
         debug_assert_eq!(self.child_mask.count_ones() as usize, self.children.len());
         debug_assert!(id < 32, "attempted to use key >32: {}", id);
 
@@ -144,7 +147,9 @@ impl<T> Node<T> {
         }
     }
 
-    fn get_or_create_child(&mut self, id: u8) -> &mut Node<T> {
+    fn get_or_create_child(&mut self, id: Action) -> &mut Node<T> {
+        let id = u8::from(id);
+
         let mask_contains = self.child_mask & (1u32 << id) > 0;
         let index = index(self.child_mask, id);
         if !mask_contains {
@@ -187,23 +192,23 @@ mod tests {
     fn test_array_tree_basic() {
         let tree: ArrayTree<usize> = ArrayTree::default();
 
-        assert!(tree.get(&[0, 1, 2]).is_none());
-        tree.insert(&[0, 1, 2], 1);
-        assert_eq!(*tree.get(&[0, 1, 2]).unwrap(), 1);
+        assert!(tree.get(&[Action(1), Action(2)]).is_none());
+        tree.insert(&[Action(1), Action(2)], 1);
+        assert_eq!(*tree.get(&[Action(1), Action(2)]).unwrap(), 1);
 
-        tree.insert(&[0], 5);
-        assert_eq!(*tree.get(&[0]).unwrap(), 5);
-        tree.insert(&[0], 4);
-        assert_eq!(*tree.get(&[0]).unwrap(), 4);
+        tree.insert(&[Action(0)], 5);
+        assert_eq!(*tree.get(&[Action(0)]).unwrap(), 5);
+        tree.insert(&[Action(0)], 4);
+        assert_eq!(*tree.get(&[Action(0)]).unwrap(), 4);
 
         // This can deadlock if we hold the reference into the map
         {
-            let mut c = tree.get_or_create_mut(&[1, 2], 0);
+            let mut c = tree.get_or_create_mut(&[Action(0), Action(2)], 0);
             assert_eq!(*c, 0);
             *c = 1;
         }
 
-        assert_eq!(*tree.get(&[1, 2]).unwrap(), 1);
+        assert_eq!(*tree.get(&[Action(0), Action(2)]).unwrap(), 1);
     }
 
     #[test]
@@ -213,7 +218,7 @@ mod tests {
 
         (0..1000).into_par_iter().for_each(|x| {
             let mut rng = thread_rng();
-            let key = [rng.gen_range(0..32)];
+            let key = [Action(rng.gen_range(0..32))];
             let t = tree.clone();
             let d = dash.clone();
             d.insert(key, x + 1);
