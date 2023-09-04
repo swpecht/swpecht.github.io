@@ -19,7 +19,7 @@ pub mod treeref;
 /// To achieve concurrency, the hash of the istate is used to choose a shard to use for storage
 /// The shard based on a hash of the full istate to ensure equal distribution of items
 pub struct ArrayTree<T> {
-    roots: [RwLock<Node<T>>; 256],
+    shards: [RwLock<Shard<T>>; 256],
 }
 
 impl<T> ArrayTree<T> {
@@ -28,8 +28,9 @@ impl<T> ArrayTree<T> {
         assert!(!k.is_empty());
 
         let mut root = self.get_shard_mut(k);
+        root.len += 1;
 
-        let mut cur_node = root.get_or_create_child(k[0]);
+        let mut cur_node = root.node.get_or_create_child(k[0]);
         let remaining_key = &k[1..];
 
         for x in remaining_key {
@@ -44,7 +45,7 @@ impl<T> ArrayTree<T> {
         assert!(!k.is_empty());
         let root = self.get_shard(k);
 
-        let mut cur_node = root.child(k[0]);
+        let mut cur_node = root.node.child(k[0]);
         let remaining_key = &k[1..];
 
         for x in remaining_key {
@@ -70,8 +71,9 @@ impl<T> ArrayTree<T> {
     pub fn get_or_create_mut(&self, k: &[Action], default: T) -> RefMut<T> {
         assert!(!k.is_empty());
         let mut root = self.get_shard_mut(k);
+        root.len += 1;
 
-        let mut cur_node = root.get_or_create_child(k[0]);
+        let mut cur_node = root.node.get_or_create_child(k[0]);
         let remaining_key = &k[1..];
 
         for x in remaining_key {
@@ -89,25 +91,33 @@ impl<T> ArrayTree<T> {
         }
     }
 
+    pub fn len(&self) -> usize {
+        self.shards.iter().map(|x| x.read().unwrap().len).sum()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Returns the a read only root shard
-    fn get_shard(&self, k: &[Action]) -> RwLockReadGuard<Node<T>> {
+    fn get_shard(&self, k: &[Action]) -> RwLockReadGuard<Shard<T>> {
         let mut hasher = DefaultHasher::new();
         k.hash(&mut hasher);
         let hash = hasher.finish();
         // take the top 8 bits of the hash as the index
         let idx = (hash >> (64 - 8)) as usize;
-        let shard = self.roots[idx].read().unwrap();
+        let shard = self.shards[idx].read().unwrap();
         shard
     }
 
     /// Returns the a read only root shard
-    fn get_shard_mut(&self, k: &[Action]) -> RwLockWriteGuard<Node<T>> {
+    fn get_shard_mut(&self, k: &[Action]) -> RwLockWriteGuard<Shard<T>> {
         let mut hasher = DefaultHasher::new();
         k.hash(&mut hasher);
         let hash = hasher.finish();
         // take the top 8 bits of the hash as the index
         let idx = (hash >> (64 - 8)) as usize;
-        let shard = self.roots[idx].write().unwrap();
+        let shard = self.shards[idx].write().unwrap();
         shard
     }
 }
@@ -115,7 +125,21 @@ impl<T> ArrayTree<T> {
 impl<T> Default for ArrayTree<T> {
     fn default() -> Self {
         Self {
-            roots: std::array::from_fn(|_| RwLock::new(Node::default())),
+            shards: std::array::from_fn(|_| RwLock::new(Shard::default())),
+        }
+    }
+}
+
+pub(super) struct Shard<T> {
+    node: Node<T>,
+    len: usize,
+}
+
+impl<T> Default for Shard<T> {
+    fn default() -> Self {
+        Self {
+            node: Node::default(),
+            len: Default::default(),
         }
     }
 }

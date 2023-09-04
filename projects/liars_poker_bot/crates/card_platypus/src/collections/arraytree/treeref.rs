@@ -4,14 +4,14 @@ use std::{
     sync::{RwLockReadGuard, RwLockWriteGuard},
 };
 
-use super::Node;
+use super::{Node, Shard};
 
 /// Struct to tracking the array tree shard RwLocks when returning values
 ///
 /// This is based on DashMap's implementation:
 ///     https://github.com/xacrimon/dashmap/blob/master/src/mapref/one.rs
 pub struct Ref<'a, T> {
-    _guard: RwLockReadGuard<'a, Node<T>>,
+    _guard: RwLockReadGuard<'a, Shard<T>>,
     value: *const T,
 }
 
@@ -20,7 +20,7 @@ unsafe impl<'a, T: Sync> Send for Ref<'a, T> {}
 unsafe impl<'a, T: Sync> Sync for Ref<'a, T> {}
 
 impl<'a, T> Ref<'a, T> {
-    pub(super) unsafe fn new(guard: RwLockReadGuard<'a, Node<T>>, v: *const T) -> Self {
+    pub(super) unsafe fn new(guard: RwLockReadGuard<'a, Shard<T>>, v: *const T) -> Self {
         Self {
             _guard: guard,
             value: v,
@@ -47,7 +47,7 @@ impl<'a, T> Debug for Ref<'a, T> {
 }
 
 pub struct RefMut<'a, T> {
-    _guard: RwLockWriteGuard<'a, Node<T>>,
+    _guard: RwLockWriteGuard<'a, Shard<T>>,
     value: *mut T,
 }
 
@@ -55,7 +55,7 @@ unsafe impl<'a, T: Sync> Send for RefMut<'a, T> {}
 unsafe impl<'a, T: Sync> Sync for RefMut<'a, T> {}
 
 impl<'a, T> RefMut<'a, T> {
-    pub(super) unsafe fn new(guard: RwLockWriteGuard<'a, Node<T>>, v: *mut T) -> Self {
+    pub(super) unsafe fn new(guard: RwLockWriteGuard<'a, Shard<T>>, v: *mut T) -> Self {
         Self {
             _guard: guard,
             value: v,

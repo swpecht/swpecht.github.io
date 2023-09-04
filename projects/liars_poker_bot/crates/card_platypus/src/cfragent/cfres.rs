@@ -220,7 +220,10 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
         let f = File::create(path).unwrap();
         let f = BufWriter::new(f);
 
-        debug!("saving weights for {} infostates...", self.infostates.len());
+        debug!(
+            "saving weights for {} infostates...",
+            self.infostates_tree.len()
+        );
         self.infostates
             .deref()
             .serialize(&mut Serializer::new(f))
@@ -243,11 +246,11 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
             self.iteration = Arc::new(AtomicUsize::new(iteration));
             debug!(
                 "loaded weights for {} infostates with {} iterations",
-                self.infostates.len(),
+                self.infostates_tree.len(),
                 iteration
             );
 
-            self.infostates.len()
+            self.infostates_tree.len()
         } else {
             warn!("file not found, no infostates loaded");
             0
@@ -413,7 +416,7 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
     }
 
     pub fn num_info_states(&self) -> usize {
-        self.infostates.len()
+        self.infostates_tree.len()
     }
 }
 
