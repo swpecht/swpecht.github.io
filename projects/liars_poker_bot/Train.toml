@@ -37,7 +37,7 @@ single_thread = false
 max_cards_played = 2
 
 [agents.three_card_played]
-weight_file = "/var/lib/card_platypus/infostate.two_card_played"
+weight_file = "/var/lib/card_platypus/infostate.three_card_played"
 training_iterations = 100000000
 scoring_freq = 1000000
 scoring_iterations = 1000
