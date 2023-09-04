@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Display, Write};
 
 use num_derive::{FromPrimitive, ToPrimitive};
-use num_traits::{FromPrimitive, ToPrimitive};
+use num_traits::FromPrimitive;
 use serde::{Deserialize, Serialize};
 
 use crate::game::Action;

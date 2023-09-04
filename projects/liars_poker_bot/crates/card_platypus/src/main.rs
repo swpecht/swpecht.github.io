@@ -1,10 +1,6 @@
 use std::fs::OpenOptions;
 use std::mem;
 
-use card_platypus::algorithms::ismcts::ResampleFromInfoState;
-
-use card_platypus::cfragent::cfres::InfoState;
-use card_platypus::istate::IStateKey;
 use clap::{command, Parser, Subcommand, ValueEnum};
 
 use card_platypus::actions;
@@ -27,7 +23,7 @@ use card_platypus::game::GameState;
 use log::{debug, info, set_max_level, LevelFilter};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
-use rand::{thread_rng, SeedableRng};
+use rand::SeedableRng;
 use scripts::agent_exploitability::calcualte_agent_exploitability;
 use scripts::benchmark::{get_rng, run_benchmark, BenchmarkArgs};
 use scripts::estimate_euchre_game_tree::estimate_euchre_game_tree;

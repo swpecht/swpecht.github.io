@@ -7,5 +7,5 @@ pub enum Entry<'a, T> {
 }
 
 pub struct OccupiedEntry<'a, T> {
-    shard: RwLockWriteGuard<'a, Node<T>>,
+    _shard: RwLockWriteGuard<'a, Node<T>>,
 }

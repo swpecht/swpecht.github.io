@@ -4,7 +4,7 @@ use std::{
     sync::{RwLockReadGuard, RwLockWriteGuard},
 };
 
-use super::{Node, Shard};
+use super::Shard;
 
 /// Struct to tracking the array tree shard RwLocks when returning values
 ///
