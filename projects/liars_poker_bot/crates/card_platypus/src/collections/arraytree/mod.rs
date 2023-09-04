@@ -6,7 +6,10 @@ use std::{
 
 use std::sync::RwLock;
 
-use self::{entry::Entry, treeref::Ref};
+use self::{
+    entry::Entry,
+    treeref::{Ref, RefMut},
+};
 
 pub mod entry;
 mod treeref;
@@ -25,7 +28,7 @@ impl<T> ArrayTree<T> {
     pub fn insert(&self, k: &[u8], v: T) {
         assert!(!k.is_empty());
 
-        let mut root = self.get_write_root(k);
+        let mut root = self.get_shard_mut(k);
 
         let mut cur_node = root.get_or_create_child(k[0]);
         let remaining_key = &k[1..];
@@ -40,7 +43,7 @@ impl<T> ArrayTree<T> {
 
     pub fn get(&self, k: &[u8]) -> Option<Ref<T>> {
         assert!(!k.is_empty());
-        let root = self.get_read_root(k);
+        let root = self.get_shard(k);
 
         let mut cur_node = root.child(k[0]);
         let remaining_key = &k[1..];
@@ -65,12 +68,30 @@ impl<T> ArrayTree<T> {
         }
     }
 
-    pub fn entry(&self, key: &[u8]) -> Entry<T> {
-        todo!()
+    pub fn get_or_create_mut(&self, k: &[u8], default: T) -> RefMut<T> {
+        assert!(!k.is_empty());
+        let mut root = self.get_shard_mut(k);
+
+        let mut cur_node = root.get_or_create_child(k[0]);
+        let remaining_key = &k[1..];
+
+        for x in remaining_key {
+            let child = *x;
+            cur_node = cur_node.get_or_create_child(child);
+        }
+
+        if cur_node.value.is_none() {
+            cur_node.value = Some(default);
+        }
+
+        unsafe {
+            let vptr: *mut T = cur_node.value.as_mut().unwrap();
+            RefMut::new(root, vptr)
+        }
     }
 
     /// Returns the a read only root shard
-    fn get_read_root(&self, k: &[u8]) -> RwLockReadGuard<Node<T>> {
+    fn get_shard(&self, k: &[u8]) -> RwLockReadGuard<Node<T>> {
         let mut hasher = DefaultHasher::new();
         k.hash(&mut hasher);
         let hash = hasher.finish();
@@ -81,7 +102,7 @@ impl<T> ArrayTree<T> {
     }
 
     /// Returns the a read only root shard
-    fn get_write_root(&self, k: &[u8]) -> RwLockWriteGuard<Node<T>> {
+    fn get_shard_mut(&self, k: &[u8]) -> RwLockWriteGuard<Node<T>> {
         let mut hasher = DefaultHasher::new();
         k.hash(&mut hasher);
         let hash = hasher.finish();
@@ -116,10 +137,10 @@ impl<T> Node<T> {
 
         // child doesn't exist, need to insert it
         if !mask_contains {
-            return None;
+            None
         } else {
             let idx = index(self.child_mask, id);
-            return Some(&self.children[idx]);
+            Some(&self.children[idx])
         }
     }
 
@@ -164,7 +185,7 @@ mod tests {
 
     #[test]
     fn test_array_tree_basic() {
-        let mut tree: ArrayTree<usize> = ArrayTree::default();
+        let tree: ArrayTree<usize> = ArrayTree::default();
 
         assert!(tree.get(&[0, 1, 2]).is_none());
         tree.insert(&[0, 1, 2], 1);
@@ -174,6 +195,15 @@ mod tests {
         assert_eq!(*tree.get(&[0]).unwrap(), 5);
         tree.insert(&[0], 4);
         assert_eq!(*tree.get(&[0]).unwrap(), 4);
+
+        // This can deadlock if we hold the reference into the map
+        {
+            let mut c = tree.get_or_create_mut(&[1, 2], 0);
+            assert_eq!(*c, 0);
+            *c = 1;
+        }
+
+        assert_eq!(*tree.get(&[1, 2]).unwrap(), 1);
     }
 
     #[test]

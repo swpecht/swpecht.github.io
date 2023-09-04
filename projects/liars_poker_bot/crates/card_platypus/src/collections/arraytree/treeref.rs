@@ -1,4 +1,8 @@
-use std::{fmt::Debug, ops::Deref, sync::RwLockReadGuard};
+use std::{
+    fmt::Debug,
+    ops::{Deref, DerefMut},
+    sync::{RwLockReadGuard, RwLockWriteGuard},
+};
 
 use super::Node;
 
@@ -42,4 +46,47 @@ impl<'a, T> Debug for Ref<'a, T> {
     }
 }
 
-pub struct RefMut {}
+pub struct RefMut<'a, T> {
+    _guard: RwLockWriteGuard<'a, Node<T>>,
+    value: *mut T,
+}
+
+unsafe impl<'a, T: Sync> Send for RefMut<'a, T> {}
+unsafe impl<'a, T: Sync> Sync for RefMut<'a, T> {}
+
+impl<'a, T> RefMut<'a, T> {
+    pub(super) unsafe fn new(guard: RwLockWriteGuard<'a, Node<T>>, v: *mut T) -> Self {
+        Self {
+            _guard: guard,
+            value: v,
+        }
+    }
+
+    pub fn value(&self) -> &T {
+        unsafe { &*self.value }
+    }
+
+    pub fn value_mut(&mut self) -> &mut T {
+        unsafe { &mut *self.value }
+    }
+}
+
+impl<'a, T> Deref for RefMut<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.value()
+    }
+}
+
+impl<'a, T> DerefMut for RefMut<'a, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.value_mut()
+    }
+}
+
+impl<'a, T> Debug for RefMut<'a, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Ref").field("value", &self.value).finish()
+    }
+}
