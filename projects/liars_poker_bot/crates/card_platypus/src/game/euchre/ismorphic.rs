@@ -180,16 +180,7 @@ fn transform(action: Action, face_up_suit: Suit) -> Action {
     let ea = EAction::from(action);
     let new_action = match ea {
         NC | TC | JC | QC | KC | AC | NS | TS | JS | QS | KS | AS | NH | TH | JH | QH | KH | AH
-        | ND | TD | JD | QD | KD | AD => {
-            EAction::public_action(transform_card(ea.card(), face_up_suit))
-        }
-
-        PrivateNC | PrivateTC | PrivateJC | PrivateQC | PrivateKC | PrivateAC | PrivateNS
-        | PrivateTS | PrivateJS | PrivateQS | PrivateKS | PrivateAS | PrivateNH | PrivateTH
-        | PrivateJH | PrivateQH | PrivateKH | PrivateAH | PrivateND | PrivateTD | PrivateJD
-        | PrivateQD | PrivateKD | PrivateAD => {
-            EAction::private_action(transform_card(ea.card(), face_up_suit))
-        }
+        | ND | TD | JD | QD | KD | AD => transform_card(ea.card(), face_up_suit).into(),
 
         Spades => transform_suit(Suit::Spades, face_up_suit).into(),
         Clubs => transform_suit(Suit::Clubs, face_up_suit).into(),

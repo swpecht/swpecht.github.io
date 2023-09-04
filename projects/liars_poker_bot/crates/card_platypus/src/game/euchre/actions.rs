@@ -7,183 +7,101 @@ use serde::{Deserialize, Serialize};
 use crate::game::Action;
 
 #[derive(PartialEq, Clone, Copy, Serialize, Deserialize, Eq, FromPrimitive, ToPrimitive)]
+#[repr(u32)]
 pub enum EAction {
-    Pickup,
-    Pass,
-    Clubs,
-    Spades,
-    Hearts,
-    Diamonds,
-    NC,
-    TC,
-    JC,
-    QC,
-    KC,
-    AC,
-    NS,
-    TS,
-    JS,
-    QS,
-    KS,
-    AS,
-    NH,
-    TH,
-    JH,
-    QH,
-    KH,
-    AH,
-    ND,
-    TD,
-    JD,
-    QD,
-    KD,
-    AD,
-    PrivateNC,
-    PrivateTC,
-    PrivateJC,
-    PrivateQC,
-    PrivateKC,
-    PrivateAC,
-    PrivateNS,
-    PrivateTS,
-    PrivateJS,
-    PrivateQS,
-    PrivateKS,
-    PrivateAS,
-    PrivateNH,
-    PrivateTH,
-    PrivateJH,
-    PrivateQH,
-    PrivateKH,
-    PrivateAH,
-    PrivateND,
-    PrivateTD,
-    PrivateJD,
-    PrivateQD,
-    PrivateKD,
-    PrivateAD,
+    NC = Card::NC as u32,
+    TC = Card::TC as u32,
+    JC = Card::JC as u32,
+    QC = Card::QC as u32,
+    KC = Card::KC as u32,
+    AC = Card::AC as u32,
+    NS = Card::NS as u32,
+    TS = Card::TS as u32,
+    JS = Card::JS as u32,
+    QS = Card::QS as u32,
+    KS = Card::KS as u32,
+    AS = Card::AS as u32,
+    NH = Card::NH as u32,
+    TH = Card::TH as u32,
+    JH = Card::JH as u32,
+    QH = Card::QH as u32,
+    KH = Card::KH as u32,
+    AH = Card::AH as u32,
+    ND = Card::ND as u32,
+    TD = Card::TD as u32,
+    JD = Card::JD as u32,
+    QD = Card::QD as u32,
+    KD = Card::KD as u32,
+    AD = Card::AD as u32,
+    Pickup = 0b1000000000000000000000000,
+    Pass = 0b10000000000000000000000000,
+    Clubs = 0b100000000000000000000000000,
+    Spades = 0b1000000000000000000000000000,
+    Hearts = 0b10000000000000000000000000000,
+    Diamonds = 0b100000000000000000000000000000,
     /// Value to differentiate discard states from player 0 states
-    DiscardMarker,
+    DiscardMarker = 0b1000000000000000000000000000000,
 }
 
 impl EAction {
     pub fn card(&self) -> Card {
-        use EAction::*;
-        match self {
-            NC | PrivateNC => Card::NC,
-            TC | PrivateTC => Card::TC,
-            JC | PrivateJC => Card::JC,
-            QC | PrivateQC => Card::QC,
-            KC | PrivateKC => Card::KC,
-            AC | PrivateAC => Card::AC,
-            NS | PrivateNS => Card::NS,
-            TS | PrivateTS => Card::TS,
-            JS | PrivateJS => Card::JS,
-            QS | PrivateQS => Card::QS,
-            KS | PrivateKS => Card::KS,
-            AS | PrivateAS => Card::AS,
-            NH | PrivateNH => Card::NH,
-            TH | PrivateTH => Card::TH,
-            JH | PrivateJH => Card::JH,
-            QH | PrivateQH => Card::QH,
-            KH | PrivateKH => Card::KH,
-            AH | PrivateAH => Card::AH,
-            ND | PrivateND => Card::ND,
-            TD | PrivateTD => Card::TD,
-            JD | PrivateJD => Card::JD,
-            QD | PrivateQD => Card::QD,
-            KD | PrivateKD => Card::KD,
-            AD | PrivateAD => Card::AD,
-            _ => panic!("can't get card on: {:?}", self),
+        unsafe { std::mem::transmute(*self) }
+    }
+}
+
+impl From<EAction> for Action {
+    fn from(val: EAction) -> Self {
+        let v: u8 = (val as u32).trailing_zeros().try_into().unwrap();
+        Action(v)
+    }
+}
+
+impl From<Action> for EAction {
+    fn from(value: Action) -> Self {
+        let repr = 1 << value.0;
+        unsafe { std::mem::transmute(repr) }
+    }
+}
+
+impl From<Card> for EAction {
+    fn from(value: Card) -> Self {
+        unsafe { std::mem::transmute(value) }
+    }
+}
+
+impl From<Suit> for EAction {
+    fn from(value: Suit) -> Self {
+        match value {
+            Suit::Clubs => EAction::Clubs,
+            Suit::Spades => EAction::Spades,
+            Suit::Hearts => EAction::Hearts,
+            Suit::Diamonds => EAction::Diamonds,
         }
     }
+}
 
-    pub fn public_action(card: Card) -> Self {
-        match card {
-            Card::NC => EAction::NC,
-            Card::TC => EAction::TC,
-            Card::JC => EAction::JC,
-            Card::QC => EAction::QC,
-            Card::KC => EAction::KC,
-            Card::AC => EAction::AC,
-            Card::NS => EAction::NS,
-            Card::TS => EAction::TS,
-            Card::JS => EAction::JS,
-            Card::QS => EAction::QS,
-            Card::KS => EAction::KS,
-            Card::AS => EAction::AS,
-            Card::NH => EAction::NH,
-            Card::TH => EAction::TH,
-            Card::JH => EAction::JH,
-            Card::QH => EAction::QH,
-            Card::KH => EAction::KH,
-            Card::AH => EAction::AH,
-            Card::ND => EAction::ND,
-            Card::TD => EAction::TD,
-            Card::JD => EAction::JD,
-            Card::QD => EAction::QD,
-            Card::KD => EAction::KD,
-            Card::AD => EAction::AD,
-        }
+impl Display for EAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        eaction_fmt(self, f)
     }
+}
 
-    pub fn private_action(card: Card) -> Self {
-        match card {
-            Card::NC => EAction::PrivateNC,
-            Card::TC => EAction::PrivateTC,
-            Card::JC => EAction::PrivateJC,
-            Card::QC => EAction::PrivateQC,
-            Card::KC => EAction::PrivateKC,
-            Card::AC => EAction::PrivateAC,
-            Card::NS => EAction::PrivateNS,
-            Card::TS => EAction::PrivateTS,
-            Card::JS => EAction::PrivateJS,
-            Card::QS => EAction::PrivateQS,
-            Card::KS => EAction::PrivateKS,
-            Card::AS => EAction::PrivateAS,
-            Card::NH => EAction::PrivateNH,
-            Card::TH => EAction::PrivateTH,
-            Card::JH => EAction::PrivateJH,
-            Card::QH => EAction::PrivateQH,
-            Card::KH => EAction::PrivateKH,
-            Card::AH => EAction::PrivateAH,
-            Card::ND => EAction::PrivateND,
-            Card::TD => EAction::PrivateTD,
-            Card::JD => EAction::PrivateJD,
-            Card::QD => EAction::PrivateQD,
-            Card::KD => EAction::PrivateKD,
-            Card::AD => EAction::PrivateAD,
-        }
+impl Debug for EAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        eaction_fmt(self, f)
     }
+}
 
-    pub fn is_public(&self) -> bool {
-        !matches!(
-            self,
-            EAction::PrivateNC
-                | EAction::PrivateTC
-                | EAction::PrivateJC
-                | EAction::PrivateQC
-                | EAction::PrivateKC
-                | EAction::PrivateAC
-                | EAction::PrivateNS
-                | EAction::PrivateTS
-                | EAction::PrivateJS
-                | EAction::PrivateQS
-                | EAction::PrivateKS
-                | EAction::PrivateAS
-                | EAction::PrivateNH
-                | EAction::PrivateTH
-                | EAction::PrivateJH
-                | EAction::PrivateQH
-                | EAction::PrivateKH
-                | EAction::PrivateAH
-                | EAction::PrivateND
-                | EAction::PrivateTD
-                | EAction::PrivateJD
-                | EAction::PrivateQD
-                | EAction::PrivateKD
-                | EAction::PrivateAD
-        )
+fn eaction_fmt(v: &EAction, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match v {
+        EAction::Clubs => f.write_char('C'),
+        EAction::Spades => f.write_char('S'),
+        EAction::Hearts => f.write_char('H'),
+        EAction::Diamonds => f.write_char('D'),
+        EAction::Pickup => f.write_char('T'),
+        EAction::Pass => f.write_char('P'),
+        EAction::DiscardMarker => f.write_str("|Dis|"),
+        _ => f.write_str(&v.card().to_string()),
     }
 }
 
@@ -492,55 +410,6 @@ impl Display for Card {
     }
 }
 
-impl From<EAction> for Action {
-    fn from(val: EAction) -> Self {
-        let v: u8 = ToPrimitive::to_u8(&val).unwrap();
-        Action(v)
-    }
-}
-
-impl From<Action> for EAction {
-    fn from(value: Action) -> Self {
-        FromPrimitive::from_u8(value.0).unwrap()
-    }
-}
-
-impl From<Suit> for EAction {
-    fn from(value: Suit) -> Self {
-        match value {
-            Suit::Clubs => EAction::Clubs,
-            Suit::Spades => EAction::Spades,
-            Suit::Hearts => EAction::Hearts,
-            Suit::Diamonds => EAction::Diamonds,
-        }
-    }
-}
-
-impl Display for EAction {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        eaction_fmt(self, f)
-    }
-}
-
-impl Debug for EAction {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        eaction_fmt(self, f)
-    }
-}
-
-fn eaction_fmt(v: &EAction, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    match v {
-        EAction::Clubs => f.write_char('C'),
-        EAction::Spades => f.write_char('S'),
-        EAction::Hearts => f.write_char('H'),
-        EAction::Diamonds => f.write_char('D'),
-        EAction::Pickup => f.write_char('T'),
-        EAction::Pass => f.write_char('P'),
-        EAction::DiscardMarker => f.write_str("|Dis|"),
-        _ => f.write_str(&v.card().to_string()),
-    }
-}
-
 #[derive(
     Debug, Clone, PartialEq, Eq, Copy, Serialize, Deserialize, Hash, FromPrimitive, ToPrimitive,
 )]
@@ -572,5 +441,33 @@ impl Display for Suit {
         };
 
         f.write_char(c)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::game::{
+        euchre::{
+            actions::{Card, EAction},
+            deck::CARDS,
+        },
+        Action,
+    };
+
+    #[test]
+    fn test_euchre_actions() {
+        assert_eq!(EAction::JS as u32, Card::JS as u32);
+        assert_eq!(EAction::JS, Card::JS.into());
+
+        let a: Action = EAction::JS.into();
+        assert_eq!(EAction::from(a), EAction::JS);
+
+        for c in CARDS {
+            let ea = EAction::from(*c);
+            let a = Action::from(ea);
+            let ea2 = EAction::from(a);
+            let card = ea2.card();
+            assert_eq!(card, *c);
+        }
     }
 }

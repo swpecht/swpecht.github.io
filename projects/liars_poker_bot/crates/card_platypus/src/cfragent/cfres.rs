@@ -26,6 +26,7 @@ use crate::{
         pimcts::PIMCTSBot,
     },
     alloc::Pool,
+    collections::arraytree::{treeref::Ref, ArrayTree},
     counter,
     game::{
         euchre::{ismorphic::EuchreNormalizer, processors::post_cards_played, EuchreGameState},
@@ -109,6 +110,7 @@ pub struct CFRES<G> {
     average_type: AverageType,
     iteration: Arc<AtomicUsize>,
     infostates: Arc<DashMap<IStateKey, InfoState>>,
+    infostates_tree: Arc<ArrayTree<InfoState>>,
     /// determine if we are at the max depth and should use the rollout
     depth_checker: Box<dyn DepthChecker<G>>,
     normalizer: Box<dyn IStateNormalizer<G>>,
@@ -154,6 +156,7 @@ impl CFRES<EuchreGameState> {
             game_generator,
             average_type: AverageType::default(),
             infostates: Arc::new(DashMap::default()),
+            infostates_tree: Arc::new(ArrayTree::default()),
             // is_max_depth: post_discard_phase,
             depth_checker: Box::new(EuchreDepthChecker { max_cards_played }),
             play_bot: PIMCTSBot::new(
@@ -176,6 +179,7 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
             game_generator,
             average_type: AverageType::default(),
             infostates: Arc::new(DashMap::default()),
+            infostates_tree: Arc::new(ArrayTree::default()),
             depth_checker: Box::new(NoOpDepthChecker {}),
             play_bot: PIMCTSBot::new(
                 50,
@@ -331,7 +335,7 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
         let policy;
         {
             let normalizer = self.normalizer.clone();
-            let infostate_info = self.lookup_entry(&info_state_key, &normalized_actions);
+            let infostate_info = self.lookup_entry_mut(&info_state_key, &normalized_actions);
             let regrets = infostate_info
                 .regrets()
                 .into_iter()
@@ -372,7 +376,7 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
             // update regrets
             let iteration = self.iteration.load(Ordering::SeqCst);
             let normalizer = self.normalizer.clone();
-            let mut entry = self.lookup_entry(&info_state_key, &normalized_actions);
+            let mut entry = self.lookup_entry_mut(&info_state_key, &normalized_actions);
             let infostate_info = entry.value_mut();
             for &a in actions.iter() {
                 let norm_a = normalizer.normalize_action(a, gs);
@@ -389,7 +393,7 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
         let player_team = player % 2;
         if matches!(self.average_type, AverageType::Simple) && cur_team != player_team {
             let normalizer = self.normalizer.clone();
-            let mut entry = self.lookup_entry(&info_state_key, &normalized_actions);
+            let mut entry = self.lookup_entry_mut(&info_state_key, &normalized_actions);
             let infostate_info = entry.value_mut();
             for &action in actions.iter() {
                 let norm_a = normalizer.normalize_action(action, gs);
@@ -404,14 +408,23 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
     }
 
     /// Looks up an information set table for the given key.
-    fn lookup_entry(
+    fn lookup_entry_mut(
         &mut self,
         key: &NormalizedIstate,
         actions: &[NormalizedAction],
     ) -> RefMut<IStateKey, InfoState> {
+        self.infostates_tree
+            .get_or_create_mut(&key.get(), InfoState::new(actions.to_vec()));
+
         self.infostates
             .entry(key.get())
             .or_insert(InfoState::new(actions.to_vec()))
+    }
+
+    /// We take &mut self to avoid accidently deadlocking the underling map, this way, we can only ever have a single handle
+    /// from the infostate map in a given thread
+    fn lookup_entry(&mut self, key: &NormalizedIstate) -> Option<Ref<InfoState>> {
+        todo!()
     }
 
     fn full_update_average(&mut self, _gs: &mut G, _reach_probs: &[f64]) {

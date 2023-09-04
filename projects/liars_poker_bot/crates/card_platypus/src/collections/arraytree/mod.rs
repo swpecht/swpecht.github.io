@@ -14,7 +14,7 @@ use self::{
 };
 
 pub mod entry;
-mod treeref;
+pub mod treeref;
 
 /// Tree data structure that that stores items based on an array
 /// of values <32

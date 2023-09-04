@@ -162,7 +162,7 @@ impl Iterator for PassOnBowerIterator {
     type Item = EuchreGameState;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let jack = EAction::PrivateJS;
+        let jack = EAction::JS;
         if let Some(hand) = self.hands.pop() {
             let mut gs = Euchre::new_state();
             while gs.cur_player() != 3 {
