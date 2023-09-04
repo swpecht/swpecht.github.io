@@ -1,5 +1,18 @@
 # File to define training profiles for cfr bot
 
+# A fast to run config for testing
+[agents.test]
+weight_file = "/var/lib/card_platypus/infostate.testing"
+training_iterations = 10000
+scoring_freq = 1000000
+scoring_iterations = 10
+checkpoint_freq = 5000000
+deal_type = "All"
+no_normalize_suit = false
+no_linear_cfr = false
+single_thread = false
+max_cards_played = 0
+
 [agents.baseline]
 weight_file = "/var/lib/card_platypus/infostate.baseline"
 training_iterations = 100000000
