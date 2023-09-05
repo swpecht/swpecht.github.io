@@ -155,6 +155,7 @@ fn score_vs_defender<A: Agent<EuchreGameState> + Seedable>(
         // );
 
         // magic number offset so the games are the same as the defender
+        defender.set_seed(i as u64);
         target.set_seed(i as u64 + 42);
 
         while !w.is_terminal() {
