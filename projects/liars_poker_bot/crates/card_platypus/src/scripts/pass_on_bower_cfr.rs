@@ -95,12 +95,7 @@ pub fn train_cfr(args: PassOnBowerCFRArgs, generator: fn() -> EuchreGameState) {
         .collect_vec();
     // let mut baseline = PIMCTSBot::new(50, OpenHandSolver::new_euchre(), get_rng());
     let mut baseline = CFRES::new_euchre_bidding(generator, get_rng(), 0);
-    let n = baseline.load("/var/lib/card_platypus/infostate.baseline");
-    if n == 0 {
-        warn!("loaded baseline agent with 0 infostates");
-    } else {
-        info!("loaded {} infostates for baseline agent", n);
-    }
+    baseline.load("/var/lib/card_platypus/infostate.baseline");
 
     info!("calculating baseline performance...");
     let baseline_score = score_vs_defender(&mut baseline, 1, worlds.clone());
@@ -156,12 +151,7 @@ fn score_vs_defender<A: Agent<EuchreGameState> + Seedable>(
         // );
 
         let mut defender = CFRES::new_euchre_bidding(Euchre::new_state, get_rng(), 0);
-        let n = defender.load("/var/lib/card_platypus/infostate.baseline");
-        if n == 0 {
-            warn!("loaded defender agent with 0 infostates");
-        } else {
-            info!("loaded {} infostates for defender agent", n);
-        }
+        defender.load("/var/lib/card_platypus/infostate.baseline");
 
         // magic number offset so the games are the same as the defender
         target.set_seed(i as u64 + 42);

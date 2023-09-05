@@ -123,9 +123,10 @@ fn get_shard_index(k: &[Action]) -> usize {
 
     // we only hash the first 7 actions in the key, for euchre, this will put all hands
     // in the same shard
-    k[..7].hash(&mut hasher);
+    k[..k.len().min(6)].hash(&mut hasher);
     let hash = hasher.finish();
     // take the top 8 bits of the hash as the index
+    // gives us 2^8 shards
     (hash >> (64 - 8)) as usize
 }
 
