@@ -1,7 +1,7 @@
 # File to define training profiles for cfr bot
 
 # A fast to run config for testing
-[agents.test]
+[train.test]
 weight_file = "./infostate.testing"
 training_iterations = 10000
 scoring_freq = 1000000
@@ -13,7 +13,7 @@ no_linear_cfr = false
 single_thread = false
 max_cards_played = 0
 
-[agents.baseline]
+[train.baseline]
 weight_file = "/var/lib/card_platypus/infostate.baseline"
 training_iterations = 100000000
 scoring_freq = 1000000
@@ -25,7 +25,7 @@ no_linear_cfr = false
 single_thread = false
 max_cards_played = 0
 
-[agents.one_card_played]
+[train.one_card_played]
 weight_file = "/var/lib/card_platypus/infostate.one_card_played"
 training_iterations = 100000000
 scoring_freq = 1000000
@@ -37,7 +37,7 @@ no_linear_cfr = false
 single_thread = false
 max_cards_played = 1
 
-[agents.two_card_played]
+[train.two_card_played]
 weight_file = "/var/lib/card_platypus/infostate.two_card_played"
 training_iterations = 100000000
 scoring_freq = 1000000
@@ -49,7 +49,7 @@ no_linear_cfr = false
 single_thread = false
 max_cards_played = 2
 
-[agents.three_card_played]
+[train.three_card_played]
 weight_file = "/var/lib/card_platypus/infostate.three_card_played"
 training_iterations = 100000000
 scoring_freq = 1000000
