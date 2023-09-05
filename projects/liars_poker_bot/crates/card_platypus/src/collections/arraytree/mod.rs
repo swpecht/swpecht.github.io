@@ -107,25 +107,28 @@ impl<T> ArrayTree<T> {
 
     /// Returns the a read only root shard
     fn get_shard(&self, k: &[Action]) -> RwLockReadGuard<Shard<T>> {
-        let mut hasher = DefaultHasher::new();
-        k.hash(&mut hasher);
-        let hash = hasher.finish();
-        // take the top 8 bits of the hash as the index
-        let idx = (hash >> (64 - 8)) as usize;
+        let idx = get_shard_index(k);
         let shard = self.shards[idx].read().unwrap();
         shard
     }
 
     /// Returns the a read only root shard
     fn get_shard_mut(&self, k: &[Action]) -> RwLockWriteGuard<Shard<T>> {
-        let mut hasher = DefaultHasher::new();
-        k.hash(&mut hasher);
-        let hash = hasher.finish();
-        // take the top 8 bits of the hash as the index
-        let idx = (hash >> (64 - 8)) as usize;
+        let idx = get_shard_index(k);
         let shard = self.shards[idx].write().unwrap();
         shard
     }
+}
+
+fn get_shard_index(k: &[Action]) -> usize {
+    let mut hasher = DefaultHasher::new();
+
+    // we only hash the first 7 actions in the key, for euchre, this will put all hands
+    // in the same shard
+    k[..7].hash(&mut hasher);
+    let hash = hasher.finish();
+    // take the top 8 bits of the hash as the index
+    (hash >> (64 - 8)) as usize
 }
 
 impl<T> Default for ArrayTree<T> {
