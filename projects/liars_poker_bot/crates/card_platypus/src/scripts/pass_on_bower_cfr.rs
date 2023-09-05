@@ -17,7 +17,7 @@ use card_platypus::{
 use clap::{Args, ValueEnum};
 use indicatif::ProgressBar;
 use itertools::Itertools;
-use log::info;
+use log::{info, warn};
 use rand::{seq::SliceRandom, thread_rng, Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 
@@ -93,7 +93,15 @@ pub fn train_cfr(args: PassOnBowerCFRArgs, generator: fn() -> EuchreGameState) {
     let worlds = (0..args.scoring_iterations)
         .map(|_| generate_jack_of_spades_deal())
         .collect_vec();
-    let mut baseline = PIMCTSBot::new(50, OpenHandSolver::new_euchre(), get_rng());
+    // let mut baseline = PIMCTSBot::new(50, OpenHandSolver::new_euchre(), get_rng());
+    let mut baseline = CFRES::new_euchre_bidding(generator, get_rng(), 0);
+    let n = baseline.load("/var/lib/card_platypus/infostate.baseline");
+    if n == 0 {
+        warn!("loaded baseline agent with 0 infostates");
+    } else {
+        info!("loaded {} infostates for baseline agent", n);
+    }
+
     info!("calculating baseline performance...");
     let baseline_score = score_vs_defender(&mut baseline, 1, worlds.clone());
     info!("found baseline performance of: {}", baseline_score);
@@ -141,11 +149,19 @@ fn score_vs_defender<A: Agent<EuchreGameState> + Seedable>(
     let mut running_score = 0.0;
     for (i, mut w) in worlds.clone().into_iter().enumerate() {
         // have a consistent seed for the defender each game
-        let mut defender = PIMCTSBot::new(
-            50,
-            OpenHandSolver::new_euchre(),
-            SeedableRng::seed_from_u64(i as u64),
-        );
+        // let mut defender = PIMCTSBot::new(
+        //     50,
+        //     OpenHandSolver::new_euchre(),
+        //     SeedableRng::seed_from_u64(i as u64),
+        // );
+
+        let mut defender = CFRES::new_euchre_bidding(Euchre::new_state, get_rng(), 0);
+        let n = defender.load("/var/lib/card_platypus/infostate.baseline");
+        if n == 0 {
+            warn!("loaded defender agent with 0 infostates");
+        } else {
+            info!("loaded {} infostates for defender agent", n);
+        }
 
         // magic number offset so the games are the same as the defender
         target.set_seed(i as u64 + 42);
