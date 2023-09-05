@@ -142,6 +142,10 @@ fn score_vs_defender<A: Agent<EuchreGameState> + Seedable>(
     worlds: Vec<EuchreGameState>,
 ) -> f64 {
     let mut running_score = 0.0;
+
+    let mut defender = CFRES::new_euchre_bidding(Euchre::new_state, get_rng(), 0);
+    defender.load("/var/lib/card_platypus/infostate.baseline");
+
     for (i, mut w) in worlds.clone().into_iter().enumerate() {
         // have a consistent seed for the defender each game
         // let mut defender = PIMCTSBot::new(
@@ -149,9 +153,6 @@ fn score_vs_defender<A: Agent<EuchreGameState> + Seedable>(
         //     OpenHandSolver::new_euchre(),
         //     SeedableRng::seed_from_u64(i as u64),
         // );
-
-        let mut defender = CFRES::new_euchre_bidding(Euchre::new_state, get_rng(), 0);
-        defender.load("/var/lib/card_platypus/infostate.baseline");
 
         // magic number offset so the games are the same as the defender
         target.set_seed(i as u64 + 42);
