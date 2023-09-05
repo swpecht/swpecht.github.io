@@ -2,7 +2,7 @@
 
 # A fast to run config for testing
 [agents.test]
-weight_file = "/var/lib/card_platypus/infostate.testing"
+weight_file = "./infostate.testing"
 training_iterations = 10000
 scoring_freq = 1000000
 scoring_iterations = 10

@@ -109,7 +109,6 @@ pub struct CFRES<G> {
     game_generator: fn() -> G,
     average_type: AverageType,
     iteration: Arc<AtomicUsize>,
-    infostates: Arc<DashMap<IStateKey, InfoState>>,
     infostates_tree: Arc<ArrayTree<InfoState>>,
     /// determine if we are at the max depth and should use the rollout
     depth_checker: Box<dyn DepthChecker<G>>,
@@ -121,7 +120,7 @@ pub struct CFRES<G> {
 impl<G> CFRES<G> {
     /// Gets the infostates of the agent for external analysis
     pub fn get_infostates(&self) -> Arc<DashMap<IStateKey, InfoState>> {
-        self.infostates.clone()
+        todo!("update to array tree");
     }
 
     pub fn iterations(&self) -> usize {
@@ -155,7 +154,6 @@ impl CFRES<EuchreGameState> {
             vector_pool: Pool::new(Vec::new),
             game_generator,
             average_type: AverageType::default(),
-            infostates: Arc::new(DashMap::default()),
             infostates_tree: Arc::new(ArrayTree::default()),
             // is_max_depth: post_discard_phase,
             depth_checker: Box::new(EuchreDepthChecker { max_cards_played }),
@@ -178,7 +176,6 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
             vector_pool: Pool::new(Vec::new),
             game_generator,
             average_type: AverageType::default(),
-            infostates: Arc::new(DashMap::default()),
             infostates_tree: Arc::new(ArrayTree::default()),
             depth_checker: Box::new(NoOpDepthChecker {}),
             play_bot: PIMCTSBot::new(
@@ -224,7 +221,8 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
             "saving weights for {} infostates...",
             self.infostates_tree.len()
         );
-        self.infostates
+
+        self.infostates_tree
             .deref()
             .serialize(&mut Serializer::new(f))
             .unwrap();
@@ -234,20 +232,21 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
         if Path::new(path).exists() {
             let f = &mut File::open(path);
             let f = f.as_mut().unwrap();
-            self.infostates = Arc::new(rmp_serde::from_read(f).unwrap());
+            self.infostates_tree = Arc::new(rmp_serde::from_read(f).unwrap());
 
             // Get the last iteration by reading the max updated iteration
-            let iteration = self
-                .infostates
-                .iter()
-                .map(|x| x.value().last_iteration)
-                .max()
-                .unwrap_or(0);
-            self.iteration = Arc::new(AtomicUsize::new(iteration));
+            // let iteration = self
+            //     .infostates_map
+            //     .iter()
+            //     .map(|x| x.value().last_iteration)
+            //     .max()
+            //     .unwrap_or(0);
+            // self.iteration = Arc::new(AtomicUsize::new(iteration));
+            warn!("loading iterations not yet supported");
             debug!(
                 "loaded weights for {} infostates with {} iterations",
                 self.infostates_tree.len(),
-                iteration
+                0
             );
 
             self.infostates_tree.len()
@@ -429,10 +428,6 @@ impl<G> CFRES<G> {
     ) -> crate::collections::arraytree::treeref::RefMut<InfoState> {
         self.infostates_tree
             .get_or_create_mut(&key.get(), InfoState::new(actions.to_vec()))
-
-        // self.infostates
-        //     .entry(key.get())
-        //     .or_insert(InfoState::new(actions.to_vec()))
     }
 
     /// Can deadlock if we hold onto handle

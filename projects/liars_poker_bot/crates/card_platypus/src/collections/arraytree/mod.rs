@@ -6,11 +6,14 @@ use std::{
 
 use std::sync::RwLock;
 
+use ::serde::{Deserialize, Serialize};
+
 use crate::game::Action;
 
 use self::treeref::{Ref, RefMut};
 
 pub mod entry;
+mod serde;
 pub mod treeref;
 
 /// Tree data structure that that stores items based on an array
@@ -18,8 +21,11 @@ pub mod treeref;
 ///
 /// To achieve concurrency, the hash of the istate is used to choose a shard to use for storage
 /// The shard based on a hash of the full istate to ensure equal distribution of items
+
+const NUM_SHARDS: usize = 256;
+
 pub struct ArrayTree<T> {
-    shards: [RwLock<Shard<T>>; 256],
+    shards: Vec<RwLock<Shard<T>>>,
 }
 
 impl<T> ArrayTree<T> {
@@ -124,13 +130,16 @@ impl<T> ArrayTree<T> {
 
 impl<T> Default for ArrayTree<T> {
     fn default() -> Self {
-        Self {
-            shards: std::array::from_fn(|_| RwLock::new(Shard::default())),
+        let mut shards = Vec::new();
+        for _ in 0..NUM_SHARDS {
+            shards.push(RwLock::new(Shard::default()));
         }
+        Self { shards }
     }
 }
 
-pub(super) struct Shard<T> {
+#[derive(Serialize, Deserialize)]
+pub struct Shard<T> {
     node: Node<T>,
     len: usize,
 }
@@ -144,6 +153,7 @@ impl<T> Default for Shard<T> {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 pub(super) struct Node<T> {
     value: Option<T>,
     child_mask: u32,
