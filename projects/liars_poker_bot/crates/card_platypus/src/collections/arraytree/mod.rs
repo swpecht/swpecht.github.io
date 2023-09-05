@@ -34,7 +34,6 @@ impl<T> ArrayTree<T> {
         assert!(!k.is_empty());
 
         let mut root = self.get_shard_mut(k);
-        root.len += 1;
 
         let mut cur_node = root.node.get_or_create_child(k[0]);
         let remaining_key = &k[1..];
@@ -77,7 +76,6 @@ impl<T> ArrayTree<T> {
     pub fn get_or_create_mut(&self, k: &[Action], default: T) -> RefMut<T> {
         assert!(!k.is_empty());
         let mut root = self.get_shard_mut(k);
-        root.len += 1;
 
         let mut cur_node = root.node.get_or_create_child(k[0]);
         let remaining_key = &k[1..];
