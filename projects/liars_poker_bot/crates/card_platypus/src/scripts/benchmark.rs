@@ -50,7 +50,7 @@ pub fn run_benchmark(args: BenchmarkArgs) {
     match args.mode {
         BenchmarkMode::FullGame => match args.game {
             GameType::KuhnPoker => run_full_game_benchmark(args, KuhnPoker::game()),
-            GameType::Euchre => run_full_game_benchmark(args, Euchre::game()),
+            GameType::Euchre => run_euchre_benchmark(args),
             GameType::Bluff11 => run_full_game_benchmark(args, Bluff::game(1, 1)),
             GameType::Bluff21 => run_full_game_benchmark(args, Bluff::game(2, 1)),
             GameType::Bluff22 => run_full_game_benchmark(args, Bluff::game(2, 2)),
@@ -58,6 +58,34 @@ pub fn run_benchmark(args: BenchmarkArgs) {
         BenchmarkMode::CardPlay => run_card_play_benchmark(args),
         BenchmarkMode::JackFaceUp => run_jack_face_up_benchmark(args),
     }
+}
+
+/// Calculate the win-rate of first to 10 for each agent
+fn run_euchre_benchmark(args: BenchmarkArgs) {
+    // all agents play the same games
+    let mut game_rng = get_rng();
+    // may need up to 19x the number fo full games to 10
+    let games = get_games(Euchre::game(), args.num_games * 19, &mut game_rng);
+
+    let mut agents: HashMap<String, &mut dyn Agent<EuchreGameState>> = HashMap::new();
+
+    let a = &mut PolicyAgent::new(
+        PIMCTSBot::new(50, OpenHandSolver::new_euchre(), get_rng()),
+        get_rng(),
+    );
+    agents.insert("pimcts, 50 worlds".to_string(), a);
+
+    let mut a = CFRES::new_euchre_bidding(Euchre::new_state, get_rng(), 0);
+    a.load("/var/lib/card_platypus/infostate.baseline");
+    info!("loaded cfr baseline agent");
+    agents.insert("cfr, 0 cards played".to_string(), &mut a);
+
+    let mut a = CFRES::new_euchre_bidding(Euchre::new_state, get_rng(), 1);
+    a.load("/var/lib/card_platypus/infostate.one_card_played");
+    info!("loaded cfr one card agent");
+    agents.insert("cfr, 1 cards played".to_string(), &mut a);
+
+    score_games(args, agents, games);
 }
 
 /// Calculate the win-rate of first to 10 for each agent
@@ -71,39 +99,13 @@ fn run_full_game_benchmark<G: GameState + ResampleFromInfoState + Send>(
     let games = get_games(game, args.num_games * 19, &mut game_rng);
 
     let mut agents: HashMap<String, &mut dyn Agent<G>> = HashMap::new();
-    // let ra: &mut dyn Agent<G> = &mut RandomAgent::new();
-    // agents.insert(ra.get_name(), ra);
 
     let a = &mut PolicyAgent::new(
         PIMCTSBot::new(50, OpenHandSolver::default(), get_rng()),
         get_rng(),
     );
+
     agents.insert("pimcts, 50 worlds, open hand".to_string(), a);
-
-    // let a = &mut PolicyAgent::new(
-    //     PIMCTSBot::new(10, RandomRolloutEvaluator::new(10), rng()),
-    //     rng(),
-    // );
-    // agents.insert("pimcts, 10 worlds, random".to_string(), a);
-
-    // Based on tuning run for 100 games
-    // https://docs.google.com/spreadsheets/d/1AGjEaqjCkuuWveUBqbOBOMH0SPHPQ_YhH1jRHij7ErY/edit#gid=1418816031
-    let config = ISMCTBotConfig {
-        child_selection_policy: ChildSelectionPolicy::Uct,
-        final_policy_type: ISMCTSFinalPolicyType::MaxVisitCount,
-        max_world_samples: -1, // unlimited samples
-    };
-    let ismcts = &mut PolicyAgent::new(
-        ISMCTSBot::new(3.0, 500, OpenHandSolver::default(), config),
-        get_rng(),
-    );
-    agents.insert("ismcts".to_string(), ismcts);
-
-    // let alphamu = &mut PolicyAgent::new(
-    //     AlphaMuBot::new(OpenHandSolver::new(), 32, 10, get_rng()),
-    //     get_rng(),
-    // );
-    // agents.insert("alphamu, open hand".to_string(), alphamu);
 
     score_games(args, agents, games);
 }
@@ -147,13 +149,6 @@ fn score_games<G: GameState + ResampleFromInfoState + Send>(
                         // We alternate who starts as the dealer each game
                         // todo: in future should have different player start deal for each game
                         let agent_1_turn = gs.cur_player() % 2 == agent_1_team;
-                        // info!(
-                        //     "cur_game: {}, cur_player: {}, is agent 1 turn?: {}: {}",
-                        //     cur_game,
-                        //     gs.cur_player(),
-                        //     agent_1_turn,
-                        //     gs
-                        // );
                         let a = match (agent_1_turn, a2.is_some()) {
                             (true, true) => a1.step(&gs),
                             (false, true) => a2.as_mut().unwrap().step(&gs),
