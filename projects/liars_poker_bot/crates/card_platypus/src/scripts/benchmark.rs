@@ -80,10 +80,10 @@ fn run_euchre_benchmark(args: BenchmarkArgs) {
     info!("loaded cfr baseline agent");
     agents.insert("cfr, 0 cards played".to_string(), &mut a);
 
-    let mut a = CFRES::new_euchre_bidding(Euchre::new_state, get_rng(), 1);
-    a.load("/var/lib/card_platypus/infostate.one_card_played");
-    info!("loaded cfr one card agent");
-    agents.insert("cfr, 1 cards played".to_string(), &mut a);
+    // let mut a = CFRES::new_euchre_bidding(Euchre::new_state, get_rng(), 1);
+    // a.load("/var/lib/card_platypus/infostate.one_card_played");
+    // info!("loaded cfr one card agent");
+    // agents.insert("cfr, 1 cards played".to_string(), &mut a);
 
     let mut a = CFRES::new_euchre_bidding(Euchre::new_state, get_rng(), 1);
     a.load("/var/lib/card_platypus/infostate.three_card_played");
