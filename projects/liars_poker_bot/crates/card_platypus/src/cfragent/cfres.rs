@@ -239,7 +239,6 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
             //     .max()
             //     .unwrap_or(0);
             // self.iteration = Arc::new(AtomicUsize::new(iteration));
-            warn!("loading iterations not yet supported");
             debug!(
                 "loaded weights for {} infostates with {} iterations",
                 self.infostates.len(),
