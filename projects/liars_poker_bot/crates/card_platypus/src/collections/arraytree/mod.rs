@@ -35,25 +35,26 @@ impl<T> ArrayTree<T> {
 
         let mut root = self.get_shard_mut(k);
 
-        let mut cur_node = root.node.get_or_create_child(k[0]);
-        let remaining_key = &k[1..];
+        let mut cur_node = &mut root.node;
 
-        for x in remaining_key {
+        // Save the last item for looking up the value.
+        for x in k.iter().take(k.len() - 1) {
             let child = *x;
             cur_node = cur_node.get_or_create_child(child);
         }
 
-        cur_node.value = Some(v);
+        let id = k.last().unwrap().0;
+        cur_node.insert_value(id, v);
     }
 
     pub fn get(&self, k: &[Action]) -> Option<Ref<T>> {
         assert!(!k.is_empty());
         let root = self.get_shard(k);
 
-        let mut cur_node = root.node.child(k[0]);
-        let remaining_key = &k[1..];
+        let mut cur_node = Some(&root.node);
 
-        for x in remaining_key {
+        // Save the last item for looking up the value.
+        for x in k.iter().take(k.len() - 1) {
             if let Some(n) = cur_node {
                 let child = *x;
                 cur_node = n.child(child);
@@ -63,7 +64,8 @@ impl<T> ArrayTree<T> {
         }
 
         let cur_node = cur_node?;
-        if let Some(v) = &cur_node.value {
+        let id = k.last().unwrap().0;
+        if let Some(v) = cur_node.get(id) {
             unsafe {
                 let vptr: *const T = v;
                 Some(Ref::new(root, vptr))
@@ -77,20 +79,21 @@ impl<T> ArrayTree<T> {
         assert!(!k.is_empty());
         let mut root = self.get_shard_mut(k);
 
-        let mut cur_node = root.node.get_or_create_child(k[0]);
-        let remaining_key = &k[1..];
+        let mut cur_node = &mut root.node;
 
-        for x in remaining_key {
+        // Save the last item for looking up the value.
+        for x in k.iter().take(k.len() - 1) {
             let child = *x;
             cur_node = cur_node.get_or_create_child(child);
         }
 
-        if cur_node.value.is_none() {
-            cur_node.value = Some(default);
+        let id = k.last().unwrap().0;
+        if cur_node.get(id).is_none() {
+            cur_node.insert_value(id, default);
         }
 
         unsafe {
-            let vptr: *mut T = cur_node.value.as_mut().unwrap();
+            let vptr: *mut T = cur_node.get_mut(id).unwrap();
             RefMut::new(root, vptr)
         }
     }
@@ -157,25 +160,25 @@ impl<T> Default for Shard<T> {
 
 #[derive(Serialize, Deserialize)]
 pub(super) struct Node<T> {
-    value: Option<T>,
-    child_mask: u32,
+    child_mask: Mask,
     children: Vec<Node<T>>,
+
+    value_mask: Mask,
+    values: Vec<T>,
 }
 
 impl<T> Node<T> {
     // how to make this only take &self and not need mut?
     fn child(&self, id: Action) -> Option<&Node<T>> {
         let id = u8::from(id);
-        debug_assert_eq!(self.child_mask.count_ones() as usize, self.children.len());
+        debug_assert_eq!(self.child_mask.len(), self.children.len());
         debug_assert!(id < 32, "attempted to use key >32: {}", id);
 
-        let mask_contains = self.child_mask & (1u32 << id) > 0;
-
         // child doesn't exist, need to insert it
-        if !mask_contains {
+        if !self.child_mask.contains(id) {
             None
         } else {
-            let idx = index(self.child_mask, id);
+            let idx = self.child_mask.index(id);
             Some(&self.children[idx])
         }
     }
@@ -183,29 +186,83 @@ impl<T> Node<T> {
     fn get_or_create_child(&mut self, id: Action) -> &mut Node<T> {
         let id = u8::from(id);
 
-        let mask_contains = self.child_mask & (1u32 << id) > 0;
-        let index = index(self.child_mask, id);
-        if !mask_contains {
+        let index = self.child_mask.index(id);
+        if !self.child_mask.contains(id) {
             let new_child = Node::default();
             self.children.insert(index, new_child);
-            self.child_mask |= 1 << id;
+            self.child_mask.insert(id);
         }
 
         &mut self.children[index]
     }
+
+    fn insert_value(&mut self, id: u8, v: T) {
+        assert_eq!(self.values.len(), self.value_mask.len());
+
+        let index = self.value_mask.index(id);
+
+        if !self.value_mask.contains(id) {
+            self.values.insert(index, v);
+        } else {
+            self.values[index] = v;
+        }
+
+        self.value_mask.insert(id);
+    }
+
+    fn get_mut(&mut self, id: u8) -> Option<&mut T> {
+        assert_eq!(self.values.len(), self.value_mask.len());
+
+        if !self.value_mask.contains(id) {
+            return None;
+        }
+
+        let index = self.value_mask.index(id);
+        Some(&mut self.values[index])
+    }
+
+    fn get(&self, id: u8) -> Option<&T> {
+        assert_eq!(self.values.len(), self.value_mask.len());
+
+        if !self.value_mask.contains(id) {
+            return None;
+        }
+
+        let index = self.value_mask.index(id);
+        Some(&self.values[index])
+    }
 }
 
-fn index(child_mask: u32, id: u8) -> usize {
-    // we want to count the number of 1s before our target index
-    // to do this, we mask all the top ones, and then count what remains
-    let mask = !(!0 << id);
-    (child_mask & mask).count_ones() as usize
+#[derive(Serialize, Deserialize, Default)]
+struct Mask(u32);
+
+impl Mask {
+    /// Returns the index of a particular id in the current mask
+    fn index(&self, id: u8) -> usize {
+        // we want to count the number of 1s before our target index
+        // to do this, we mask all the top ones, and then count what remains
+        let id_mask = !(!0 << id);
+        (self.0 & id_mask).count_ones() as usize
+    }
+
+    fn contains(&self, id: u8) -> bool {
+        self.0 & (1 << id) > 0
+    }
+
+    fn insert(&mut self, id: u8) {
+        self.0 |= 1 << id;
+    }
+
+    fn len(&self) -> usize {
+        self.0.count_ones() as usize
+    }
 }
 
 impl<T> Default for Node<T> {
     fn default() -> Self {
         Self {
-            value: Default::default(),
+            value_mask: Default::default(),
+            values: Default::default(),
             child_mask: Default::default(),
             children: Default::default(),
         }
@@ -214,11 +271,11 @@ impl<T> Default for Node<T> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
     use super::*;
     use dashmap::DashMap;
-    use rand::{thread_rng, Rng};
+    use rand::{rngs::StdRng, thread_rng, Rng, SeedableRng};
     use rayon::prelude::*;
 
     #[test]
@@ -228,11 +285,17 @@ mod tests {
         assert!(tree.get(&[Action(1), Action(2)]).is_none());
         tree.insert(&[Action(1), Action(2)], 1);
         assert_eq!(*tree.get(&[Action(1), Action(2)]).unwrap(), 1);
+        tree.insert(&[Action(1), Action(2)], 3);
+        assert_eq!(*tree.get(&[Action(1), Action(2)]).unwrap(), 3);
 
-        tree.insert(&[Action(0)], 5);
-        assert_eq!(*tree.get(&[Action(0)]).unwrap(), 5);
-        tree.insert(&[Action(0)], 4);
-        assert_eq!(*tree.get(&[Action(0)]).unwrap(), 4);
+        tree.insert(&[Action(1)], 5);
+        assert_eq!(*tree.get(&[Action(1)]).unwrap(), 5);
+        tree.insert(&[Action(1)], 4);
+        assert_eq!(*tree.get(&[Action(1)]).unwrap(), 4);
+
+        for i in 0..32 {
+            tree.insert(&[Action(23)], i)
+        }
 
         // This can deadlock if we hold the reference into the map
         {
@@ -256,17 +319,53 @@ mod tests {
     }
 
     #[test]
+    fn test_array_tree_single_thread() {
+        let t = ArrayTree::default();
+        let d = DashMap::new();
+
+        let mut rng: StdRng = SeedableRng::seed_from_u64(42);
+        (0..100).for_each(|x| {
+            let key = [Action(rng.gen_range(0..32))];
+
+            d.insert(key, x + 1);
+            t.insert(&key, x + 1);
+
+            assert_eq!(
+                *d.get(&key).unwrap(),
+                *t.get(&key).unwrap(),
+                "key: {:?}",
+                key
+            );
+        });
+
+        for e in d.iter() {
+            let t_val = t.get(e.key()).unwrap();
+            assert_eq!(*t_val, *e.value());
+        }
+    }
+
+    #[test]
     fn test_array_tree_parallel() {
         let tree = Arc::new(ArrayTree::default());
         let dash = Arc::new(DashMap::new());
 
-        (0..1000).into_par_iter().for_each(|x| {
+        // use a mutex to ensure writes to dashmap and array tree
+        // happen atomically
+        let lock = Arc::new(Mutex::new(1));
+
+        (0..100).into_par_iter().for_each(|x| {
             let mut rng = thread_rng();
             let key = [Action(rng.gen_range(0..32))];
             let t = tree.clone();
             let d = dash.clone();
+
+            let l = lock.clone();
+            let g = l.lock().unwrap();
             d.insert(key, x + 1);
             t.insert(&key, x + 1);
+
+            drop(g);
+            assert_eq!(*d.get(&key).unwrap(), *t.get(&key).unwrap());
         });
 
         for e in dash.iter() {

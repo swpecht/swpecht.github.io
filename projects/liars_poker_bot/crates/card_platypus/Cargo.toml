@@ -29,6 +29,7 @@ num-derive = "0.4"
 anyhow = "1.0"
 dyn-clone = "1.0"
 toml = "0.7"
+crossbeam-channel = "0.5"
 
 [dev-dependencies]
 criterion = "0.4"
@@ -43,4 +44,8 @@ harness = false
 
 [[bench]]
 name = "pimcts_optimizations"
+harness = false
+
+[[bench]]
+name = "node_storage_benchmark"
 harness = false
