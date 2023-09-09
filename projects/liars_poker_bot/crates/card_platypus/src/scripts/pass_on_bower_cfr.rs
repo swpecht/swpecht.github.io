@@ -93,9 +93,9 @@ pub fn train_cfr(args: PassOnBowerCFRArgs, generator: fn() -> EuchreGameState) {
     let worlds = (0..args.scoring_iterations)
         .map(|_| generate_jack_of_spades_deal())
         .collect_vec();
-    // let mut baseline = PIMCTSBot::new(50, OpenHandSolver::new_euchre(), get_rng());
-    let mut baseline = CFRES::new_euchre_bidding(generator, get_rng(), 0);
-    baseline.load("/var/lib/card_platypus/infostate.baseline");
+    let mut baseline = PIMCTSBot::new(50, OpenHandSolver::new_euchre(), get_rng());
+    // let mut baseline = CFRES::new_euchre_bidding(generator, get_rng(), 0);
+    // baseline.load("/var/lib/card_platypus/infostate.baseline");
 
     info!("calculating baseline performance...");
     let baseline_score = score_vs_defender(&mut baseline, 1, worlds.clone());
@@ -143,16 +143,16 @@ fn score_vs_defender<A: Agent<EuchreGameState> + Seedable>(
 ) -> f64 {
     let mut running_score = 0.0;
 
-    let mut defender = CFRES::new_euchre_bidding(Euchre::new_state, get_rng(), 0);
-    defender.load("/var/lib/card_platypus/infostate.baseline");
+    // let mut defender = CFRES::new_euchre_bidding(Euchre::new_state, get_rng(), 0);
+    // defender.load("/var/lib/card_platypus/infostate.baseline");
 
     for (i, mut w) in worlds.clone().into_iter().enumerate() {
         // have a consistent seed for the defender each game
-        // let mut defender = PIMCTSBot::new(
-        //     50,
-        //     OpenHandSolver::new_euchre(),
-        //     SeedableRng::seed_from_u64(i as u64),
-        // );
+        let mut defender = PIMCTSBot::new(
+            50,
+            OpenHandSolver::new_euchre(),
+            SeedableRng::seed_from_u64(i as u64),
+        );
 
         // magic number offset so the games are the same as the defender
         defender.set_seed(i as u64);
