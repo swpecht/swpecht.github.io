@@ -1,7 +1,8 @@
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
-    sync::{RwLockReadGuard, RwLockWriteGuard},
+    ops::Deref,
+    sync::{atomic::AtomicUsize, RwLockReadGuard, RwLockWriteGuard},
 };
 
 use std::sync::RwLock;
@@ -16,6 +17,8 @@ pub mod entry;
 mod serde;
 pub mod treeref;
 
+use std::sync::atomic::Ordering::SeqCst;
+
 /// Tree data structure that that stores items based on an array
 /// of values <32
 ///
@@ -24,8 +27,20 @@ pub mod treeref;
 
 const NUM_SHARDS: usize = 256;
 
+#[derive(Serialize, Deserialize)]
 pub struct ArrayTree<T> {
-    shards: Vec<RwLock<Shard<T>>>,
+    shards: ShardList<T>,
+    len: AtomicUsize,
+}
+
+struct ShardList<T>(Vec<RwLock<Shard<T>>>);
+
+impl<T> Deref for ShardList<T> {
+    type Target = Vec<RwLock<Shard<T>>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 impl<T> ArrayTree<T> {
@@ -40,7 +55,7 @@ impl<T> ArrayTree<T> {
         // Save the last item for looking up the value.
         for x in k.iter().take(k.len() - 1) {
             let child = *x;
-            cur_node = cur_node.get_or_create_child(child);
+            cur_node = cur_node.get_or_create_child(child, &self.len);
         }
 
         let id = k.last().unwrap().0;
@@ -84,7 +99,7 @@ impl<T> ArrayTree<T> {
         // Save the last item for looking up the value.
         for x in k.iter().take(k.len() - 1) {
             let child = *x;
-            cur_node = cur_node.get_or_create_child(child);
+            cur_node = cur_node.get_or_create_child(child, &self.len);
         }
 
         let id = k.last().unwrap().0;
@@ -99,7 +114,7 @@ impl<T> ArrayTree<T> {
     }
 
     pub fn len(&self) -> usize {
-        self.shards.iter().map(|x| x.read().unwrap().len).sum()
+        self.len.load(SeqCst)
     }
 
     pub fn is_empty(&self) -> bool {
@@ -139,21 +154,22 @@ impl<T> Default for ArrayTree<T> {
         for _ in 0..NUM_SHARDS {
             shards.push(RwLock::new(Shard::default()));
         }
-        Self { shards }
+        Self {
+            shards: ShardList(shards),
+            len: AtomicUsize::new(0),
+        }
     }
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct Shard<T> {
     node: Node<T>,
-    len: usize,
 }
 
 impl<T> Default for Shard<T> {
     fn default() -> Self {
         Self {
             node: Node::default(),
-            len: Default::default(),
         }
     }
 }
@@ -183,7 +199,7 @@ impl<T> Node<T> {
         }
     }
 
-    fn get_or_create_child(&mut self, id: Action) -> &mut Node<T> {
+    fn get_or_create_child(&mut self, id: Action, len: &AtomicUsize) -> &mut Node<T> {
         let id = u8::from(id);
 
         let index = self.child_mask.index(id);
@@ -191,6 +207,7 @@ impl<T> Node<T> {
             let new_child = Node::default();
             self.children.insert(index, new_child);
             self.child_mask.insert(id);
+            len.fetch_add(1, SeqCst);
         }
 
         &mut self.children[index]
