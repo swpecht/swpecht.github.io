@@ -927,7 +927,7 @@ impl GameState for EuchreGameState {
             }
 
             // If last action was pickup, we're discarding
-            _ if self.key().last() == Some(&Action::from(EAction::Pickup)) => {
+            _ if self.key.last() == Some(&Action::from(EAction::Pickup)) => {
                 let c = applied_action.card();
                 self.deck.set(c, CardLocation::Player3);
                 self.phase = EPhase::Discard;
