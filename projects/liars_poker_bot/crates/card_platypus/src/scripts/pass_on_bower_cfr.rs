@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs, ops::Deref};
+use std::{collections::HashMap, fs, ops::Deref, path::Path};
 
 use card_platypus::{
     agents::{Agent, Seedable},
@@ -17,7 +17,7 @@ use card_platypus::{
 use clap::{Args, ValueEnum};
 use indicatif::ProgressBar;
 use itertools::Itertools;
-use log::{info, warn};
+use log::info;
 use rand::{seq::SliceRandom, thread_rng, Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 
@@ -84,7 +84,7 @@ pub fn train_cfr(args: PassOnBowerCFRArgs, generator: fn() -> EuchreGameState) {
     let mut alg = CFRES::new_euchre_bidding(generator, get_rng(), args.max_cards_played);
 
     let infostate_path = args.weight_file.as_str();
-    let loaded_states = alg.load(infostate_path);
+    let loaded_states = alg.load(Path::new(infostate_path));
     info!(
         "loaded {} info states from {}",
         loaded_states, infostate_path
@@ -108,7 +108,7 @@ pub fn train_cfr(args: PassOnBowerCFRArgs, generator: fn() -> EuchreGameState) {
         alg.train(TRAINING_PER_ITERATION);
         pb.inc(TRAINING_PER_ITERATION as u64);
         if (i * TRAINING_PER_ITERATION) % args.checkpoint_freq == 0 && i > 0 {
-            alg.save(infostate_path);
+            alg.save();
         }
 
         if (i * TRAINING_PER_ITERATION) % args.scoring_freq == 0 {
@@ -118,7 +118,7 @@ pub fn train_cfr(args: PassOnBowerCFRArgs, generator: fn() -> EuchreGameState) {
         }
     }
     pb.finish_and_clear();
-    alg.save(infostate_path);
+    alg.save();
     println!("num info states: {}", alg.num_info_states());
 
     log_score(&mut alg, worlds, baseline_score);
@@ -202,7 +202,7 @@ pub fn parse_weights(infostate_path: &str) {
     let generator = generate_jack_of_spades_deal;
     let mut alg = CFRES::new_euchre_bidding(generator, get_rng(), 0);
 
-    let loaded_states = alg.load(infostate_path);
+    let loaded_states = alg.load(Path::new(infostate_path));
     println!(
         "loaded {} info states from {}",
         loaded_states, infostate_path
@@ -253,7 +253,7 @@ pub fn analyze_istate(num_games: usize) {
     let istate = EuchreGameState::from("9sTsQsKsAs|9cTcKcAcTd|JdQdKdAd9h|JcQcJhAh9d|Js");
     let mut rng = get_rng();
     let mut agent = CFRES::new_euchre_bidding(Euchre::new_state, rng.clone(), 0);
-    let loaded = agent.load("infostates.open-hand-20m");
+    let loaded = agent.load(Path::new("/var/lib/card_platypus/infostate.baseline"));
     info!("loaded {}", loaded);
 
     let mut pass_on_bower_games = Vec::new();

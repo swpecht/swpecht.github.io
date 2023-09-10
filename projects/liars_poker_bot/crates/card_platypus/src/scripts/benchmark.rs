@@ -1,14 +1,9 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, path::Path, rc::Rc};
 
 use card_platypus::{
     agents::{Agent, PolicyAgent},
     algorithms::{
-        alphamu::AlphaMuBot,
-        ismcts::{
-            ChildSelectionPolicy, ISMCTBotConfig, ISMCTSBot, ISMCTSFinalPolicyType,
-            ResampleFromInfoState,
-        },
-        open_hand_solver::OpenHandSolver,
+        alphamu::AlphaMuBot, ismcts::ResampleFromInfoState, open_hand_solver::OpenHandSolver,
         pimcts::PIMCTSBot,
     },
     cfragent::cfres::CFRES,
@@ -76,7 +71,7 @@ fn run_euchre_benchmark(args: BenchmarkArgs) {
     agents.insert("pimcts, 50 worlds".to_string(), a);
 
     let mut a = CFRES::new_euchre_bidding(Euchre::new_state, get_rng(), 0);
-    a.load("/var/lib/card_platypus/infostate.baseline");
+    a.load(&Path::new("/var/lib/card_platypus").join("infostate.baseline"));
     info!("loaded cfr baseline agent");
     agents.insert("cfr, 0 cards played".to_string(), &mut a);
 
@@ -86,7 +81,7 @@ fn run_euchre_benchmark(args: BenchmarkArgs) {
     // agents.insert("cfr, 1 cards played".to_string(), &mut a);
 
     let mut a = CFRES::new_euchre_bidding(Euchre::new_state, get_rng(), 1);
-    a.load("/var/lib/card_platypus/infostate.three_card_played");
+    a.load(&Path::new("/var/lib/card_platypus").join("infostate.three_cards_played"));
     info!("loaded cfr three card agent");
     agents.insert("cfr, 3 cards played".to_string(), &mut a);
 
@@ -285,7 +280,7 @@ fn run_jack_face_up_benchmark(args: BenchmarkArgs) {
     agents.push(("pimcts, 50 worlds".to_string(), Rc::new(RefCell::new(a))));
 
     let mut cfr = CFRES::new_euchre_bidding(generate_jack_of_spades_deal, get_rng(), 0);
-    let loaded = cfr.load("infostates.open-hand-20m");
+    let loaded = cfr.load(&Path::new("/var/lib/card_platypus").join("infostate.baseline"));
     println!("loaded {loaded} infostates");
     agents.push(("pre-play cfr, 20m".to_string(), Rc::new(RefCell::new(cfr))));
 

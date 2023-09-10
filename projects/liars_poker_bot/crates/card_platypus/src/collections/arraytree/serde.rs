@@ -1,12 +1,8 @@
-use std::{
-    marker::PhantomData,
-    sync::{atomic::AtomicUsize, RwLock},
-};
+use std::{marker::PhantomData, sync::RwLock};
 
 use serde::{de::Visitor, ser::SerializeSeq, Deserialize, Serialize};
-use std::sync::atomic::Ordering::SeqCst;
 
-use super::{ArrayTree, Shard, ShardList};
+use super::{Shard, ShardList};
 
 struct ShardVisitor<T> {
     marker: PhantomData<T>,

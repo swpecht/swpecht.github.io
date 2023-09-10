@@ -32,7 +32,6 @@ use scripts::pass_on_bower_alpha::benchmark_pass_on_bower;
 use scripts::pass_on_bower_cfr::{
     analyze_istate, parse_weights, run_pass_on_bower_cfr, PassOnBowerCFRArgs,
 };
-use scripts::tune::{run_tune, TuneArgs};
 use simplelog::{
     ColorChoice, CombinedLogger, ConfigBuilder, TermLogger, TerminalMode, WriteLogger,
 };
@@ -64,7 +63,6 @@ enum Commands {
     PassOnBowerCFRTrain(PassOnBowerCFRArgs),
     PassOnBowerCFRParseWeights { infostate_path: String },
     PassOnBowerCFRAnalyzeIstate { num_games: usize },
-    Tune(TuneArgs),
 }
 
 /// Simple program to greet a person
@@ -148,7 +146,6 @@ fn main() {
         Commands::PassOnBowerOpenHand => open_hand_score_pass_on_bower(args),
         Commands::Exploitability => calcualte_agent_exploitability(args),
         Commands::PassOnBowerAlpha { num_games } => benchmark_pass_on_bower(num_games),
-        Commands::Tune(tune) => run_tune(tune),
         Commands::PassOnBowerCFRTrain(bower_cfr) => run_pass_on_bower_cfr(bower_cfr),
         Commands::PassOnBowerCFRParseWeights { infostate_path } => {
             parse_weights(infostate_path.as_str())

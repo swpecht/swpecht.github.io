@@ -1,6 +1,6 @@
 use std::{
     alloc::{GlobalAlloc, Layout, System},
-    sync::atomic::{AtomicI64, AtomicUsize},
+    sync::atomic::AtomicUsize,
     sync::atomic::{AtomicIsize, Ordering::SeqCst},
 };
 

@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    fs,
     path::Path,
     sync::{Arc, Mutex},
     time::Instant,
@@ -53,9 +52,6 @@ pub fn main() {
     // 155_268_000
     // 2_245_231_328
 
-    // benchmark sqlite implementation
-    // heed with lmdb
-
     // 1_759_354_232
     // 92_146_699
     //130_617_360
@@ -102,16 +98,19 @@ fn dashmap_bench(size: usize) -> Arc<DashMap<IStateKey, InfoState>> {
 fn heed_bench(size: usize) -> DiskStore {
     let path = Path::new("/tmp/card_platypus").join("bytemuck.mdb");
     let x = DiskStore::new(Some(&path)).unwrap();
+    println!("heed len: {}", x.len());
 
     let generator = get_generator(size);
 
     generator.for_each(|(k, v)| {
         {
-            x.get(k);
+            x.get(&k);
         }
         do_work();
         x.put(k, v);
     });
+
+    x.commit();
     x
 }
 

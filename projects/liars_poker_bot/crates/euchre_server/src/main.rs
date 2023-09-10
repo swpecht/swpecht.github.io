@@ -1,4 +1,9 @@
-use std::{collections::HashMap, fs::OpenOptions, path::PathBuf, sync::Mutex};
+use std::{
+    collections::HashMap,
+    fs::OpenOptions,
+    path::{Path, PathBuf},
+    sync::Mutex,
+};
 
 use actix_files::NamedFile;
 use actix_web::{
@@ -39,7 +44,7 @@ impl Default for AppState {
             StdRng::from_rng(thread_rng()).unwrap(),
         );
 
-        let n = bot.load("default.infostates");
+        let n = bot.load(Path::new("/var/lib/card_platypus/infostate.baseline"));
         info!("loaded bot with {n} infostates");
 
         Self {

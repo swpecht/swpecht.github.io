@@ -1,7 +1,4 @@
 use std::{
-    fs::{self, File},
-    io::BufWriter,
-    ops::Deref,
     path::Path,
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -9,13 +6,16 @@ use std::{
     },
 };
 
-use dashmap::DashMap;
+use dashmap::{
+    mapref::one::{Ref, RefMut},
+    DashMap,
+};
 use dyn_clone::DynClone;
 use itertools::Itertools;
 use log::{debug, warn};
 use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, Rng, SeedableRng};
 use rayon::prelude::*;
-use rmp_serde::Serializer;
+
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -26,7 +26,7 @@ use crate::{
         pimcts::PIMCTSBot,
     },
     alloc::Pool,
-    collections::arraytree::{treeref::Ref, ArrayTree},
+    collections::diskstore::DiskStore,
     counter,
     game::{
         euchre::{ismorphic::EuchreNormalizer, processors::post_cards_played, EuchreGameState},
@@ -109,7 +109,7 @@ pub struct CFRES<G> {
     game_generator: fn() -> G,
     average_type: AverageType,
     iteration: Arc<AtomicUsize>,
-    infostates: Arc<ArrayTree<InfoState>>,
+    infostates: Arc<DiskStore>,
     /// determine if we are at the max depth and should use the rollout
     depth_checker: Box<dyn DepthChecker<G>>,
     normalizer: Box<dyn IStateNormalizer<G>>,
@@ -154,7 +154,7 @@ impl CFRES<EuchreGameState> {
             vector_pool: Pool::new(Vec::new),
             game_generator,
             average_type: AverageType::default(),
-            infostates: Arc::new(ArrayTree::default()),
+            infostates: Arc::new(DiskStore::new(None).unwrap()),
             // is_max_depth: post_discard_phase,
             depth_checker: Box::new(EuchreDepthChecker { max_cards_played }),
             play_bot: PIMCTSBot::new(
@@ -176,7 +176,7 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
             vector_pool: Pool::new(Vec::new),
             game_generator,
             average_type: AverageType::default(),
-            infostates: Arc::new(ArrayTree::default()),
+            infostates: Arc::new(DiskStore::new(None).unwrap()),
             depth_checker: Box::new(NoOpDepthChecker {}),
             play_bot: PIMCTSBot::new(
                 50,
@@ -204,52 +204,24 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
         self.evaluator.reset();
     }
 
-    pub fn save(&self, path: &str) {
-        if Path::new(path).exists() {
-            let mut target = path.to_string();
-            target.push_str(".old");
-            fs::rename(path, target.as_str()).expect("error backing up previous file");
-        }
-
-        let path = std::path::Path::new(path);
-        let prefix = path.parent().unwrap();
-        fs::create_dir_all(prefix).unwrap();
-        let f = File::create(path).unwrap();
-        let f = BufWriter::new(f);
-
-        debug!("saving weights for {} infostates...", self.infostates.len());
-
-        self.infostates
-            .deref()
-            .serialize(&mut Serializer::new(f))
-            .unwrap();
+    pub fn save(&self) {
+        self.infostates.commit();
     }
 
-    pub fn load(&mut self, path: &str) -> usize {
-        if Path::new(path).exists() {
-            let f = &mut File::open(path);
-            let f = f.as_mut().unwrap();
-            self.infostates = Arc::new(rmp_serde::from_read(f).unwrap());
-
-            // Get the last iteration by reading the max updated iteration
-            // let iteration = self
-            //     .infostates_map
-            //     .iter()
-            //     .map(|x| x.value().last_iteration)
-            //     .max()
-            //     .unwrap_or(0);
-            // self.iteration = Arc::new(AtomicUsize::new(iteration));
-            debug!(
-                "loaded weights for {} infostates with {} iterations",
-                self.infostates.len(),
-                0
-            );
-
-            self.infostates.len()
-        } else {
-            warn!("file not found, no infostates loaded");
+    pub fn load(&mut self, path: &Path) -> usize {
+        self.infostates = Arc::new(DiskStore::new(Some(path)).unwrap());
+        let len = self.infostates.len();
+        debug!(
+            "loaded weights for {} infostates with {} iterations",
+            self.infostates.len(),
             0
+        );
+
+        if len == 0 {
+            warn!("no infostates loaded");
         }
+
+        len
     }
 
     /// Performs one iteration of external sampling.
@@ -421,13 +393,13 @@ impl<G> CFRES<G> {
         &mut self,
         key: &NormalizedIstate,
         actions: &[NormalizedAction],
-    ) -> crate::collections::arraytree::treeref::RefMut<InfoState> {
+    ) -> RefMut<IStateKey, InfoState> {
         self.infostates
             .get_or_create_mut(&key.get(), InfoState::new(actions.to_vec()))
     }
 
     /// Can deadlock if we hold onto handle
-    fn lookup_entry(&self, key: &NormalizedIstate) -> Option<Ref<InfoState>> {
+    fn lookup_entry(&self, key: &NormalizedIstate) -> Option<Ref<IStateKey, InfoState>> {
         self.infostates.get(&key.get())
     }
 }
