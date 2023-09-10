@@ -22,6 +22,16 @@ impl Default for IStateKey {
     }
 }
 
+impl From<&[u8]> for IStateKey {
+    fn from(value: &[u8]) -> Self {
+        let mut key = IStateKey::default();
+        for x in value {
+            key.push(Action(*x));
+        }
+        key
+    }
+}
+
 /// We deref to a slice for full indexing, this is the same approach
 /// that ArrayVec uses
 impl Deref for IStateKey {
@@ -57,6 +67,10 @@ impl IStateKey {
         let last = self.actions[self.len() - 1];
         self.len -= 1;
         last
+    }
+
+    pub fn as_slice(&self) -> &[Action] {
+        &self.actions[..self.len]
     }
 }
 

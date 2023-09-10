@@ -65,10 +65,10 @@ enum AverageType {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct InfoState {
-    actions: Vec<NormalizedAction>,
-    regrets: Vec<f64>,
-    avg_strategy: Vec<f64>,
-    last_iteration: usize,
+    pub actions: Vec<NormalizedAction>,
+    pub regrets: Vec<f64>,
+    pub avg_strategy: Vec<f64>,
+    pub last_iteration: usize,
 }
 
 impl InfoState {
