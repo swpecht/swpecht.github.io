@@ -16,11 +16,11 @@ use crate::{
             processors::{euchre_early_terminate, process_euchre_actions},
             EuchreGameState,
         },
-        Action, GameState, Player,
+        Action, GameState, Player, Team,
     },
 };
 
-use super::{alphamu::Team, ismcts::Evaluator};
+use super::ismcts::Evaluator;
 
 pub const DEFAULT_MAX_TT_DEPTH: u8 = 255;
 

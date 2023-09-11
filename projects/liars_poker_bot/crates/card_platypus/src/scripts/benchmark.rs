@@ -3,13 +3,12 @@ use std::{cell::RefCell, collections::HashMap, path::Path, rc::Rc};
 use card_platypus::{
     agents::{Agent, PolicyAgent},
     algorithms::{
-        alphamu::AlphaMuBot, ismcts::ResampleFromInfoState, open_hand_solver::OpenHandSolver,
-        pimcts::PIMCTSBot,
+        ismcts::ResampleFromInfoState, open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot,
     },
     cfragent::cfres::CFRES,
     game::{
         bluff::Bluff,
-        euchre::{EPhase, Euchre, EuchreGameState},
+        euchre::{Euchre, EuchreGameState},
         get_games,
         kuhn_poker::KuhnPoker,
         Game, GameState,

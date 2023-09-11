@@ -2,13 +2,10 @@ use std::time::Duration;
 
 use card_platypus::{
     actions,
-    agents::PolicyAgent,
-    algorithms::{
-        alphamu::AlphaMuBot, ismcts::Evaluator, open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot,
-    },
+    algorithms::{ismcts::Evaluator, open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot},
     game::{
         euchre::{Euchre, EuchreGameState},
-        run_game, GameState,
+        GameState,
     },
 };
 use criterion::{criterion_group, criterion_main, Criterion};
@@ -40,30 +37,6 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("agents");
     group.sample_size(10);
-
-    let rng: StdRng = SeedableRng::seed_from_u64(42);
-    let mut evaluator = PolicyAgent::new(
-        AlphaMuBot::new(OpenHandSolver::new_euchre(), 10, 5, rng.clone()),
-        rng,
-    );
-    let mut rng: StdRng = SeedableRng::seed_from_u64(45);
-    group.bench_function("alpha mu 10 worlds, m=5", |b| {
-        b.iter(|| alpha_mu_benchmark(&mut evaluator, &mut rng))
-    });
-
-    let rng: StdRng = SeedableRng::seed_from_u64(42);
-    let mut evaluator = AlphaMuBot::new(OpenHandSolver::default(), 20, 5, rng);
-    let mut rng: StdRng = SeedableRng::seed_from_u64(45);
-    group.bench_function("alpha mu 20 worlds, m=5", |b| {
-        b.iter(|| alpha_mu_eval_benchmark(&mut evaluator, &mut rng))
-    });
-
-    let rng: StdRng = SeedableRng::seed_from_u64(42);
-    let mut evaluator = AlphaMuBot::new(OpenHandSolver::default(), 30, 3, rng);
-    let mut rng: StdRng = SeedableRng::seed_from_u64(45);
-    group.bench_function("alpha mu 30 worlds, m=3", |b| {
-        b.iter(|| alpha_mu_eval_benchmark(&mut evaluator, &mut rng))
-    });
 }
 
 fn rotate_array(array: &mut [u8]) {
@@ -75,22 +48,6 @@ fn bit_shift(v: &mut u32) {
     *v >>= 4;
     *v &= !(0b1111);
     *v |= x;
-}
-
-fn alpha_mu_benchmark(
-    evaluator: &mut PolicyAgent<AlphaMuBot<EuchreGameState, OpenHandSolver<EuchreGameState>>>,
-    rng: &mut StdRng,
-) {
-    let mut gs = get_game(rng);
-    run_game(&mut gs, evaluator, &mut None, rng);
-}
-
-fn alpha_mu_eval_benchmark(
-    evaluator: &mut AlphaMuBot<EuchreGameState, OpenHandSolver<EuchreGameState>>,
-    rng: &mut StdRng,
-) {
-    let gs = get_game(rng);
-    evaluator.run_search(&gs, gs.cur_player());
 }
 
 fn evaluate_games(

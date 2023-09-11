@@ -1,22 +1,14 @@
 use approx::assert_relative_eq;
 use card_platypus::{
-    agents::{Agent, PolicyAgent},
     algorithms::{
-        alphamu::AlphaMuBot, exploitability::exploitability, ismcts::Evaluator,
-        open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot,
+        exploitability::exploitability, ismcts::Evaluator, open_hand_solver::OpenHandSolver,
     },
     cfragent::{
         cfres::{self, CFRES},
         CFRAgent, CFRAlgorithm,
     },
     database::memory_node_store::MemoryNodeStore,
-    game::{
-        bluff::Bluff,
-        euchre::{actions::EAction, Euchre},
-        get_games,
-        kuhn_poker::KuhnPoker,
-        GameState,
-    },
+    game::{bluff::Bluff, euchre::Euchre, get_games, kuhn_poker::KuhnPoker, GameState},
 };
 use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
 use rayon::prelude::*;
@@ -45,65 +37,6 @@ fn test_alg_open_hand_solver_euchre() {
             gs.apply_action(*a);
         }
     });
-}
-
-/// AlphaMu with M=1 should be equivalent to PIMCTS
-#[test]
-fn alpha_mu_pimcts_equivalent() {
-    let policy_rng: StdRng = SeedableRng::seed_from_u64(56);
-    let agent_rng: StdRng = SeedableRng::seed_from_u64(57);
-    let rollouts = 5;
-    let mut alpha = PolicyAgent::new(
-        AlphaMuBot::new(
-            OpenHandSolver::new_euchre(),
-            rollouts,
-            1,
-            policy_rng.clone(),
-        ),
-        agent_rng.clone(),
-    );
-    let mut pimcts = PolicyAgent::new(
-        PIMCTSBot::new(rollouts, OpenHandSolver::new_euchre(), policy_rng),
-        agent_rng,
-    );
-    let mut actions = Vec::new();
-
-    let mut game_rng: StdRng = SeedableRng::seed_from_u64(23);
-    for i in 0..100 {
-        let mut gs = Euchre::new_state();
-
-        while !gs.is_terminal() {
-            if gs.is_chance_node() {
-                gs.legal_actions(&mut actions);
-                let a = actions.choose(&mut game_rng).unwrap();
-                gs.apply_action(*a);
-            } else {
-                let alpha_action = alpha.step(&gs);
-                let pimcts_action = pimcts.step(&gs);
-                if alpha_action != pimcts_action {
-                    println!("{}: {}", i, gs);
-                    println!("alpha action: {}", EAction::from(alpha_action));
-                    println!("pimcts action: {}", EAction::from(pimcts_action));
-                    gs.apply_action(alpha_action);
-                    println!(
-                        "alpha action value by pimcts: {}",
-                        pimcts.policy.evaluate_player(&gs, gs.cur_player())
-                    );
-                    gs.undo();
-                    gs.apply_action(pimcts_action);
-                    println!(
-                        "pimcts action value by pimcts: {}",
-                        pimcts.policy.evaluate_player(&gs, gs.cur_player())
-                    );
-                    gs.undo();
-                }
-
-                assert_eq!(alpha_action, pimcts_action);
-                gs.apply_action(pimcts_action);
-            }
-        }
-        // println!("{}", gs);
-    }
 }
 
 #[test]

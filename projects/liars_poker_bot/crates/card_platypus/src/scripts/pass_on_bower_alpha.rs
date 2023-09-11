@@ -1,7 +1,6 @@
 use card_platypus::{
     agents::{Agent, PolicyAgent, RandomAgent},
     algorithms::{
-        alphamu::AlphaMuBot,
         ismcts::{RandomRolloutEvaluator, ResampleFromInfoState},
         open_hand_solver::OpenHandSolver,
         pimcts::PIMCTSBot,
@@ -52,18 +51,6 @@ pub fn benchmark_pass_on_bower(num_games: usize) {
     // };
     // let ismcts = &mut ISMCTSBot::new(Euchre::game(), 1.5, 100, OpenHandSolver::new(), config);
     // agents.push(("ismcts, 100 simulations", ismcts));
-
-    let alphamu = &mut PolicyAgent::new(
-        AlphaMuBot::new(OpenHandSolver::new_euchre(), 10, 1, policy_rng.clone()),
-        agent_rng.clone(),
-    );
-    agents.push(("alphamu, open hand, m=1, 10 worlds", alphamu));
-
-    let alphamu = &mut PolicyAgent::new(
-        AlphaMuBot::new(OpenHandSolver::new_euchre(), 10, 5, policy_rng),
-        agent_rng,
-    );
-    agents.push(("alphamu, open hand", alphamu));
 
     let worlds = get_pass_on_bower_deals(num_games, &mut get_rng());
 

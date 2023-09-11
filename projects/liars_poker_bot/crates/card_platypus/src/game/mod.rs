@@ -140,6 +140,28 @@ pub fn get_games<T: GameState>(game: Game<T>, n: usize, rng: &mut StdRng) -> Vec
     games
 }
 
+#[derive(PartialEq, Eq, Clone, Copy, Hash)]
+pub enum Team {
+    Team1,
+    Team2,
+}
+
+impl From<Team> for Player {
+    fn from(val: Team) -> Self {
+        val as usize
+    }
+}
+
+impl From<Player> for Team {
+    fn from(val: Player) -> Self {
+        if val % 2 == 0 {
+            Team::Team1
+        } else {
+            Team::Team2
+        }
+    }
+}
+
 #[macro_export]
 macro_rules! actions {
     ( $x:expr ) => {{
