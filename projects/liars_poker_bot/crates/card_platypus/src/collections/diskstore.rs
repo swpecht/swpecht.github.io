@@ -10,7 +10,7 @@ use itertools::Itertools;
 use crate::{cfragent::cfres::InfoState, istate::IStateKey};
 
 const MAX_CACHE_LEN: usize = 50_000_000;
-const MAX_DB_SIZE_GB: usize = 100;
+const MAX_DB_SIZE_GB: usize = 200;
 
 pub struct DiskStore {
     env: Option<Env>,
