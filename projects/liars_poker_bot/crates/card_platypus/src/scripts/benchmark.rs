@@ -28,7 +28,6 @@ use super::pass_on_bower_cfr::generate_jack_of_spades_deal;
 #[derive(ValueEnum, Clone, Copy, Debug)]
 pub enum BenchmarkMode {
     FullGame,
-    CardPlay,
     JackFaceUp,
 }
 
@@ -50,7 +49,6 @@ pub fn run_benchmark(args: BenchmarkArgs) {
             GameType::Bluff21 => run_full_game_benchmark(args, Bluff::game(2, 1)),
             GameType::Bluff22 => run_full_game_benchmark(args, Bluff::game(2, 2)),
         },
-        BenchmarkMode::CardPlay => run_card_play_benchmark(args),
         BenchmarkMode::JackFaceUp => run_jack_face_up_benchmark(args),
     }
 }
@@ -197,70 +195,6 @@ fn score_games<G: GameState + ResampleFromInfoState + Send>(
             }
         }
     }
-}
-
-/// Runs the benchmark for euchre, but only for the card play portion.
-///
-/// Uses PIMCTS to do the bidding for all players
-fn run_card_play_benchmark(args: BenchmarkArgs) {
-    assert!(matches!(args.game, GameType::Euchre));
-
-    // all agents play the same games
-    info!("generating games...");
-    let mut game_rng = get_rng();
-    let games = get_card_play_games(args.num_games * 19, &mut game_rng);
-    info!("finished generated {} games", games.len());
-
-    let mut agents: HashMap<String, &mut dyn Agent<EuchreGameState>> = HashMap::new();
-    // let ra: &mut dyn Agent<G> = &mut RandomAgent::new();
-    // agents.insert(ra.get_name(), ra);
-
-    let a = &mut PolicyAgent::new(
-        PIMCTSBot::new(32, OpenHandSolver::new_euchre(), get_rng()),
-        get_rng(),
-    );
-    agents.insert("pimcts, 32 worlds hand".to_string(), a);
-
-    let alphamu = &mut PolicyAgent::new(
-        AlphaMuBot::new(OpenHandSolver::new_euchre(), 32, 20, get_rng()),
-        get_rng(),
-    );
-    agents.insert("alphamu, 32 worlds, m=20".to_string(), alphamu);
-
-    score_games(args, agents, games);
-}
-
-pub fn get_card_play_games(n: usize, rng: &mut StdRng) -> Vec<EuchreGameState> {
-    let mut games = get_games(Euchre::game(), n, rng);
-
-    let mut agent = PolicyAgent::new(
-        PIMCTSBot::new(50, OpenHandSolver::new_euchre(), get_rng()),
-        get_rng(),
-    );
-
-    fn bid(
-        mut gs: EuchreGameState,
-        agent: &mut PolicyAgent<PIMCTSBot<EuchreGameState, OpenHandSolver<EuchreGameState>>>,
-    ) -> EuchreGameState {
-        while gs.phase() != EPhase::Play {
-            let a = agent.step(&gs);
-            gs.apply_action(a);
-        }
-
-        gs
-    }
-
-    let pb = ProgressBar::new(n as u64);
-    games = games
-        .into_iter()
-        .map(|gs| {
-            pb.inc(1);
-            bid(gs, &mut agent)
-        })
-        .collect_vec();
-    pb.finish_and_clear();
-
-    games
 }
 
 fn run_jack_face_up_benchmark(args: BenchmarkArgs) {
