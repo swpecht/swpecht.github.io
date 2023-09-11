@@ -63,7 +63,7 @@ max_cards_played = 3
 
 [train.first_trick]
 weight_file = "/var/lib/card_platypus/infostate.first_trick"
-training_iterations = 100000000
+training_iterations = 200000000
 scoring_freq = 1000000
 scoring_iterations = 1000
 checkpoint_freq = 5000000
