@@ -2,8 +2,8 @@
 
 # A fast to run config for testing
 [train.test]
-weight_file = "./infostate.testing"
-training_iterations = 10000
+weight_file = "/var/lib/card_platypus/infostate.testing"
+training_iterations = 100000
 scoring_freq = 1000000
 scoring_iterations = 10
 checkpoint_freq = 5000000
