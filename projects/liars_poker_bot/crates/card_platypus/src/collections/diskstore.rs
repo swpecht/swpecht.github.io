@@ -119,6 +119,7 @@ impl DiskStore {
         if self.db.is_none() || self.env.is_none() {
             self.cache.len()
         } else {
+            self.commit();
             let rtxn = self.env.as_ref().unwrap().read_txn().unwrap();
             self.db.unwrap().len(&rtxn).unwrap() as usize
         }
