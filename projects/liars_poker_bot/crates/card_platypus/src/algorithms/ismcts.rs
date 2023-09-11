@@ -89,6 +89,7 @@ pub trait Evaluator<G> {
     fn evaluate_player(&mut self, gs: &G, p: Player) -> f64;
     /// Returns a probability for each legal action in the given state.
     fn prior(&mut self, gs: &G) -> ActionVec<f64>;
+    fn reset(&mut self) {}
 }
 
 /// A simple evaluator doing random rollouts. It will always return the same result
