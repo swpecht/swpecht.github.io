@@ -72,7 +72,7 @@ pub fn run_pass_on_bower_cfr(args: PassOnBowerCFRArgs) {
     }
 
     match args.deal_type {
-        DealType::JackOfSpadesOnly => train_cfr(args, generate_jack_of_spades_deal),
+        DealType::JackOfSpadesOnly => train_cfr(args, || generate_face_up_deals(Card::JS)),
         DealType::All => train_cfr(args, Euchre::new_state),
     }
 }
@@ -91,7 +91,7 @@ pub fn train_cfr(args: PassOnBowerCFRArgs, generator: fn() -> EuchreGameState) {
     );
 
     let worlds = (0..args.scoring_iterations)
-        .map(|_| generate_jack_of_spades_deal())
+        .map(|_| generate_face_up_deals(Card::JS))
         .collect_vec();
     let mut baseline = PIMCTSBot::new(50, OpenHandSolver::new_euchre(), get_rng());
     // let mut baseline = CFRES::new_euchre_bidding(generator, get_rng(), 0);
@@ -173,12 +173,12 @@ fn score_vs_defender<A: Agent<EuchreGameState> + Seedable>(
 }
 
 /// Generator for games where the jack of spades is face up
-pub fn generate_jack_of_spades_deal() -> EuchreGameState {
+pub fn generate_face_up_deals(face_up: Card) -> EuchreGameState {
     let mut gs = Euchre::new_state();
     let mut actions = Vec::new();
     for _ in 0..20 {
         gs.legal_actions(&mut actions);
-        actions.retain(|&a| EAction::from(a).card() != Card::JS);
+        actions.retain(|&a| EAction::from(a).card() != face_up);
         let a = actions
             .choose(&mut thread_rng())
             .expect("error dealing cards");
@@ -186,7 +186,7 @@ pub fn generate_jack_of_spades_deal() -> EuchreGameState {
         actions.clear();
     }
 
-    gs.apply_action(EAction::JS.into());
+    gs.apply_action(EAction::from(face_up).into());
 
     gs
 }
@@ -199,7 +199,7 @@ struct JSONRow {
 }
 
 pub fn parse_weights(infostate_path: &str) {
-    let generator = generate_jack_of_spades_deal;
+    let generator = || generate_face_up_deals(Card::JS);
     let mut alg = CFRES::new_euchre_bidding(generator, get_rng(), 0);
 
     let loaded_states = alg.load(Path::new(infostate_path));

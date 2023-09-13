@@ -8,7 +8,7 @@ use card_platypus::{
     cfragent::cfres::CFRES,
     game::{
         bluff::Bluff,
-        euchre::{Euchre, EuchreGameState},
+        euchre::{actions::Card, Euchre, EuchreGameState},
         get_games,
         kuhn_poker::KuhnPoker,
         Game, GameState,
@@ -20,9 +20,7 @@ use itertools::Itertools;
 use log::{debug, info};
 use rand::{rngs::StdRng, thread_rng, SeedableRng};
 
-use crate::GameType;
-
-use super::pass_on_bower_cfr::generate_jack_of_spades_deal;
+use crate::{scripts::pass_on_bower_cfr::generate_face_up_deals, GameType};
 
 #[derive(ValueEnum, Clone, Copy, Debug)]
 pub enum BenchmarkMode {
@@ -212,7 +210,7 @@ fn run_jack_face_up_benchmark(args: BenchmarkArgs) {
     );
     agents.push(("pimcts, 50 worlds".to_string(), Rc::new(RefCell::new(a))));
 
-    let mut cfr = CFRES::new_euchre_bidding(generate_jack_of_spades_deal, get_rng(), 0);
+    let mut cfr = CFRES::new_euchre_bidding(|| generate_face_up_deals(Card::JS), get_rng(), 0);
     let loaded = cfr.load(&Path::new("/var/lib/card_platypus").join("infostate.baseline"));
     println!("loaded {loaded} infostates");
     agents.push(("pre-play cfr, 20m".to_string(), Rc::new(RefCell::new(cfr))));
@@ -246,7 +244,9 @@ fn run_jack_face_up_benchmark(args: BenchmarkArgs) {
 }
 
 fn get_jack_of_spades_games(n: usize) -> Vec<EuchreGameState> {
-    (0..n).map(|_| generate_jack_of_spades_deal()).collect_vec()
+    (0..n)
+        .map(|_| generate_face_up_deals(Card::JS))
+        .collect_vec()
 }
 
 pub fn get_rng() -> StdRng {
