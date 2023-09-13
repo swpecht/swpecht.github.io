@@ -15,8 +15,12 @@ use card_platypus::{
 
 use dashmap::DashMap;
 
+use itertools::Itertools;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use rayon::prelude::*;
+use rmp_serde::Serializer;
+use rocksdb::DB;
+use serde::Serialize;
 
 pub fn run_and_track<T>(name: &str, size: usize, f: impl FnOnce(usize) -> T) {
     card_platypus::alloc::tracking::reset();
@@ -49,6 +53,10 @@ pub fn main() {
     run_and_track("dashmap", size, dashmap_bench);
 
     run_and_track("heed", size, heed_bench);
+    run_and_track("rocksdb", size, rocksdb_bench);
+
+    // do a mock implementation of the perfect hasing algorithm and reading directly from disk
+
     // 155_268_000
     // 2_245_231_328
 
@@ -97,12 +105,13 @@ fn dashmap_bench(size: usize) -> Arc<DashMap<IStateKey, InfoState>> {
 
 fn heed_bench(size: usize) -> DiskStore {
     let path = Path::new("/tmp/card_platypus").join("bytemuck.mdb");
-    let x = DiskStore::new(Some(&path)).unwrap();
+    let mut x = DiskStore::new(Some(&path)).unwrap();
+    x.set_cache_len(1_000_000);
     println!("heed len: {}", x.len());
 
     let generator = get_generator(size);
 
-    generator.for_each(|(k, v)| {
+    generator.par_bridge().for_each(|(k, v)| {
         {
             x.get(&k);
         }
@@ -112,6 +121,23 @@ fn heed_bench(size: usize) -> DiskStore {
 
     x.commit();
     x
+}
+
+fn rocksdb_bench(size: usize) {
+    let path = "/tmp/card_platypus/rocksdb_bench";
+
+    let x = DB::open_default(path).unwrap();
+    let generator = get_generator(size);
+    generator.par_bridge().for_each(|(k, v)| {
+        let k = k.as_slice().iter().map(|x| x.0).collect_vec();
+        {
+            x.get(&k).unwrap();
+        }
+        do_work();
+        let data = rmp_serde::encode::to_vec(&v).unwrap();
+        x.put(k, data).unwrap();
+    });
+    x.flush().unwrap();
 }
 
 fn do_work() {
