@@ -1,10 +1,12 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
+    fs::OpenOptions,
     path::Path,
     sync::{Arc, Mutex},
     time::Instant,
 };
 
+use boomphf::Mphf;
 use card_platypus::{
     alloc::tracking::{Stats, TrackingAllocator},
     cfragent::cfres::InfoState,
@@ -16,11 +18,12 @@ use card_platypus::{
 use dashmap::DashMap;
 
 use itertools::Itertools;
+use memmap2::MmapMut;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use rayon::prelude::*;
+
 use rmp_serde::Serializer;
 use rocksdb::DB;
-use serde::Serialize;
 
 pub fn run_and_track<T>(name: &str, size: usize, f: impl FnOnce(usize) -> T) {
     card_platypus::alloc::tracking::reset();
@@ -47,28 +50,21 @@ pub fn main() {
     #[global_allocator]
     static ALLOC: TrackingAllocator = TrackingAllocator;
 
-    println!("starting run...");
     let size = 10_000_000;
+    std::fs::create_dir_all("/tmp/card_platypus/").unwrap();
+
+    println!("starting generation of phf");
+    generate_phf("/tmp/card_platypus/phf", size).unwrap();
+
+    println!("starting run...");
+
     run_and_track("mutex hashmap", size, mutex_hashmap_bench);
     run_and_track("dashmap", size, dashmap_bench);
+    run_and_track("heed - cached", size, heed_bench);
+    // look up how to tune rockdb -- are there batched writes?
+    run_and_track("rocksdb - cached writes", size, rocksdb_bench);
 
-    run_and_track("heed", size, heed_bench);
-    run_and_track("rocksdb", size, rocksdb_bench);
-
-    // do a mock implementation of the perfect hasing algorithm and reading directly from disk
-
-    // 155_268_000
-    // 2_245_231_328
-
-    // 1_759_354_232
-    // 92_146_699
-    //130_617_360
-    // 111_808_384
-    // 83_379_462
-
-    // message passing
-    // track peak memory usage
-    // track time to complete
+    run_and_track("mem map w/ phf, single thread", size, file_reading);
 }
 
 fn get_generator(len: usize) -> DataGenerator {
@@ -127,6 +123,7 @@ fn rocksdb_bench(size: usize) {
     let path = "/tmp/card_platypus/rocksdb_bench";
 
     let x = DB::open_default(path).unwrap();
+    let cache = Mutex::new(HashMap::new());
     let generator = get_generator(size);
     generator.par_bridge().for_each(|(k, v)| {
         let k = k.as_slice().iter().map(|x| x.0).collect_vec();
@@ -135,13 +132,99 @@ fn rocksdb_bench(size: usize) {
         }
         do_work();
         let data = rmp_serde::encode::to_vec(&v).unwrap();
-        x.put(k, data).unwrap();
+        cache.lock().unwrap().insert(k, data);
+
+        if cache.lock().unwrap().len() > 1_000_000 {
+            for (k, v) in cache.lock().unwrap().drain() {
+                x.put(k, v).unwrap();
+            }
+        }
     });
+
+    for (k, v) in cache.lock().unwrap().drain() {
+        x.put(k, v).unwrap();
+    }
     x.flush().unwrap();
+}
+
+fn file_reading(size: usize) {
+    let serialized = std::fs::read("/tmp/card_platypus/phf").unwrap();
+    let phf: Mphf<IStateKey> = rmp_serde::from_slice(&serialized).unwrap();
+
+    let path = "/tmp/card_platypus/mem_map_bench";
+    std::fs::create_dir_all("/tmp/card_platypus").unwrap();
+
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(path)
+        .unwrap();
+
+    const BUCKET_SIZE: usize = 200;
+    // todo: organically grow the file
+    file.set_len((size * BUCKET_SIZE) as u64).unwrap();
+
+    let mut mmap = unsafe { MmapMut::map_mut(&file).unwrap() };
+    let mut count = 0;
+
+    let generator = get_generator(size);
+    generator.for_each(|(k, v)| {
+        let index: usize = phf.hash(&k) as usize;
+
+        let start = index * BUCKET_SIZE;
+        let data = &mmap[start..start + BUCKET_SIZE];
+        let s: InfoState = rmp_serde::from_slice(data).unwrap_or(InfoState::new(vec![]));
+
+        do_work();
+        let data = rmp_serde::to_vec(&v).unwrap();
+        assert!(data.len() <= BUCKET_SIZE);
+        mmap[start..start + data.len()].copy_from_slice(&data);
+        count += 1;
+
+        if count % 1_000_000 == 0 {
+            mmap.flush().unwrap();
+        }
+    });
+
+    mmap.flush().unwrap();
 }
 
 fn do_work() {
     // std::thread::sleep(Duration::from_millis(1))
+}
+
+fn generate_phf(path: &str, size: usize) -> anyhow::Result<()> {
+    let mut keys = HashSet::new();
+    for (k, _) in get_generator(size) {
+        keys.insert(k);
+    }
+
+    let n = keys.len();
+    let phf = Mphf::new_parallel(1.7, &keys.iter().copied().collect_vec(), None);
+
+    // Get hash value of all objects
+    let mut hashes = Vec::new();
+    for v in keys {
+        hashes.push(phf.hash(&v));
+    }
+    hashes.sort();
+
+    // Expected hash output is set of all integers from 0..n
+    let expected_hashes: Vec<u64> = (0..n as u64).collect();
+    assert!(hashes == expected_hashes);
+
+    let serialized = rmp_serde::to_vec(&phf)?;
+
+    let f = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(path)?;
+
+    std::fs::write(path, serialized)?;
+
+    Ok(())
 }
 
 /// Generates random data for storage benchmarking
