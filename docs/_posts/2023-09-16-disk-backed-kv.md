@@ -195,10 +195,10 @@ The infostates are about 165 bytes of data total on average [0]. We need to stor
 
 ```rust
 pub struct InfoState {
-    actions: Vec<u8>, # 24 bytes for vector + 5 * 1 for each u8 action
-    regrets: Vec<f64>, # 24 bytes for vector + 5 * 8 for each f64 regret)
-    avg_strategy: Vec<f64>, # 24 bytes
-    last_iteration: usize, # 8 bytes
+    actions: Vec<u8>, // 24 bytes for vector + 5 * 1 for each u8 action
+    regrets: Vec<f64>, // 24 bytes for vector + 5 * 8 for each f64 regret)
+    avg_strategy: Vec<f64>, // 24 bytes
+    last_iteration: usize, // 8 bytes
 }
 ```
 

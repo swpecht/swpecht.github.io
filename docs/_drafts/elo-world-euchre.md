@@ -1,10 +1,13 @@
 
+[ ] Implement the mem map store
+    [ ] Create phf for different lengths of euchre game
+    [ ] Do an estimate on the data we would need
+    [ ] Switch over diskstore to use the mem map -- use an anon map for no file access
+
+[ ] Optimize infostate representation
+
 [ ] Shard training on the face up card -- all the istates should be independent
     * Estimate max size we can hold, -- may need to use array tree again to avoid allocation behavior where it doubles
-[ ] Create phf for different lengths of euchre game -- fall back to memory if not suing this and avoid creating phf
-
-[ ] Fix bug in loading new baseline agent
-    [ ] is this due to inserting something at the end?
 
 [ ] Add benchmark configuration to the TOML file
 [ ] Add agent configuration to the TOML file
