@@ -1,4 +1,4 @@
-use std::{env, fs, path::Path};
+use std::{fs, path::Path};
 
 use dashmap::{
     mapref::one::{Ref, RefMut},
@@ -166,6 +166,6 @@ mod tests {
     #[test]
     fn test_open_database() {
         let path = Path::new("/tmp/card_platypus").join("bytemuck.mdb");
-        let mut x = DiskStore::new(Some(&path)).unwrap();
+        let mut _x = DiskStore::new(Some(&path)).unwrap();
     }
 }

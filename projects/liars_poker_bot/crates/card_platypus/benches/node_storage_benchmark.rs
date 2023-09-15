@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    fs::OpenOptions,
+    fs::{self, OpenOptions},
     path::Path,
     sync::{Arc, Mutex},
     time::Instant,
@@ -10,19 +10,22 @@ use boomphf::Mphf;
 use card_platypus::{
     alloc::tracking::{Stats, TrackingAllocator},
     cfragent::cfres::InfoState,
-    collections::diskstore::DiskStore,
     game::Action,
     istate::{IStateKey, NormalizedAction},
 };
 
 use dashmap::DashMap;
 
+use heed::{
+    flags::Flags,
+    types::{ByteSlice, SerdeBincode},
+    Database, EnvOpenOptions,
+};
 use itertools::Itertools;
 use memmap2::MmapMut;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use rayon::prelude::*;
 
-use rmp_serde::Serializer;
 use rocksdb::DB;
 
 pub fn run_and_track<T>(name: &str, size: usize, f: impl FnOnce(usize) -> T) {
@@ -50,7 +53,7 @@ pub fn main() {
     #[global_allocator]
     static ALLOC: TrackingAllocator = TrackingAllocator;
 
-    let size = 10_000_000;
+    let size = 20_000_000;
     std::fs::create_dir_all("/tmp/card_platypus/").unwrap();
 
     println!("starting generation of phf");
@@ -61,10 +64,8 @@ pub fn main() {
     run_and_track("mutex hashmap", size, mutex_hashmap_bench);
     run_and_track("dashmap", size, dashmap_bench);
     run_and_track("heed - cached", size, heed_bench);
-    // look up how to tune rockdb -- are there batched writes?
     run_and_track("rocksdb - cached writes", size, rocksdb_bench);
-
-    run_and_track("mem map w/ phf, single thread", size, file_reading);
+    run_and_track("mem map w/ phf, single thread", size, mem_map);
 }
 
 fn get_generator(len: usize) -> DataGenerator {
@@ -99,24 +100,55 @@ fn dashmap_bench(size: usize) -> Arc<DashMap<IStateKey, InfoState>> {
     x
 }
 
-fn heed_bench(size: usize) -> DiskStore {
-    let path = Path::new("/tmp/card_platypus").join("bytemuck.mdb");
-    let mut x = DiskStore::new(Some(&path)).unwrap();
-    x.set_cache_len(1_000_000);
-    println!("heed len: {}", x.len());
+fn heed_bench(size: usize) {
+    let path = Path::new("/tmp/card_platypus").join("heed_bench.mdb");
+
+    fs::create_dir_all(path.clone()).unwrap();
+
+    let mut env_builder = EnvOpenOptions::new();
+    unsafe {
+        // Only sync meta data at the end of a transaction, this can hurt the durability
+        // of the database, but cannot lead to corruption
+        env_builder.flag(Flags::MdbNoMetaSync);
+        // Disable OS read-ahead, can improve perf when db is larger than RAM
+        env_builder.flag(Flags::MdbNoRdAhead);
+        // Improves write performance, but can cause corruption if there is a bug in application
+        // code that overwrite the memory address
+        env_builder.flag(Flags::MdbWriteMap);
+        // Avoid zeroing memory before use -- can cause issues with
+        // sensitive data, but not a risk here.
+        env_builder.flag(Flags::MdbNoMemInit);
+    }
+    const MAX_DB_SIZE_GB: usize = 10;
+    env_builder.map_size(MAX_DB_SIZE_GB * 1024 * 1024 * 1024);
+
+    let env = env_builder.open(path).unwrap();
+    // need to open rather than create for WriteMap to work
+    let x: Database<ByteSlice, SerdeBincode<InfoState>> = env.open_database(None).unwrap().unwrap();
+    let cache = Mutex::new(HashMap::new());
 
     let generator = get_generator(size);
 
     generator.par_bridge().for_each(|(k, v)| {
-        {
-            x.get(&k);
+        if cache.lock().unwrap().get(&k).is_none() {
+            let rtxn = env.read_txn().unwrap();
+            let k = k.as_slice().iter().map(|x| x.0).collect_vec();
+            x.get(&rtxn, &k).unwrap();
         }
-        do_work();
-        x.put(k, v);
-    });
 
-    x.commit();
-    x
+        do_work();
+        cache.lock().unwrap().insert(k, v);
+
+        let mut c = cache.lock().unwrap();
+        if c.len() > 1_000_000 {
+            let mut wtxn = env.write_txn().unwrap();
+            for (k, v) in c.drain() {
+                let k = k.as_slice().iter().map(|x| x.0).collect_vec();
+                x.put(&mut wtxn, &k, &v).unwrap();
+            }
+            wtxn.commit().unwrap();
+        }
+    });
 }
 
 fn rocksdb_bench(size: usize) {
@@ -126,28 +158,25 @@ fn rocksdb_bench(size: usize) {
     let cache = Mutex::new(HashMap::new());
     let generator = get_generator(size);
     generator.par_bridge().for_each(|(k, v)| {
-        let k = k.as_slice().iter().map(|x| x.0).collect_vec();
-        {
+        if cache.lock().unwrap().get(&k).is_none() {
+            let k = k.as_slice().iter().map(|x| x.0).collect_vec();
             x.get(&k).unwrap();
         }
         do_work();
         let data = rmp_serde::encode::to_vec(&v).unwrap();
         cache.lock().unwrap().insert(k, data);
 
-        if cache.lock().unwrap().len() > 1_000_000 {
-            for (k, v) in cache.lock().unwrap().drain() {
-                x.put(k, v).unwrap();
+        let mut c = cache.lock().unwrap();
+        if c.len() > 1_000_000 {
+            for (k, v) in c.drain() {
+                let k = k.as_slice().iter().map(|x| x.0).collect_vec();
+                x.put(&k, &v).unwrap();
             }
         }
     });
-
-    for (k, v) in cache.lock().unwrap().drain() {
-        x.put(k, v).unwrap();
-    }
-    x.flush().unwrap();
 }
 
-fn file_reading(size: usize) {
+fn mem_map(size: usize) {
     let serialized = std::fs::read("/tmp/card_platypus/phf").unwrap();
     let phf: Mphf<IStateKey> = rmp_serde::from_slice(&serialized).unwrap();
 
@@ -161,12 +190,9 @@ fn file_reading(size: usize) {
         .open(path)
         .unwrap();
 
-    const BUCKET_SIZE: usize = 200;
-    // todo: organically grow the file
+    const BUCKET_SIZE: usize = 200; // approximation of size of serialized infostate
     file.set_len((size * BUCKET_SIZE) as u64).unwrap();
-
     let mut mmap = unsafe { MmapMut::map_mut(&file).unwrap() };
-    let mut count = 0;
 
     let generator = get_generator(size);
     generator.for_each(|(k, v)| {
@@ -174,17 +200,12 @@ fn file_reading(size: usize) {
 
         let start = index * BUCKET_SIZE;
         let data = &mmap[start..start + BUCKET_SIZE];
-        let s: InfoState = rmp_serde::from_slice(data).unwrap_or(InfoState::new(vec![]));
+        let _s: InfoState = rmp_serde::from_slice(data).unwrap_or(InfoState::new(vec![]));
 
         do_work();
         let data = rmp_serde::to_vec(&v).unwrap();
-        assert!(data.len() <= BUCKET_SIZE);
+        assert!(data.len() <= BUCKET_SIZE); // if this is false, we're overflowing into another bucket
         mmap[start..start + data.len()].copy_from_slice(&data);
-        count += 1;
-
-        if count % 1_000_000 == 0 {
-            mmap.flush().unwrap();
-        }
     });
 
     mmap.flush().unwrap();
@@ -215,13 +236,6 @@ fn generate_phf(path: &str, size: usize) -> anyhow::Result<()> {
     assert!(hashes == expected_hashes);
 
     let serialized = rmp_serde::to_vec(&phf)?;
-
-    let f = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .open(path)?;
-
     std::fs::write(path, serialized)?;
 
     Ok(())
