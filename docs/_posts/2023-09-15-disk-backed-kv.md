@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "Finding a disk-backed key-value store for a euchre bot"
+title:  "Building a disk-backed key-value store for a euchre bot"
 categories: project-log
 ---
 
