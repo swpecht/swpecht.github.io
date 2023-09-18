@@ -6,8 +6,6 @@ use card_platypus::{
         ismcts::Evaluator,
         open_hand_solver::OpenHandSolver,
     },
-    cfragent::{CFRAgent, CFRAlgorithm},
-    database::memory_node_store::MemoryNodeStore,
     game::{bluff::Bluff, euchre::Euchre, get_games, kuhn_poker::KuhnPoker, GameState},
 };
 use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
@@ -41,11 +39,12 @@ fn test_alg_open_hand_solver_euchre() {
 
 #[test]
 fn test_cfr_exploitability() {
-    let ns = MemoryNodeStore::default();
-    let mut agent = CFRAgent::new(|| (KuhnPoker::game().new)(), 1, ns, CFRAlgorithm::CFRCS);
-    agent.train(1_000_000);
+    cfres::feature::enable(cfres::feature::LinearCFR);
 
-    let exploitability = exploitability(|| (KuhnPoker::game().new)(), &mut agent.ns).nash_conv;
+    let mut alg = CFRES::new(|| (KuhnPoker::game().new)(), SeedableRng::seed_from_u64(43));
+    alg.train(5_000_000);
+
+    let exploitability = exploitability(|| (KuhnPoker::game().new)(), &mut alg).nash_conv;
     assert_relative_eq!(exploitability, 0.0, epsilon = 0.001);
 }
 
@@ -54,7 +53,8 @@ fn test_cfr_euchre() {
     cfres::feature::enable(cfres::feature::NormalizeSuit);
     cfres::feature::enable(cfres::feature::LinearCFR);
 
-    let mut alg = CFRES::new(|| (Euchre::game().new)(), SeedableRng::seed_from_u64(43));
+    let mut alg =
+        CFRES::new_euchre_bidding(|| (Euchre::game().new)(), SeedableRng::seed_from_u64(43), 0);
     alg.train(1);
 }
 

@@ -1,26 +1,10 @@
 use card_platypus::{
     actions,
-    cfragent::CFRAlgorithm,
-    database::memory_node_store::MemoryNodeStore,
     game::euchre::{Euchre, EuchreGameState},
     game::GameState,
 };
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rand::{seq::SliceRandom, thread_rng};
-
-use card_platypus::{cfragent::CFRAgent, game::kuhn_poker::KuhnPoker};
-
-fn train_cfr_kp() {
-    let game_generator = || (KuhnPoker::game().new)();
-    // Verify the nash equilibrium is reached. From https://en.wikipedia.org/wiki/Kuhn_poker
-    let mut agent = CFRAgent::new(
-        game_generator,
-        42,
-        MemoryNodeStore::default(),
-        CFRAlgorithm::CFRCS,
-    );
-    agent.train(100);
-}
 
 /// Attempts to mimic the call structure of CFR without actually doing it
 fn traverse_game_tree(n: usize) {
@@ -70,8 +54,6 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("traverse euchre game tree", |b| {
         b.iter(|| traverse_game_tree(black_box(10000)))
     });
-
-    c.bench_function("cfr kuhn poker 100", |b| b.iter(train_cfr_kp));
 }
 
 criterion_group!(benches, criterion_benchmark);

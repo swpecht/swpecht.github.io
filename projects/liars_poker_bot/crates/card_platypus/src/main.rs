@@ -7,13 +7,8 @@ use clap::{command, Parser, Subcommand, ValueEnum};
 use card_platypus::actions;
 use card_platypus::agents::{Agent, PlayerAgent, PolicyAgent};
 
-use card_platypus::algorithms::exploitability::{self};
-
 use card_platypus::algorithms::open_hand_solver::OpenHandSolver;
 use card_platypus::algorithms::pimcts::PIMCTSBot;
-use card_platypus::cfragent::cfrnode::CFRNode;
-use card_platypus::cfragent::{CFRAgent, CFRAlgorithm};
-use card_platypus::database::memory_node_store::MemoryNodeStore;
 
 use card_platypus::game::bluff::BluffGameState;
 
@@ -21,7 +16,7 @@ use card_platypus::game::euchre::{Euchre, EuchreGameState};
 use card_platypus::game::kuhn_poker::KPGameState;
 use card_platypus::game::GameState;
 
-use log::{debug, info, set_max_level, LevelFilter};
+use log::{set_max_level, LevelFilter};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
@@ -78,9 +73,6 @@ pub struct Args {
 
     #[clap(short)]
     file: Option<String>,
-
-    #[clap(long, value_enum, default_value_t=CFRAlgorithm::CFRCS)]
-    alg: CFRAlgorithm,
 
     /// Allow module to log
     #[structopt(long = "module")]
@@ -221,27 +213,6 @@ fn run(_args: Args) {
     //         ));
     //     }
     // };
-}
-
-fn _train_cfr_agent<G: GameState>(mut agent: CFRAgent<G, MemoryNodeStore<CFRNode>>) {
-    let mut iteration = 1;
-
-    while iteration < 100_001 {
-        agent.train(iteration);
-        debug!(
-            "finished iteration: {}, starting best response calculation",
-            iteration
-        );
-        let exploitability =
-            exploitability::exploitability(agent.game_generator, &mut agent.ns).nash_conv;
-        info!(
-            "exploitability:\t{}\t{}\t{}",
-            iteration,
-            agent.nodes_touched(),
-            exploitability
-        );
-        iteration *= 10;
-    }
 }
 
 fn run_play(_args: Args) {
