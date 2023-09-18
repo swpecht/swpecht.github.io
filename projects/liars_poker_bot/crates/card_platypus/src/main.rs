@@ -1,7 +1,9 @@
 use std::fs::OpenOptions;
 use std::mem;
+use std::path::Path;
 
-use card_platypus::algorithms::cfres;
+use card_platypus::algorithms::cfres::{self, InfoState};
+use card_platypus::database::generate_euchre_phf;
 use clap::{command, Parser, Subcommand, ValueEnum};
 
 use card_platypus::actions;
@@ -153,9 +155,10 @@ fn run_scratch(_args: Args) {
     println!("kuhn poker size: {}", mem::size_of::<KPGameState>());
     println!("euchre size: {}", mem::size_of::<EuchreGameState>());
 
-    println!("cfres node {}", mem::size_of::<usize>());
+    println!("cfres node {}", mem::size_of::<InfoState>());
 
-    train_cfr_from_config("baseline").unwrap();
+    let n = generate_euchre_phf(Path::new("/tmp/card_platypus/euchre_phf")).unwrap();
+    println!("generated phf for {} istates", n);
 }
 
 fn run_analyze(args: Args) {

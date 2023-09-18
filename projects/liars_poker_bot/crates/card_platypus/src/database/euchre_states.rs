@@ -1,19 +1,19 @@
 use std::collections::HashSet;
 
-use card_platypus::{
+use itertools::Itertools;
+use EAction::*;
+
+use crate::{
     game::{euchre::actions::EAction, Action},
     istate::IStateKey,
 };
-
-use itertools::Itertools;
-use EAction::*;
 const FACE_UP: &[EAction] = &[NS, TS, JS, QS, KS, AS];
 const DEAL: &[EAction] = &[
     NC, TC, JC, QC, KC, AC, NS, TS, JS, QS, KS, AS, NH, TH, JH, QH, KH, AH, ND, TD, JD, QD, KD, AD,
 ];
 
 #[derive(PartialEq, PartialOrd, Default, Clone, Copy, Debug)]
-enum Termination {
+pub enum Termination {
     #[default]
     Deal,
     Pickup,
@@ -24,7 +24,7 @@ enum Termination {
     },
 }
 
-struct IStateBuilder {
+pub struct IStateBuilder {
     actions: Vec<EAction>,
     phase: Vec<Termination>,
 }
@@ -140,7 +140,7 @@ impl Default for IStateBuilder {
     }
 }
 
-fn generate_euchre_states(
+pub fn generate_euchre_states(
     builder: &mut IStateBuilder,
     istates: &mut HashSet<IStateKey>,
     termination: Termination,
@@ -166,7 +166,7 @@ fn generate_euchre_states(
 mod tests {
     use std::collections::HashSet;
 
-    use crate::scripts::euchre_states::Termination;
+    use super::Termination;
 
     use super::{generate_euchre_states, IStateBuilder};
 
