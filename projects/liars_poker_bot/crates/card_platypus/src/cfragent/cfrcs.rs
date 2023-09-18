@@ -5,7 +5,7 @@ use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
 use crate::{
     alloc::Pool,
-    cfragent::cfrnode::ActionVec,
+    collections::actionvec::ActionVec,
     database::NodeStore,
     game::{Action, GameState, Player},
 };

@@ -166,9 +166,6 @@ fn generate_euchre_states(
 mod tests {
     use std::collections::HashSet;
 
-    use card_platypus::game::euchre::actions::EAction;
-    use itertools::Itertools;
-
     use crate::scripts::euchre_states::Termination;
 
     use super::{generate_euchre_states, IStateBuilder};

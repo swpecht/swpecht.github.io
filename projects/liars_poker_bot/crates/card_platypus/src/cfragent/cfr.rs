@@ -5,13 +5,12 @@ use log::{debug, trace};
 use crate::{
     actions,
     cfragent::cfrnode::CFRNode,
+    collections::actionvec::ActionVec,
     database::{memory_node_store::MemoryNodeStore, NodeStore},
     game::kuhn_poker::{KPAction, KuhnPoker},
     game::{GameState, Player},
     istate::IStateKey,
 };
-
-use super::cfrnode::ActionVec;
 
 pub trait Algorithm {
     fn run<T: GameState, N: NodeStore<CFRNode>>(

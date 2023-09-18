@@ -1,6 +1,6 @@
 use crate::{
     actions,
-    cfragent::cfrnode::ActionVec,
+    collections::actionvec::ActionVec,
     game::{Action, GameState},
 };
 

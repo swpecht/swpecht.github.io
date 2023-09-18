@@ -4,7 +4,7 @@ use log::{debug, log_enabled, trace};
 
 use crate::{
     actions,
-    cfragent::cfrnode::ActionVec,
+    collections::actionvec::ActionVec,
     game::{Action, GameState, Player},
     istate::IStateKey,
     policy::Policy,
@@ -193,7 +193,7 @@ impl<'a, G: GameState, P: Policy<G>> TabularBestResponse<'a, G, P> {
 
 impl<'a, G: GameState, P: Policy<G> + Clone> Policy<G> for TabularBestResponse<'a, G, P> {
     /// Returns the policy for a player in a state.
-    fn action_probabilities(&mut self, gs: &G) -> crate::cfragent::cfrnode::ActionVec<f64> {
+    fn action_probabilities(&mut self, gs: &G) -> ActionVec<f64> {
         let actions = actions!(gs);
         let mut probs = ActionVec::new(&actions);
         let br = self.best_response_action(&gs.istate_key(gs.cur_player()));

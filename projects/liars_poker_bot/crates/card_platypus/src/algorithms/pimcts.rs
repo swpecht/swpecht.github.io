@@ -6,7 +6,7 @@ use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 use crate::{
     actions,
     agents::{Agent, Seedable},
-    cfragent::cfrnode::ActionVec,
+    collections::actionvec::ActionVec,
     game::{Action, GameState, Player},
     policy::Policy,
 };

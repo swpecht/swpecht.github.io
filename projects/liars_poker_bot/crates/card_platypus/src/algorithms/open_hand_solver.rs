@@ -10,7 +10,7 @@ use log::trace;
 use crate::{
     actions,
     alloc::Pool,
-    cfragent::cfrnode::ActionVec,
+    collections::actionvec::ActionVec,
     game::{
         euchre::{
             processors::{euchre_early_terminate, process_euchre_actions},

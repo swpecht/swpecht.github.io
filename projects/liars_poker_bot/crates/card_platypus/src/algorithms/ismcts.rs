@@ -13,7 +13,7 @@ use rustc_hash::FxHashMap;
 use crate::{
     actions,
     agents::Agent,
-    cfragent::cfrnode::ActionVec,
+    collections::actionvec::ActionVec,
     game::{Action, GameState, Player},
     istate::IStateKey,
     policy::Policy,

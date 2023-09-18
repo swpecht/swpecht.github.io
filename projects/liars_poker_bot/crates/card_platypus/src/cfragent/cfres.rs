@@ -26,7 +26,7 @@ use crate::{
         pimcts::PIMCTSBot,
     },
     alloc::Pool,
-    collections::{actionlist::ActionList, diskstore::DiskStore},
+    collections::{actionlist::ActionList, actionvec::ActionVec, diskstore::DiskStore},
     counter,
     game::{
         euchre::{ismorphic::EuchreNormalizer, processors::post_cards_played, EuchreGameState},
@@ -36,7 +36,6 @@ use crate::{
     policy::Policy,
 };
 
-use super::cfrnode::ActionVec;
 use features::features;
 
 /// Number of iterations to stop doing the linear CFR normalization

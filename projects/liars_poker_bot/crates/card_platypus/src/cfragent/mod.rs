@@ -14,13 +14,14 @@ use crate::{
         cfr::{Algorithm, VanillaCFR},
         cfrcs::CFRCS,
     },
+    collections::actionvec::ActionVec,
     database::NodeStore,
     game::{Action, GameState},
     istate::IStateKey,
     policy::Policy,
 };
 
-use self::cfrnode::{ActionVec, CFRNode};
+use self::cfrnode::CFRNode;
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub enum CFRAlgorithm {
@@ -122,7 +123,8 @@ mod tests {
     use crate::{
         actions,
         agents::Agent,
-        cfragent::{cfrnode::ActionVec, CFRAlgorithm},
+        cfragent::CFRAlgorithm,
+        collections::actionvec::ActionVec,
         database::memory_node_store::MemoryNodeStore,
         game::{
             kuhn_poker::{KPAction, KuhnPoker},
