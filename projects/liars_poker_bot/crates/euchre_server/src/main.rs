@@ -16,7 +16,7 @@ use actix_web::{
 use card_platypus::{
     actions,
     agents::Agent,
-    cfragent::cfres::CFRES,
+    algorithms::cfres::CFRES,
     game::{
         euchre::{Euchre, EuchreGameState},
         Action, GameState,

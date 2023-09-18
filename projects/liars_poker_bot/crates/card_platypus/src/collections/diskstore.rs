@@ -7,7 +7,7 @@ use dashmap::{
 use heed::{flags::Flags, types::SerdeBincode, Database, Env, EnvOpenOptions};
 use itertools::Itertools;
 
-use crate::{cfragent::cfres::InfoState, istate::IStateKey};
+use crate::{algorithms::cfres::InfoState, istate::IStateKey};
 
 const DEFAULT_CACHE_LEN: usize = 30_000_000;
 const MAX_DB_SIZE_GB: usize = 200;

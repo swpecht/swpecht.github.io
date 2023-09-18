@@ -2,10 +2,10 @@ use std::{cell::RefCell, collections::HashMap, path::Path, rc::Rc};
 
 use card_platypus::{
     agents::{Agent, PolicyAgent},
+    algorithms::cfres::CFRES,
     algorithms::{
         ismcts::ResampleFromInfoState, open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot,
     },
-    cfragent::cfres::CFRES,
     game::{
         bluff::Bluff,
         euchre::{actions::Card, Euchre, EuchreGameState},

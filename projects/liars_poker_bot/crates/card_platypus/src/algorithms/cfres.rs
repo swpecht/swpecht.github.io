@@ -549,9 +549,9 @@ mod tests {
 
     use rand::SeedableRng;
 
-    use crate::{cfragent::cfres::CFRES, game::kuhn_poker::KuhnPoker};
+    use crate::game::kuhn_poker::KuhnPoker;
 
-    use super::feature;
+    use super::{feature, CFRES};
 
     #[test]
     fn cfres_train_test() {

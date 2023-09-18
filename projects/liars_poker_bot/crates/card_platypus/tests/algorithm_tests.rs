@@ -1,12 +1,12 @@
 use approx::assert_relative_eq;
 use card_platypus::{
     algorithms::{
-        exploitability::exploitability, ismcts::Evaluator, open_hand_solver::OpenHandSolver,
-    },
-    cfragent::{
         cfres::{self, CFRES},
-        CFRAgent, CFRAlgorithm,
+        exploitability::exploitability,
+        ismcts::Evaluator,
+        open_hand_solver::OpenHandSolver,
     },
+    cfragent::{CFRAgent, CFRAlgorithm},
     database::memory_node_store::MemoryNodeStore,
     game::{bluff::Bluff, euchre::Euchre, get_games, kuhn_poker::KuhnPoker, GameState},
 };

@@ -2,10 +2,10 @@ use std::{collections::HashMap, fs, ops::Deref, path::Path};
 
 use card_platypus::{
     agents::{Agent, Seedable},
+    algorithms::cfres::{self, CFRES},
     algorithms::{
         ismcts::ResampleFromInfoState, open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot,
     },
-    cfragent::cfres::{self, CFRES},
     game::{
         euchre::{
             actions::{Card, EAction},

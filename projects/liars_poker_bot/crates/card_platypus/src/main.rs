@@ -1,6 +1,7 @@
 use std::fs::OpenOptions;
 use std::mem;
 
+use card_platypus::algorithms::cfres;
 use clap::{command, Parser, Subcommand, ValueEnum};
 
 use card_platypus::actions;
@@ -11,7 +12,7 @@ use card_platypus::algorithms::exploitability::{self};
 use card_platypus::algorithms::open_hand_solver::OpenHandSolver;
 use card_platypus::algorithms::pimcts::PIMCTSBot;
 use card_platypus::cfragent::cfrnode::CFRNode;
-use card_platypus::cfragent::{cfres, CFRAgent, CFRAlgorithm};
+use card_platypus::cfragent::{CFRAgent, CFRAlgorithm};
 use card_platypus::database::memory_node_store::MemoryNodeStore;
 
 use card_platypus::game::bluff::BluffGameState;

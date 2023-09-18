@@ -8,8 +8,8 @@ use std::{
 
 use boomphf::Mphf;
 use card_platypus::{
+    algorithms::cfres::InfoState,
     alloc::tracking::{Stats, TrackingAllocator},
-    cfragent::cfres::InfoState,
     collections::actionlist::ActionList,
     game::Action,
     istate::{IStateKey, NormalizedAction},

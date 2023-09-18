@@ -1,6 +1,5 @@
 pub mod cfr;
 pub mod cfrcs;
-pub mod cfres;
 pub mod cfrnode;
 
 use clap::ValueEnum;

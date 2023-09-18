@@ -1,3 +1,4 @@
+pub mod cfres;
 pub mod exploitability;
 pub mod ismcts;
 pub mod open_hand_solver;
