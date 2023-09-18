@@ -63,8 +63,13 @@ pub fn main() {
 
     run_and_track("mutex hashmap", size, mutex_hashmap_bench);
     run_and_track("dashmap", size, dashmap_bench);
-    run_and_track("heed - cached", size, heed_bench);
-    run_and_track("rocksdb - cached writes", size, rocksdb_bench);
+
+    #[cfg(feature = "storage-benchmark")]
+    {
+        run_and_track("heed - cached", size, heed_bench);
+        run_and_track("rocksdb - cached writes", size, rocksdb_bench);
+    }
+
     run_and_track("mem map w/ phf, single thread", size, mem_map);
 }
 
