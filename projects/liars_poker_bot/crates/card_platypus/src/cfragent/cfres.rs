@@ -26,7 +26,7 @@ use crate::{
         pimcts::PIMCTSBot,
     },
     alloc::Pool,
-    collections::diskstore::DiskStore,
+    collections::{actionlist::ActionList, diskstore::DiskStore},
     counter,
     game::{
         euchre::{ismorphic::EuchreNormalizer, processors::post_cards_played, EuchreGameState},
@@ -65,7 +65,7 @@ enum AverageType {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct InfoState {
-    pub actions: Vec<NormalizedAction>,
+    pub actions: ActionList,
     pub regrets: Vec<f64>,
     pub avg_strategy: Vec<f64>,
     pub last_iteration: usize,
@@ -75,7 +75,7 @@ impl InfoState {
     pub fn new(normalized_actions: Vec<NormalizedAction>) -> Self {
         let n = normalized_actions.len();
         Self {
-            actions: normalized_actions,
+            actions: ActionList::new(&normalized_actions),
             regrets: vec![1.0 / 1e6; n],
             avg_strategy: vec![1.0 / 1e6; n],
             last_iteration: 0,
@@ -84,7 +84,7 @@ impl InfoState {
 
     pub fn avg_strategy(&self) -> Vec<(NormalizedAction, f64)> {
         self.actions
-            .clone()
+            .to_vec()
             .into_iter()
             .zip(self.avg_strategy.clone())
             .collect_vec()
@@ -92,7 +92,7 @@ impl InfoState {
 
     pub fn regrets(&self) -> Vec<(NormalizedAction, f64)> {
         self.actions
-            .clone()
+            .to_vec()
             .into_iter()
             .zip(self.regrets.clone())
             .collect_vec()
@@ -455,8 +455,7 @@ fn add_regret(infostate: &mut InfoState, action: NormalizedAction, amount: f64, 
 
     let idx = infostate
         .actions
-        .iter()
-        .position(|&x| x == action)
+        .index(action)
         .expect("couldn't find action");
     infostate.regrets[idx] += amount;
 }
@@ -464,8 +463,7 @@ fn add_regret(infostate: &mut InfoState, action: NormalizedAction, amount: f64, 
 fn add_avstrat(infostate: &mut InfoState, action: NormalizedAction, amount: f64) {
     let idx = infostate
         .actions
-        .iter()
-        .position(|&x| x == action)
+        .index(action)
         .expect("couldn't find action");
     infostate.avg_strategy[idx] += amount;
 }

@@ -149,12 +149,16 @@ impl NormalizedIstate {
 }
 
 /// Helper type to keep track of if an action is normalized or not
-#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Copy)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Copy, Debug)]
 pub struct NormalizedAction(Action);
 
 impl NormalizedAction {
     pub fn new(action: Action) -> Self {
         Self(action)
+    }
+
+    pub fn new_from_id(id: u8) -> Self {
+        Self(Action(id))
     }
 
     pub fn get(self) -> Action {

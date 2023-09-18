@@ -1,4 +1,4 @@
-use std::{collections::HashSet, default};
+use std::collections::HashSet;
 
 use card_platypus::{
     game::{euchre::actions::EAction, Action},
@@ -195,6 +195,6 @@ mod tests {
         //     .take(100)
         //     .for_each(|x| println!("{:?}", x.iter().map(|a| EAction::from(*a)).collect_vec()));
 
-        todo!("discard not visible to all players");
+        // todo!("discard not visible to all players");
     }
 }

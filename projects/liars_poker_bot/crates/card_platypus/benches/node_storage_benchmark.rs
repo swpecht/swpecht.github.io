@@ -10,6 +10,7 @@ use boomphf::Mphf;
 use card_platypus::{
     alloc::tracking::{Stats, TrackingAllocator},
     cfragent::cfres::InfoState,
+    collections::actionlist::ActionList,
     game::Action,
     istate::{IStateKey, NormalizedAction},
 };
@@ -277,9 +278,11 @@ impl Iterator for DataGenerator {
         (0..key_length).for_each(|_| key.push(Action(self.rng.gen_range(0..32))));
 
         let data = InfoState {
-            actions: (0..5)
-                .map(|_| NormalizedAction::new(Action(self.rng.gen_range(0..32))))
-                .collect(),
+            actions: ActionList::new(
+                &(0..5)
+                    .map(|_| NormalizedAction::new(Action(self.rng.gen_range(0..32))))
+                    .collect_vec(),
+            ),
             regrets: (0..5).map(|_| self.rng.gen()).collect(),
             avg_strategy: (0..5).map(|_| self.rng.gen()).collect(),
             last_iteration: self.rng.gen(),
