@@ -43,8 +43,6 @@ pub struct PassOnBowerCFRArgs {
     #[clap(long, value_enum, default_value_t=DealType::All)]
     deal_type: DealType,
     #[clap(long, default_value_t = false)]
-    no_normalize_suit: bool,
-    #[clap(long, default_value_t = false)]
     no_linear_cfr: bool,
     #[clap(long, default_value_t = false)]
     single_thread: bool,
@@ -57,12 +55,6 @@ pub fn run_pass_on_bower_cfr(args: PassOnBowerCFRArgs) {
         cfres::feature::enable(cfres::feature::LinearCFR);
     } else {
         cfres::feature::disable(cfres::feature::LinearCFR);
-    }
-
-    if !args.no_normalize_suit {
-        cfres::feature::enable(cfres::feature::NormalizeSuit);
-    } else {
-        cfres::feature::disable(cfres::feature::NormalizeSuit);
     }
 
     if args.single_thread {
@@ -81,7 +73,7 @@ pub fn train_cfr(args: PassOnBowerCFRArgs, generator: fn() -> EuchreGameState) {
     info!("starting new run of pass on bower cfr. args {:?}", args);
 
     let pb = ProgressBar::new(args.training_iterations as u64);
-    let mut alg = CFRES::new_euchre_bidding(generator, get_rng(), args.max_cards_played);
+    let mut alg = CFRES::new_euchre(generator, get_rng(), args.max_cards_played);
 
     let infostate_path = args.weight_file.as_str();
     let loaded_states = alg.load(Path::new(infostate_path));
@@ -200,7 +192,7 @@ struct JSONRow {
 
 pub fn parse_weights(infostate_path: &str) {
     let generator = || generate_face_up_deals(Card::JS);
-    let mut alg = CFRES::new_euchre_bidding(generator, get_rng(), 0);
+    let mut alg = CFRES::new_euchre(generator, get_rng(), 0);
 
     let loaded_states = alg.load(Path::new(infostate_path));
     println!(
@@ -252,7 +244,7 @@ pub fn parse_weights(infostate_path: &str) {
 pub fn analyze_istate(num_games: usize) {
     let istate = EuchreGameState::from("9sTsQsKsAs|9cTcKcAcTd|JdQdKdAd9h|JcQcJhAh9d|Js");
     let mut rng = get_rng();
-    let mut agent = CFRES::new_euchre_bidding(Euchre::new_state, rng.clone(), 0);
+    let mut agent = CFRES::new_euchre(Euchre::new_state, rng.clone(), 0);
     let loaded = agent.load(Path::new("/var/lib/card_platypus/infostate.baseline"));
     info!("loaded {}", loaded);
 

@@ -50,11 +50,9 @@ fn test_cfr_exploitability() {
 
 #[test]
 fn test_cfr_euchre() {
-    cfres::feature::enable(cfres::feature::NormalizeSuit);
     cfres::feature::enable(cfres::feature::LinearCFR);
 
-    let mut alg =
-        CFRES::new_euchre_bidding(|| (Euchre::game().new)(), SeedableRng::seed_from_u64(43), 0);
+    let mut alg = CFRES::new_euchre(|| (Euchre::game().new)(), SeedableRng::seed_from_u64(43), 0);
     alg.train(1);
 }
 

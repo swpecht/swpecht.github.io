@@ -49,7 +49,6 @@ counter!(nodes_touched);
 
 features! {
     pub mod feature {
-        const NormalizeSuit = 0b10000000,
         const LinearCFR = 0b01000000,
         const SingleThread = 0b00100000
     }
@@ -135,17 +134,15 @@ impl<G> Seedable for CFRES<G> {
 }
 
 impl CFRES<EuchreGameState> {
-    pub fn new_euchre_bidding(
+    pub fn new_euchre(
         game_generator: fn() -> EuchreGameState,
         mut rng: StdRng,
         max_cards_played: usize,
     ) -> Self {
+        assert_eq!(max_cards_played, 0, "only implemented for 0 right now");
+
         let normalizer: Box<dyn IStateNormalizer<EuchreGameState>> =
-            if feature::is_enabled(feature::NormalizeSuit) {
-                Box::<EuchreNormalizer>::default()
-            } else {
-                Box::<NoOpNormalizer>::default()
-            };
+            Box::<EuchreNormalizer>::default();
 
         let pimcts_seed = rng.gen();
 
@@ -555,7 +552,6 @@ mod tests {
 
     #[test]
     fn cfres_train_test() {
-        feature::enable(feature::NormalizeSuit);
         feature::enable(feature::LinearCFR);
 
         let mut alg = CFRES::new(|| (KuhnPoker::game().new)(), SeedableRng::seed_from_u64(43));
