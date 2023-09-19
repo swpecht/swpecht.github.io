@@ -26,8 +26,8 @@ pub struct NodeStore {
 impl NodeStore {
     /// len is the number of infostates to provision for
     pub fn new_euchre(file: Option<&Path>) -> anyhow::Result<Self> {
-        let (phf, n) = generate_euchre_phf()?;
-        let mmap = get_mmap(file, n)?;
+        let (phf, n) = generate_euchre_phf().context("failed to generate phf")?;
+        let mmap = get_mmap(file, n).context("failed to create mmap")?;
         Ok(Self { phf, mmap })
     }
 
@@ -71,16 +71,18 @@ impl NodeStore {
 fn get_mmap(file: Option<&Path>, len: usize) -> anyhow::Result<MmapMut> {
     if let Some(path) = file {
         let dir = path.parent().context("couldn't get file parent")?;
-        std::fs::create_dir_all(dir)?;
+        std::fs::create_dir_all(dir).context("failed to create directory")?;
 
         let file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
-            .open(path)?;
+            .open(path)
+            .context("failed to create mmap file")?;
 
-        file.set_len((len * BUCKET_SIZE) as u64).unwrap();
-        Ok(unsafe { MmapMut::map_mut(&file).unwrap() })
+        file.set_len((len * BUCKET_SIZE) as u64)
+            .context("failed to set length")?;
+        Ok(unsafe { MmapMut::map_mut(&file)? })
     } else {
         Ok(memmap2::MmapOptions::new()
             .len(len * BUCKET_SIZE)
