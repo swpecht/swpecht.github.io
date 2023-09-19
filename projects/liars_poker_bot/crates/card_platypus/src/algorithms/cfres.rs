@@ -29,7 +29,9 @@ use crate::{
     collections::{actionlist::ActionList, actionvec::ActionVec, diskstore::DiskStore},
     counter,
     game::{
+        bluff::{Bluff, BluffGameState},
         euchre::{ismorphic::EuchreNormalizer, processors::post_cards_played, EuchreGameState},
+        kuhn_poker::{KPGameState, KuhnPoker},
         Action, GameState, Player,
     },
     istate::{IStateKey, IStateNormalizer, NoOpNormalizer, NormalizedAction, NormalizedIstate},
@@ -165,12 +167,13 @@ impl CFRES<EuchreGameState> {
     }
 }
 
-impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
-    pub fn new(game_generator: fn() -> G, mut rng: StdRng) -> Self {
+impl CFRES<KPGameState> {
+    pub fn new_kp() -> Self {
+        let mut rng: StdRng = SeedableRng::seed_from_u64(42);
         let pimcts_seed = rng.gen();
         Self {
             vector_pool: Pool::new(Vec::new),
-            game_generator,
+            game_generator: KuhnPoker::new_state,
             average_type: AverageType::default(),
             infostates: Arc::new(DiskStore::new(None).unwrap()),
             depth_checker: Box::new(NoOpDepthChecker {}),
@@ -184,7 +187,31 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
             iteration: Arc::new(AtomicUsize::new(0)),
         }
     }
+}
 
+impl CFRES<BluffGameState> {
+    pub fn new_bluff_11() -> Self {
+        let mut rng: StdRng = SeedableRng::seed_from_u64(42);
+        let pimcts_seed = rng.gen();
+        Self {
+            vector_pool: Pool::new(Vec::new),
+            game_generator: || Bluff::new_state(1, 1),
+            average_type: AverageType::default(),
+            infostates: Arc::new(DiskStore::new(None).unwrap()),
+            depth_checker: Box::new(NoOpDepthChecker {}),
+            play_bot: PIMCTSBot::new(
+                50,
+                OpenHandSolver::default(),
+                SeedableRng::seed_from_u64(pimcts_seed),
+            ),
+            evaluator: OpenHandSolver::default(),
+            normalizer: Box::<NoOpNormalizer>::default(),
+            iteration: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+}
+
+impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
     pub fn train(&mut self, n: usize) {
         if feature::is_enabled(feature::SingleThread) {
             for _ in 0..n {
@@ -544,17 +571,13 @@ impl DepthChecker<EuchreGameState> for EuchreDepthChecker {
 #[cfg(test)]
 mod tests {
 
-    use rand::SeedableRng;
-
-    use crate::game::kuhn_poker::KuhnPoker;
-
     use super::{feature, CFRES};
 
     #[test]
     fn cfres_train_test() {
         feature::enable(feature::LinearCFR);
 
-        let mut alg = CFRES::new(|| (KuhnPoker::game().new)(), SeedableRng::seed_from_u64(43));
+        let mut alg = CFRES::new_kp();
         alg.train(10);
     }
 }

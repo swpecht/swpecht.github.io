@@ -41,7 +41,7 @@ fn test_alg_open_hand_solver_euchre() {
 fn test_cfr_exploitability() {
     cfres::feature::enable(cfres::feature::LinearCFR);
 
-    let mut alg = CFRES::new(|| (KuhnPoker::game().new)(), SeedableRng::seed_from_u64(43));
+    let mut alg = CFRES::new_kp();
     alg.train(5_000_000);
 
     let exploitability = exploitability(|| (KuhnPoker::game().new)(), &mut alg).nash_conv;
@@ -61,7 +61,7 @@ fn test_cfres_nash_kuhn_poker() {
     cfres::feature::enable(cfres::feature::LinearCFR);
 
     // Verify the nash equilibrium is reached. From https://en.wikipedia.org/wiki/Kuhn_poker
-    let mut alg = CFRES::new(|| (KuhnPoker::game().new)(), SeedableRng::seed_from_u64(43));
+    let mut alg = CFRES::new_kp();
 
     alg.train(50_000);
     alg.train(50_000);
@@ -73,7 +73,7 @@ fn test_cfres_nash_kuhn_poker() {
 fn test_cfres_nash_bluff11() {
     cfres::feature::enable(cfres::feature::LinearCFR);
 
-    let mut alg = CFRES::new(|| (Bluff::game(1, 1).new)(), SeedableRng::seed_from_u64(43));
+    let mut alg = CFRES::new_bluff_11();
 
     alg.train(2_000_000);
     let exploitability = exploitability(|| (Bluff::game(1, 1).new)(), &mut alg).nash_conv;

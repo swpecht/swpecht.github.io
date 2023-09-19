@@ -95,7 +95,7 @@ fn validate_phf(istates: &HashSet<IStateKey>, phf: &Mphf<IStateKey>) {
     // Get hash value of all objects
     let mut hashes = Vec::new();
     for v in istates {
-        hashes.push(phf.hash(&v));
+        hashes.push(phf.hash(v));
     }
     hashes.sort();
 

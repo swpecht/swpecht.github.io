@@ -39,13 +39,14 @@ struct AppState {
 
 impl Default for AppState {
     fn default() -> Self {
-        let mut bot = CFRES::new(
+        let mut bot = CFRES::new_euchre(
             || panic!("training not supported"),
             StdRng::from_rng(thread_rng()).unwrap(),
+            0,
         );
 
         let n = bot.load(Path::new("/var/lib/card_platypus/infostate.baseline"));
-        info!("loaded bot with {n} infostates");
+        info!("loaded bot with {n} infostates and 0 max cards played");
 
         Self {
             games: Default::default(),
