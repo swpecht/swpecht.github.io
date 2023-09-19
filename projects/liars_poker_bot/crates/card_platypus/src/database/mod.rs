@@ -6,6 +6,7 @@ use itertools::Itertools;
 use memmap2::MmapMut;
 
 use crate::{
+    algorithms::cfres::InfoState,
     database::euchre_states::{generate_euchre_states, IStateBuilder},
     istate::IStateKey,
 };
@@ -21,6 +22,7 @@ pub struct NodeStore {
 }
 
 impl NodeStore {
+    /// len is the number of infostates to provision for
     pub fn new(phf: &Path, file: Option<&Path>, len: usize) -> anyhow::Result<Self> {
         let serialized = std::fs::read(phf)?;
         let phf: Mphf<IStateKey> = rmp_serde::from_slice(&serialized)?;
@@ -42,6 +44,30 @@ impl NodeStore {
         };
 
         Ok(Self { phf, mmap })
+    }
+
+    pub fn get(&self, key: &IStateKey) -> Option<InfoState> {
+        let index: usize = self.phf.hash(key) as usize;
+        let start = index * BUCKET_SIZE;
+        let data = &self.mmap[start..start + BUCKET_SIZE];
+        let info = match rmp_serde::from_slice(data) {
+            Ok(x) => x,
+            Err(_) => return None,
+        };
+        Some(info)
+    }
+
+    pub fn put(&mut self, key: &IStateKey, value: &InfoState) {
+        let data = rmp_serde::to_vec(value).unwrap();
+        assert!(data.len() <= BUCKET_SIZE); // if this is false, we're overflowing into another bucket
+
+        let index: usize = self.phf.hash(key) as usize;
+        let start = index * BUCKET_SIZE;
+        self.mmap[start..start + data.len()].copy_from_slice(&data);
+    }
+
+    pub fn commit(&mut self) -> anyhow::Result<()> {
+        self.mmap.flush().context("failed to flush mmap")
     }
 }
 
