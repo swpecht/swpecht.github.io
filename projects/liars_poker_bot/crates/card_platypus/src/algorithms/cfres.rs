@@ -2,14 +2,11 @@ use std::{
     path::Path,
     sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc,
+        Arc, Mutex,
     },
 };
 
-use dashmap::{
-    mapref::one::{Ref, RefMut},
-    DashMap,
-};
+use dashmap::DashMap;
 use dyn_clone::DynClone;
 use itertools::Itertools;
 use log::{debug, warn};
@@ -26,8 +23,9 @@ use crate::{
         pimcts::PIMCTSBot,
     },
     alloc::Pool,
-    collections::{actionlist::ActionList, actionvec::ActionVec, diskstore::DiskStore},
+    collections::{actionlist::ActionList, actionvec::ActionVec},
     counter,
+    database::NodeStore,
     game::{
         bluff::{Bluff, BluffGameState},
         euchre::{ismorphic::EuchreNormalizer, processors::post_cards_played, EuchreGameState},
@@ -109,7 +107,7 @@ pub struct CFRES<G> {
     game_generator: fn() -> G,
     average_type: AverageType,
     iteration: Arc<AtomicUsize>,
-    infostates: Arc<DiskStore>,
+    infostates: Arc<Mutex<NodeStore>>,
     /// determine if we are at the max depth and should use the rollout
     depth_checker: Box<dyn DepthChecker<G>>,
     normalizer: Box<dyn IStateNormalizer<G>>,
@@ -141,7 +139,10 @@ impl CFRES<EuchreGameState> {
         mut rng: StdRng,
         max_cards_played: usize,
     ) -> Self {
-        assert_eq!(max_cards_played, 0, "only implemented for 0 right now");
+        assert_eq!(
+            max_cards_played, 0,
+            "only implemented for 0 right now, need to change phf"
+        );
 
         let normalizer: Box<dyn IStateNormalizer<EuchreGameState>> =
             Box::<EuchreNormalizer>::default();
@@ -152,7 +153,7 @@ impl CFRES<EuchreGameState> {
             vector_pool: Pool::new(Vec::new),
             game_generator,
             average_type: AverageType::default(),
-            infostates: Arc::new(DiskStore::new(None).unwrap()),
+            infostates: Arc::new(Mutex::new(NodeStore::new_euchre(None).unwrap())),
             // is_max_depth: post_discard_phase,
             depth_checker: Box::new(EuchreDepthChecker { max_cards_played }),
             play_bot: PIMCTSBot::new(
@@ -165,17 +166,34 @@ impl CFRES<EuchreGameState> {
             normalizer,
         }
     }
+
+    pub fn load(&mut self, path: &Path) -> usize {
+        self.infostates = Arc::new(Mutex::new(NodeStore::new_euchre(Some(path)).unwrap()));
+        debug!("counting loaded infostates not yet supported");
+        // let len = self.infostates.len();
+        // debug!(
+        //     "loaded weights for {} infostates with {} iterations",
+        //     self.infostates.len(),
+        //     0
+        // );
+
+        // if len == 0 {
+        //     warn!("no infostates loaded");
+        // }
+
+        0
+    }
 }
 
 impl CFRES<KPGameState> {
     pub fn new_kp() -> Self {
-        let mut rng: StdRng = SeedableRng::seed_from_u64(42);
+        let mut rng: StdRng = SeedableRng::seed_from_u64(43);
         let pimcts_seed = rng.gen();
         Self {
             vector_pool: Pool::new(Vec::new),
             game_generator: KuhnPoker::new_state,
             average_type: AverageType::default(),
-            infostates: Arc::new(DiskStore::new(None).unwrap()),
+            infostates: Arc::new(Mutex::new(NodeStore::new_kp(None).unwrap())),
             depth_checker: Box::new(NoOpDepthChecker {}),
             play_bot: PIMCTSBot::new(
                 50,
@@ -191,13 +209,13 @@ impl CFRES<KPGameState> {
 
 impl CFRES<BluffGameState> {
     pub fn new_bluff_11() -> Self {
-        let mut rng: StdRng = SeedableRng::seed_from_u64(42);
+        let mut rng: StdRng = SeedableRng::seed_from_u64(43);
         let pimcts_seed = rng.gen();
         Self {
             vector_pool: Pool::new(Vec::new),
             game_generator: || Bluff::new_state(1, 1),
             average_type: AverageType::default(),
-            infostates: Arc::new(DiskStore::new(None).unwrap()),
+            infostates: Arc::new(Mutex::new(NodeStore::new_bluff_11(None).unwrap())),
             depth_checker: Box::new(NoOpDepthChecker {}),
             play_bot: PIMCTSBot::new(
                 50,
@@ -227,24 +245,8 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
         self.evaluator.reset();
     }
 
-    pub fn save(&self) {
-        self.infostates.commit();
-    }
-
-    pub fn load(&mut self, path: &Path) -> usize {
-        self.infostates = Arc::new(DiskStore::new(Some(path)).unwrap());
-        let len = self.infostates.len();
-        debug!(
-            "loaded weights for {} infostates with {} iterations",
-            self.infostates.len(),
-            0
-        );
-
-        if len == 0 {
-            warn!("no infostates loaded");
-        }
-
-        len
+    pub fn save(&self) -> anyhow::Result<()> {
+        self.infostates.lock().unwrap().commit()
     }
 
     /// Performs one iteration of external sampling.
@@ -328,7 +330,9 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
         let policy;
         {
             let normalizer = self.normalizer.clone();
-            let infostate_info = self.lookup_entry_mut(&info_state_key, &normalized_actions);
+            let infostate_info = self
+                .lookup_entry(&info_state_key)
+                .unwrap_or_else(|| InfoState::new(normalized_actions.clone()));
             let regrets = infostate_info
                 .regrets()
                 .into_iter()
@@ -369,12 +373,19 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
             // update regrets
             let iteration = self.iteration.load(Ordering::SeqCst);
             let normalizer = self.normalizer.clone();
-            let mut entry = self.lookup_entry_mut(&info_state_key, &normalized_actions);
-            let infostate_info = entry.value_mut();
+            let mut infostate_info = self
+                .lookup_entry(&info_state_key)
+                .unwrap_or_else(|| InfoState::new(normalized_actions.clone()));
             for &a in actions.iter() {
                 let norm_a = normalizer.normalize_action(a, gs);
-                add_regret(infostate_info, norm_a, child_values[a] - value, iteration);
+                add_regret(
+                    &mut infostate_info,
+                    norm_a,
+                    child_values[a] - value,
+                    iteration,
+                );
             }
+            self.put_entry(&info_state_key, infostate_info);
         }
 
         // Simple average does averaging on the opponent node. To do this in a game
@@ -386,12 +397,15 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
         let player_team = player % 2;
         if matches!(self.average_type, AverageType::Simple) && cur_team != player_team {
             let normalizer = self.normalizer.clone();
-            let mut entry = self.lookup_entry_mut(&info_state_key, &normalized_actions);
-            let infostate_info = entry.value_mut();
+            let mut infostate_info = self
+                .lookup_entry(&info_state_key)
+                .unwrap_or_else(|| InfoState::new(normalized_actions.clone()));
             for &action in actions.iter() {
                 let norm_a = normalizer.normalize_action(action, gs);
-                add_avstrat(infostate_info, norm_a, policy[action]);
+                add_avstrat(&mut infostate_info, norm_a, policy[action]);
             }
+
+            self.put_entry(&info_state_key, infostate_info);
         }
 
         actions.clear();
@@ -406,24 +420,18 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
     }
 
     pub fn num_info_states(&self) -> usize {
-        self.infostates.len()
+        0
     }
 }
 
 impl<G> CFRES<G> {
-    /// Looks up an information set table for the given key.
-    fn lookup_entry_mut(
-        &mut self,
-        key: &NormalizedIstate,
-        actions: &[NormalizedAction],
-    ) -> RefMut<IStateKey, InfoState> {
-        self.infostates
-            .get_or_create_mut(&key.get(), InfoState::new(actions.to_vec()))
+    /// Can deadlock if we hold onto handle
+    fn lookup_entry(&self, key: &NormalizedIstate) -> Option<InfoState> {
+        self.infostates.lock().unwrap().get(&key.get())
     }
 
-    /// Can deadlock if we hold onto handle
-    fn lookup_entry(&self, key: &NormalizedIstate) -> Option<Ref<IStateKey, InfoState>> {
-        self.infostates.get(&key.get())
+    fn put_entry(&self, key: &NormalizedIstate, v: InfoState) {
+        self.infostates.lock().unwrap().put(&key.get(), &v);
     }
 }
 

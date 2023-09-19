@@ -16,8 +16,10 @@ enum Commands {
     Serve,
     Deploy,
     UpdateNginx,
-    PublishNotebook { name: String },
-    Profile,
+    Profile {
+        #[clap(short, long, default_value_t = 0)]
+        pid: usize,
+    },
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -36,19 +38,22 @@ fn main() -> anyhow::Result<()> {
         Commands::Serve => serve(),
         Commands::Deploy => deploy(),
         Commands::UpdateNginx => update_nginx(),
-        Commands::PublishNotebook { name } => publish_notesbooks(&name),
-        Commands::Profile => profile(),
+        Commands::Profile { pid } => profile(pid),
     }
 }
 
-fn profile() -> anyhow::Result<()> {
+fn profile(pid: usize) -> anyhow::Result<()> {
     let sh = Shell::new()?;
 
     let kptr_restrict = cmd!(sh, "cat /proc/sys/kernel/kptr_restrict").read()?;
     if kptr_restrict != "0" {
         cmd!(sh, "sudo sh -c 'echo 0 > /proc/sys/kernel/kptr_restrict'").run()?;
     }
-    let pid = cmd!(sh, "pidof card_platypus").read()?;
+    let pid = if pid == 0 {
+        cmd!(sh, "pidof card_platypus").read()?
+    } else {
+        pid.to_string()
+    };
     cmd!(sh, "perf record -p {pid} -F 99 --call-graph dwarf sleep 60").run()?;
 
     Ok(())
@@ -188,62 +193,6 @@ fn update_nginx() -> anyhow::Result<()> {
     )
     .run()?;
     cmd!(sh, "ssh root@{REMOTE_ADDR} nginx -s reload").run()?;
-
-    Ok(())
-}
-
-fn publish_notesbooks(name: &str) -> anyhow::Result<()> {
-    let toml_str = fs::read_to_string("./notebooks.toml")?;
-    let toml = toml_str.parse::<Table>()?;
-    println!("{:?}", toml);
-    let config = toml
-        .get(name)
-        .context("Name not found")?
-        .as_table()
-        .context("error parsing table")?;
-    let input = config
-        .get("input")
-        .context("input not found")?
-        .as_str()
-        .context("error parsing input to string")?;
-
-    let output = config
-        .get("output")
-        .context("output not found")?
-        .as_str()
-        .context("error parsing output to string")?;
-
-    let title = config
-        .get("title")
-        .context("title not found")?
-        .as_str()
-        .context("error parsing title to string")?;
-
-    let sh = Shell::new()?;
-    cmd!(
-        sh,
-        "jupyter nbconvert --no-input --to html ./python/{input}.ipynb"
-    )
-    .run()?;
-
-    let html = sh.read_file(format!("./python/{}.html", input))?;
-
-    let mut contents = format!(
-        "---
-layout: post
-title:  \"{}\"
-categories: project-log
----
-",
-        title
-    )
-    .to_string();
-
-    contents.push_str(html.as_str());
-
-    sh.write_file(format!("../../docs/_posts/{}.html", output), contents)?;
-
-    cmd!(sh, "rm ./python/{input}.html").run()?;
 
     Ok(())
 }

@@ -156,7 +156,7 @@ fn run_scratch(_args: Args) {
 
     println!("cfres node {}", mem::size_of::<InfoState>());
 
-    let n = generate_euchre_phf(Path::new("/tmp/card_platypus/euchre_phf")).unwrap();
+    let (_, n) = generate_euchre_phf().unwrap();
     println!("generated phf for {} istates", n);
 }
 

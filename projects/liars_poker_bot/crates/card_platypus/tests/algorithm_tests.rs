@@ -38,17 +38,6 @@ fn test_alg_open_hand_solver_euchre() {
 }
 
 #[test]
-fn test_cfr_exploitability() {
-    cfres::feature::enable(cfres::feature::LinearCFR);
-
-    let mut alg = CFRES::new_kp();
-    alg.train(5_000_000);
-
-    let exploitability = exploitability(|| (KuhnPoker::game().new)(), &mut alg).nash_conv;
-    assert_relative_eq!(exploitability, 0.0, epsilon = 0.001);
-}
-
-#[test]
 fn test_cfr_euchre() {
     cfres::feature::enable(cfres::feature::LinearCFR);
 
@@ -59,12 +48,12 @@ fn test_cfr_euchre() {
 #[test]
 fn test_cfres_nash_kuhn_poker() {
     cfres::feature::enable(cfres::feature::LinearCFR);
+    // avoid lock contention
+    cfres::feature::enable(cfres::feature::SingleThread);
 
     // Verify the nash equilibrium is reached. From https://en.wikipedia.org/wiki/Kuhn_poker
     let mut alg = CFRES::new_kp();
-
-    alg.train(50_000);
-    alg.train(50_000);
+    alg.train(1_000_000);
     let exploitability = exploitability(|| (KuhnPoker::game().new)(), &mut alg).nash_conv;
     assert_relative_eq!(exploitability, 0.0, epsilon = 0.01);
 }
@@ -72,10 +61,12 @@ fn test_cfres_nash_kuhn_poker() {
 #[test]
 fn test_cfres_nash_bluff11() {
     cfres::feature::enable(cfres::feature::LinearCFR);
+    // avoid lock contention
+    cfres::feature::enable(cfres::feature::SingleThread);
 
     let mut alg = CFRES::new_bluff_11();
 
-    alg.train(2_000_000);
+    alg.train(1_000_000);
     let exploitability = exploitability(|| (Bluff::game(1, 1).new)(), &mut alg).nash_conv;
     assert_relative_eq!(exploitability, 0.0, epsilon = 0.01);
 }

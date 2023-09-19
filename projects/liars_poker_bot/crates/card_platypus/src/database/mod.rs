@@ -6,8 +6,10 @@ use itertools::Itertools;
 use memmap2::MmapMut;
 
 use crate::{
+    actions,
     algorithms::cfres::InfoState,
     database::euchre_states::{generate_euchre_states, IStateBuilder},
+    game::{bluff::Bluff, kuhn_poker::KuhnPoker, GameState},
     istate::IStateKey,
 };
 
@@ -23,26 +25,21 @@ pub struct NodeStore {
 
 impl NodeStore {
     /// len is the number of infostates to provision for
-    pub fn new(phf: &Path, file: Option<&Path>, len: usize) -> anyhow::Result<Self> {
-        let serialized = std::fs::read(phf)?;
-        let phf: Mphf<IStateKey> = rmp_serde::from_slice(&serialized)?;
+    pub fn new_euchre(file: Option<&Path>) -> anyhow::Result<Self> {
+        let (phf, n) = generate_euchre_phf()?;
+        let mmap = get_mmap(file, n)?;
+        Ok(Self { phf, mmap })
+    }
 
-        let mmap = if let Some(path) = file {
-            let dir = path.parent().context("couldn't get file parent")?;
-            std::fs::create_dir_all(dir)?;
+    pub fn new_kp(file: Option<&Path>) -> anyhow::Result<Self> {
+        let (phf, n) = generate_phf(KuhnPoker::new_state)?;
+        let mmap = get_mmap(file, n)?;
+        Ok(Self { phf, mmap })
+    }
 
-            let file = OpenOptions::new()
-                .read(true)
-                .write(true)
-                .create(true)
-                .open(path)?;
-
-            file.set_len((len * BUCKET_SIZE) as u64).unwrap();
-            unsafe { MmapMut::map_mut(&file).unwrap() }
-        } else {
-            memmap2::MmapOptions::new().map_anon()?
-        };
-
+    pub fn new_bluff_11(file: Option<&Path>) -> anyhow::Result<Self> {
+        let (phf, n) = generate_phf(|| Bluff::new_state(1, 1))?;
+        let mmap = get_mmap(file, n)?;
         Ok(Self { phf, mmap })
     }
 
@@ -58,11 +55,11 @@ impl NodeStore {
     }
 
     pub fn put(&mut self, key: &IStateKey, value: &InfoState) {
-        let data = rmp_serde::to_vec(value).unwrap();
-        assert!(data.len() <= BUCKET_SIZE); // if this is false, we're overflowing into another bucket
-
         let index: usize = self.phf.hash(key) as usize;
         let start = index * BUCKET_SIZE;
+
+        let data = rmp_serde::to_vec(value).unwrap();
+        assert!(data.len() <= BUCKET_SIZE); // if this is false, we're overflowing into another bucket
         self.mmap[start..start + data.len()].copy_from_slice(&data);
     }
 
@@ -71,7 +68,27 @@ impl NodeStore {
     }
 }
 
-pub fn generate_euchre_phf(path: &Path) -> anyhow::Result<usize> {
+fn get_mmap(file: Option<&Path>, len: usize) -> anyhow::Result<MmapMut> {
+    if let Some(path) = file {
+        let dir = path.parent().context("couldn't get file parent")?;
+        std::fs::create_dir_all(dir)?;
+
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(path)?;
+
+        file.set_len((len * BUCKET_SIZE) as u64).unwrap();
+        Ok(unsafe { MmapMut::map_mut(&file).unwrap() })
+    } else {
+        Ok(memmap2::MmapOptions::new()
+            .len(len * BUCKET_SIZE)
+            .map_anon()?)
+    }
+}
+
+pub fn generate_euchre_phf() -> anyhow::Result<(Mphf<IStateKey>, usize)> {
     let mut builder = IStateBuilder::default();
     let mut istates = HashSet::new();
     generate_euchre_states(
@@ -84,10 +101,38 @@ pub fn generate_euchre_phf(path: &Path) -> anyhow::Result<usize> {
     let phf = Mphf::new_parallel(1.7, &istates.iter().copied().collect_vec(), None);
     validate_phf(&istates, &phf);
 
-    let serialized = rmp_serde::to_vec(&phf)?;
-    std::fs::write(path, serialized)?;
+    Ok((phf, n))
+}
 
-    Ok(n)
+fn generate_phf<T: GameState>(new_state: fn() -> T) -> anyhow::Result<(Mphf<IStateKey>, usize)> {
+    let mut istates = HashSet::new();
+
+    let mut gs = (new_state)();
+    populate_all_states(&mut istates, &mut gs);
+
+    let n = istates.len();
+    let phf = Mphf::new_parallel(1.7, &istates.iter().copied().collect_vec(), None);
+    validate_phf(&istates, &phf);
+
+    Ok((phf, n))
+}
+
+fn populate_all_states<T: GameState>(istates: &mut HashSet<IStateKey>, gs: &mut T) {
+    if gs.is_terminal() {
+        return;
+    }
+
+    if !gs.is_chance_node() {
+        let key = gs.istate_key(gs.cur_player());
+        istates.insert(key);
+    }
+
+    let actions = actions!(gs);
+    for a in actions {
+        gs.apply_action(a);
+        populate_all_states(istates, gs);
+        gs.undo()
+    }
 }
 
 fn validate_phf(istates: &HashSet<IStateKey>, phf: &Mphf<IStateKey>) {
