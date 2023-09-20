@@ -170,18 +170,17 @@ impl CFRES<EuchreGameState> {
     pub fn load(&mut self, path: &Path) -> usize {
         self.infostates = Arc::new(Mutex::new(NodeStore::new_euchre(Some(path)).unwrap()));
         debug!("counting loaded infostates not yet supported");
-        // let len = self.infostates.len();
-        // debug!(
-        //     "loaded weights for {} infostates with {} iterations",
-        //     self.infostates.len(),
-        //     0
-        // );
+        let len = self.infostates.lock().unwrap().len();
+        debug!(
+            "loaded weights for {} infostates with {} iterations",
+            len, 0
+        );
 
-        // if len == 0 {
-        //     warn!("no infostates loaded");
-        // }
+        if len == 0 {
+            warn!("no infostates loaded");
+        }
 
-        0
+        len
     }
 }
 
@@ -420,7 +419,7 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
     }
 
     pub fn num_info_states(&self) -> usize {
-        0
+        self.infostates.lock().unwrap().len()
     }
 }
 

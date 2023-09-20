@@ -4,7 +4,11 @@ use itertools::Itertools;
 use EAction::*;
 
 use crate::{
-    game::{euchre::actions::EAction, Action},
+    actions,
+    game::{
+        euchre::{actions::EAction, EPhase, Euchre, EuchreGameState},
+        Action, GameState,
+    },
     istate::IStateKey,
 };
 const FACE_UP: &[EAction] = &[NS, TS, JS, QS, KS, AS];
@@ -128,6 +132,40 @@ impl IStateBuilder {
 
     fn phase(&self) -> Termination {
         *self.phase.last().unwrap()
+    }
+}
+
+pub fn count_deals() -> usize {
+    let mut gs = Euchre::new_state();
+    let mut count = 0;
+    walk_deals(&mut gs, &mut count);
+    count
+}
+
+fn walk_deals(gs: &mut EuchreGameState, count: &mut usize) {
+    if !gs.is_chance_node() {
+        *count += 1;
+        if *count % 1_000_000_000 == 0 {
+            println!("{}: {}", count, gs);
+        }
+    }
+
+    if !gs.is_chance_node() {
+        return;
+    }
+
+    if gs.is_chance_node() && gs.phase() == EPhase::DealHands {
+        for hand in actions!(gs).into_iter().combinations(5) {
+            hand.into_iter().for_each(|c| gs.apply_action(c));
+            walk_deals(gs, count);
+            (0..5).for_each(|_| gs.undo());
+        }
+    } else {
+        for a in actions!(gs) {
+            gs.apply_action(a);
+            walk_deals(gs, count);
+            gs.undo();
+        }
     }
 }
 

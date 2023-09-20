@@ -100,7 +100,7 @@ pub fn train_cfr(args: PassOnBowerCFRArgs, generator: fn() -> EuchreGameState) {
         alg.train(TRAINING_PER_ITERATION);
         pb.inc(TRAINING_PER_ITERATION as u64);
         if (i * TRAINING_PER_ITERATION) % args.checkpoint_freq == 0 && i > 0 {
-            alg.save();
+            alg.save().unwrap();
         }
 
         if (i * TRAINING_PER_ITERATION) % args.scoring_freq == 0 {
@@ -110,7 +110,7 @@ pub fn train_cfr(args: PassOnBowerCFRArgs, generator: fn() -> EuchreGameState) {
         }
     }
     pb.finish_and_clear();
-    alg.save();
+    alg.save().unwrap();
     println!("num info states: {}", alg.num_info_states());
 
     log_score(&mut alg, worlds, baseline_score);

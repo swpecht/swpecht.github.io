@@ -3,6 +3,7 @@ use std::mem;
 use std::path::Path;
 
 use card_platypus::algorithms::cfres::{self, InfoState};
+use card_platypus::database::euchre_states::count_deals;
 use card_platypus::database::generate_euchre_phf;
 use clap::{command, Parser, Subcommand, ValueEnum};
 
@@ -156,8 +157,8 @@ fn run_scratch(_args: Args) {
 
     println!("cfres node {}", mem::size_of::<InfoState>());
 
-    let (_, n) = generate_euchre_phf().unwrap();
-    println!("generated phf for {} istates", n);
+    let n = count_deals();
+    println!("counted: {}", n);
 }
 
 fn run_analyze(args: Args) {

@@ -1,4 +1,8 @@
-use std::{collections::HashSet, fs::OpenOptions, path::Path};
+use std::{
+    collections::{HashMap, HashSet},
+    fs::OpenOptions,
+    path::Path,
+};
 
 use anyhow::Context;
 use boomphf::Mphf;
@@ -13,39 +17,82 @@ use crate::{
     istate::IStateKey,
 };
 
-mod euchre_states;
+pub mod euchre_states;
 
 const BUCKET_SIZE: usize = 200; // approximation of size of serialized infostate
 
+#[derive(Default)]
+struct HashStore {
+    index: HashMap<IStateKey, usize>,
+    next: usize,
+}
+
+impl HashStore {
+    pub fn hash(&mut self, key: &IStateKey) -> usize {
+        match self.index.entry(*key) {
+            std::collections::hash_map::Entry::Occupied(x) => return *x.get(),
+            std::collections::hash_map::Entry::Vacant(x) => {
+                let hash = self.next;
+                self.next += 1;
+                x.insert(hash);
+                hash
+            }
+        }
+    }
+
+    pub fn get_hash(&self, key: &IStateKey) -> Option<usize> {
+        self.index.get(key).copied()
+    }
+
+    pub fn len(&self) -> usize {
+        self.next - 1
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
 // A performant, optionally diskback node storage system
 pub struct NodeStore {
-    phf: Mphf<IStateKey>,
+    // phf: Mphf<IStateKey>,
+    phf: HashStore,
     mmap: MmapMut,
 }
 
 impl NodeStore {
     /// len is the number of infostates to provision for
     pub fn new_euchre(file: Option<&Path>) -> anyhow::Result<Self> {
-        let (phf, n) = generate_euchre_phf().context("failed to generate phf")?;
-        let mmap = get_mmap(file, n).context("failed to create mmap")?;
+        // let (phf, n) = generate_euchre_phf().context("failed to generate phf")?;
+        let phf = HashStore::default();
+        let mmap = get_mmap(file, 10_000_000).context("failed to create mmap")?;
         Ok(Self { phf, mmap })
     }
 
     pub fn new_kp(file: Option<&Path>) -> anyhow::Result<Self> {
-        let (phf, n) = generate_phf(KuhnPoker::new_state)?;
-        let mmap = get_mmap(file, n)?;
+        // let (phf, n) = generate_phf(KuhnPoker::new_state)?;
+        let mmap = get_mmap(file, 1_000)?;
+        let phf = HashStore::default();
         Ok(Self { phf, mmap })
     }
 
     pub fn new_bluff_11(file: Option<&Path>) -> anyhow::Result<Self> {
-        let (phf, n) = generate_phf(|| Bluff::new_state(1, 1))?;
-        let mmap = get_mmap(file, n)?;
+        // let (phf, n) = generate_phf(|| Bluff::new_state(1, 1))?;
+        let mmap = get_mmap(file, 10_000)?;
+        let phf = HashStore::default();
         Ok(Self { phf, mmap })
     }
 
     pub fn get(&self, key: &IStateKey) -> Option<InfoState> {
-        let index: usize = self.phf.hash(key) as usize;
+        // let index: usize = self.phf.hash(key) as usize;
+        let index: usize = self.phf.get_hash(key)?;
         let start = index * BUCKET_SIZE;
+
+        if start + BUCKET_SIZE > self.mmap.len() {
+            return None;
+        }
+
         let data = &self.mmap[start..start + BUCKET_SIZE];
         let info = match rmp_serde::from_slice(data) {
             Ok(x) => x,
@@ -55,8 +102,12 @@ impl NodeStore {
     }
 
     pub fn put(&mut self, key: &IStateKey, value: &InfoState) {
-        let index: usize = self.phf.hash(key) as usize;
+        let index: usize = self.phf.hash(key);
         let start = index * BUCKET_SIZE;
+
+        if start + BUCKET_SIZE > self.mmap.len() {
+            todo!("Re-sizing not yet implemented")
+        }
 
         let data = rmp_serde::to_vec(value).unwrap();
         assert!(data.len() <= BUCKET_SIZE); // if this is false, we're overflowing into another bucket
@@ -65,6 +116,15 @@ impl NodeStore {
 
     pub fn commit(&mut self) -> anyhow::Result<()> {
         self.mmap.flush().context("failed to flush mmap")
+    }
+
+    pub fn len(&self) -> usize {
+        self.phf.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }
 
