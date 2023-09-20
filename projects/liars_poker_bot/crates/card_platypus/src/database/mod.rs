@@ -22,6 +22,7 @@ use crate::{
 pub mod euchre_states;
 
 const BUCKET_SIZE: usize = 200; // approximation of size of serialized infostate
+const REMAP_INCREMENT: usize = 10_000_000;
 
 #[derive(Default, Serialize, Deserialize)]
 struct HashStore {
@@ -69,7 +70,6 @@ impl NodeStore {
     pub fn new_euchre(path: Option<&Path>) -> anyhow::Result<Self> {
         // let (phf, n) = generate_euchre_phf().context("failed to generate phf")?;
 
-        let mmap = get_mmap(path, 10_000_000).context("failed to create mmap")?;
         let phf = match load_phf(path) {
             Ok(x) => x,
             Err(_) => {
@@ -77,6 +77,7 @@ impl NodeStore {
                 HashStore::default()
             }
         };
+        let mmap = get_mmap(path, phf.len().max(20_000_000)).context("failed to create mmap")?;
 
         let path = path.map(|x| x.to_path_buf());
         Ok(Self { phf, mmap, path })
@@ -128,7 +129,11 @@ impl NodeStore {
         let start = index * BUCKET_SIZE;
 
         if start + BUCKET_SIZE > self.mmap.len() {
-            todo!("Re-sizing not yet implemented")
+            let cur_len = self.mmap.len();
+            self.mmap.flush().expect("failed to flush mmap");
+            self.mmap = get_mmap(self.path.as_deref(), cur_len + REMAP_INCREMENT)
+                .expect("failed to resize mmap");
+            warn!("resized mmap");
         }
 
         let data = rmp_serde::to_vec(value).unwrap();
