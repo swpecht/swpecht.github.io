@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{btree_map::Entry, BTreeMap, HashMap, HashSet},
     fs::OpenOptions,
     path::{Path, PathBuf},
 };
@@ -25,15 +25,15 @@ const BUCKET_SIZE: usize = 200; // approximation of size of serialized infostate
 
 #[derive(Default, Serialize, Deserialize)]
 struct HashStore {
-    index: HashMap<IStateKey, usize>,
+    index: BTreeMap<IStateKey, usize>,
     next: usize,
 }
 
 impl HashStore {
     pub fn hash(&mut self, key: &IStateKey) -> usize {
         match self.index.entry(*key) {
-            std::collections::hash_map::Entry::Occupied(x) => return *x.get(),
-            std::collections::hash_map::Entry::Vacant(x) => {
+            Entry::Occupied(x) => return *x.get(),
+            Entry::Vacant(x) => {
                 let hash = self.next;
                 self.next += 1;
                 x.insert(hash);
@@ -73,7 +73,7 @@ impl NodeStore {
         let path = path.map(|x| x.to_path_buf());
 
         let phf = if let Some(path) = &path {
-            let content = std::fs::read(path.join("index"))?;
+            let content = std::fs::read(path.join("index")).unwrap_or(Vec::new());
             let phf: HashStore = rmp_serde::decode::from_slice(&content).unwrap_or_default();
             if phf.is_empty() {
                 warn!("no index found or failed to load")
