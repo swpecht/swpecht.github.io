@@ -139,11 +139,6 @@ impl CFRES<EuchreGameState> {
         mut rng: StdRng,
         max_cards_played: usize,
     ) -> Self {
-        assert_eq!(
-            max_cards_played, 0,
-            "only implemented for 0 right now, need to change phf"
-        );
-
         let normalizer: Box<dyn IStateNormalizer<EuchreGameState>> =
             Box::<EuchreNormalizer>::default();
 
