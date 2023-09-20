@@ -1,19 +1,21 @@
 use std::{
     collections::{HashMap, HashSet},
     fs::OpenOptions,
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use anyhow::Context;
 use boomphf::Mphf;
 use itertools::Itertools;
+use log::warn;
 use memmap2::MmapMut;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     actions,
     algorithms::cfres::InfoState,
     database::euchre_states::{generate_euchre_states, IStateBuilder},
-    game::{bluff::Bluff, kuhn_poker::KuhnPoker, GameState},
+    game::GameState,
     istate::IStateKey,
 };
 
@@ -21,7 +23,7 @@ pub mod euchre_states;
 
 const BUCKET_SIZE: usize = 200; // approximation of size of serialized infostate
 
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 struct HashStore {
     index: HashMap<IStateKey, usize>,
     next: usize,
@@ -59,29 +61,53 @@ pub struct NodeStore {
     // phf: Mphf<IStateKey>,
     phf: HashStore,
     mmap: MmapMut,
+    path: Option<PathBuf>,
 }
 
 impl NodeStore {
     /// len is the number of infostates to provision for
-    pub fn new_euchre(file: Option<&Path>) -> anyhow::Result<Self> {
+    pub fn new_euchre(path: Option<&Path>) -> anyhow::Result<Self> {
         // let (phf, n) = generate_euchre_phf().context("failed to generate phf")?;
-        let phf = HashStore::default();
-        let mmap = get_mmap(file, 10_000_000).context("failed to create mmap")?;
-        Ok(Self { phf, mmap })
+
+        let mmap = get_mmap(path, 10_000_000).context("failed to create mmap")?;
+        let path = path.map(|x| x.to_path_buf());
+
+        let phf = if let Some(path) = &path {
+            let content = std::fs::read(path.join("index"))?;
+            let phf: HashStore = rmp_serde::decode::from_slice(&content).unwrap_or_default();
+            if phf.is_empty() {
+                warn!("no index found or failed to load")
+            }
+            phf
+        } else {
+            HashStore::default()
+        };
+
+        Ok(Self { phf, mmap, path })
     }
 
-    pub fn new_kp(file: Option<&Path>) -> anyhow::Result<Self> {
+    pub fn new_kp(path: Option<&Path>) -> anyhow::Result<Self> {
         // let (phf, n) = generate_phf(KuhnPoker::new_state)?;
-        let mmap = get_mmap(file, 1_000)?;
+        if path.is_some() {
+            panic!("serialization not supported for this game type")
+        }
+
+        let mmap = get_mmap(path, 1_000)?;
         let phf = HashStore::default();
-        Ok(Self { phf, mmap })
+        let path = path.map(|x| x.to_path_buf());
+        Ok(Self { phf, mmap, path })
     }
 
-    pub fn new_bluff_11(file: Option<&Path>) -> anyhow::Result<Self> {
+    pub fn new_bluff_11(path: Option<&Path>) -> anyhow::Result<Self> {
         // let (phf, n) = generate_phf(|| Bluff::new_state(1, 1))?;
-        let mmap = get_mmap(file, 10_000)?;
+
+        if path.is_some() {
+            panic!("serialization not supported for this game type")
+        }
+        let mmap = get_mmap(path, 10_000)?;
         let phf = HashStore::default();
-        Ok(Self { phf, mmap })
+        let path = path.map(|x| x.to_path_buf());
+        Ok(Self { phf, mmap, path })
     }
 
     pub fn get(&self, key: &IStateKey) -> Option<InfoState> {
@@ -115,7 +141,14 @@ impl NodeStore {
     }
 
     pub fn commit(&mut self) -> anyhow::Result<()> {
-        self.mmap.flush().context("failed to flush mmap")
+        self.mmap.flush().context("failed to flush mmap")?;
+
+        if let Some(dir) = &self.path {
+            let encoded = rmp_serde::to_vec(&self.phf)?;
+            std::fs::write(dir.join("index"), encoded)?;
+        }
+
+        anyhow::Ok(())
     }
 
     pub fn len(&self) -> usize {
@@ -128,16 +161,15 @@ impl NodeStore {
     }
 }
 
-fn get_mmap(file: Option<&Path>, len: usize) -> anyhow::Result<MmapMut> {
-    if let Some(path) = file {
-        let dir = path.parent().context("couldn't get file parent")?;
+fn get_mmap(dir: Option<&Path>, len: usize) -> anyhow::Result<MmapMut> {
+    if let Some(dir) = dir {
         std::fs::create_dir_all(dir).context("failed to create directory")?;
 
         let file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
-            .open(path)
+            .open(dir.join("mmap"))
             .context("failed to create mmap file")?;
 
         file.set_len((len * BUCKET_SIZE) as u64)
