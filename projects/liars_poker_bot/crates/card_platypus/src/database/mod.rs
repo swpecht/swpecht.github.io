@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 use boomphf::Mphf;
 use itertools::Itertools;
 use log::warn;
@@ -47,7 +47,7 @@ impl HashStore {
     }
 
     pub fn len(&self) -> usize {
-        self.next - 1
+        self.next
     }
 
     #[must_use]
@@ -70,19 +70,15 @@ impl NodeStore {
         // let (phf, n) = generate_euchre_phf().context("failed to generate phf")?;
 
         let mmap = get_mmap(path, 10_000_000).context("failed to create mmap")?;
-        let path = path.map(|x| x.to_path_buf());
-
-        let phf = if let Some(path) = &path {
-            let content = std::fs::read(path.join("index")).unwrap_or(Vec::new());
-            let phf: HashStore = rmp_serde::decode::from_slice(&content).unwrap_or_default();
-            if phf.is_empty() {
-                warn!("no index found or failed to load")
+        let phf = match load_phf(path) {
+            Ok(x) => x,
+            Err(_) => {
+                warn!("failed to load index");
+                HashStore::default()
             }
-            phf
-        } else {
-            HashStore::default()
         };
 
+        let path = path.map(|x| x.to_path_buf());
         Ok(Self { phf, mmap, path })
     }
 
@@ -179,6 +175,16 @@ fn get_mmap(dir: Option<&Path>, len: usize) -> anyhow::Result<MmapMut> {
         Ok(memmap2::MmapOptions::new()
             .len(len * BUCKET_SIZE)
             .map_anon()?)
+    }
+}
+
+fn load_phf(path: Option<&Path>) -> anyhow::Result<HashStore> {
+    if let Some(path) = &path {
+        let content = std::fs::read(path.join("index"))?;
+        let phf: HashStore = rmp_serde::decode::from_slice(&content)?;
+        Ok(phf)
+    } else {
+        bail!("path is none")
     }
 }
 
