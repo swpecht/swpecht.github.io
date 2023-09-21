@@ -157,6 +157,24 @@ impl Deck {
         self.locations[loc.idx()]
     }
 
+    /// Moves a card from played back to the players hand
+    pub fn unplay(&mut self, card: Card, player: Player) -> anyhow::Result<()> {
+        let played_hand = &mut self.locations[CardLocation::Played(player).idx()];
+        if !played_hand.contains(card) {
+            let loc = self.get(card);
+            bail!(
+                "attemped to unplay a card that is not currently played. Card is at: {:?}",
+                loc
+            )
+        }
+        played_hand.remove(card);
+
+        let player_loc = CardLocation::from(player);
+        let player_hand = &mut self.locations[player_loc.idx()];
+        player_hand.add(card);
+        Ok(())
+    }
+
     /// Moves a card from the players hand to the play location
     pub fn play(&mut self, card: Card, player: Player) -> anyhow::Result<()> {
         let player_loc = CardLocation::from(player);

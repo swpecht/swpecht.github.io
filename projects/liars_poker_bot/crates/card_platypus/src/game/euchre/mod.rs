@@ -4,6 +4,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
+use anyhow::Context;
 use itertools::Itertools;
 
 use rand::seq::SliceRandom;
@@ -938,10 +939,12 @@ impl GameState for EuchreGameState {
             // all that's left are play actions
             _ => {
                 let c = applied_action.card();
-                self.deck.set(c, self.cur_player.into());
+
                 self.cards_played -= 1;
+                // put the old cards back on the table if trick just ended
                 if self.cards_played % 4 == 3 {
-                    // put the old cards back on the table
+                    self.deck.set(c, self.cur_player.into());
+
                     for (a, p) in self
                         .key
                         .iter()
@@ -952,6 +955,10 @@ impl GameState for EuchreGameState {
                         let c = EAction::from(*a).card();
                         self.deck.set(c, CardLocation::Played(*p));
                     }
+                } else {
+                    self.deck
+                        .unplay(c, self.cur_player)
+                        .unwrap_or_else(|_| panic!("failed to unplay card: {}, gs: {}", c, self));
                 }
             }
         }
