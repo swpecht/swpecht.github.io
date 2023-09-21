@@ -163,7 +163,7 @@ impl NodeStore {
 }
 
 fn get_mmap(dir: Option<&Path>, len: usize) -> anyhow::Result<MmapMut> {
-    if let Some(dir) = dir {
+    let mmap = if let Some(dir) = dir {
         std::fs::create_dir_all(dir).context("failed to create directory")?;
 
         let file = OpenOptions::new()
@@ -175,12 +175,16 @@ fn get_mmap(dir: Option<&Path>, len: usize) -> anyhow::Result<MmapMut> {
 
         file.set_len((len * BUCKET_SIZE) as u64)
             .context("failed to set length")?;
-        Ok(unsafe { MmapMut::map_mut(&file)? })
+        unsafe { MmapMut::map_mut(&file)? }
     } else {
-        Ok(memmap2::MmapOptions::new()
+        memmap2::MmapOptions::new()
             .len(len * BUCKET_SIZE)
-            .map_anon()?)
-    }
+            .map_anon()?
+    };
+
+    // Inform that re-ahead may not be useful
+    mmap.advise(memmap2::Advice::Random)?;
+    Ok(mmap)
 }
 
 fn load_phf(path: Option<&Path>) -> anyhow::Result<HashStore> {
