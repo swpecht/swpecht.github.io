@@ -70,7 +70,7 @@ pub fn run_pass_on_bower_cfr(args: PassOnBowerCFRArgs) {
 }
 
 pub fn train_cfr(args: PassOnBowerCFRArgs, generator: fn() -> EuchreGameState) {
-    info!("starting new run of pass on bower cfr. args {:?}", args);
+    info!("starting new run of cfr. args {:?}", args);
 
     let pb = ProgressBar::new(args.training_iterations as u64);
     let mut alg = CFRES::new_euchre(generator, get_rng(), args.max_cards_played);
@@ -83,7 +83,7 @@ pub fn train_cfr(args: PassOnBowerCFRArgs, generator: fn() -> EuchreGameState) {
     );
 
     let worlds = (0..args.scoring_iterations)
-        .map(|_| generate_face_up_deals(Card::JS))
+        .map(|_| Euchre::new_state())
         .collect_vec();
     let mut baseline = PIMCTSBot::new(50, OpenHandSolver::new_euchre(), get_rng());
     // let mut baseline = CFRES::new_euchre_bidding(generator, get_rng(), 0);
