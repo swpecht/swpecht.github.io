@@ -1,6 +1,7 @@
 use std::{collections::HashMap, fs, ops::Deref, path::Path};
 
 use card_platypus::{
+    actions,
     agents::{Agent, Seedable},
     algorithms::cfres::{self, CFRES},
     algorithms::{
@@ -9,7 +10,7 @@ use card_platypus::{
     game::{
         euchre::{
             actions::{Card, EAction},
-            Euchre, EuchreGameState,
+            EPhase, Euchre, EuchreGameState,
         },
         GameState,
     },
@@ -64,15 +65,44 @@ pub fn run_pass_on_bower_cfr(args: PassOnBowerCFRArgs) {
     }
 
     match args.deal_type {
-        DealType::JackOfSpadesOnly => train_cfr(args, || generate_face_up_deals(Card::JS)),
-        DealType::All => train_cfr(args, Euchre::new_state),
+        DealType::JackOfSpadesOnly => {
+            let n = args.training_iterations;
+            train_cfr_shot(args, n, || generate_face_up_deals(Card::JS))
+        }
+        DealType::All => all_deal_cfr(args),
     }
 }
 
-pub fn train_cfr(args: PassOnBowerCFRArgs, generator: fn() -> EuchreGameState) {
+pub fn all_deal_cfr(args: PassOnBowerCFRArgs) {
     info!("starting new run of cfr. args {:?}", args);
+    let iterations_per_card = args.training_iterations / 6;
 
-    let pb = ProgressBar::new(args.training_iterations as u64);
+    train_cfr_shot(args.clone(), iterations_per_card, || {
+        generate_face_up_deals(Card::NS)
+    });
+    train_cfr_shot(args.clone(), iterations_per_card, || {
+        generate_face_up_deals(Card::TS)
+    });
+    train_cfr_shot(args.clone(), iterations_per_card, || {
+        generate_face_up_deals(Card::JS)
+    });
+    train_cfr_shot(args.clone(), iterations_per_card, || {
+        generate_face_up_deals(Card::QS)
+    });
+    train_cfr_shot(args.clone(), iterations_per_card, || {
+        generate_face_up_deals(Card::KS)
+    });
+    train_cfr_shot(args, iterations_per_card, || {
+        generate_face_up_deals(Card::AS)
+    });
+}
+
+pub fn train_cfr_shot(
+    args: PassOnBowerCFRArgs,
+    training_iterations: usize,
+    generator: fn() -> EuchreGameState,
+) {
+    let pb = ProgressBar::new(training_iterations as u64);
     let mut alg = CFRES::new_euchre(generator, get_rng(), args.max_cards_played);
 
     let infostate_path = args.weight_file.as_str();
@@ -83,7 +113,15 @@ pub fn train_cfr(args: PassOnBowerCFRArgs, generator: fn() -> EuchreGameState) {
     );
 
     let worlds = (0..args.scoring_iterations)
-        .map(|_| Euchre::new_state())
+        .map(|_| {
+            let mut gs = Euchre::new_state();
+            while gs.is_chance_node() {
+                let actions = actions!(gs);
+                let a = actions.choose(&mut thread_rng()).unwrap();
+                gs.apply_action(*a);
+            }
+            gs
+        })
         .collect_vec();
     let mut baseline = PIMCTSBot::new(50, OpenHandSolver::new_euchre(), get_rng());
     // let mut baseline = CFRES::new_euchre_bidding(generator, get_rng(), 0);
@@ -96,7 +134,7 @@ pub fn train_cfr(args: PassOnBowerCFRArgs, generator: fn() -> EuchreGameState) {
     // print_scored_istates(&mut alg);
 
     const TRAINING_PER_ITERATION: usize = 100;
-    for i in 0..args.training_iterations / TRAINING_PER_ITERATION {
+    for i in 0..training_iterations / TRAINING_PER_ITERATION {
         alg.train(TRAINING_PER_ITERATION);
         pb.inc(TRAINING_PER_ITERATION as u64);
         if (i * TRAINING_PER_ITERATION) % args.checkpoint_freq == 0 && i > 0 {
@@ -180,6 +218,7 @@ pub fn generate_face_up_deals(face_up: Card) -> EuchreGameState {
 
     gs.apply_action(EAction::from(face_up).into());
 
+    assert_eq!(gs.phase(), EPhase::Pickup);
     gs
 }
 
