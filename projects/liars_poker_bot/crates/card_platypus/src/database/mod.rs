@@ -129,7 +129,7 @@ impl NodeStore {
         let start = index * BUCKET_SIZE;
 
         if start + BUCKET_SIZE > self.mmap.len() {
-            let cur_len = self.mmap.len();
+            let cur_len = self.mmap.len() / BUCKET_SIZE;
             self.mmap.flush().expect("failed to flush mmap");
             self.mmap = get_mmap(self.path.as_deref(), cur_len + REMAP_INCREMENT)
                 .expect("failed to resize mmap");
