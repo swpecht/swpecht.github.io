@@ -1,12 +1,18 @@
 use std::collections::HashSet;
 
 use itertools::Itertools;
+use rand::{seq::SliceRandom, thread_rng};
 use EAction::*;
 
 use crate::{
     actions,
+    algorithms::cfres::{DepthChecker, EuchreDepthChecker},
     game::{
-        euchre::{actions::EAction, EPhase, Euchre, EuchreGameState},
+        euchre::{
+            actions::{Card, EAction},
+            util::generate_face_up_deals,
+            EPhase, Euchre, EuchreGameState,
+        },
         Action, GameState,
     },
     istate::IStateKey,
@@ -135,11 +141,23 @@ impl IStateBuilder {
     }
 }
 
-pub fn count_deals() -> usize {
-    let mut gs = Euchre::new_state();
-    let mut count = 0;
-    walk_deals(&mut gs, &mut count);
-    count
+pub fn count_deals(samples: usize, face_up: Card, max_cards_played: usize) -> usize {
+    let checker = EuchreDepthChecker { max_cards_played };
+    let mut istates = HashSet::new();
+    let mut actions = Vec::new();
+
+    for _ in 0..samples {
+        let mut gs = generate_face_up_deals(face_up);
+        while !checker.is_max_depth(&gs) {
+            let istate = gs.istate_key(gs.cur_player());
+            istates.insert(istate);
+            gs.legal_actions(&mut actions);
+            let a = actions.choose(&mut thread_rng()).unwrap();
+            gs.apply_action(*a);
+        }
+    }
+
+    istates.len()
 }
 
 fn walk_deals(gs: &mut EuchreGameState, count: &mut usize) {

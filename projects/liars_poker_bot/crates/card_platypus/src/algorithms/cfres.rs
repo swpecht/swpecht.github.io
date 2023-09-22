@@ -560,8 +560,8 @@ impl<G> DepthChecker<G> for NoOpDepthChecker {
 }
 
 #[derive(Clone)]
-struct EuchreDepthChecker {
-    max_cards_played: usize,
+pub struct EuchreDepthChecker {
+    pub max_cards_played: usize,
 }
 
 impl DepthChecker<EuchreGameState> for EuchreDepthChecker {

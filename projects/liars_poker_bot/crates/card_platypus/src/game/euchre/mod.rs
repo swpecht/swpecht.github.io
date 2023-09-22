@@ -30,6 +30,7 @@ mod deck;
 pub mod ismorphic;
 mod parser;
 pub mod processors;
+pub mod util;
 
 pub struct Euchre {}
 impl Euchre {

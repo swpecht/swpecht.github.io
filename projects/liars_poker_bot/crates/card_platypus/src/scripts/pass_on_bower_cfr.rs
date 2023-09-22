@@ -10,6 +10,7 @@ use card_platypus::{
     game::{
         euchre::{
             actions::{Card, EAction},
+            util::generate_face_up_deals,
             EPhase, Euchre, EuchreGameState,
         },
         GameState,
@@ -200,26 +201,6 @@ fn score_vs_defender<A: Agent<EuchreGameState> + Seedable>(
         running_score += w.evaluate(target_team);
     }
     running_score / worlds.len() as f64
-}
-
-/// Generator for games where the jack of spades is face up
-pub fn generate_face_up_deals(face_up: Card) -> EuchreGameState {
-    let mut gs = Euchre::new_state();
-    let mut actions = Vec::new();
-    for _ in 0..20 {
-        gs.legal_actions(&mut actions);
-        actions.retain(|&a| EAction::from(a).card() != face_up);
-        let a = actions
-            .choose(&mut thread_rng())
-            .expect("error dealing cards");
-        gs.apply_action(*a);
-        actions.clear();
-    }
-
-    gs.apply_action(EAction::from(face_up).into());
-
-    assert_eq!(gs.phase(), EPhase::Pickup);
-    gs
 }
 
 #[derive(Serialize)]

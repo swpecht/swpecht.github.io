@@ -8,7 +8,7 @@ use card_platypus::{
     },
     game::{
         bluff::Bluff,
-        euchre::{actions::Card, Euchre, EuchreGameState},
+        euchre::{actions::Card, util::generate_face_up_deals, Euchre, EuchreGameState},
         get_games,
         kuhn_poker::KuhnPoker,
         Game, GameState,
@@ -20,7 +20,7 @@ use itertools::Itertools;
 use log::{debug, info};
 use rand::{rngs::StdRng, thread_rng, SeedableRng};
 
-use crate::{scripts::pass_on_bower_cfr::generate_face_up_deals, GameType};
+use crate::GameType;
 
 #[derive(ValueEnum, Clone, Copy, Debug)]
 pub enum BenchmarkMode {

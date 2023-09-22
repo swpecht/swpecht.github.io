@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fs::{self, OpenOptions},
     path::Path,
     sync::{Arc, Mutex},
@@ -10,7 +10,7 @@ use boomphf::Mphf;
 use card_platypus::{
     algorithms::cfres::InfoState,
     alloc::tracking::{Stats, TrackingAllocator},
-    collections::actionlist::ActionList,
+    collections::{actionlist::ActionList, actiontrie::ActionTrie},
     game::Action,
     istate::{IStateKey, NormalizedAction},
 };
@@ -27,7 +27,32 @@ use memmap2::MmapMut;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use rayon::prelude::*;
 
-use rocksdb::DB;
+pub fn main() {
+    #[global_allocator]
+    static ALLOC: TrackingAllocator = TrackingAllocator;
+
+    let size = 20_000_000;
+    std::fs::create_dir_all("/tmp/card_platypus/").unwrap();
+
+    // println!("starting generation of phf");
+    // generate_phf("/tmp/card_platypus/phf", size).unwrap();
+
+    // println!("starting run...");
+
+    // run_and_track("mutex hashmap", size, mutex_hashmap_bench);
+    // run_and_track("dashmap", size, dashmap_bench);
+
+    // #[cfg(feature = "storage-benchmark")]
+    // {
+    //     run_and_track("heed - cached", size, heed_bench);
+    //     run_and_track("rocksdb - cached writes", size, rocksdb_bench);
+    // }
+
+    // run_and_track("mem map w/ phf, single thread", size, mem_map);
+
+    run_and_track("storage: actiontrie", 5_000_000, actiontrie_storage);
+    run_and_track("storage: btree", 5_000_000, btree_storage);
+}
 
 pub fn run_and_track<T>(name: &str, size: usize, f: impl FnOnce(usize) -> T) {
     card_platypus::alloc::tracking::reset();
@@ -48,30 +73,6 @@ pub fn run_and_track<T>(name: &str, size: usize, f: impl FnOnce(usize) -> T) {
     );
 
     drop(t);
-}
-
-pub fn main() {
-    #[global_allocator]
-    static ALLOC: TrackingAllocator = TrackingAllocator;
-
-    let size = 20_000_000;
-    std::fs::create_dir_all("/tmp/card_platypus/").unwrap();
-
-    println!("starting generation of phf");
-    generate_phf("/tmp/card_platypus/phf", size).unwrap();
-
-    println!("starting run...");
-
-    run_and_track("mutex hashmap", size, mutex_hashmap_bench);
-    run_and_track("dashmap", size, dashmap_bench);
-
-    #[cfg(feature = "storage-benchmark")]
-    {
-        run_and_track("heed - cached", size, heed_bench);
-        run_and_track("rocksdb - cached writes", size, rocksdb_bench);
-    }
-
-    run_and_track("mem map w/ phf, single thread", size, mem_map);
 }
 
 fn get_generator(len: usize) -> DataGenerator {
@@ -157,31 +158,6 @@ fn heed_bench(size: usize) {
     });
 }
 
-fn rocksdb_bench(size: usize) {
-    let path = "/tmp/card_platypus/rocksdb_bench";
-
-    let x = DB::open_default(path).unwrap();
-    let cache = Mutex::new(HashMap::new());
-    let generator = get_generator(size);
-    generator.par_bridge().for_each(|(k, v)| {
-        if cache.lock().unwrap().get(&k).is_none() {
-            let k = k.as_slice().iter().map(|x| x.0).collect_vec();
-            x.get(&k).unwrap();
-        }
-        do_work();
-        let data = rmp_serde::encode::to_vec(&v).unwrap();
-        cache.lock().unwrap().insert(k, data);
-
-        let mut c = cache.lock().unwrap();
-        if c.len() > 1_000_000 {
-            for (k, v) in c.drain() {
-                let k = k.as_slice().iter().map(|x| x.0).collect_vec();
-                x.put(&k, &v).unwrap();
-            }
-        }
-    });
-}
-
 fn mem_map(size: usize) {
     let serialized = std::fs::read("/tmp/card_platypus/phf").unwrap();
     let phf: Mphf<IStateKey> = rmp_serde::from_slice(&serialized).unwrap();
@@ -215,6 +191,26 @@ fn mem_map(size: usize) {
     });
 
     mmap.flush().unwrap();
+}
+
+fn btree_storage(size: usize) -> BTreeMap<IStateKey, usize> {
+    let mut map = BTreeMap::new();
+
+    let generator = get_generator(size);
+    for (i, (k, _)) in generator.enumerate() {
+        map.insert(k, i);
+    }
+    map
+}
+
+fn actiontrie_storage(size: usize) -> ActionTrie<usize> {
+    let mut map = ActionTrie::default();
+
+    let generator = get_generator(size);
+    for (i, (k, _)) in generator.enumerate() {
+        map.insert(&k, i);
+    }
+    map
 }
 
 fn do_work() {
