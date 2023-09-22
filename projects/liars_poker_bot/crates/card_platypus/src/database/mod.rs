@@ -7,7 +7,7 @@ use std::{
 use anyhow::{bail, Context};
 use boomphf::Mphf;
 use itertools::Itertools;
-use log::warn;
+use log::{debug, warn};
 use memmap2::MmapMut;
 use serde::{Deserialize, Serialize};
 
@@ -135,7 +135,7 @@ impl NodeStore {
             self.mmap.flush().expect("failed to flush mmap");
             self.mmap = get_mmap(self.path.as_deref(), cur_len + REMAP_INCREMENT)
                 .expect("failed to resize mmap");
-            warn!("resized mmap");
+            debug!("resized mmap");
         }
 
         let data = rmp_serde::to_vec(value).unwrap();
