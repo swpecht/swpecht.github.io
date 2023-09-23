@@ -72,6 +72,10 @@ impl IStateKey {
     pub fn as_slice(&self) -> &[Action] {
         &self.actions[..self.len]
     }
+
+    pub fn to_vec(&self) -> Vec<Action> {
+        self.actions[..self.len].to_vec()
+    }
 }
 
 impl ToString for IStateKey {

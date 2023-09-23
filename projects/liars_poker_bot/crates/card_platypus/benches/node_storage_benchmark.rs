@@ -50,8 +50,9 @@ pub fn main() {
 
     // run_and_track("mem map w/ phf, single thread", size, mem_map);
 
-    run_and_track("storage: actiontrie", 5_000_000, actiontrie_storage);
+    // run_and_track("storage: actiontrie", 5_000_000, actiontrie_storage);
     run_and_track("storage: btree", 5_000_000, btree_storage);
+    run_and_track("storage: btree vec", 5_000_000, btree_storage_vec);
 }
 
 pub fn run_and_track<T>(name: &str, size: usize, f: impl FnOnce(usize) -> T) {
@@ -199,6 +200,16 @@ fn btree_storage(size: usize) -> BTreeMap<IStateKey, usize> {
     let generator = get_generator(size);
     for (i, (k, _)) in generator.enumerate() {
         map.insert(k, i);
+    }
+    map
+}
+
+fn btree_storage_vec(size: usize) -> BTreeMap<Vec<Action>, usize> {
+    let mut map = BTreeMap::new();
+
+    let generator = get_generator(size);
+    for (i, (k, _)) in generator.enumerate() {
+        map.insert(k.to_vec(), i);
     }
     map
 }

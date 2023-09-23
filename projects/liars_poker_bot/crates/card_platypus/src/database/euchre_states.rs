@@ -141,9 +141,13 @@ impl IStateBuilder {
     }
 }
 
-pub fn count_deals(samples: usize, face_up: Card, max_cards_played: usize) -> usize {
+pub fn collect_istates(
+    istates: &mut HashSet<IStateKey>,
+    samples: usize,
+    face_up: Card,
+    max_cards_played: usize,
+) {
     let checker = EuchreDepthChecker { max_cards_played };
-    let mut istates = HashSet::new();
     let mut actions = Vec::new();
 
     for _ in 0..samples {
@@ -156,8 +160,6 @@ pub fn count_deals(samples: usize, face_up: Card, max_cards_played: usize) -> us
             gs.apply_action(*a);
         }
     }
-
-    istates.len()
 }
 
 fn walk_deals(gs: &mut EuchreGameState, count: &mut usize) {

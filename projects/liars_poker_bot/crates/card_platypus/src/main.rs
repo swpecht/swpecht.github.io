@@ -1,10 +1,11 @@
+use std::collections::HashSet;
 use std::fs::OpenOptions;
 use std::mem;
-use std::path::Path;
 
 use card_platypus::algorithms::cfres::{self, InfoState};
-use card_platypus::database::euchre_states::count_deals;
-use card_platypus::database::generate_euchre_phf;
+use card_platypus::database::euchre_states::collect_istates;
+
+use card_platypus::game::euchre::actions::Card;
 use clap::{command, Parser, Subcommand, ValueEnum};
 
 use card_platypus::actions;
@@ -19,7 +20,8 @@ use card_platypus::game::euchre::{Euchre, EuchreGameState};
 use card_platypus::game::kuhn_poker::KPGameState;
 use card_platypus::game::GameState;
 
-use log::{set_max_level, LevelFilter};
+use indicatif::ProgressBar;
+use log::{info, set_max_level, LevelFilter};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
@@ -157,8 +159,22 @@ fn run_scratch(_args: Args) {
 
     println!("cfres node {}", mem::size_of::<InfoState>());
 
-    let n = count_deals();
-    println!("counted: {}", n);
+    println!("estimating istates...");
+    let mut istates = HashSet::new();
+    let samples = 100_000_000;
+    let mut cur_sample = 0;
+    const STEP_SIZE: usize = 1_000_000;
+
+    let pb = ProgressBar::new(samples as u64);
+    while cur_sample < samples {
+        collect_istates(&mut istates, STEP_SIZE, Card::JS, 0);
+        cur_sample += STEP_SIZE;
+        pb.inc(STEP_SIZE as u64);
+        info!("{}\t{}", cur_sample, istates.len());
+    }
+    pb.finish_and_clear();
+
+    println!("{}", istates.len());
 }
 
 fn run_analyze(args: Args) {

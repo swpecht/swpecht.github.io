@@ -15,7 +15,7 @@ use crate::{
     actions,
     algorithms::cfres::InfoState,
     database::euchre_states::{generate_euchre_states, IStateBuilder},
-    game::GameState,
+    game::{Action, GameState},
     istate::IStateKey,
 };
 
@@ -24,15 +24,17 @@ pub mod euchre_states;
 const BUCKET_SIZE: usize = 200; // approximation of size of serialized infostate
 const REMAP_INCREMENT: usize = 10_000_000;
 
+/// We use a vectorized version of the istates instead of the array to reduce memory usage
 #[derive(Default, Serialize, Deserialize)]
 struct HashStore {
-    index: BTreeMap<IStateKey, usize>,
+    index: BTreeMap<Vec<Action>, usize>,
     next: usize,
 }
 
 impl HashStore {
     pub fn hash(&mut self, key: &IStateKey) -> usize {
-        match self.index.entry(*key) {
+        let key = key.to_vec();
+        match self.index.entry(key) {
             Entry::Occupied(x) => return *x.get(),
             Entry::Vacant(x) => {
                 let hash = self.next;
@@ -44,7 +46,8 @@ impl HashStore {
     }
 
     pub fn get_hash(&self, key: &IStateKey) -> Option<usize> {
-        self.index.get(key).copied()
+        let key = key.to_vec();
+        self.index.get(&key).copied()
     }
 
     pub fn len(&self) -> usize {
