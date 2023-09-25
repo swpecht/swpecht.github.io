@@ -14,7 +14,6 @@ use serde::{Deserialize, Serialize};
 use crate::{
     actions,
     algorithms::cfres::InfoState,
-    database::euchre_states::{generate_euchre_states, IStateBuilder},
     game::{Action, GameState},
     istate::IStateKey,
 };
@@ -203,19 +202,20 @@ fn load_phf(path: Option<&Path>) -> anyhow::Result<HashStore> {
 }
 
 pub fn generate_euchre_phf() -> anyhow::Result<(Mphf<IStateKey>, usize)> {
-    let mut builder = IStateBuilder::default();
-    let mut istates = HashSet::new();
-    generate_euchre_states(
-        &mut builder,
-        &mut istates,
-        euchre_states::Termination::Play { cards: 1 },
-    );
+    // let mut builder = IStateBuilder::default();
+    // let mut istates = HashSet::new();
+    // generate_euchre_states(
+    //     &mut builder,
+    //     &mut istates,
+    //     euchre_states::Termination::Play { cards: 1 },
+    // );
 
-    let n = istates.len();
-    let phf = Mphf::new_parallel(1.7, &istates.iter().copied().collect_vec(), None);
-    validate_phf(&istates, &phf);
+    // let n = istates.len();
+    // let phf = Mphf::new_parallel(1.7, &istates.iter().copied().collect_vec(), None);
+    // validate_phf(&istates, &phf);
 
-    Ok((phf, n))
+    // Ok((phf, n))
+    todo!()
 }
 
 fn generate_phf<T: GameState>(new_state: fn() -> T) -> anyhow::Result<(Mphf<IStateKey>, usize)> {

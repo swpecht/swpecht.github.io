@@ -28,6 +28,7 @@ use rand::SeedableRng;
 use scripts::agent_exploitability::calcualte_agent_exploitability;
 use scripts::benchmark::{get_rng, run_benchmark, BenchmarkArgs};
 use scripts::estimate_euchre_game_tree::estimate_euchre_game_tree;
+use scripts::euchre_phf::{euchre_phf, EuchrePhfMode};
 use scripts::pass_on_bower::open_hand_score_pass_on_bower;
 use scripts::pass_on_bower_alpha::benchmark_pass_on_bower;
 use scripts::pass_on_bower_cfr::{
@@ -59,11 +60,23 @@ enum Commands {
     Scratch,
     Exploitability,
     PassOnBowerOpenHand,
-    PassOnBowerAlpha { num_games: usize },
-    EuchreCFRTrain { profile: String },
+    PassOnBowerAlpha {
+        num_games: usize,
+    },
+    EuchreCFRTrain {
+        profile: String,
+    },
     PassOnBowerCFRTrain(PassOnBowerCFRArgs),
-    PassOnBowerCFRParseWeights { infostate_path: String },
-    PassOnBowerCFRAnalyzeIstate { num_games: usize },
+    PassOnBowerCFRParseWeights {
+        infostate_path: String,
+    },
+    PassOnBowerCFRAnalyzeIstate {
+        num_games: usize,
+    },
+    EuchrePhf {
+        #[command(subcommand)]
+        command: EuchrePhfMode,
+    },
 }
 
 /// Simple program to greet a person
@@ -149,6 +162,7 @@ fn main() {
         }
         Commands::PassOnBowerCFRAnalyzeIstate { num_games } => analyze_istate(num_games),
         Commands::EuchreCFRTrain { profile } => train_cfr_from_config(profile.as_str()).unwrap(),
+        Commands::EuchrePhf { command } => euchre_phf(command),
     }
 }
 
@@ -158,23 +172,6 @@ fn run_scratch(_args: Args) {
     println!("euchre size: {}", mem::size_of::<EuchreGameState>());
 
     println!("cfres node {}", mem::size_of::<InfoState>());
-
-    println!("estimating istates...");
-    let mut istates = HashSet::new();
-    let samples = 100_000_000;
-    let mut cur_sample = 0;
-    const STEP_SIZE: usize = 1_000_000;
-
-    let pb = ProgressBar::new(samples as u64);
-    while cur_sample < samples {
-        collect_istates(&mut istates, STEP_SIZE, Card::JS, 0);
-        cur_sample += STEP_SIZE;
-        pb.inc(STEP_SIZE as u64);
-        info!("{}\t{}", cur_sample, istates.len());
-    }
-    pb.finish_and_clear();
-
-    println!("{}", istates.len());
 }
 
 fn run_analyze(args: Args) {
