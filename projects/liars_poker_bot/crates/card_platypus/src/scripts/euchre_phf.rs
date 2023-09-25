@@ -1,10 +1,11 @@
 use std::{
     collections::HashSet,
     fs::File,
-    io::{BufReader, BufWriter},
+    io::{self, BufReader, BufWriter, Read},
     path::Path,
 };
 
+use anyhow::Ok;
 use boomphf::Mphf;
 use card_platypus::{
     database::euchre_states::collect_istates,
@@ -66,14 +67,10 @@ fn generate_euchre_istates(num_iterations: usize) -> anyhow::Result<()> {
 
 fn load_istates() -> anyhow::Result<HashSet<Vec<Action>>> {
     let out_dir = Path::new(DIR);
-    let istates = if let Ok(out_f) = File::open(out_dir.join(ISTATE_FILE)) {
-        let r = BufReader::new(&out_f);
-        match serde_json::from_reader(r) {
-            Ok(x) => x,
-            Err(_) => HashSet::default(),
-        }
-    } else {
-        HashSet::default()
+    let r = ProgressReader::new(&out_dir.join(ISTATE_FILE))?;
+    let istates = match serde_json::from_reader(r) {
+        std::result::Result::Ok(x) => x,
+        Err(_) => HashSet::default(),
     };
     Ok(istates)
 }
@@ -91,4 +88,31 @@ fn generate_euchre_phf() -> anyhow::Result<()> {
     serde_json::to_writer(w, &phf)?;
 
     Ok(())
+}
+
+struct ProgressReader {
+    reader: BufReader<File>,
+    pb: ProgressBar,
+}
+
+impl ProgressReader {
+    fn new(file: &Path) -> anyhow::Result<Self> {
+        let f = File::open(file)?;
+        let len = f.metadata()?.len();
+        let pb = ProgressBar::new(len);
+        let r = BufReader::new(f);
+        Ok(Self { reader: r, pb })
+    }
+
+    fn finish(&mut self) {
+        self.pb.finish_and_clear();
+    }
+}
+
+impl Read for ProgressReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.reader.read(buf)?;
+        self.pb.inc(n as u64);
+        std::io::Result::Ok(n)
+    }
 }
