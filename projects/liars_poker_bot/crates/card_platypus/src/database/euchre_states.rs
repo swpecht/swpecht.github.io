@@ -15,7 +15,7 @@ use crate::{
 };
 
 pub fn collect_istates(
-    istates: &mut HashSet<IStateKey>,
+    istates: &mut HashSet<Vec<Action>>,
     samples: usize,
     face_up: Card,
     max_cards_played: usize,
@@ -27,7 +27,7 @@ pub fn collect_istates(
         let mut gs = generate_face_up_deals(face_up);
         while !checker.is_max_depth(&gs) {
             let istate = gs.istate_key(gs.cur_player());
-            istates.insert(istate);
+            istates.insert(istate.to_vec());
             gs.legal_actions(&mut actions);
             let a = actions.choose(&mut thread_rng()).unwrap();
             gs.apply_action(*a);
