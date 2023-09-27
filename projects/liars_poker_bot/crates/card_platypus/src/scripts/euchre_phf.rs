@@ -10,6 +10,8 @@ use boomphf::Mphf;
 use card_platypus::{
     database::euchre_states::collect_istates,
     game::{euchre::actions::Card, Action},
+    io::ProgressReader,
+    istate::IStateKey,
 };
 use clap::Subcommand;
 use indicatif::ProgressBar;
@@ -90,29 +92,41 @@ fn generate_euchre_phf() -> anyhow::Result<()> {
     Ok(())
 }
 
-struct ProgressReader {
-    reader: BufReader<File>,
-    pb: ProgressBar,
+/// Translates an IStateKey to an index
+pub fn to_index(key: &IStateKey) -> usize {
+    todo!()
 }
 
-impl ProgressReader {
-    fn new(file: &Path) -> anyhow::Result<Self> {
-        let f = File::open(file)?;
-        let len = f.metadata()?.len();
-        let pb = ProgressBar::new(len);
-        let r = BufReader::new(f);
-        Ok(Self { reader: r, pb })
+#[cfg(test)]
+mod tests {
+    use card_platypus::{
+        game::euchre::actions::{Card, EAction},
+        istate::IStateKey,
+    };
+
+    use crate::scripts::euchre_phf::to_index;
+
+    #[test]
+    fn test_euchre_index() {
+        use Card::*;
+        let cases = vec![
+            (vec![NS, TS, JS, QS, KS, AS], 0),
+            (vec![NS, TS, JS, QS, KS, TC], 1),
+            (vec![TS, JS, QS, KS, AS, TC], 500), // todo - fix this
+        ];
+
+        for (cards, index) in cases {
+            let key = to_key(&cards);
+            assert_eq!(to_index(&key), index);
+        }
     }
 
-    fn finish(&mut self) {
-        self.pb.finish_and_clear();
-    }
-}
+    fn to_key(cards: &[Card]) -> IStateKey {
+        let mut key = IStateKey::default();
+        for c in cards {
+            key.push(EAction::from(*c).into());
+        }
 
-impl Read for ProgressReader {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let n = self.reader.read(buf)?;
-        self.pb.inc(n as u64);
-        std::io::Result::Ok(n)
+        key
     }
 }

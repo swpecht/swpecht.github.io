@@ -4,6 +4,7 @@ pub mod alloc;
 pub mod collections;
 pub mod database;
 pub mod game;
+pub mod io;
 pub mod istate;
 pub mod metrics;
 pub mod policy;
