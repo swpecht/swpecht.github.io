@@ -39,7 +39,6 @@ training_iterations = 100000000
 scoring_freq = 1000000
 scoring_iterations = 1000
 checkpoint_freq = 5000000
-deal_type = "All"
 max_cards_played = 3
 
 [train.first_trick]
@@ -48,5 +47,4 @@ training_iterations = 200000000
 scoring_freq = 1000000
 scoring_iterations = 1000
 checkpoint_freq = 5000000
-deal_type = "All"
 max_cards_played = 4
