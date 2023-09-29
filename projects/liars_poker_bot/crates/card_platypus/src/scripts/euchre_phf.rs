@@ -1,11 +1,6 @@
-use std::{
-    collections::HashSet,
-    fs::File,
-    io::{self, BufReader, BufWriter, Read},
-    path::Path,
-};
+use std::{collections::HashSet, fs::File, io::BufWriter, path::Path};
 
-use anyhow::{bail, Context, Ok};
+use anyhow::{bail, Ok};
 use boomphf::Mphf;
 use card_platypus::{
     database::euchre_states::collect_istates,

@@ -1,11 +1,8 @@
-use std::collections::HashSet;
 use std::fs::OpenOptions;
 use std::mem;
 
 use card_platypus::algorithms::cfres::{self, InfoState};
-use card_platypus::database::euchre_states::collect_istates;
 
-use card_platypus::game::euchre::actions::Card;
 use clap::{command, Parser, Subcommand, ValueEnum};
 
 use card_platypus::actions;
@@ -20,8 +17,7 @@ use card_platypus::game::euchre::{Euchre, EuchreGameState};
 use card_platypus::game::kuhn_poker::KPGameState;
 use card_platypus::game::GameState;
 
-use indicatif::ProgressBar;
-use log::{info, set_max_level, LevelFilter};
+use log::{set_max_level, LevelFilter};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::SeedableRng;

@@ -1,10 +1,10 @@
-use std::{fs, path::Path};
+use std::path::Path;
 
-use anyhow::{Context, Ok};
+use anyhow::Ok;
 use clap::{command, Parser, Subcommand};
 use itertools::Itertools;
 use notify::{RecursiveMode, Watcher};
-use toml::Table;
+
 use xshell::{cmd, Shell};
 
 const REMOTE_ADDR: &str = "static.222.71.9.5.clients.your-server.de";

@@ -12,7 +12,7 @@ use card_platypus::{
             actions::{Card, EAction},
             ismorphic::LossyEuchreNormalizer,
             util::generate_face_up_deals,
-            EPhase, Euchre, EuchreGameState,
+            Euchre, EuchreGameState,
         },
         GameState,
     },
