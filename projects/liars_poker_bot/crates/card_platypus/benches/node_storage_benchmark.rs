@@ -1,7 +1,6 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
-    fs::{self, OpenOptions},
-    path::Path,
+    fs::OpenOptions,
     sync::{Arc, Mutex},
     time::Instant,
 };
@@ -17,11 +16,6 @@ use card_platypus::{
 
 use dashmap::DashMap;
 
-use heed::{
-    flags::Flags,
-    types::{ByteSlice, SerdeBincode},
-    Database, EnvOpenOptions,
-};
 use itertools::Itertools;
 use memmap2::MmapMut;
 use rand::{rngs::StdRng, Rng, SeedableRng};
@@ -34,23 +28,17 @@ pub fn main() {
     let size = 20_000_000;
     std::fs::create_dir_all("/tmp/card_platypus/").unwrap();
 
-    // println!("starting generation of phf");
-    // generate_phf("/tmp/card_platypus/phf", size).unwrap();
+    println!("starting generation of phf");
+    generate_phf("/tmp/card_platypus/phf", size).unwrap();
 
-    // println!("starting run...");
+    println!("starting run...");
 
-    // run_and_track("mutex hashmap", size, mutex_hashmap_bench);
-    // run_and_track("dashmap", size, dashmap_bench);
+    run_and_track("mutex hashmap", size, mutex_hashmap_bench);
+    run_and_track("dashmap", size, dashmap_bench);
 
-    // #[cfg(feature = "storage-benchmark")]
-    // {
-    //     run_and_track("heed - cached", size, heed_bench);
-    //     run_and_track("rocksdb - cached writes", size, rocksdb_bench);
-    // }
+    run_and_track("mem map w/ phf, single thread", size, mem_map);
 
-    // run_and_track("mem map w/ phf, single thread", size, mem_map);
-
-    // run_and_track("storage: actiontrie", 5_000_000, actiontrie_storage);
+    run_and_track("storage: actiontrie", 5_000_000, actiontrie_storage);
     run_and_track("storage: btree", 5_000_000, btree_storage);
     run_and_track("storage: btree vec", 5_000_000, btree_storage_vec);
 }
@@ -106,57 +94,6 @@ fn dashmap_bench(size: usize) -> Arc<DashMap<IStateKey, InfoState>> {
         s.insert(k, v);
     });
     x
-}
-
-fn heed_bench(size: usize) {
-    let path = Path::new("/tmp/card_platypus").join("heed_bench.mdb");
-
-    fs::create_dir_all(path.clone()).unwrap();
-
-    let mut env_builder = EnvOpenOptions::new();
-    unsafe {
-        // Only sync meta data at the end of a transaction, this can hurt the durability
-        // of the database, but cannot lead to corruption
-        env_builder.flag(Flags::MdbNoMetaSync);
-        // Disable OS read-ahead, can improve perf when db is larger than RAM
-        env_builder.flag(Flags::MdbNoRdAhead);
-        // Improves write performance, but can cause corruption if there is a bug in application
-        // code that overwrite the memory address
-        env_builder.flag(Flags::MdbWriteMap);
-        // Avoid zeroing memory before use -- can cause issues with
-        // sensitive data, but not a risk here.
-        env_builder.flag(Flags::MdbNoMemInit);
-    }
-    const MAX_DB_SIZE_GB: usize = 10;
-    env_builder.map_size(MAX_DB_SIZE_GB * 1024 * 1024 * 1024);
-
-    let env = env_builder.open(path).unwrap();
-    // need to open rather than create for WriteMap to work
-    let x: Database<ByteSlice, SerdeBincode<InfoState>> = env.open_database(None).unwrap().unwrap();
-    let cache = Mutex::new(HashMap::new());
-
-    let generator = get_generator(size);
-
-    generator.par_bridge().for_each(|(k, v)| {
-        if cache.lock().unwrap().get(&k).is_none() {
-            let rtxn = env.read_txn().unwrap();
-            let k = k.as_slice().iter().map(|x| x.0).collect_vec();
-            x.get(&rtxn, &k).unwrap();
-        }
-
-        do_work();
-        cache.lock().unwrap().insert(k, v);
-
-        let mut c = cache.lock().unwrap();
-        if c.len() > 1_000_000 {
-            let mut wtxn = env.write_txn().unwrap();
-            for (k, v) in c.drain() {
-                let k = k.as_slice().iter().map(|x| x.0).collect_vec();
-                x.put(&mut wtxn, &k, &v).unwrap();
-            }
-            wtxn.commit().unwrap();
-        }
-    });
 }
 
 fn mem_map(size: usize) {

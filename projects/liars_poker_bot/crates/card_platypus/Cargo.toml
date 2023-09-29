@@ -28,15 +28,10 @@ num-derive = "0.4"
 anyhow = "1.0"
 dyn-clone = "1.0"
 toml = "0.7"
-heed = "0.11"
 bitflags = "^1.0"
-rocksdb = {version = "0.21", optional = true}
 memmap2 = "0.7.1"
 boomphf = {version = "0.6", git = "https://github.com/10XGenomics/rust-boomphf.git", features = ["serde"]}
 bytemuck = "1.14"
-
-[features]
-storage-benchmark = ["dep:rocksdb"]
 
 [dev-dependencies]
 criterion = "0.4"
