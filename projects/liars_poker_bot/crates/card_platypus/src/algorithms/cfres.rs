@@ -136,12 +136,21 @@ impl<G> Seedable for CFRES<G> {
 impl CFRES<EuchreGameState> {
     pub fn new_euchre(
         game_generator: fn() -> EuchreGameState,
-        mut rng: StdRng,
+        rng: StdRng,
         max_cards_played: usize,
     ) -> Self {
         let normalizer: Box<dyn IStateNormalizer<EuchreGameState>> =
             Box::<EuchreNormalizer>::default();
 
+        CFRES::new_with_normalizer(game_generator, rng, max_cards_played, normalizer)
+    }
+
+    pub fn new_with_normalizer(
+        game_generator: fn() -> EuchreGameState,
+        mut rng: StdRng,
+        max_cards_played: usize,
+        normalizer: Box<dyn IStateNormalizer<EuchreGameState>>,
+    ) -> Self {
         let pimcts_seed = rng.gen();
 
         Self {

@@ -6,7 +6,7 @@ use crate::{
 use super::{
     actions::{Card, EAction, Suit},
     deck::Deck,
-    EuchreGameState,
+    EPhase, EuchreGameState,
 };
 
 const JACK_RANK: usize = 2;
@@ -171,6 +171,62 @@ impl IStateNormalizer<EuchreGameState> for EuchreNormalizer {
         new_istate.sort_range(0, 5.min(new_istate.len()));
 
         NormalizedIstate::new(new_istate)
+    }
+}
+
+/// Normalizes the play cards for euchre to normalize the istate
+#[derive(Default, Clone)]
+pub struct LossyEuchreNormalizer {
+    baseline: EuchreNormalizer,
+}
+
+impl IStateNormalizer<EuchreGameState> for LossyEuchreNormalizer {
+    fn normalize_action(&self, action: Action, gs: &EuchreGameState) -> NormalizedAction {
+        self.baseline.normalize_action(action, gs)
+    }
+
+    fn denormalize_action(&self, action: NormalizedAction, gs: &EuchreGameState) -> Action {
+        self.baseline.denormalize_action(action, gs)
+    }
+
+    /// Only exactly tracks the cards in our hand, face up card, trump card, and the lead suit in a trick.
+    ///
+    /// Everything else is replaced with a 9 of the relevant suit
+    fn normalize_istate(&self, istate: &IStateKey, gs: &EuchreGameState) -> NormalizedIstate {
+        let mut new_key = self.baseline.normalize_istate(istate, gs).get();
+
+        if gs.phase() != EPhase::Play {
+            return NormalizedIstate::new(new_key);
+        }
+
+        let len = new_key.len();
+        let cards_played = gs.cards_played;
+        let trump = gs.trump.unwrap();
+        let mut lead_suit = Suit::Spades;
+
+        new_key
+            .iter_mut()
+            .skip(len - cards_played)
+            .enumerate()
+            .for_each(|(i, x)| {
+                let a = EAction::from(*x);
+                if i % 4 == 0 {
+                    lead_suit = gs.get_suit(a.card());
+                }
+                let new_a = match a {
+                    a if gs.get_suit(a.card()) == trump => a,
+                    a if gs.get_suit(a.card()) == lead_suit => a,
+                    a if a.card().suit() == Suit::Clubs => EAction::NC,
+                    a if a.card().suit() == Suit::Spades => EAction::NS,
+                    a if a.card().suit() == Suit::Diamonds => EAction::ND,
+                    a if a.card().suit() == Suit::Hearts => EAction::NH,
+                    _ => panic!("invalid action to convert: {}", a),
+                };
+
+                *x = new_a.into();
+            });
+
+        NormalizedIstate::new(new_key)
     }
 }
 
@@ -343,5 +399,10 @@ mod tests {
                 assert_eq!(denormalized, suit.into())
             }
         }
+    }
+
+    #[test]
+    fn test_lossy_normalizer() {
+        todo!()
     }
 }

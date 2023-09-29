@@ -2,7 +2,12 @@ use dyn_clone::DynClone;
 use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;
 
-use std::{fmt::Debug, hash::Hash, ops::Deref, usize};
+use std::{
+    fmt::Debug,
+    hash::Hash,
+    ops::{Deref, DerefMut},
+    usize,
+};
 
 use crate::game::Action;
 
@@ -39,6 +44,12 @@ impl Deref for IStateKey {
 
     fn deref(&self) -> &Self::Target {
         &self.actions[..self.len]
+    }
+}
+
+impl DerefMut for IStateKey {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.actions[..self.len]
     }
 }
 

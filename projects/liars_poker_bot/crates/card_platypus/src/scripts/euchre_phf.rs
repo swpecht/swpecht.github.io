@@ -5,11 +5,14 @@ use std::{
     path::Path,
 };
 
-use anyhow::Ok;
+use anyhow::{bail, Context, Ok};
 use boomphf::Mphf;
 use card_platypus::{
     database::euchre_states::collect_istates,
-    game::{euchre::actions::Card, Action},
+    game::{
+        euchre::actions::{Card, EAction},
+        Action,
+    },
     io::ProgressReader,
     istate::IStateKey,
 };
@@ -92,13 +95,76 @@ fn generate_euchre_phf() -> anyhow::Result<()> {
     Ok(())
 }
 
+use EAction::*;
+const VALID_ACTIONS: &[&[EAction]] = &[
+    &[
+        NC, TC, JC, QC, KC, AC, NS, TS, JS, QS, KS, AS, NH, TH, JH, QH, KH, AH, ND, TD,
+    ],
+    &[
+        TC, JC, QC, KC, AC, NS, TS, JS, QS, KS, AS, NH, TH, JH, QH, KH, AH, ND, TD, JD,
+    ],
+    &[
+        JC, QC, KC, AC, NS, TS, JS, QS, KS, AS, NH, TH, JH, QH, KH, AH, ND, TD, JD, QD,
+    ],
+    &[
+        QC, KC, AC, NS, TS, JS, QS, KS, AS, NH, TH, JH, QH, KH, AH, ND, TD, JD, QD, KD,
+    ],
+    &[
+        KC, AC, NS, TS, JS, QS, KS, AS, NH, TH, JH, QH, KH, AH, ND, TD, JD, QD, KD, AD,
+    ],
+    &[NS, TS, JS, QS, KS, AS],
+];
+
 /// Translates an IStateKey to an index
-pub fn to_index(key: &IStateKey) -> usize {
-    todo!()
+pub fn to_index(key: &IStateKey) -> anyhow::Result<usize> {
+    if key.len() < 6 {
+        bail!("only full deals supported")
+    }
+
+    assert_eq!(key.len(), 6, "only support deals for now");
+
+    let mut index = 0;
+    let mut actions = Vec::with_capacity(key.len());
+    for a in key.iter().map(|x| EAction::from(*x)) {
+        actions.push(a);
+        index += count_lower(&mut actions)?;
+    }
+
+    Ok(index)
+}
+
+/// Returns the number of lower hands if the deal was extended forward from the
+/// last dealt card where it was filled with the lowest cards
+fn count_lower(actions: &mut Vec<EAction>) -> anyhow::Result<usize> {
+    if actions.len() == 6 {
+        return Ok(1);
+    }
+
+    // we should count up, until we have the action we want in the slot we're looking at?
+    let mut count = 0;
+    let valid = VALID_ACTIONS[actions.len() - 1];
+    let a = actions.last().unwrap();
+    // let idx = valid.iter().position(|x| *x == a).with_context(|| {
+    //     format!(
+    //         "invalid action passsed: {}, valid actions are: {:?}",
+    //         a, valid
+    //     )
+    // })?;
+    let idx = 0;
+    let lower_actions = &valid[..idx];
+
+    for a in lower_actions {
+        actions.push(*a);
+        count += count_lower(actions)?;
+        actions.pop();
+    }
+
+    Ok(count)
 }
 
 #[cfg(test)]
 mod tests {
+    use anyhow::Ok;
     use card_platypus::{
         game::euchre::actions::{Card, EAction},
         istate::IStateKey,
@@ -106,19 +172,34 @@ mod tests {
 
     use crate::scripts::euchre_phf::to_index;
 
+    use super::VALID_ACTIONS;
+
     #[test]
-    fn test_euchre_index() {
+    fn test_valid_actions_sorted() {
+        for list in VALID_ACTIONS {
+            let mut sorted = list.to_vec();
+            sorted.sort();
+            assert_eq!(list.to_vec(), sorted);
+        }
+    }
+
+    #[test]
+    fn test_euchre_index() -> anyhow::Result<()> {
         use Card::*;
         let cases = vec![
-            (vec![NS, TS, JS, QS, KS, AS], 0),
-            (vec![NS, TS, JS, QS, KS, TC], 1),
-            (vec![TS, JS, QS, KS, AS, TC], 500), // todo - fix this
+            (vec![NC, TC, JC, QC, KC, NS], 0),
+            (vec![NC, TC, JC, QC, KC, TS], 1),
+            (vec![TC, JC, QC, KC, AC, NS], 31),
+            (vec![JC, QC, KC, AC, NS, NS], 242),
+            (vec![TD, JD, QD, KD, AD, AS], 168245),
         ];
 
         for (cards, index) in cases {
             let key = to_key(&cards);
-            assert_eq!(to_index(&key), index);
+            assert_eq!(to_index(&key)?, index, "{:?}", cards);
         }
+
+        Ok(())
     }
 
     fn to_key(cards: &[Card]) -> IStateKey {

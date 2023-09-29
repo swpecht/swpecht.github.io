@@ -6,7 +6,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::game::Action;
 
-#[derive(PartialEq, Clone, Copy, Serialize, Deserialize, Eq, FromPrimitive, ToPrimitive)]
+#[derive(
+    PartialEq, Clone, Copy, Serialize, Deserialize, Eq, FromPrimitive, ToPrimitive, PartialOrd, Ord,
+)]
 #[repr(u32)]
 pub enum EAction {
     NC = Card::NC as u32,
