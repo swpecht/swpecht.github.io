@@ -7,10 +7,6 @@ training_iterations = 100000
 scoring_freq = 1000000
 scoring_iterations = 10
 checkpoint_freq = 5000000
-deal_type = "All"
-no_normalize_suit = false
-no_linear_cfr = false
-single_thread = false
 max_cards_played = 0
 
 [train.baseline]
@@ -19,10 +15,6 @@ training_iterations = 50000000
 scoring_freq = 1000000
 scoring_iterations = 1000
 checkpoint_freq = 5000000
-deal_type = "All"
-no_normalize_suit = false
-no_linear_cfr = false
-single_thread = false
 max_cards_played = 0
 
 [train.one_card_played]
@@ -31,10 +23,6 @@ training_iterations = 100000000
 scoring_freq = 1000000
 scoring_iterations = 1000
 checkpoint_freq = 5000000
-deal_type = "All"
-no_normalize_suit = false
-no_linear_cfr = false
-single_thread = false
 max_cards_played = 1
 
 [train.two_card_played]
@@ -43,10 +31,6 @@ training_iterations = 100000000
 scoring_freq = 1000000
 scoring_iterations = 1000
 checkpoint_freq = 5000000
-deal_type = "All"
-no_normalize_suit = false
-no_linear_cfr = false
-single_thread = false
 max_cards_played = 2
 
 [train.three_card_played]
@@ -56,9 +40,6 @@ scoring_freq = 1000000
 scoring_iterations = 1000
 checkpoint_freq = 5000000
 deal_type = "All"
-no_normalize_suit = false
-no_linear_cfr = false
-single_thread = false
 max_cards_played = 3
 
 [train.first_trick]
@@ -68,7 +49,4 @@ scoring_freq = 1000000
 scoring_iterations = 1000
 checkpoint_freq = 5000000
 deal_type = "All"
-no_normalize_suit = false
-no_linear_cfr = false
-single_thread = false
 max_cards_played = 4

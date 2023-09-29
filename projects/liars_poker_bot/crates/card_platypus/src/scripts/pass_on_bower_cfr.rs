@@ -25,9 +25,10 @@ use serde::{Deserialize, Serialize};
 
 use super::benchmark::get_rng;
 
-#[derive(ValueEnum, Copy, Clone, Debug, Deserialize)]
+#[derive(ValueEnum, Copy, Clone, Debug, Deserialize, Default)]
 enum DealType {
     JackOfSpadesOnly,
+    #[default]
     All,
 }
 
@@ -43,10 +44,13 @@ pub struct PassOnBowerCFRArgs {
     #[clap(long, default_value = "infostates")]
     weight_file: String,
     #[clap(long, value_enum, default_value_t=DealType::All)]
+    #[serde(default)]
     deal_type: DealType,
     #[clap(long, default_value_t = false)]
+    #[serde(default)]
     no_linear_cfr: bool,
     #[clap(long, default_value_t = false)]
+    #[serde(default)]
     single_thread: bool,
     #[clap(long, default_value_t = 0)]
     max_cards_played: usize,
