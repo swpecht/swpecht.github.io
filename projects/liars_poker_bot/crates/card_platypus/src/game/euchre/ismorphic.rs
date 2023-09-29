@@ -279,10 +279,17 @@ fn transform_suit(s: Suit, face_up_suit: Suit) -> Suit {
 
 #[cfg(test)]
 mod tests {
-    use crate::game::euchre::{
-        actions::{Card, EAction, Suit},
-        deck::{CardLocation, Deck, CARDS},
-        ismorphic::{iso_deck, swap_loc},
+    use crate::{
+        game::{
+            euchre::{
+                actions::{Card, EAction, Suit},
+                deck::{CardLocation, Deck, CARDS},
+                ismorphic::{iso_deck, swap_loc, LossyEuchreNormalizer},
+                EuchreGameState,
+            },
+            GameState,
+        },
+        istate::{IStateKey, IStateNormalizer},
     };
 
     use super::{transform, transform_card};
@@ -403,6 +410,27 @@ mod tests {
 
     #[test]
     fn test_lossy_normalizer() {
-        todo!()
+        let normalizer = LossyEuchreNormalizer::default();
+
+        let gs = EuchreGameState::from("Qc9sTs9dAd|9cKsThQhTd|KcAsJhKhQd|AcJs9hAhJd|Qs");
+        let key = gs.istate_key(0);
+        assert_eq!(
+            gs.istate_key(0),
+            normalizer.normalize_istate(&key, &gs).get()
+        );
+
+        let gs = EuchreGameState::from(
+            "Qc9sTs9dAd|9cKsThQhTd|KcAsJhKhQd|JcJs9hAhJd|Qs|T|9h|9sKsAsJs|JcTsQhKc",
+        );
+        let key = gs.istate_key(3);
+
+        use EAction::*;
+        let should = &[
+            JC, JS, NH, AH, JD, QS, Pickup, NH, NS, KS, AS, JS, JC, TS, NH, NC,
+        ];
+        assert_eq!(
+            normalizer.normalize_istate(&key, &gs).get(),
+            IStateKey::from(should.as_slice())
+        );
     }
 }

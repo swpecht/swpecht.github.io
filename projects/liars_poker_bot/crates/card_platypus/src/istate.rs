@@ -9,7 +9,7 @@ use std::{
     usize,
 };
 
-use crate::game::Action;
+use crate::game::{self, Action};
 
 #[derive(Clone, Copy, Serialize, Deserialize, PartialOrd, Ord)]
 pub struct IStateKey {
@@ -32,6 +32,19 @@ impl From<&[u8]> for IStateKey {
         let mut key = IStateKey::default();
         for x in value {
             key.push(Action(*x));
+        }
+        key
+    }
+}
+
+impl<T: Copy> From<&[T]> for IStateKey
+where
+    game::Action: std::convert::From<T>,
+{
+    fn from(value: &[T]) -> Self {
+        let mut key = IStateKey::default();
+        for x in value {
+            key.push(Action::from(*x));
         }
         key
     }
@@ -151,6 +164,7 @@ impl Iterator for IStateKeyIterator {
 pub type IsomorphicHash = u64;
 
 /// Helper type to keep track of if a key has been normalized or not
+#[derive(Debug)]
 pub struct NormalizedIstate(IStateKey);
 
 impl NormalizedIstate {
