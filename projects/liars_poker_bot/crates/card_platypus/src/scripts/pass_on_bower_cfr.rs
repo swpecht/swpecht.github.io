@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs, ops::Deref, path::Path};
+use std::{collections::HashMap, default, fs, ops::Deref, path::Path};
 
 use card_platypus::{
     actions,
@@ -10,6 +10,7 @@ use card_platypus::{
     game::{
         euchre::{
             actions::{Card, EAction},
+            ismorphic::LossyEuchreNormalizer,
             util::generate_face_up_deals,
             EPhase, Euchre, EuchreGameState,
         },
@@ -30,6 +31,13 @@ enum DealType {
     JackOfSpadesOnly,
     #[default]
     All,
+}
+
+#[derive(ValueEnum, Copy, Clone, Debug, Deserialize, Default)]
+enum Normalizer {
+    #[default]
+    Lossless,
+    Lossy,
 }
 
 #[derive(Args, Clone, Debug, Deserialize)]
@@ -54,6 +62,9 @@ pub struct PassOnBowerCFRArgs {
     single_thread: bool,
     #[clap(long, default_value_t = 0)]
     max_cards_played: usize,
+    #[clap(long, value_enum, default_value_t=Normalizer::Lossless)]
+    #[serde(default)]
+    normalizer: Normalizer,
 }
 
 pub fn run_pass_on_bower_cfr(args: PassOnBowerCFRArgs) {
@@ -108,7 +119,15 @@ pub fn train_cfr_shot(
     generator: fn() -> EuchreGameState,
 ) {
     let pb = ProgressBar::new(training_iterations as u64);
-    let mut alg = CFRES::new_euchre(generator, get_rng(), args.max_cards_played);
+    let mut alg = match args.normalizer {
+        Normalizer::Lossless => CFRES::new_euchre(generator, get_rng(), args.max_cards_played),
+        Normalizer::Lossy => CFRES::new_with_normalizer(
+            generator,
+            get_rng(),
+            args.max_cards_played,
+            Box::<LossyEuchreNormalizer>::default(),
+        ),
+    };
 
     let infostate_path = args.weight_file.as_str();
     let loaded_states = alg.load(Path::new(infostate_path));
