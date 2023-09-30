@@ -50,6 +50,15 @@ checkpoint_freq = 5000000
 max_cards_played = 3
 normalizer = "Lossy"
 
+[train.first_trick_lossy]
+weight_file = "/var/lib/card_platypus/infostate.first_trick_lossy"
+training_iterations = 200000000
+scoring_freq = 1000000
+scoring_iterations = 1000
+checkpoint_freq = 5000000
+max_cards_played = 4
+normalizer = "Lossy"
+
 [train.first_trick]
 weight_file = "/var/lib/card_platypus/infostate.first_trick"
 training_iterations = 200000000
