@@ -74,9 +74,9 @@ impl NodeStore {
 
         let phf = match load_phf(path) {
             Ok(x) => x,
-            Err(_) => {
+            Err(x) => {
                 if path.is_some() {
-                    warn!("failed to load index");
+                    warn!("failed to load index: {}", x);
                 }
                 HashStore::default()
             }

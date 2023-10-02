@@ -17,7 +17,7 @@ use card_platypus::{
 use clap::{Args, ValueEnum};
 use indicatif::ProgressBar;
 use itertools::Itertools;
-use log::{debug, info};
+use log::{debug, info, warn};
 use rand::{rngs::StdRng, thread_rng, SeedableRng};
 
 use crate::GameType;
@@ -66,19 +66,32 @@ fn run_euchre_benchmark(args: BenchmarkArgs) {
     agents.insert("pimcts, 50 worlds".to_string(), a);
 
     let mut a = CFRES::new_euchre(Euchre::new_state, get_rng(), 0);
-    a.load(&Path::new("/var/lib/card_platypus").join("infostate.baseline"));
-    info!("loaded cfr baseline agent");
+    let n = a.load(Path::new("/var/lib/card_platypus/infostate.baseline/"));
+    info!("loaded cfr baseline agent: {} istates", n);
     agents.insert("cfr, 0 cards played".to_string(), &mut a);
+
+    let mut a = CFRES::new_euchre(Euchre::new_state, get_rng(), 3);
+    let n = a.load(Path::new(
+        "/var/lib/card_platypus/infostate.three_card_played/",
+    ));
+    if n > 0 {
+        info!("loaded cfr 3 card agent: {} istates", n);
+        agents.insert("cfr, 3 cards played".to_string(), &mut a);
+    } else {
+        warn!("failed to load istates for 3 card agent, skipping")
+    }
 
     // let mut a = CFRES::new_euchre_bidding(Euchre::new_state, get_rng(), 1);
     // a.load("/var/lib/card_platypus/infostate.one_card_played");
     // info!("loaded cfr one card agent");
     // agents.insert("cfr, 1 cards played".to_string(), &mut a);
 
-    let mut a = CFRES::new_euchre(Euchre::new_state, get_rng(), 1);
-    a.load(&Path::new("/var/lib/card_platypus").join("infostate.three_cards_played"));
-    info!("loaded cfr three card agent");
-    agents.insert("cfr, 3 cards played".to_string(), &mut a);
+    // let mut a = CFRES::new_euchre(Euchre::new_state, get_rng(), 1);
+    // a.load(&Path::new("/var/lib/card_platypus").join("infostate.three_cards_played"));
+    // info!("loaded cfr three card agent");
+    // agents.insert("cfr, 3 cards played".to_string(), &mut a);
+
+    println!("Starting benchmark for agents: {:?}", agents.keys());
 
     score_games(args, agents, games);
 }
