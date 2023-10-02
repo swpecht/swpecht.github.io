@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, path::Path, rc::Rc};
 
 use card_platypus::{
-    agents::{Agent, PolicyAgent},
+    agents::{Agent, PolicyAgent, RandomAgent},
     algorithms::cfres::CFRES,
     algorithms::{
         ismcts::ResampleFromInfoState, open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot,
@@ -58,6 +58,9 @@ fn run_euchre_benchmark(args: BenchmarkArgs) {
     let games = get_games(Euchre::game(), args.num_games * 19, &mut game_rng);
 
     let mut agents: HashMap<String, &mut dyn Agent<EuchreGameState>> = HashMap::new();
+
+    let mut a = RandomAgent::default();
+    agents.insert("random".to_string(), &mut a);
 
     let a = &mut PolicyAgent::new(
         PIMCTSBot::new(50, OpenHandSolver::new_euchre(), get_rng()),
