@@ -290,6 +290,7 @@ class DeepCFRSolver(policy.Policy):
         save_strategy_memories: str = None,
         infer_device="cpu",
         train_device="cpu",
+        callback=None,
     ):
         """Initialize the Deep CFR algorithm.
 
@@ -347,6 +348,7 @@ class DeepCFRSolver(policy.Policy):
         self._train_device = train_device
         self._memories_tfrecordpath = None
         self._memories_tfrecordfile = None
+        self._callback = callback
 
         # Initialize file save locations
         if self._save_advantage_networks:
@@ -460,7 +462,9 @@ class DeepCFRSolver(policy.Policy):
                     self._memories_tfrecordfile = stack.enter_context(
                         tf.io.TFRecordWriter(self._memories_tfrecordpath)
                     )
-                for _ in tqdm(range(self._num_iterations)):
+                t = tqdm(range(self._num_iterations))
+                for _ in t:
+                    # print(self._callback(self._game, self))
                     for p in range(self._num_players):
                         for _ in range(self._num_traversals):
                             self._traverse_game_tree(self._root_node, p)
@@ -476,6 +480,12 @@ class DeepCFRSolver(policy.Policy):
                                     f"advnet_p{p}_it{self._iteration:04}",
                                 )
                             )
+                    # Learn strategy network to estimate exploitabilty
+                    if self._callback is not None:
+                        t.set_postfix(
+                            {"exploitability": self._callback(self._game, self)}
+                        )
+
                     self._iteration += 1
         # Train policy network.
         policy_loss = self._learn_strategy_network()
