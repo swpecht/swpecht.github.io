@@ -1,12 +1,33 @@
 
-[ ] Implement the mem map store
-    [ ] Create phf for different lengths of euchre game
-    [ ] Do an estimate on the data we would need
-    [ ] Switch over diskstore to use the mem map -- use an anon map for no file access
+[ ] Might be too many istates for the first trick -- look at collapsing the number of istates?
+    * Train baseline, first card, second card -- see how compare
+    * Train one with modified states -- e.g. only show an offsuit card
+[ ] Look at how the meta poker bot uses search with cfr if the state isn't found
 
-[ ] Optimize infostate representation
+[ ] Can we use the phf from one face up card run to figure out the others, e.g. some way to translate? Is it as simple as a find and replace on the new face up card -- should work for the istate key -- then just put the different face up cards into different memmap files
+    [ ] Build translation function for istate key to move it across shards
+    [ ] Have the hashstore support both the phf as well as the btreemap implementation
+    [ ] Logic for terminating the sampling
+    [*] Implement interface for tracking read progress
 
-[ ] Shard training on the face up card -- all the istates should be independent
+[ ] serialize all the istates to a file -- can try generating them per face up card -- and then can use that to create perfect hash functions after the fact
+    * Loop until see no new istates
+
+[ ] investigate sampling approach for estimating exploitability
+
+[ ] Look at openspiel rust bindings
+[ ] Improve mmap perofmrnace
+    [*] Shard training on the face up card -- all the istates should be independent -- can do this and fully re-load the memmap to try and have only the relevant data in memory
+    [ ] Chagne to ArrayTrie for index to reduce memory overhead? -- no longer need to store the entire key?
+        * has too much overhead
+        [ ] Do a benhmark on allocations to see data usage difference
+    [ ] Go back to using phf? -- can use sampling to get all the deals
+    [ ] Add in a check that the index is correct for the data being loaded -- tbd on how to do this
+    [ ] Make the index map to a full page of values, do this in a smart way so similar istates are in the same page? -- could improve read / write performance
+    [ ] Switch to using bytemuck -- implement the Pod trait (requires using array instead of vectors) -- then can return pointers to the data directly
+    * Need to account for fact that bluff can have more than 6 actions
+
+
     * Estimate max size we can hold, -- may need to use array tree again to avoid allocation behavior where it doubles
 
 [ ] Add benchmark configuration to the TOML file
@@ -21,6 +42,19 @@
 
 
 [ ] Don't actually lose that much speed using a single reader writer (mutex hashmap) -- simplify to single reader / writer setup?
+
+
+# Estimating istates
+
+2.4m pre-deal
+
+18 remaining cards
+
+2.4m * 18 * (12+2) * (12+2)
+
+We only track trump explicitly and the lead suit -- everything else just gets a marker card
+
+Is this enough to do the first trick of play?
 
 # Data size analysis
 

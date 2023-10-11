@@ -25,6 +25,8 @@ import deep_cfr_tf2
 
 conv_data = []
 
+# Use a random angent as the benchmark
+
 
 def progress(game, solver):
     solver._learn_strategy_network()
@@ -45,11 +47,13 @@ def train():
     # [ ] Tune network size
 
     game = pyspiel.load_game("kuhn_poker")
+    # Parameters from MULTI-AGENT REINFORCEMENT LEARNING IN OPENSPIEL, March 2021
+    # https://arxiv.org/abs/2103.00187
     deep_cfr_solver = deep_cfr_tf2.DeepCFRSolver(
         game,
         policy_network_layers=(64, 64, 64),
         advantage_network_layers=(64, 64, 64),
-        num_iterations=100,
+        num_iterations=1,
         num_traversals=15000,
         learning_rate=1e-3,
         batch_size_advantage=2048,  # Cody recommends 32 or 64 as batch size

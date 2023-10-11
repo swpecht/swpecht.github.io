@@ -45,29 +45,6 @@ Improving exploitability and CFR
 [ ] What people are doing these days for approximate best response is running "DQN-BR" (use reinforcement learning as an exploiter). See, for example, the MMD paper: https://arxiv.org/pdf/2206.05825.pdf. There's an example of this in OpenSpiel:  https://github.com/deepmind/open_spiel/blob/master/open_spiel/python/examples/rl_response.py. This idea is the basis of PSRO, btw, which is a paper which may interest you: https://arxiv.org/abs/1711.00832. Anyway, there are even more sophisticated methods that add MCTS search on top of it (see our ABR paper: https://arxiv.org/abs/2004.09677) but it is a bit heavy and compute-hungry so I'd recommend starting with DQN-BR.
 
 
-Evaluating other algorithms and games
-[ ] See notes in blog post
-[ ] Implement double dummy solver (open hand solver)
-    * Implement a sort range function for IStateKey -- and get rid of SortedArrayVec, then can just sort the keys in place at the right time
-    * Implement undo for Euchre
-      * 14% of run time going to cloning gamestates
-    * How many tricks are there actually -- create a transposition table for all tricks and the evaluation? Euchre gamestate could store this
-      * Only 170k tricks if ignore order after first card -- probably less than that if can do some de-duping with suit
-        * 24 * (23 choose 3) * 4 suits
-    * Look at tips from bridge solvers on improving evaluation speed, especially figuring out who won tricks
-    * Implement undo method for game? -- would avoid needing to copy memory for each iteration of search -- probably a lot of savings
-    * Identify quick hands -- see if there are certain actions always taken. For example, if have the right trump and can lead -- always lead with that?
-    * Implement transposition table for evaluating tricks?
-    * Transposition table for legal moves? given leading card and trump suit and cards in hand
-[ ] Extend doubly dummy solver to search the entire state tree for a hand? Not just a sample of worlds?
-    * From DDS paper -- moves are all the possible cards that could be played, not just moves for and instance of the game -- everything that hasn't been seen
-    * Could be a set of new traits, e.g. undoable, possible actions (all possible moves from thse not scene), number of tricks already taken, etc.
-[ ] Extend alphamu to scoring and not just win vs loss metrics -- could see if this improve performance of the agent
-
-Tech debt cleanup:
-[ ] Have nodestores return references to nodes rather than owned copies. Just need to have the calling code release the reference to the node
-    * And then do the other computation, and then can get the reference again
-
 
 Misc ideas
 [ ] Multithread for rollout?
@@ -110,87 +87,4 @@ Each of these possible states could play out in a variety of ways.
 | Round 5 | 1                 | $1^4$                            |
 
 From playing rounds alone, there are 207M options. Including pre-play rounds there are 67 billion options.
-
-
-## Disk performance testing
-
-### sqlite multithreaded writing for data
-
-WAL testing:
-No WAL
-    2023-02-07T15:44:26-07:00 - INFO - Starting self play for CFR
-    2023-02-07T15:46:11-07:00 - DEBUG - cfr called 60000000 times   (0:01:45)
-
-W/ WAL
-    2023-02-07T15:47:52-07:00 - INFO - Starting self play for CFR
-    2023-02-07T15:49:54-07:00 - DEBUG - cfr called 60000000 times   (0:02:02)
-
-No index, w/ WAL
-    2023-02-07T15:53:40-07:00 - INFO - Starting self play for CFR
-    2023-02-07T15:55:04-07:00 - DEBUG - cfr called 60000000 times   (0:01:24)
-    2023-02-07T15:57:26-07:00 - DEBUG - cfr called 100000000 times  (0:03:46)
-    2023-02-07T16:01:33-07:00 - DEBUG - cfr called 200000000 times  (0:07:53)
-
-No index, Journal mode off, synchronous Normal
-    2023-02-07T18:29:25-07:00 - INFO - Starting self play for CFR
-    2023-02-07T18:31:05-07:00 - DEBUG - cfr called 60000000 times   (0:01:40)
-    2023-02-07T18:33:32-07:00 - DEBUG - cfr called 100000000 times  (0:04:07)
-
-    Failed with a "database is locked"
-
-Only getting 20M/s from iotop -- can we do better with raw writing performance
-
-### no_op disk backed
-
-Doesn't do any disk IO as a point of reference
-    2023-02-08T10:23:59-07:00 - INFO - Starting self play for CFR
-    2023-02-08T10:24:46-07:00 - DEBUG - cfr called 60000000 times (0:00:47)
-    2023-02-08T10:25:30-07:00 - DEBUG - cfr called 100000000 times (0:01:31)
-    2023-02-08T10:27:29-07:00 - DEBUG - cfr called 200000000 times (0:03:30)
-    2023-02-08T10:37:05-07:00 - DEBUG - cfr called 713000000 times (0:13:06)
-
-### io_uring
-
-Built proof of concept with tokio io_uring.
-to write 1M nodes:
-
-* sqlite: 8.1325s (15-20MB/s)
-* io_uring (4kb page): 2.9714s (40-60MB/s)
-
-2.7x faster than raw writing to SQL. But this doesn't include any of the book keeping overhead sqlite incurs
-But verified with perf that serialization overhead is minimal
-
-With a 4k offset, what about 64k?
-    * io_uring (64kb page): 0.67s (100-200MB/s)
-    12x faster than sqlite
-
-Dual buffer -- no noticable change, tokio is properly parallelizing
-
-## Allocation reduction
-
-liars_poker_bot::cfragent: 2023-03-08T16:18:55-07:00 - INFO - Starting self play for CFR
-liars_poker_bot::cfragent: 2023-03-08T16:19:59-07:00 - DEBUG - cfr called 60000000 times
-liars_poker_bot::cfragent: 2023-03-08T16:21:01-07:00 - DEBUG - cfr called 100000000 times
-
-## With IStateKey and synchronous IO
-
-liars_poker_bot::cfragent: 2023-03-29T12:18:46-05:00 - INFO - Starting self play for CFR
-liars_poker_bot::cfragent: 2023-03-29T12:20:14-05:00 - DEBUG - cfr called 60000000 times (0:01:28 )
-
-## Use hashtables to lookup pages
-
-liars_poker_bot::cfragent: 2023-04-04T11:36:05-04:00 - INFO - Starting self play for CFR
-liars_poker_bot::cfragent: 2023-04-04T11:36:41-04:00 - DEBUG - cfr called 60000000 times (0:00:36)
-
-## Switch to using IState key for Istates used during storage and page mgmt rather than Strings 
-
-liars_poker_bot::cfragent: 2023-04-06T14:55:06+02:00 - INFO - Starting self play for CFR
-liars_poker_bot::cfragent: 2023-04-06T14:55:55+02:00 - DEBUG - cfr called 60000000 times
-
-## Storing the first bit of IStateKey for easy retrieval
-
-liars_poker_bot::cfragent: 2023-04-06T15:07:18+02:00 - INFO - Starting self play for CFR
-liars_poker_bot::cfragent: 2023-04-06T15:07:41+02:00 - DEBUG - cfr called 60000000 times (0:00:23)
-
-
 

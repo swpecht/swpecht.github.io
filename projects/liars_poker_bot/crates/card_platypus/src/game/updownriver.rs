@@ -17,4 +17,5 @@
 
 pub struct UDRiverGameState {
     // Challenge is this is not a 2 team game, unclear how that impacts algorithms
+    // Probably need to add a get_cur_team() function to GameState instead of get cur player -- use that for all algorithms
 }
