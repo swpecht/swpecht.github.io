@@ -4,7 +4,7 @@ use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::FromPrimitive;
 use serde::{Deserialize, Serialize};
 
-use crate::game::Action;
+use crate::Action;
 
 #[derive(
     PartialEq, Clone, Copy, Serialize, Deserialize, Eq, FromPrimitive, ToPrimitive, PartialOrd, Ord,
@@ -448,8 +448,8 @@ impl Display for Suit {
 
 #[cfg(test)]
 mod tests {
-    use crate::game::{
-        euchre::{
+    use crate::{
+        gamestates::euchre::{
             actions::{Card, EAction},
             deck::CARDS,
         },

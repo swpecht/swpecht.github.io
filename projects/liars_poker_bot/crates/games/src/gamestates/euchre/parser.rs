@@ -1,5 +1,5 @@
-use crate::game::{
-    euchre::{
+use crate::{
+    gamestates::euchre::{
         actions::{Card, EAction},
         EPhase, Euchre,
     },

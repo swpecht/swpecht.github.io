@@ -1,20 +1,12 @@
-use std::io;
+use games::{Action, GameState};
 
-use itertools::Itertools;
 use rand::{
     rngs::{StdRng, ThreadRng},
     seq::SliceRandom,
     thread_rng,
 };
 
-use crate::{
-    actions,
-    game::{
-        euchre::{actions::EAction, EuchreGameState},
-        Action, GameState,
-    },
-    policy::Policy,
-};
+use crate::policy::Policy;
 
 pub trait Agent<T: GameState> {
     fn step(&mut self, s: &T) -> Action;
@@ -114,56 +106,6 @@ impl<G: GameState, T: Policy<G>> Agent<G> for PolicyAgent<T> {
             .choose_weighted(&mut self.rng, |item| item.1)
             .unwrap()
             .0
-    }
-}
-
-/// An agent that plays with input from the terminal
-#[derive(Default)]
-pub struct PlayerAgent {}
-
-impl Agent<EuchreGameState> for PlayerAgent {
-    fn step(&mut self, gs: &EuchreGameState) -> Action {
-        println!("{}", gs.istate_string(gs.cur_player()));
-        let actions = actions!(gs).into_iter().map(EAction::from).collect_vec();
-
-        // skip when only 1 move
-        if actions.len() == 1 {
-            return actions[0].into();
-        }
-
-        for a in &actions {
-            print!("{} ", a);
-        }
-        println!();
-
-        for i in 0..actions.len() {
-            print!("{}  ", i);
-        }
-        println!();
-
-        let mut buffer = String::new();
-        let a;
-
-        loop {
-            io::stdin()
-                .read_line(&mut buffer)
-                .expect("Failed to read input");
-
-            let index: Result<i8, _> = buffer.trim().parse();
-
-            if let Ok(index) = index {
-                if index == -1 {
-                    println!("{}", gs);
-                } else {
-                    a = index as usize;
-                    break;
-                }
-            }
-
-            println!("enter index of action to take")
-        }
-
-        actions[a].into()
     }
 }
 

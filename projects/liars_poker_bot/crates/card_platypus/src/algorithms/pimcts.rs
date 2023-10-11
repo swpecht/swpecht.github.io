@@ -1,18 +1,17 @@
 use std::marker::PhantomData;
 
+use games::{actions, resample::ResampleFromInfoState, Action, GameState, Player};
 use itertools::Itertools;
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
 use crate::{
-    actions,
     agents::{Agent, Seedable},
     collections::actionvec::ActionVec,
-    game::{Action, GameState, Player},
     policy::Policy,
 };
 use rayon::prelude::*;
 
-use super::ismcts::{Evaluator, ResampleFromInfoState};
+use super::ismcts::Evaluator;
 
 #[derive(Clone)]
 pub struct PIMCTSBot<G, E> {
@@ -160,14 +159,14 @@ impl<G: GameState + ResampleFromInfoState + Send, E: Evaluator<G> + Clone + Sync
 #[cfg(test)]
 mod tests {
 
+    use games::gamestates::{
+        euchre::EuchreGameState,
+        kuhn_poker::{KPAction, KuhnPoker},
+    };
     use rand::SeedableRng;
 
     use crate::{
         algorithms::{ismcts::Evaluator, open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot},
-        game::{
-            euchre::EuchreGameState,
-            kuhn_poker::{KPAction, KuhnPoker},
-        },
         policy::Policy,
     };
 

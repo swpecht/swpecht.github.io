@@ -9,7 +9,7 @@ use std::{
     usize,
 };
 
-use crate::game::{self, Action};
+use crate::Action;
 
 #[derive(Clone, Copy, Serialize, Deserialize, PartialOrd, Ord)]
 pub struct IStateKey {
@@ -39,7 +39,7 @@ impl From<&[u8]> for IStateKey {
 
 impl<T: Copy> From<&[T]> for IStateKey
 where
-    game::Action: std::convert::From<T>,
+    Action: std::convert::From<T>,
 {
     fn from(value: &[T]) -> Self {
         let mut key = IStateKey::default();

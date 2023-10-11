@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::istate::NormalizedAction;
+use games::istate::NormalizedAction;
 
 /// Compact representation of what actions are present in a list
 #[derive(Serialize, Deserialize, Default, Clone, Copy)]
@@ -63,7 +63,7 @@ impl ActionList {
 
 #[cfg(test)]
 mod tests {
-    use crate::istate::NormalizedAction;
+    use games::istate::NormalizedAction;
 
     use super::ActionList;
 

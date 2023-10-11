@@ -1,10 +1,10 @@
-use card_platypus::{
+use card_platypus::algorithms::{
+    ismcts::Evaluator, open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot,
+};
+use games::{
     actions,
-    algorithms::{ismcts::Evaluator, open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot},
-    game::{
-        euchre::{actions::EAction, Euchre, EuchreGameState},
-        GameState,
-    },
+    gamestates::euchre::{actions::EAction, Euchre, EuchreGameState},
+    GameState,
 };
 use itertools::Itertools;
 use log::info;

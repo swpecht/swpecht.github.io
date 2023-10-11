@@ -1,12 +1,13 @@
 use approx::assert_relative_eq;
-use card_platypus::{
-    algorithms::{
-        cfres::{self, CFRES},
-        exploitability::exploitability,
-        ismcts::Evaluator,
-        open_hand_solver::OpenHandSolver,
-    },
-    game::{bluff::Bluff, euchre::Euchre, get_games, kuhn_poker::KuhnPoker, GameState},
+use card_platypus::algorithms::{
+    cfres::{self, CFRES},
+    exploitability::exploitability,
+    ismcts::Evaluator,
+    open_hand_solver::OpenHandSolver,
+};
+use games::{
+    gamestates::{bluff::Bluff, euchre::Euchre, kuhn_poker::KuhnPoker},
+    get_games, GameState,
 };
 use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
 use rayon::prelude::*;

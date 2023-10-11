@@ -10,12 +10,14 @@ use card_platypus::{
     algorithms::cfres::InfoState,
     alloc::tracking::{Stats, TrackingAllocator},
     collections::{actionlist::ActionList, actiontrie::ActionTrie},
-    game::Action,
-    istate::{IStateKey, NormalizedAction},
 };
 
 use dashmap::DashMap;
 
+use games::{
+    istate::{IStateKey, NormalizedAction},
+    Action,
+};
 use itertools::Itertools;
 use memmap2::MmapMut;
 use rand::{rngs::StdRng, Rng, SeedableRng};

@@ -4,7 +4,7 @@ use anyhow::{bail, Context, Ok};
 use num_traits::{FromPrimitive, ToPrimitive};
 use serde::{Deserialize, Serialize};
 
-use crate::game::Player;
+use crate::Player;
 
 use super::actions::Card;
 
@@ -349,7 +349,7 @@ impl Iterator for HandIterator {
 
 #[cfg(test)]
 mod tests {
-    use crate::game::euchre::actions::Card::*;
+    use crate::gamestates::euchre::actions::Card::*;
 
     use super::Hand;
 

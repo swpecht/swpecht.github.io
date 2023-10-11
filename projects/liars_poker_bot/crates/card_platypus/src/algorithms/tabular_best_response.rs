@@ -1,14 +1,9 @@
 use std::collections::HashMap;
 
+use games::{actions, istate::IStateKey, Action, GameState, Player};
 use log::{debug, log_enabled, trace};
 
-use crate::{
-    actions,
-    collections::actionvec::ActionVec,
-    game::{Action, GameState, Player},
-    istate::IStateKey,
-    policy::Policy,
-};
+use crate::{collections::actionvec::ActionVec, policy::Policy};
 
 /// A best response algorithm that can handle hidden actions (like those needed for euchre)
 ///
@@ -287,11 +282,12 @@ mod tests {
 
     use crate::{
         algorithms::tabular_best_response::{DecisionNodeIterator, TabularBestResponse},
-        game::{
-            bluff::Bluff,
-            kuhn_poker::{KPAction as A, KuhnPoker as KP},
-        },
         policy::UniformRandomPolicy,
+    };
+
+    use games::gamestates::{
+        bluff::Bluff,
+        kuhn_poker::{KPAction as A, KuhnPoker as KP},
     };
 
     #[test]

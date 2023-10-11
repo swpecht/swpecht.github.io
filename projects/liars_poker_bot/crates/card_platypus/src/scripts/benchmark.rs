@@ -3,18 +3,19 @@ use std::{cell::RefCell, collections::HashMap, path::Path, rc::Rc};
 use card_platypus::{
     agents::{Agent, PolicyAgent, RandomAgent},
     algorithms::cfres::CFRES,
-    algorithms::{
-        ismcts::ResampleFromInfoState, open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot,
-    },
-    game::{
-        bluff::Bluff,
-        euchre::{actions::Card, util::generate_face_up_deals, Euchre, EuchreGameState},
-        get_games,
-        kuhn_poker::KuhnPoker,
-        Game, GameState,
-    },
+    algorithms::{open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot},
 };
 use clap::{Args, ValueEnum};
+use games::{
+    gamestates::{
+        bluff::Bluff,
+        euchre::{actions::Card, util::generate_face_up_deals, Euchre, EuchreGameState},
+        kuhn_poker::KuhnPoker,
+    },
+    get_games,
+    resample::ResampleFromInfoState,
+    Game, GameState,
+};
 use indicatif::ProgressBar;
 use itertools::Itertools;
 use log::{debug, info, warn};

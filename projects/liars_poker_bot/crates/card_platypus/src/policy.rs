@@ -1,8 +1,6 @@
-use crate::{
-    actions,
-    collections::actionvec::ActionVec,
-    game::{Action, GameState},
-};
+use crate::collections::actionvec::ActionVec;
+
+use games::{actions, Action, GameState};
 
 /// Wrapper for game policies, usually backed by a node store for CFR
 pub trait Policy<G> {

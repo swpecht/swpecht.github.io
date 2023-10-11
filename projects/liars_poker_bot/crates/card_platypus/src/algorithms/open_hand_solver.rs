@@ -5,20 +5,17 @@ use std::{
 };
 
 use dashmap::DashMap;
+use games::{
+    actions,
+    gamestates::euchre::{
+        processors::{euchre_early_terminate, process_euchre_actions},
+        EuchreGameState,
+    },
+    Action, GameState, Player, Team,
+};
 use log::trace;
 
-use crate::{
-    actions,
-    alloc::Pool,
-    collections::actionvec::ActionVec,
-    game::{
-        euchre::{
-            processors::{euchre_early_terminate, process_euchre_actions},
-            EuchreGameState,
-        },
-        Action, GameState, Player, Team,
-    },
-};
+use crate::{alloc::Pool, collections::actionvec::ActionVec};
 
 use super::ismcts::Evaluator;
 
@@ -443,16 +440,17 @@ fn alpha_beta<G: GameState>(
 #[cfg(test)]
 mod tests {
 
-    use crate::{
-        algorithms::{
-            ismcts::Evaluator,
-            open_hand_solver::{mtd_search, AlphaBetaCache, Optimizations},
-        },
-        game::{
+    use games::{
+        gamestates::{
             bluff::{Bluff, BluffActions, Dice},
             kuhn_poker::{KPAction, KuhnPoker},
-            GameState,
         },
+        GameState,
+    };
+
+    use crate::algorithms::{
+        ismcts::Evaluator,
+        open_hand_solver::{mtd_search, AlphaBetaCache, Optimizations},
     };
 
     use super::OpenHandSolver;

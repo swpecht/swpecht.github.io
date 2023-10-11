@@ -5,7 +5,7 @@ use std::ops::Index;
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::game::Action;
+use games::Action;
 
 /// A helper struct to make working with sparse action vectors easy
 ///

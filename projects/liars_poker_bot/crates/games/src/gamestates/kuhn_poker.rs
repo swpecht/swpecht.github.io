@@ -4,10 +4,7 @@ use std::{
 };
 
 use crate::{
-    actions,
-    algorithms::ismcts::ResampleFromInfoState,
-    game::{Action, Game, GameState, Player},
-    istate::IStateKey,
+    actions, istate::IStateKey, resample::ResampleFromInfoState, Action, Game, GameState, Player,
 };
 use itertools::Itertools;
 
@@ -317,24 +314,26 @@ impl ResampleFromInfoState for KPGameState {
 
 #[cfg(test)]
 mod tests {
-    use std::vec;
 
     use crate::{
         actions,
-        agents::RecordedAgent,
-        game::kuhn_poker::{KPAction, KuhnPoker},
-        game::{run_game, GameState},
+        gamestates::kuhn_poker::{KPAction, KuhnPoker},
+        GameState,
     };
     use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
     #[test]
     fn kuhn_poker_test_bb() {
         let mut g = KuhnPoker::new_state();
-        let mut rng: StdRng = SeedableRng::seed_from_u64(0);
-        let mut a1 = RecordedAgent::new(vec![KPAction::Bet.into(); 1]);
-        let mut a2 = RecordedAgent::new(vec![KPAction::Bet.into(); 1]);
 
-        run_game(&mut g, &mut a1, &mut Some(&mut a2), &mut rng);
+        for a in [
+            KPAction::King,
+            KPAction::Queen,
+            KPAction::Bet,
+            KPAction::Bet,
+        ] {
+            g.apply_action(a.into());
+        }
 
         assert_eq!(format!("{}", g), "[KingQueen]bb");
         assert_eq!(g.evaluate(0), 2.0);
@@ -344,11 +343,15 @@ mod tests {
     #[test]
     fn kuhn_poker_test_pbp() {
         let mut g = KuhnPoker::new_state();
-        let mut rng: StdRng = SeedableRng::seed_from_u64(0);
-        let mut a1 = RecordedAgent::new(vec![KPAction::Pass.into(); 2]);
-        let mut a2 = RecordedAgent::new(vec![KPAction::Bet.into(); 1]);
-
-        run_game(&mut g, &mut a1, &mut Some(&mut a2), &mut rng);
+        for a in [
+            KPAction::King,
+            KPAction::Queen,
+            KPAction::Pass,
+            KPAction::Bet,
+            KPAction::Pass,
+        ] {
+            g.apply_action(a.into());
+        }
 
         assert_eq!(format!("{}", g), "[KingQueen]pbp");
         assert_eq!(g.evaluate(0), -1.0);

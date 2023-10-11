@@ -1,9 +1,9 @@
-use card_platypus::{
-    actions,
-    game::euchre::{Euchre, EuchreGameState},
-    game::GameState,
-};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use games::{
+    actions,
+    gamestates::euchre::{Euchre, EuchreGameState},
+    GameState,
+};
 use rand::{seq::SliceRandom, thread_rng};
 
 /// Attempts to mimic the call structure of CFR without actually doing it

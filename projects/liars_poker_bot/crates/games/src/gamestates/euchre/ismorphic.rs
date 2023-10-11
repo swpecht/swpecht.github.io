@@ -1,6 +1,7 @@
 use crate::{
-    game::{euchre::deck::CardLocation, Action},
+    gamestates::euchre::deck::CardLocation,
     istate::{IStateKey, IStateNormalizer, NormalizedAction, NormalizedIstate},
+    Action,
 };
 
 use super::{
@@ -280,16 +281,14 @@ fn transform_suit(s: Suit, face_up_suit: Suit) -> Suit {
 #[cfg(test)]
 mod tests {
     use crate::{
-        game::{
-            euchre::{
-                actions::{Card, EAction, Suit},
-                deck::{CardLocation, Deck, CARDS},
-                ismorphic::{iso_deck, swap_loc, LossyEuchreNormalizer},
-                EuchreGameState,
-            },
-            GameState,
+        gamestates::euchre::{
+            actions::{Card, EAction, Suit},
+            deck::{CardLocation, Deck, CARDS},
+            ismorphic::{iso_deck, swap_loc, LossyEuchreNormalizer},
+            EuchreGameState,
         },
         istate::{IStateKey, IStateNormalizer},
+        GameState,
     };
 
     use super::{transform, transform_card};

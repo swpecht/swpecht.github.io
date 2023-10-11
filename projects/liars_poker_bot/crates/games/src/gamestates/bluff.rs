@@ -7,9 +7,9 @@ use std::{
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 
-use crate::{actions, algorithms::ismcts::ResampleFromInfoState, istate::IStateKey};
-
-use super::{Action, Game, GameState, Player};
+use crate::{
+    actions, istate::IStateKey, resample::ResampleFromInfoState, Action, Game, GameState, Player,
+};
 
 const STARTING_DICE: usize = 2;
 /// The value `last_bid` is initialized with, represents the lowest bid
@@ -362,7 +362,7 @@ impl GameState for BluffGameState {
         key
     }
 
-    fn istate_string(&self, player: super::Player) -> String {
+    fn istate_string(&self, player: Player) -> String {
         let mut istate = String::new();
 
         let k = self.istate_key(player);
@@ -524,10 +524,8 @@ mod tests {
 
     use crate::{
         actions,
-        game::{
-            bluff::{Bluff, BluffGameState, Phase, FACES},
-            Action, GameState,
-        },
+        gamestates::bluff::{Bluff, BluffGameState, Phase, FACES},
+        Action, GameState,
     };
 
     use super::{BluffActions, Dice, STARTING_DICE};

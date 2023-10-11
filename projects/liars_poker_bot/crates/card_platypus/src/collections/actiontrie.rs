@@ -1,6 +1,6 @@
 use ::serde::{Deserialize, Serialize};
 
-use crate::game::Action;
+use games::Action;
 
 #[derive(Serialize, Deserialize)]
 pub struct ActionTrie<T> {

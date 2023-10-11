@@ -11,10 +11,10 @@ use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    algorithms::ismcts::ResampleFromInfoState,
-    alloc::Pool,
-    game::{Action, Game, GameState, Player},
     istate::IStateKey,
+    pool::Pool,
+    resample::ResampleFromInfoState,
+    {Action, Game, GameState, Player},
 };
 
 use self::{
@@ -1252,16 +1252,15 @@ pub(super) fn suit_mask(suit: Suit, trump: Option<Suit>) -> Hand {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashSet, vec};
+    use std::{collections::HashSet, os::unix::thread, vec};
 
     use itertools::Itertools;
     use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
 
     use crate::{
         actions,
-        agents::{Agent, RandomAgent},
-        algorithms::ismcts::ResampleFromInfoState,
-        game::euchre::{actions::Card, deck::CARDS, EAction, EPhase, Euchre, Suit},
+        gamestates::euchre::{actions::Card, deck::CARDS, EAction, EPhase, Euchre, Suit},
+        resample::ResampleFromInfoState,
     };
 
     use super::{EuchreGameState, GameState};
@@ -1481,20 +1480,22 @@ mod tests {
 
     #[test]
     fn euchre_test_unique_istate() {
-        let mut ra = RandomAgent::new();
-
+        let mut actions = Vec::new();
         for _ in 0..1000 {
             let mut s = Euchre::new_state();
             let mut istates = HashSet::new();
             while s.is_chance_node() {
-                let a = ra.step(&s);
-                s.apply_action(a);
+                actions.clear();
+                s.legal_actions(&mut actions);
+                let a = actions.choose(&mut thread_rng()).unwrap();
+                s.apply_action(*a);
             }
 
             istates.insert(s.istate_string(s.cur_player));
             while !s.is_terminal() {
-                let a = ra.step(&s);
-                s.apply_action(a);
+                s.legal_actions(&mut actions);
+                let a = actions.choose(&mut thread_rng()).unwrap();
+                s.apply_action(*a);
                 let istate = s.istate_string(s.cur_player);
                 assert!(!istates.contains(&istate));
                 istates.insert(istate);
@@ -1504,15 +1505,16 @@ mod tests {
 
     #[test]
     fn euchre_test_resample_from_istate() {
-        let mut ra = RandomAgent::new();
         let mut rng = thread_rng();
+        let mut actions = Vec::new();
 
         for _ in 0..100 {
             let mut s = Euchre::new_state();
 
             while s.is_chance_node() {
-                let a = ra.step(&s);
-                s.apply_action(a);
+                s.legal_actions(&mut actions);
+                let a = actions.choose(&mut rng).unwrap();
+                s.apply_action(*a);
             }
 
             while !s.is_terminal() {
@@ -1525,8 +1527,9 @@ mod tests {
                     }
                 }
 
-                let a = ra.step(&s);
-                s.apply_action(a);
+                s.legal_actions(&mut actions);
+                let a = actions.choose(&mut rng).unwrap();
+                s.apply_action(*a);
             }
         }
 

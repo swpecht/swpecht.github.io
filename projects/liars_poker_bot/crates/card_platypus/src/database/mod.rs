@@ -6,17 +6,13 @@ use std::{
 
 use anyhow::{bail, Context};
 use boomphf::Mphf;
+use games::{actions, istate::IStateKey, Action, GameState};
 use itertools::Itertools;
 use log::{debug, warn};
 use memmap2::MmapMut;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    actions,
-    algorithms::cfres::InfoState,
-    game::{Action, GameState},
-    istate::IStateKey,
-};
+use crate::algorithms::cfres::InfoState;
 
 pub mod euchre_states;
 

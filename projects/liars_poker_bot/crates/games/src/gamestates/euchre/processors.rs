@@ -1,7 +1,7 @@
 use itertools::Itertools;
 
-use crate::game::{
-    euchre::{
+use crate::{
+    gamestates::euchre::{
         actions::EAction,
         deck::{self},
         ismorphic::get_cards,
@@ -188,8 +188,10 @@ pub fn post_cards_played(gs: &EuchreGameState, n: usize) -> bool {
 mod tests {
     use itertools::Itertools;
 
-    use crate::game::{
-        euchre::{actions::EAction, processors::evaluate_highest_trump_first, EuchreGameState},
+    use crate::{
+        gamestates::euchre::{
+            actions::EAction, processors::evaluate_highest_trump_first, EuchreGameState,
+        },
         GameState,
     };
 

@@ -1,8 +1,5 @@
-use card_platypus::{
-    actions,
-    agents::{Agent, RandomAgent},
-    game::{euchre::Euchre, GameState},
-};
+use card_platypus::agents::{Agent, RandomAgent};
+use games::{actions, gamestates::euchre::Euchre, GameState};
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
 use crate::{Args, GameType};

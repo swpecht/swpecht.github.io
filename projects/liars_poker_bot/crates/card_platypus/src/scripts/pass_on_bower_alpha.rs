@@ -1,14 +1,13 @@
 use card_platypus::{
     agents::{Agent, PolicyAgent, RandomAgent},
     algorithms::{
-        ismcts::{RandomRolloutEvaluator, ResampleFromInfoState},
-        open_hand_solver::OpenHandSolver,
-        pimcts::PIMCTSBot,
+        ismcts::RandomRolloutEvaluator, open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot,
     },
-    game::{
-        euchre::{actions::EAction, EuchreGameState},
-        GameState,
-    },
+};
+use games::{
+    gamestates::euchre::{actions::EAction, EuchreGameState},
+    resample::ResampleFromInfoState,
+    GameState,
 };
 use itertools::Itertools;
 use log::{debug, info};
@@ -94,7 +93,7 @@ pub fn get_pass_on_bower_deals(n: usize, rng: &mut StdRng) -> Vec<EuchreGameStat
     let generator = PassOnBowerIterator::new();
     let mut worlds = generator
         .take(n)
-        .map(|w| w.resample_from_istate(w.cur_player(), rng))
+        .map(|w: EuchreGameState| w.resample_from_istate(w.cur_player(), rng))
         .collect_vec();
     worlds.shuffle(rng);
     worlds

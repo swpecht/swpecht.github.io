@@ -8,6 +8,16 @@ use std::{
 
 use dashmap::DashMap;
 use dyn_clone::DynClone;
+use games::{
+    gamestates::{
+        bluff::{Bluff, BluffGameState},
+        euchre::{ismorphic::EuchreNormalizer, processors::post_cards_played, EuchreGameState},
+        kuhn_poker::{KPGameState, KuhnPoker},
+    },
+    istate::{IStateKey, IStateNormalizer, NoOpNormalizer, NormalizedAction, NormalizedIstate},
+    resample::ResampleFromInfoState,
+    Action, GameState, Player,
+};
 use itertools::Itertools;
 use log::{debug, warn};
 use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, Rng, SeedableRng};
@@ -17,22 +27,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     agents::{Agent, Seedable},
-    algorithms::{
-        ismcts::{Evaluator, ResampleFromInfoState},
-        open_hand_solver::OpenHandSolver,
-        pimcts::PIMCTSBot,
-    },
+    algorithms::{ismcts::Evaluator, open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot},
     alloc::Pool,
     collections::{actionlist::ActionList, actionvec::ActionVec},
     counter,
     database::NodeStore,
-    game::{
-        bluff::{Bluff, BluffGameState},
-        euchre::{ismorphic::EuchreNormalizer, processors::post_cards_played, EuchreGameState},
-        kuhn_poker::{KPGameState, KuhnPoker},
-        Action, GameState, Player,
-    },
-    istate::{IStateKey, IStateNormalizer, NoOpNormalizer, NormalizedAction, NormalizedIstate},
     policy::Policy,
 };
 

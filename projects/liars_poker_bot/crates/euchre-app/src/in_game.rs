@@ -3,19 +3,17 @@
 use std::time::Duration;
 
 use async_std::task;
-use card_platypus::{
-    actions,
-    game::{
-        euchre::{
-            actions::{Card, EAction, Suit},
-            EuchreGameState,
-        },
-        GameState, Player,
-    },
-};
 use client_server_messages::{ActionRequest, GameAction, GameData, GameProcessingState};
 use dioxus::prelude::*;
 use futures_util::StreamExt;
+use games::{
+    actions,
+    gamestates::euchre::{
+        actions::{Card, EAction, Suit},
+        EuchreGameState,
+    },
+    GameState, Player,
+};
 
 use crate::{
     base_url, hide_element, requests::make_game_request, PlayerId, ACTION_BUTTON_CLASS, SERVER,
@@ -412,7 +410,7 @@ fn FaceUpCard<T>(cx: Scope<T>, c: Option<Card>) -> Element {
 }
 
 fn CardIcon<T>(cx: Scope<T>, c: Card) -> Element {
-    use card_platypus::game::euchre::actions::Suit::*;
+    use games::gamestates::euchre::actions::Suit::*;
     let color = match c.suit() {
         Clubs | Spades => "black",
         Hearts | Diamonds => "red",
@@ -529,7 +527,7 @@ fn PlayerActions<T>(cx: Scope<T>, gs: EuchreGameState, south_player: usize) -> E
 }
 
 fn ActionButton<T>(cx: Scope<T>, card: Card, action: Option<EAction>) -> Element {
-    use card_platypus::game::euchre::actions::Suit::*;
+    use games::gamestates::euchre::actions::Suit::*;
     let color = match card.suit() {
         Clubs | Spades => "text-black",
         Hearts | Diamonds => "text-red-500",

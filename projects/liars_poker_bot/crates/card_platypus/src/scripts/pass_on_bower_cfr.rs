@@ -1,23 +1,22 @@
 use std::{collections::HashMap, default, fs, ops::Deref, path::Path};
 
 use card_platypus::{
-    actions,
     agents::{Agent, Seedable},
     algorithms::cfres::{self, CFRES},
-    algorithms::{
-        ismcts::ResampleFromInfoState, open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot,
-    },
-    game::{
-        euchre::{
-            actions::{Card, EAction},
-            ismorphic::LossyEuchreNormalizer,
-            util::generate_face_up_deals,
-            Euchre, EuchreGameState,
-        },
-        GameState,
-    },
+    algorithms::{open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot},
 };
 use clap::{Args, ValueEnum};
+use games::{
+    actions,
+    gamestates::euchre::{
+        actions::{Card, EAction},
+        ismorphic::LossyEuchreNormalizer,
+        util::generate_face_up_deals,
+        Euchre, EuchreGameState,
+    },
+    resample::ResampleFromInfoState,
+    GameState,
+};
 use indicatif::ProgressBar;
 use itertools::Itertools;
 use log::info;

@@ -1,18 +1,16 @@
 use std::collections::HashSet;
 
-use rand::{seq::SliceRandom, thread_rng};
-
-use crate::{
-    algorithms::cfres::{DepthChecker, EuchreDepthChecker},
-    game::{
-        euchre::{
-            actions::{Card, EAction},
-            util::generate_face_up_deals,
-        },
-        Action, GameState,
+use games::{
+    gamestates::euchre::{
+        actions::{Card, EAction},
+        util::generate_face_up_deals,
     },
     istate::IStateKey,
+    Action, GameState,
 };
+use rand::{seq::SliceRandom, thread_rng};
+
+use crate::algorithms::cfres::{DepthChecker, EuchreDepthChecker};
 
 pub fn collect_istates(
     istates: &mut HashSet<Vec<Action>>,

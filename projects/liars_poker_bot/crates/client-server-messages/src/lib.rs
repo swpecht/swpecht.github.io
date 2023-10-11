@@ -1,4 +1,4 @@
-use card_platypus::game::{euchre::EuchreGameState, Action};
+use games::{gamestates::euchre::EuchreGameState, Action};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

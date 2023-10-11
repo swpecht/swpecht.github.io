@@ -1,7 +1,7 @@
 use rand::{seq::SliceRandom, thread_rng};
 
-use crate::game::{
-    euchre::{actions::EAction, EPhase, Euchre},
+use crate::{
+    gamestates::euchre::{actions::EAction, EPhase, Euchre},
     GameState,
 };
 

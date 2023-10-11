@@ -1,18 +1,16 @@
 use std::time::Duration;
 
-use card_platypus::{
-    actions,
-    algorithms::{
-        ismcts::Evaluator,
-        open_hand_solver::{OpenHandSolver, Optimizations},
-        pimcts::PIMCTSBot,
-    },
-    game::{
-        euchre::{processors::euchre_early_terminate, Euchre, EuchreGameState},
-        Action, GameState,
-    },
+use card_platypus::algorithms::{
+    ismcts::Evaluator,
+    open_hand_solver::{OpenHandSolver, Optimizations},
+    pimcts::PIMCTSBot,
 };
 use criterion::{criterion_group, criterion_main, Criterion};
+use games::{
+    actions,
+    gamestates::euchre::{processors::euchre_early_terminate, Euchre, EuchreGameState},
+    Action, GameState,
+};
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
 pub fn criterion_benchmark(c: &mut Criterion) {

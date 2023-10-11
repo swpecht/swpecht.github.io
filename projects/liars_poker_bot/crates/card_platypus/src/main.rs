@@ -5,18 +5,14 @@ use card_platypus::algorithms::cfres::{self, InfoState};
 
 use clap::{command, Parser, Subcommand, ValueEnum};
 
-use card_platypus::actions;
-use card_platypus::agents::{Agent, PlayerAgent, PolicyAgent};
+use card_platypus::agents::{Agent, PolicyAgent};
 
 use card_platypus::algorithms::open_hand_solver::OpenHandSolver;
 use card_platypus::algorithms::pimcts::PIMCTSBot;
 
-use card_platypus::game::bluff::BluffGameState;
-
-use card_platypus::game::euchre::{Euchre, EuchreGameState};
-use card_platypus::game::kuhn_poker::KPGameState;
-use card_platypus::game::GameState;
-
+use games::gamestates::bluff::BluffGameState;
+use games::gamestates::euchre::EuchreGameState;
+use games::gamestates::kuhn_poker::KPGameState;
 use log::{set_max_level, LevelFilter};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
@@ -228,41 +224,5 @@ fn run(_args: Args) {
 }
 
 fn run_play(_args: Args) {
-    let mut rng: StdRng = SeedableRng::seed_from_u64(2);
-
-    let mut agent = PolicyAgent::new(
-        PIMCTSBot::new(50, OpenHandSolver::new_euchre(), get_rng()),
-        get_rng(),
-    );
-    let mut player = PlayerAgent::default();
-    let user = 0;
-    let mut score = [0; 2];
-    let mut i = 0;
-
-    loop {
-        let mut gs = Euchre::new_state();
-        while !gs.is_terminal() {
-            if gs.is_chance_node() {
-                let actions = actions!(gs);
-                let a = *actions.choose(&mut rng).unwrap();
-                gs.apply_action(a);
-                continue;
-            }
-
-            let a = if gs.cur_player() % 2 == (user + i % 2) % 2 {
-                player.step(&gs)
-            } else {
-                agent.step(&gs)
-            };
-
-            gs.apply_action(a);
-        }
-        println!("{}", gs.evaluate(user));
-        score[0] += 0.max(gs.evaluate(0) as i8);
-        score[1] += 0.max(gs.evaluate(1) as i8);
-
-        println!("{} to {}", score[0], score[1]);
-        println!("user is player: {}", user);
-        i += 1;
-    }
+    todo!()
 }

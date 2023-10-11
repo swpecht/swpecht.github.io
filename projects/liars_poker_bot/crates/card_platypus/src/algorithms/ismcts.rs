@@ -6,18 +6,14 @@ use std::{
     hash::{Hash, Hasher},
 };
 
+use games::{
+    actions, istate::IStateKey, resample::ResampleFromInfoState, Action, GameState, Player,
+};
 use log::info;
-use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
+use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 use rustc_hash::FxHashMap;
 
-use crate::{
-    actions,
-    agents::Agent,
-    collections::actionvec::ActionVec,
-    game::{Action, GameState, Player},
-    istate::IStateKey,
-    policy::Policy,
-};
+use crate::{agents::Agent, collections::actionvec::ActionVec, policy::Policy};
 
 const UNLIMITED_NUM_WORLD_SAMPLES: i32 = -1;
 const UNEXPANDED_VISIT_COUNT: i32 = -1;
@@ -160,11 +156,6 @@ impl<G: GameState> Evaluator<G> for RandomRolloutEvaluator {
     fn evaluate_player(&mut self, gs: &G, p: Player) -> f64 {
         self.evaluate(gs)[p]
     }
-}
-
-/// Resample the chance nodes to other versions of the gamestate that result in the same istate for a given player
-pub trait ResampleFromInfoState {
-    fn resample_from_istate<T: Rng>(&self, player: Player, rng: &mut T) -> Self;
 }
 
 pub struct ISMCTBotConfig {
@@ -449,7 +440,7 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> ISMCTSBot<G, E> {
 }
 
 impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Agent<G> for ISMCTSBot<G, E> {
-    fn step(&mut self, s: &G) -> crate::game::Action {
+    fn step(&mut self, s: &G) -> Action {
         let action_weights = self.run_search(s).to_vec();
         action_weights
             .choose_weighted(&mut self.rng, |item| item.1)
@@ -471,17 +462,19 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> Policy<G> for ISMCTS
 #[cfg(test)]
 mod tests {
     use approx::assert_ulps_eq;
+    use games::{
+        actions,
+        gamestates::{
+            bluff::Bluff,
+            kuhn_poker::{KPAction, KuhnPoker},
+        },
+        GameState,
+    };
     use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
 
     use crate::{
-        actions,
         agents::{Agent, RandomAgent},
         algorithms::ismcts::{Evaluator, ISMCTSBot, RandomRolloutEvaluator},
-        game::{
-            bluff::Bluff,
-            kuhn_poker::{KPAction, KuhnPoker},
-            GameState,
-        },
     };
 
     use super::ISMCTBotConfig;
