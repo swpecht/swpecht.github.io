@@ -8,9 +8,9 @@ impl Plugin for PhyscisPlugin {
     }
 }
 
-#[derive(Component, Deref, DerefMut)]
+#[derive(Component, Deref, DerefMut, Default)]
 pub struct Position(pub Vec2);
-#[derive(Component, Deref, DerefMut)]
+#[derive(Component, Deref, DerefMut, Default)]
 pub struct Velocity(pub Vec2);
 
 fn velocity_system(mut query: Query<(&mut Position, &Velocity)>, time: Res<Time>) {

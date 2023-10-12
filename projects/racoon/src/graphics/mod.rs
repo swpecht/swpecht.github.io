@@ -1,12 +1,10 @@
-use std::f32::consts::PI;
-
 use bevy::prelude::*;
 
 use crate::physics::{Position, Velocity};
 
-pub struct WorldRenderPlugin {}
+pub struct GraphicsPlugin {}
 
-impl Plugin for WorldRenderPlugin {
+impl Plugin for GraphicsPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, load_assets)
             .add_systems(Update, (position_render_system, animate_sprite))
@@ -89,9 +87,4 @@ fn animate_sprite(
     }
 }
 
-fn load_assets(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    mut texture_atlases: ResMut<Assets<TextureAtlas>>,
-) {
-}
+fn load_assets() {}

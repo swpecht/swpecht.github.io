@@ -13,6 +13,16 @@ const ENEMY_SIZE: Vec3 = Vec3::new(20.0, 20.0, 0.0);
 const SPAWN_COLOR: Color = Color::rgb(0.7, 0.3, 0.3);
 const SPAWN_RANGE: f32 = 20.;
 
+const UNIT_VELOCITY: f32 = 30.;
+
+pub struct UnitsPlugin {}
+
+impl Plugin for UnitsPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(Update, unit_movement_system);
+    }
+}
+
 #[derive(Bundle)]
 pub struct EnemyBundle {
     position: Position,
@@ -26,7 +36,7 @@ impl EnemyBundle {
         Self {
             position: Position(pos),
             shape: Shape::Circle,
-            velocity: Velocity(Vec2 { x: 10., y: -30. }),
+            velocity: Velocity(Vec2 { x: 0., y: 0. }),
             sprite,
         }
     }
@@ -81,4 +91,13 @@ pub enum SpawnerType {
 #[derive(Component)]
 enum Shape {
     Circle,
+}
+
+#[derive(Component, Default, Deref, DerefMut)]
+pub struct GoalPos(pub Vec2);
+
+fn unit_movement_system(mut query: Query<(&mut Velocity, &Position, &GoalPos)>) {
+    for (mut vel, pos, gpos) in &mut query {
+        *vel = Velocity((**gpos - **pos).clamp_length_max(30.));
+    }
 }

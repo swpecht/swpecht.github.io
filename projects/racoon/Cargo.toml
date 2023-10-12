@@ -16,3 +16,4 @@ opt-level = 3
 [dependencies]
 # Remove dynamic linking for release
 bevy = { version = "0.11.0", features = ["dynamic_linking"] }
+rand = "0.8"

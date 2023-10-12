@@ -1,10 +1,13 @@
-use bevy::{ecs::query, gizmos, prelude::*};
+use bevy::{
+    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
+    prelude::*,
+};
 use racoon::{
-    ai::AIPlugin,
-    graphics::{AnimatedSpriteBundle, WorldRenderPlugin},
+    ai::{AIControlled, AIPlugin},
+    graphics::{AnimatedSpriteBundle, GraphicsPlugin},
     input::{CursorPlugin, MouseCoords},
     physics::{PhyscisPlugin, Position},
-    units::{EnemyBundle, EnemySpawnBundle, SpawnerBundle, SpawnerTimer},
+    units::{EnemyBundle, EnemySpawnBundle, SpawnerTimer, UnitsPlugin},
 };
 
 const GRID_SIZE: f32 = 50.;
@@ -15,9 +18,10 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_plugins((
             CursorPlugin {},
-            WorldRenderPlugin {},
+            GraphicsPlugin {},
             PhyscisPlugin {},
             AIPlugin {},
+            UnitsPlugin {},
         ))
         .add_systems(Startup, setup)
         .add_systems(Update, (mouse_click_system, spawner_system))
@@ -53,7 +57,7 @@ fn grid_system(mut gizmos: Gizmos) {
     }
 }
 
-fn setup(mut commands: Commands, mut gizmos: Gizmos) {
+fn setup(mut commands: Commands) {
     commands.spawn(EnemySpawnBundle::new(Vec2 { x: -153., y: 76. }));
     commands.spawn(EnemySpawnBundle::new(Vec2 { x: 183., y: 76. }));
 }
@@ -73,7 +77,7 @@ fn spawner_system(
                 TextureAtlas::from_grid(texture_handle, Vec2::new(32.0, 32.0), 2, 2, None, None);
             let texture_atlas_handle = texture_atlases.add(texture_atlas);
             let sprite = AnimatedSpriteBundle::new(texture_atlas_handle, spawn_pos);
-            commands.spawn(EnemyBundle::new(spawn_pos, sprite));
+            commands.spawn((EnemyBundle::new(spawn_pos, sprite), AIControlled {}));
         }
     }
 }
