@@ -61,7 +61,7 @@ fn camera_pan(
     mut q_camera: Query<(&Camera, &mut Transform), With<MainCamera>>,
     keys: Res<Input<KeyCode>>,
 ) {
-    let (camera, mut camera_transform) = q_camera.single_mut();
+    let (_, mut camera_transform) = q_camera.single_mut();
     if keys.pressed(KeyCode::W) {
         camera_transform.translation += Vec3::Y * CAMERA_PAN_SPEED;
     }

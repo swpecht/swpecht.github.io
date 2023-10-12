@@ -1,17 +1,17 @@
 use bevy::{ecs::query, prelude::*};
 use racoon::{
+    graphics::{AnimatedSpriteBundle, WorldRenderPlugin},
     input::{CursorPlugin, MouseCoords},
-    render::WorldRenderPlugin,
-    units::{EnemyBundle, EnemySpawn, Position, Spawner},
+    physics::{PhyscisPlugin, Position},
+    units::{EnemyBundle, EnemySpawnBundle, SpawnerBundle, SpawnerTimer},
 };
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugins((CursorPlugin {}, WorldRenderPlugin {}))
+        .add_plugins((CursorPlugin {}, WorldRenderPlugin {}, PhyscisPlugin {}))
         .add_systems(Startup, setup)
         .add_systems(Update, (mouse_click_system, spawner_system))
-        .add_systems(FixedUpdate, move_unit_system)
         .run();
 }
 
@@ -26,24 +26,26 @@ fn mouse_click_system(mouse_cords: Res<MouseCoords>, mouse_button_input: Res<Inp
 }
 
 fn setup(mut commands: Commands) {
-    commands.spawn(EnemySpawn::new(Vec2 { x: -153., y: 76. }));
-    commands.spawn(EnemySpawn::new(Vec2 { x: 183., y: 76. }));
-}
-
-fn move_unit_system(mut query: Query<&mut Position, Without<Spawner>>) {
-    for mut pos in &mut query {
-        pos.loc.y -= 1.;
-    }
+    commands.spawn(EnemySpawnBundle::new(Vec2 { x: -153., y: 76. }));
+    commands.spawn(EnemySpawnBundle::new(Vec2 { x: 183., y: 76. }));
 }
 
 fn spawner_system(
     mut commands: Commands,
     time: Res<Time>,
-    mut query: Query<(&mut Spawner, &Position)>,
+    mut query: Query<(&mut SpawnerTimer, &Position)>,
+    asset_server: Res<AssetServer>,
+    mut texture_atlases: ResMut<Assets<TextureAtlas>>,
 ) {
     for (mut s, pos) in &mut query {
-        if s.timer.tick(time.delta()).just_finished() {
-            commands.spawn(EnemyBundle::new(*pos.loc() + s.range));
+        if s.tick(time.delta()).just_finished() {
+            let spawn_pos = **pos + Vec2 { x: 20., y: 20. };
+            let texture_handle = asset_server.load("corgi.png");
+            let texture_atlas =
+                TextureAtlas::from_grid(texture_handle, Vec2::new(32.0, 32.0), 2, 2, None, None);
+            let texture_atlas_handle = texture_atlases.add(texture_atlas);
+            let sprite = AnimatedSpriteBundle::new(texture_atlas_handle, spawn_pos);
+            commands.spawn(EnemyBundle::new(spawn_pos, sprite));
         }
     }
 }

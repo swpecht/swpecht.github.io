@@ -2,6 +2,11 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 
+use crate::{
+    graphics::AnimatedSpriteBundle,
+    physics::{Position, Velocity},
+};
+
 const ENEMY_COLOR: Color = Color::rgb(0.3, 0.3, 0.7);
 const ENEMY_SIZE: Vec3 = Vec3::new(20.0, 20.0, 0.0);
 
@@ -11,46 +16,36 @@ const SPAWN_RANGE: f32 = 20.;
 #[derive(Bundle)]
 pub struct EnemyBundle {
     position: Position,
+    velocity: Velocity,
     shape: Shape,
-    sprite: SpriteBundle,
+    sprite: AnimatedSpriteBundle,
 }
 
 impl EnemyBundle {
-    pub fn new(pos: Vec2) -> Self {
+    pub fn new(pos: Vec2, sprite: AnimatedSpriteBundle) -> Self {
         Self {
-            position: Position { loc: pos },
+            position: Position(pos),
             shape: Shape::Circle,
-            sprite: SpriteBundle {
-                transform: Transform {
-                    translation: Vec3::new(pos.x, pos.y, 0.0),
-                    scale: ENEMY_SIZE,
-                    ..default()
-                },
-                sprite: Sprite {
-                    color: ENEMY_COLOR,
-                    ..default()
-                },
-                ..default()
-            },
+            velocity: Velocity(Vec2 { x: 10., y: -30. }),
+            sprite,
         }
     }
 }
 
 #[derive(Bundle)]
-pub struct EnemySpawn {
+pub struct EnemySpawnBundle {
     position: Position,
     sprite: SpriteBundle,
-    spawner: Spawner,
+    spawner: SpawnerBundle,
 }
 
-impl EnemySpawn {
+impl EnemySpawnBundle {
     pub fn new(pos: Vec2) -> Self {
         Self {
-            position: Position { loc: pos },
-            spawner: Spawner {
+            position: Position(pos),
+            spawner: SpawnerBundle {
                 spawner_type: SpawnerType::Enemy,
-                range: SPAWN_RANGE,
-                timer: Timer::new(Duration::from_secs(1), TimerMode::Repeating),
+                timer: SpawnerTimer(Timer::new(Duration::from_secs(1), TimerMode::Repeating)),
             },
             sprite: SpriteBundle {
                 transform: Transform {
@@ -68,26 +63,19 @@ impl EnemySpawn {
     }
 }
 
-#[derive(Component)]
-pub struct Spawner {
+// TODO: Change this to a bundle
+#[derive(Bundle)]
+pub struct SpawnerBundle {
     pub spawner_type: SpawnerType,
-    pub range: f32,
-    pub timer: Timer,
+    pub timer: SpawnerTimer,
 }
 
+#[derive(Component, Deref, DerefMut)]
+pub struct SpawnerTimer(Timer);
+
+#[derive(Component)]
 pub enum SpawnerType {
     Enemy,
-}
-
-#[derive(Component)]
-pub struct Position {
-    pub loc: Vec2,
-}
-
-impl Position {
-    pub fn loc(&self) -> &Vec2 {
-        &self.loc
-    }
 }
 
 #[derive(Component)]
