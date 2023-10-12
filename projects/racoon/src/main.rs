@@ -1,17 +1,27 @@
-use bevy::{ecs::query, prelude::*};
+use bevy::{ecs::query, gizmos, prelude::*};
 use racoon::{
+    ai::AIPlugin,
     graphics::{AnimatedSpriteBundle, WorldRenderPlugin},
     input::{CursorPlugin, MouseCoords},
     physics::{PhyscisPlugin, Position},
     units::{EnemyBundle, EnemySpawnBundle, SpawnerBundle, SpawnerTimer},
 };
 
+const GRID_SIZE: f32 = 50.;
+const NUM_GRID: usize = 100;
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugins((CursorPlugin {}, WorldRenderPlugin {}, PhyscisPlugin {}))
+        .add_plugins((
+            CursorPlugin {},
+            WorldRenderPlugin {},
+            PhyscisPlugin {},
+            AIPlugin {},
+        ))
         .add_systems(Startup, setup)
         .add_systems(Update, (mouse_click_system, spawner_system))
+        // .add_systems(Update, grid_system)
         .run();
 }
 
@@ -25,7 +35,25 @@ fn mouse_click_system(mouse_cords: Res<MouseCoords>, mouse_button_input: Res<Inp
     }
 }
 
-fn setup(mut commands: Commands) {
+fn grid_system(mut gizmos: Gizmos) {
+    for i in 0..2 * NUM_GRID {
+        gizmos.line(
+            Vec3 {
+                x: -(NUM_GRID as f32 * GRID_SIZE),
+                y: -(NUM_GRID as f32 * GRID_SIZE) + i as f32 * GRID_SIZE,
+                z: 0.,
+            },
+            Vec3 {
+                x: (NUM_GRID as f32 * GRID_SIZE),
+                y: -(NUM_GRID as f32 * GRID_SIZE) + i as f32 * GRID_SIZE,
+                z: 0.,
+            },
+            Color::GREEN,
+        );
+    }
+}
+
+fn setup(mut commands: Commands, mut gizmos: Gizmos) {
     commands.spawn(EnemySpawnBundle::new(Vec2 { x: -153., y: 76. }));
     commands.spawn(EnemySpawnBundle::new(Vec2 { x: 183., y: 76. }));
 }

@@ -28,6 +28,10 @@ fn direction_render_system(mut query: Query<(&Velocity, &mut Transform)>) {
     }
 }
 
+/// Used to help identify our main camera
+#[derive(Component)]
+pub struct MainCamera;
+
 #[derive(Bundle)]
 pub struct AnimatedSpriteBundle {
     animation_indices: AnimationIndices,

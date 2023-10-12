@@ -1,5 +1,7 @@
 use bevy::{input::mouse::MouseWheel, prelude::*, window::PrimaryWindow};
 
+use crate::graphics::MainCamera;
+
 const CAMERA_PAN_SPEED: f32 = 2.0;
 const CAMERA_ZOOM_SPEED: f32 = 0.1;
 
@@ -21,10 +23,6 @@ impl MouseCoords {
         &self.0
     }
 }
-
-/// Used to help identify our main camera
-#[derive(Component)]
-pub struct MainCamera;
 
 fn input_setup(mut commands: Commands) {
     commands.init_resource::<MouseCoords>();
@@ -58,24 +56,25 @@ fn cursor_system(
 }
 
 fn camera_pan(
-    mut q_camera: Query<(&Camera, &mut Transform), With<MainCamera>>,
+    mut q_camera: Query<(&mut Transform, &OrthographicProjection), With<MainCamera>>,
     keys: Res<Input<KeyCode>>,
 ) {
-    let (_, mut camera_transform) = q_camera.single_mut();
+    let (mut camera_transform, proj) = q_camera.single_mut();
+    let speed = proj.scale * CAMERA_PAN_SPEED;
     if keys.pressed(KeyCode::W) {
-        camera_transform.translation += Vec3::Y * CAMERA_PAN_SPEED;
+        camera_transform.translation += Vec3::Y * speed;
     }
 
     if keys.pressed(KeyCode::A) {
-        camera_transform.translation -= Vec3::X * CAMERA_PAN_SPEED;
+        camera_transform.translation -= Vec3::X * speed;
     }
 
     if keys.pressed(KeyCode::S) {
-        camera_transform.translation -= Vec3::Y * CAMERA_PAN_SPEED;
+        camera_transform.translation -= Vec3::Y * speed;
     }
 
     if keys.pressed(KeyCode::D) {
-        camera_transform.translation += Vec3::X * CAMERA_PAN_SPEED;
+        camera_transform.translation += Vec3::X * speed;
     }
 }
 
