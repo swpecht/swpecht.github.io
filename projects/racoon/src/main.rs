@@ -5,6 +5,7 @@ use racoon::{
     input::{CursorPlugin, MouseCoords},
     physics::{PhyscisPlugin, Position},
     simulation::SimulationPlugin,
+    ui::UIPlugin,
     units::{EnemyBundle, EnemySpawnBundle, SpawnerTimer, UnitsPlugin},
 };
 
@@ -18,6 +19,7 @@ fn main() {
             AIPlugin {},
             UnitsPlugin {},
             SimulationPlugin {},
+            UIPlugin {},
         ))
         .add_systems(Startup, setup)
         .add_systems(Update, (mouse_click_system, spawner_system))

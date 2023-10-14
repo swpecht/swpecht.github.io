@@ -3,4 +3,5 @@ pub mod graphics;
 pub mod input;
 pub mod physics;
 pub mod simulation;
+pub mod ui;
 pub mod units;

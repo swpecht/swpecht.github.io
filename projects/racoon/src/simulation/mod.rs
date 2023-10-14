@@ -14,7 +14,29 @@ pub struct SimulationPlugin {}
 
 impl Plugin for SimulationPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(SimulationState::default())
+        let mut gs = SimulationState::default();
+        gs.spawn_entity(
+            Entity::RangedUnit {
+                team: Team::Computer,
+                health: 100,
+            },
+            Coordinates { x: 50, y: 50 },
+        )
+        .unwrap();
+
+        gs.spawn_entity(
+            Entity::RangedUnit {
+                team: Team::Player,
+                health: 100,
+            },
+            Coordinates { x: 50, y: 51 },
+        )
+        .unwrap();
+
+        gs.spawn_entity(Entity::Wall, Coordinates { x: 51, y: 51 })
+            .unwrap();
+
+        app.insert_resource(gs)
             .add_systems(Startup, setup)
             .add_systems(Update, (tick_simulation_system, display_sim_state));
     }
@@ -130,8 +152,22 @@ impl SimulationState {
     /// Actions are applied in the following order:
     /// *...
     fn process_actions(&mut self) {
+        assert_eq!(self.action_queue.len(), self.entities.len());
+
+        // check for legal actions
+        self.entities
+            .iter_mut()
+            .zip(&self.action_queue)
+            .for_each(|((coords, entity), action)| {
+                use Action::*;
+                match (entity, action) {
+                    (_, Pass) => {}
+                    (_, Move { x, y }) => *coords = Coordinates { x: *x, y: *y },
+                    _ => panic!("unsupported entity, action combination",),
+                }
+            });
+
         self.action_queue.clear();
-        todo!()
     }
 
     pub fn undo() {
@@ -162,7 +198,7 @@ enum Entity {
     Wall,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 enum Action {
     Attack { x: usize, y: usize },
     Move { x: usize, y: usize },
@@ -208,6 +244,8 @@ fn display_sim_state(mut gizmos: Gizmos, gs: Res<SimulationState>) {
 
 #[cfg(test)]
 mod tests {
+    use crate::simulation::Action;
+
     use super::{Coordinates, Entity, SimulationState, Team};
 
     #[test]
@@ -243,16 +281,12 @@ mod tests {
             }
         ));
 
-        let actions = gs.legal_actions();
-        gs.apply_action(actions[0]);
-
-        assert!(matches!(
-            gs.cur_entity(),
-            Entity::RangedUnit {
-                team: Team::Player,
-                health: _
-            }
-        ));
+        use Action::*;
+        gs.apply_action(Move { x: 49, y: 50 });
         assert_eq!(gs.cur_entity_coords(), Coordinates { x: 90, y: 90 });
+        gs.apply_action(Move { x: 91, y: 90 });
+
+        // the entity moved
+        assert_eq!(gs.cur_entity_coords(), Coordinates { x: 49, y: 50 });
     }
 }
