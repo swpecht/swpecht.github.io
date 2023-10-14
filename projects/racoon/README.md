@@ -1,7 +1,10 @@
 [ ] Implement visualizing the simulation
   [*] Show static representation using gizmos
   [ ] Implement movement on ticks
+    [ ] How to handle units that can move at different speeds? -- save for later
   [ ] Implement lerping to smooth the movement
+[ ] Implement attacking
+
 [ ] Implement a basic ai using cfr or some similar algorithm -- should we implement the card platypus gamestate?
 
 
@@ -28,7 +31,8 @@ Legal actions:
 * move units
 * have units attack
 
-Each unit can have a move and attack action every turn
+Each unit can have a move or attack every turn -- but there is some damage that is passively done
+
 Each player locks their move and attack action for every unit -- then both are executed simultaneously -- can occupy the same space
 Cannot have own units occupy the same space
 
