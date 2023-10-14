@@ -98,6 +98,6 @@ pub struct GoalPos(pub Vec2);
 
 fn unit_movement_system(mut query: Query<(&mut Velocity, &Position, &GoalPos)>) {
     for (mut vel, pos, gpos) in &mut query {
-        *vel = Velocity((**gpos - **pos).normalize() * 30.);
+        *vel = Velocity((**gpos - **pos).normalize() * UNIT_VELOCITY);
     }
 }

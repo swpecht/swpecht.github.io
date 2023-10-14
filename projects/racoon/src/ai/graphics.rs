@@ -10,3 +10,4 @@ pub(super) fn render_ai_goals(mut gizmos: Gizmos, query: Query<&GoalPos>) {
         gizmos.circle_2d(**pos, ACHIEVE_GOAL_DELTA, Color::GREEN);
     }
 }
+

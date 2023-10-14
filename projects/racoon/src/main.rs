@@ -1,17 +1,12 @@
-use bevy::{
-    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
-    prelude::*,
-};
+use bevy::prelude::*;
 use racoon::{
     ai::{AIControlled, AIPlugin},
     graphics::{AnimatedSpriteBundle, GraphicsPlugin},
     input::{CursorPlugin, MouseCoords},
     physics::{PhyscisPlugin, Position},
+    simulation::SimulationPlugin,
     units::{EnemyBundle, EnemySpawnBundle, SpawnerTimer, UnitsPlugin},
 };
-
-const GRID_SIZE: f32 = 50.;
-const NUM_GRID: usize = 100;
 
 fn main() {
     App::new()
@@ -22,6 +17,7 @@ fn main() {
             PhyscisPlugin {},
             AIPlugin {},
             UnitsPlugin {},
+            SimulationPlugin {},
         ))
         .add_systems(Startup, setup)
         .add_systems(Update, (mouse_click_system, spawner_system))
@@ -35,24 +31,6 @@ fn mouse_click_system(mouse_cords: Res<MouseCoords>, mouse_button_input: Res<Inp
             "left mouse just released: {}, {}",
             mouse_cords.loc().x,
             mouse_cords.loc().y
-        );
-    }
-}
-
-fn grid_system(mut gizmos: Gizmos) {
-    for i in 0..2 * NUM_GRID {
-        gizmos.line(
-            Vec3 {
-                x: -(NUM_GRID as f32 * GRID_SIZE),
-                y: -(NUM_GRID as f32 * GRID_SIZE) + i as f32 * GRID_SIZE,
-                z: 0.,
-            },
-            Vec3 {
-                x: (NUM_GRID as f32 * GRID_SIZE),
-                y: -(NUM_GRID as f32 * GRID_SIZE) + i as f32 * GRID_SIZE,
-                z: 0.,
-            },
-            Color::GREEN,
         );
     }
 }
