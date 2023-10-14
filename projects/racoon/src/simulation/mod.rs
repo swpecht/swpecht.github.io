@@ -44,6 +44,8 @@ impl Default for SimulationState {
             health: 100,
         });
 
+        entities[51][51].push(Entity::Wall);
+
         Self { entities }
     }
 }
@@ -55,6 +57,14 @@ impl SimulationState {
     ///
     /// First we select attack action, then the move action? -- how do we track this istate? -- show the set of what other units are going to do
     pub fn legal_actions() -> Vec<Action> {
+        todo!()
+    }
+
+    pub fn apply_action(a: Action) {
+        todo!()
+    }
+
+    pub fn undo() {
         todo!()
     }
 }
@@ -92,19 +102,21 @@ fn display_sim_state(mut gizmos: Gizmos, gs: Res<SimulationState>) {
         for (y, units) in row.iter().enumerate() {
             for unit in units {
                 // info!("found unit: {:?}", unit);
-
+                let position: Vec2 = Coordinates { x, y }.into();
                 match unit {
                     Entity::RangedUnit { team, health: _ } => {
                         gizmos.circle_2d(
-                            Coordinates { x, y }.into(),
-                            20.,
+                            position,
+                            25.,
                             match team {
                                 Team::Player => Color::GREEN,
                                 Team::Computer => Color::RED,
                             },
                         );
                     }
-                    Entity::Wall => todo!(),
+                    Entity::Wall => {
+                        gizmos.rect_2d(position, 0., Vec2 { x: 50., y: 50. }, Color::WHITE)
+                    }
                 }
             }
         }
