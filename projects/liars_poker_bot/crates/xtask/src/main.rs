@@ -103,6 +103,8 @@ fn get_server_logs() -> anyhow::Result<()> {
 
     println!("num games: {}", num_games);
 
+    //cat server.log | cut -c -10 | datamash -g 1 count 1
+
     Ok(())
 }
 
