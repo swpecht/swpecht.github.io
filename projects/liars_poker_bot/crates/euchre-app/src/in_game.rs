@@ -103,7 +103,8 @@ pub fn InGame(cx: Scope, game_id: String) -> Element {
                     div { class: "sm:basis-3/4", PlayArea(cx, gd.clone(), south_player) }
                     div { class: "sm:basis-1/4",
                         GameData(cx, gd.gs.clone(), south_player),
-                        RunningStats(cx, gd.computer_score, gd.human_score)
+                        RunningStats(cx, gd.computer_score, gd.human_score),
+                        PlayerStats(cx, gd.players.clone())
                     }
                 }
             )
@@ -220,6 +221,27 @@ fn RunningStats<T>(cx: Scope<T>, machine_score: usize, human_score: usize) -> El
             }
         }
     )
+}
+
+fn PlayerStats<T>(cx: Scope<T>, players: Vec<Option<usize>>) -> Element {
+    let num_humans = players.iter().filter(|x| x.is_some()).count();
+    if num_humans > 1 {
+        render!(
+            div { class: "pt-8 font-bold text-xl font-large text-black", "Player details" }
+            div { "North: Human" }
+            div { "South: Human" }
+            div { "East: Computer" }
+            div { "West: Computer" }
+        )
+    } else {
+        render!(
+            div { class: "pt-8 font-bold text-xl font-large text-black", "Player details" }
+            div { "North: Human" }
+            div { "South: Computer" }
+            div { "East: Computer" }
+            div { "West: Computer" }
+        )
+    }
 }
 
 fn PlayArea<T>(cx: Scope<T>, game_data: GameData, south_player: usize) -> Element {
