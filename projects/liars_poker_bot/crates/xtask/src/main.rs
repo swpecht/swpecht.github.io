@@ -183,6 +183,26 @@ fn deploy() -> anyhow::Result<()> {
     )
     .run()?;
 
+    sh.change_dir("../xtask");
+    cmd!(
+        sh,
+        "rsync euchre-server.service root@{REMOTE_ADDR}:/etc/systemd/system/"
+    )
+    .run()?;
+
+    cmd!(sh, "ssh root@{REMOTE_ADDR} systemctl daemon-reload").run()?;
+
+    cmd!(
+        sh,
+        "ssh root@{REMOTE_ADDR} systemctl enable eucher-server.service"
+    )
+    .run()?;
+    cmd!(
+        sh,
+        "ssh root@{REMOTE_ADDR} systemctl restart eucher-server.service"
+    )
+    .run()?;
+
     Ok(())
 }
 

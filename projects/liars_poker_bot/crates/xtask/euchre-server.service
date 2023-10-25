@@ -1,0 +1,9 @@
+[Unit]
+Description=Euchre Server
+
+[Service]
+ExecStart=/root/deploy/euchre_server
+WorkingDirectory=/root/deploy/
+
+[Install]
+WantedBy=multi-user.target
