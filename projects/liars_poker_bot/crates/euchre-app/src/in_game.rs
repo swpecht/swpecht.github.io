@@ -276,8 +276,8 @@ fn PlayerStats<T>(cx: Scope<T>, players: Vec<Option<usize>>) -> Element {
     } else {
         render!(
             div { class: "pt-8 font-bold text-xl font-large text-black", "Player details" }
-            div { "North: Human" }
-            div { "South: Computer" }
+            div { "North: Computer" }
+            div { "South: Human" }
             div { "East: Computer" }
             div { "West: Computer" }
         )
