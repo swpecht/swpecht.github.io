@@ -341,7 +341,9 @@ fn PlayArea<T>(cx: Scope<T>, game_data: GameData, south_player: usize) -> Elemen
                     if matches!(game_data.display_state, WaitingBidClear { ready_players: _ }) {
                         FaceUpCard(cx, Some(gs.face_up().expect("invalid faceup call")))
                     }
-                    TurnTracker(cx, gs.clone(), south_player),
+                    if !gs.is_terminal() {
+                        TurnTracker(cx, gs.clone(), south_player)
+                    }
                     ClearButton(cx, game_data.clone().display_state, game_data.clone())
                 }
 
