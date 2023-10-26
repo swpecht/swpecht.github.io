@@ -194,11 +194,6 @@ fn deploy() -> anyhow::Result<()> {
 
     cmd!(
         sh,
-        "ssh root@{REMOTE_ADDR} systemctl enable eucher-server.service"
-    )
-    .run()?;
-    cmd!(
-        sh,
         "ssh root@{REMOTE_ADDR} systemctl restart eucher-server.service"
     )
     .run()?;

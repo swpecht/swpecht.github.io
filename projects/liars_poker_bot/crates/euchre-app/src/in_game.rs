@@ -523,6 +523,11 @@ fn PlayerActions<T>(cx: Scope<T>, gs: EuchreGameState, south_player: usize) -> E
             }
         )
     } else if actions.contains(&EAction::Pickup) {
+        let pickup_text = if south_player == 3 {
+            "Take card"
+        } else {
+            "Tell dealer to take card"
+        };
         // special case for play pickup and pass
         let hand = gs.get_hand(south_player);
         render!(
@@ -536,7 +541,7 @@ fn PlayerActions<T>(cx: Scope<T>, gs: EuchreGameState, south_player: usize) -> E
                     button {
                         class: "basis-1/2 text-xl {ACTION_BUTTON_CLASS}",
                         onclick: move |_| { action_task.send(GameAction::TakeAction(EAction::Pickup.into())) },
-                        "Tell dealer to take card"
+                        "{pickup_text}"
                     }
 
                     button {
