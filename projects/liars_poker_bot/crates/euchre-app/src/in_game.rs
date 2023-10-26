@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 
-use std::time::Duration;
+use std::{fmt::Display, time::Duration};
 
 use async_std::task;
 use client_server_messages::{ActionRequest, GameAction, GameData, GameProcessingState};
@@ -45,6 +45,17 @@ impl TableLocation {
             .iter()
             .position(|x| x.is_some() && x.unwrap() == player_id)
             .unwrap()
+    }
+}
+
+impl Display for TableLocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TableLocation::North => f.write_str("North"),
+            TableLocation::South => f.write_str("South"),
+            TableLocation::East => f.write_str("East"),
+            TableLocation::West => f.write_str("West"),
+        }
     }
 }
 
@@ -341,7 +352,7 @@ fn PlayArea<T>(cx: Scope<T>, game_data: GameData, south_player: usize) -> Elemen
                     if matches!(game_data.display_state, WaitingBidClear { ready_players: _ }) {
                         FaceUpCard(cx, Some(gs.face_up().expect("invalid faceup call")))
                     }
-                    if !gs.is_terminal() {
+                    if !gs.is_terminal() && !gs.is_trick_over() {
                         TurnTracker(cx, gs.clone(), south_player)
                     }
                     ClearButton(cx, game_data.clone().display_state, game_data.clone())
@@ -406,7 +417,9 @@ fn ClearButton<T>(cx: Scope<T>, display_state: GameProcessingState, gd: GameData
             )
         }
         GameProcessingState::WaitingTrickClear { ready_players: _ } => {
+            let winner = TableLocation::to_location(player_id, &gd, gs.cur_player());
             render!(
+                div { "{winner} wins" }
                 button {
                     class: "bg-white outline outline-black hover:bg-slate-100 focus:outline-none focus:ring focus:bg-slate-100 active:bg-slate-200 px-5 py-2 text-sm leading-5 rounded-full font-semibold text-black",
                     onclick: move |_| { action_task.send(GameAction::ReadyTrickClear) },
