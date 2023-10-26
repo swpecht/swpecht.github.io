@@ -20,6 +20,35 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
+pub enum TableLocation {
+    North,
+    South,
+    East,
+    West,
+}
+
+impl TableLocation {
+    pub fn to_location(player_id: usize, gd: &GameData, player: Player) -> TableLocation {
+        let south_player = TableLocation::south_player(player_id, gd);
+
+        use TableLocation::*;
+        match player {
+            x if x == south_player => South,
+            x if x == (south_player + 1) % 4 => West,
+            x if x == (south_player + 2) % 4 => North,
+            _ => East,
+        }
+    }
+
+    pub fn south_player(player_id: usize, gd: &GameData) -> Player {
+        gd.players
+            .iter()
+            .position(|x| x.is_some() && x.unwrap() == player_id)
+            .unwrap()
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum InGameState {
     Loading,
     NotFound,
@@ -313,7 +342,7 @@ fn PlayArea<T>(cx: Scope<T>, game_data: GameData, south_player: usize) -> Elemen
                         FaceUpCard(cx, Some(gs.face_up().expect("invalid faceup call")))
                     }
                     TurnTracker(cx, gs.clone(), south_player),
-                    ClearButton(cx, game_data.clone().display_state)
+                    ClearButton(cx, game_data.clone().display_state, game_data.clone())
                 }
 
                 div { class: "row-start-2 col-start-3",
@@ -346,36 +375,51 @@ fn PlayArea<T>(cx: Scope<T>, game_data: GameData, south_player: usize) -> Elemen
     })
 }
 
-fn ClearButton<T>(cx: Scope<T>, display_state: GameProcessingState) -> Element {
+fn ClearButton<T>(cx: Scope<T>, display_state: GameProcessingState, gd: GameData) -> Element {
     let action_task = use_coroutine_handle::<GameAction>(cx).expect("error getting action task");
     let player_id = use_shared_state::<PlayerId>(cx).unwrap().read().id;
+    let gs = gd.to_state();
 
     match display_state {
-        GameProcessingState::WaitingTrickClear { ready_players } => {
-            if ready_players.contains(&player_id) {
-                render!( div { class: "text-center", "waiting on other players..." } )
-            } else {
-                render!(
-                    button {
-                        class: "bg-white outline outline-black hover:bg-slate-100 focus:outline-none focus:ring focus:bg-slate-100 active:bg-slate-200 px-5 py-2 text-sm leading-5 rounded-full font-semibold text-black",
-                        onclick: move |_| { action_task.send(GameAction::ReadyTrickClear) },
-                        "Clear trick"
-                    }
-                )
-            }
+        GameProcessingState::WaitingTrickClear { ready_players }
+        | GameProcessingState::WaitingBidClear { ready_players }
+            if ready_players.contains(&player_id) =>
+        {
+            render!( div { class: "text-center", "waiting on other players..." } )
         }
-        GameProcessingState::WaitingBidClear { ready_players } => {
-            if ready_players.contains(&player_id) {
-                render!( div { class: "text-center", "waiting on other players..." } )
-            } else {
-                render!(
-                    button {
-                        class: "bg-white outline outline-black hover:bg-slate-100 focus:outline-none focus:ring focus:bg-slate-100 active:bg-slate-200 px-5 py-2 text-sm leading-5 rounded-full font-semibold text-black",
-                        onclick: move |_| { action_task.send(GameAction::ReadyBidClear) },
-                        "Continue game"
-                    }
-                )
-            }
+        GameProcessingState::WaitingTrickClear { ready_players: _ } if gs.is_terminal() => {
+            let south_player = TableLocation::south_player(player_id, &gd);
+            let south_wins = gs.trick_score()[south_player % 2];
+            let east_wins = gs.trick_score()[(south_player + 1) % 2];
+
+            render!(
+                div { "Game over" }
+                div { "North/South tricks: {south_wins}" }
+                div { "East/West tricks: {east_wins}" }
+                button {
+                    class: "bg-white outline outline-black hover:bg-slate-100 focus:outline-none focus:ring focus:bg-slate-100 active:bg-slate-200 px-5 py-2 text-sm leading-5 rounded-full font-semibold text-black",
+                    onclick: move |_| { action_task.send(GameAction::ReadyTrickClear) },
+                    "Next game"
+                }
+            )
+        }
+        GameProcessingState::WaitingTrickClear { ready_players: _ } => {
+            render!(
+                button {
+                    class: "bg-white outline outline-black hover:bg-slate-100 focus:outline-none focus:ring focus:bg-slate-100 active:bg-slate-200 px-5 py-2 text-sm leading-5 rounded-full font-semibold text-black",
+                    onclick: move |_| { action_task.send(GameAction::ReadyTrickClear) },
+                    "Clear trick"
+                }
+            )
+        }
+        GameProcessingState::WaitingBidClear { ready_players: _ } => {
+            render!(
+                button {
+                    class: "bg-white outline outline-black hover:bg-slate-100 focus:outline-none focus:ring focus:bg-slate-100 active:bg-slate-200 px-5 py-2 text-sm leading-5 rounded-full font-semibold text-black",
+                    onclick: move |_| { action_task.send(GameAction::ReadyBidClear) },
+                    "Continue game"
+                }
+            )
         }
         _ => render!({}),
     }

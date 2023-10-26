@@ -29,6 +29,10 @@ impl GameData {
             display_state: GameProcessingState::WaitingHumanMove,
         }
     }
+
+    pub fn to_state(&self) -> EuchreGameState {
+        EuchreGameState::from(self.gs.as_str())
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]

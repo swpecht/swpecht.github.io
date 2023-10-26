@@ -11,6 +11,12 @@ pub struct PlayerId {
     pub id: usize,
 }
 
+impl From<PlayerId> for usize {
+    fn from(value: PlayerId) -> Self {
+        value.id
+    }
+}
+
 pub fn base_url() -> String {
     web_sys::window().unwrap().location().origin().unwrap()
 }
