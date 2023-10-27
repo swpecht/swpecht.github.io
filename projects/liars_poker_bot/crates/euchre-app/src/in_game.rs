@@ -10,7 +10,7 @@ use games::{
     actions,
     gamestates::euchre::{
         actions::{Card, EAction, Suit},
-        EuchreGameState,
+        EPhase, EuchreGameState,
     },
     GameState, Player,
 };
@@ -315,6 +315,11 @@ fn PlayArea<T>(cx: Scope<T>, game_data: GameData, south_player: usize) -> Elemen
         "West"
     };
 
+    let show_bids = matches!(
+        game_data.display_state,
+        WaitingBidClear { ready_players: _ }
+    ) || gs.phase() == EPhase::Pickup
+        || gs.phase() == EPhase::ChooseTrump;
     use GameProcessingState::*;
 
     cx.render(rsx! {
@@ -336,15 +341,15 @@ fn PlayArea<T>(cx: Scope<T>, game_data: GameData, south_player: usize) -> Elemen
                 div { class: "col-start-2",
                     PlayedCard(cx, gs.played_card(north_player)),
                     LastTrick(cx, game_data.clone(), north_player),
-                    if matches!(game_data.display_state, WaitingBidClear { ready_players: _ }) {
-                        LastBid(cx, gs.clone(), north_player)
+                    if show_bids  {
+                        Bids(cx, gs.clone(), north_player)
                     }
                 }
                 div { class: "row-start-2",
                     PlayedCard(cx, gs.played_card(west_player)),
                     LastTrick(cx, game_data.clone(), west_player),
-                    if matches!(game_data.display_state, WaitingBidClear { ready_players: _ }) {
-                        LastBid(cx, gs.clone(), west_player)
+                    if show_bids {
+                        Bids(cx, gs.clone(), west_player)
                     }
                 }
                 div { class: "row-start-2 col-start-2 grid justify-items-center",
@@ -361,16 +366,16 @@ fn PlayArea<T>(cx: Scope<T>, game_data: GameData, south_player: usize) -> Elemen
                 div { class: "row-start-2 col-start-3",
                     PlayedCard(cx, gs.played_card(east_player)),
                     LastTrick(cx, game_data.clone(), east_player),
-                    if matches!(game_data.display_state, WaitingBidClear { ready_players: _ }) {
-                        LastBid(cx, gs.clone(), east_player)
+                    if show_bids {
+                        Bids(cx, gs.clone(), east_player)
                     }
                 }
 
                 div { class: "row-start-3 col-start-2",
                     PlayedCard(cx, gs.played_card(south_player)),
                     LastTrick(cx, game_data.clone(), south_player),
-                    if matches!(game_data.display_state, WaitingBidClear { ready_players: _ }) {
-                        LastBid(cx, gs.clone(), south_player)
+                    if show_bids {
+                        Bids(cx, gs.clone(), south_player)
                     }
                 }
             }
@@ -440,16 +445,33 @@ fn ClearButton<T>(cx: Scope<T>, display_state: GameProcessingState, gd: GameData
     }
 }
 
-fn LastBid<T>(cx: Scope<T>, gs: EuchreGameState, player: Player) -> Element {
-    match gs.last_bid(player) {
-        None => None,
-        Some(EAction::Pass) => render!( div { class: "text-xl", "Pass" } ),
-        Some(EAction::Pickup) => render!( div { class: "text-xl", "Pickup" } ),
-        Some(EAction::Clubs) => render!( div { class: "text-xl", "Clubs" } ),
-        Some(EAction::Spades) => render!( div { class: "text-xl", "Spades" } ),
-        Some(EAction::Hearts) => render!( div { class: "text-xl", "Hearts" } ),
-        Some(EAction::Diamonds) => render!( div { class: "text-xl", "Diamonds" } ),
-        Some(_) => render!( div { class: "text-xl", "error getting bid" } ),
+fn Bids<T>(cx: Scope<T>, gs: EuchreGameState, player: Player) -> Element {
+    use EAction::*;
+    let bids: Vec<Option<&str>> = gs
+        .bids()
+        .iter()
+        .map(|x| {
+            x.map(|a| match a {
+                Pass => "Pass",
+                Pickup => "Pickup",
+                Clubs => "Clubs",
+                Spades => "Spades",
+                Hearts => "Hearts",
+                Diamonds => "Diamonds",
+                _ => "Invalid bid",
+            })
+        })
+        .collect();
+
+    if bids[player].is_some() && bids[player + 4].is_some() {
+        render!(
+            div { bids[player] }
+            div { bids[player + 4] }
+        )
+    } else if bids[player].is_some() {
+        render!(bids[player])
+    } else {
+        None
     }
 }
 

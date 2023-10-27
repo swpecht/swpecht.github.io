@@ -89,6 +89,27 @@ pub enum EPhase {
 }
 
 impl EuchreGameState {
+    /// Returns players bid actions if they have taken them so far
+    pub fn bids(&self) -> [Option<EAction>; 8] {
+        let mut bids = [None; 8];
+        let key = self.key();
+        for (a, b) in key
+            .iter()
+            .skip(21)
+            .take(8)
+            .map(|x| EAction::from(*x))
+            .zip(bids.iter_mut())
+        {
+            use EAction::*;
+            match a {
+                Pass | Pickup | Spades | Clubs | Diamonds | Hearts => *b = Some(a),
+                _ => break,
+            }
+        }
+
+        bids
+    }
+
     pub fn trump_caller(&self) -> Option<Player> {
         match self.phase() {
             EPhase::Play | EPhase::Discard => Some(self.trump_caller),
