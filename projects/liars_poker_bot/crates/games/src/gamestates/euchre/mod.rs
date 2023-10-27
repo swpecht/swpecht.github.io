@@ -131,24 +131,6 @@ impl EuchreGameState {
         self.cards_played % 4 == 0 && self.cards_played > 0
     }
 
-    pub fn last_bid(&self, player: Player) -> Option<EAction> {
-        use EAction::*;
-        let x = self
-            .history()
-            .iter()
-            .rev()
-            .find(|(p, a)| {
-                *p == player && matches!(*a, Pickup | Pass | Clubs | Spades | Hearts | Diamonds)
-            })
-            .cloned();
-
-        if let Some((_, a)) = x {
-            Some(a)
-        } else {
-            None
-        }
-    }
-
     pub fn last_trick(&self) -> Option<(Player, [Card; 4])> {
         if self.cards_played < 4 {
             return None;
