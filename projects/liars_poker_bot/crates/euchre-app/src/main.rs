@@ -6,9 +6,11 @@ use dioxus::prelude::*;
 use dioxus_router::prelude::*;
 
 use euchre_app::{
-    base_url, hide_element, in_game::InGame, show_element, PlayerId, ACTION_BUTTON_CLASS, SERVER,
+    base_url, hide_element, in_game::InGame, requests::set_up_ws, show_element, PlayerId,
+    ACTION_BUTTON_CLASS, SERVER,
 };
 use rand::{thread_rng, Rng};
+use web_sys::WebSocket;
 
 const PLAYER_ID_KEY: &str = "PLAYER_ID";
 
@@ -38,6 +40,8 @@ fn App(cx: Scope) -> Element {
     let local_storage = web_sys::window().unwrap().local_storage().unwrap().unwrap();
 
     let stored_id = local_storage.get_item(PLAYER_ID_KEY);
+
+    // set_up_ws(&cx);
 
     if let Ok(Some(player_id)) = stored_id {
         use_shared_state_provider(cx, || PlayerId {

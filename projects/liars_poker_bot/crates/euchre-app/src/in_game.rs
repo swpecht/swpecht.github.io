@@ -14,6 +14,7 @@ use games::{
     },
     GameState, Player,
 };
+use web_sys::WebSocket;
 
 use crate::{
     base_url, hide_element, requests::make_game_request, PlayerId, ACTION_BUTTON_CLASS, SERVER,

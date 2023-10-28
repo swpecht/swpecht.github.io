@@ -16,6 +16,8 @@ client-server-messages =  { path = "../client-server-messages" }
 rand = "0.8"
 log = "0.4"
 simplelog = "0.12"
+actix-web-actors = "4.2.0"
+actix = "0.13.1"
 
 [dependencies.uuid]
 version = "1.4.1"

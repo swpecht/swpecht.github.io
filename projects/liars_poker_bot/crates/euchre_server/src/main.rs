@@ -5,14 +5,16 @@ use std::{
     sync::Mutex,
 };
 
+use actix::StreamHandler;
 use actix_files::NamedFile;
 use actix_web::{
     get,
     middleware::Logger,
     post,
     web::{self, Json},
-    App, HttpResponse, HttpServer, Responder,
+    App, HttpRequest, HttpResponse, HttpServer, Responder,
 };
+use actix_web_actors::ws;
 use card_platypus::{agents::Agent, algorithms::cfres::CFRES};
 use client_server_messages::{
     ActionRequest, GameData, GameProcessingState, NewGameRequest, NewGameResponse,
@@ -23,7 +25,7 @@ use games::{
     Action, GameState,
 };
 use log::{info, set_max_level, LevelFilter};
-use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
+use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, Rng, SeedableRng};
 use simplelog::{
     ColorChoice, CombinedLogger, ConfigBuilder, TermLogger, TerminalMode, WriteLogger,
 };
@@ -59,7 +61,9 @@ async fn api_index(json: Json<NewGameRequest>, data: web::Data<AppState>) -> imp
     let game_id = Uuid::new_v4();
     let gs = new_game();
 
-    let game_date = GameData::new(gs, json.0.player_id);
+    let mut game_date = GameData::new(gs, json.0.player_id);
+    // randomize who starts with deal
+    game_date.players.rotate_right(thread_rng().gen_range(0..4));
     data.games.lock().unwrap().insert(game_id, game_date);
 
     info!("new game created");
@@ -333,6 +337,7 @@ async fn main() -> std::io::Result<()> {
             .service(api_index)
             .service(get_game)
             .service(post_game)
+            .route("/ws/", web::get().to(handle_euchre_ws))
             // Need to register this last so other services are accessible
             .service(actix_files::Files::new("/", "./static").index_file("index.html"))
             .default_service(web::get().to(not_found))
@@ -353,6 +358,36 @@ fn new_game() -> EuchreGameState {
     }
 
     gs
+}
+
+struct EuchreGameWs {}
+impl actix::Actor for EuchreGameWs {
+    type Context = actix_web_actors::ws::WebsocketContext<Self>;
+}
+
+/// Handler for ws::Message message
+impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for EuchreGameWs {
+    fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
+        match msg {
+            Ok(ws::Message::Ping(msg)) => ctx.pong(&msg),
+            Ok(ws::Message::Text(text)) => ctx.text(text),
+            Ok(ws::Message::Binary(bin)) => ctx.binary(bin),
+            _ => (),
+        }
+    }
+}
+
+async fn handle_euchre_ws(
+    req: HttpRequest,
+    stream: web::Payload,
+) -> Result<HttpResponse, actix_web::Error> {
+    // req: web::Json<ActionRequest>,
+    // path: web::Path<String>,
+    // data: web::Data<AppState>,
+
+    info!("websocket message received: {:?}", req);
+    let resp = ws::start(EuchreGameWs {}, &req, stream);
+    resp
 }
 
 #[cfg(test)]
