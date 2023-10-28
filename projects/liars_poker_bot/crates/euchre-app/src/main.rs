@@ -6,11 +6,9 @@ use dioxus::prelude::*;
 use dioxus_router::prelude::*;
 
 use euchre_app::{
-    base_url, hide_element, in_game::InGame, requests::set_up_ws, show_element, PlayerId,
-    ACTION_BUTTON_CLASS, SERVER,
+    base_url, hide_element, in_game::InGame, show_element, PlayerId, ACTION_BUTTON_CLASS, SERVER,
 };
 use rand::{thread_rng, Rng};
-use web_sys::WebSocket;
 
 const PLAYER_ID_KEY: &str = "PLAYER_ID";
 
@@ -19,6 +17,9 @@ enum Route {
     // if the current location is "/home", render the Home component
     #[route("/")]
     Index {},
+
+    #[route("/event")]
+    Event {},
 
     #[route("/game")]
     NewGame {},
@@ -62,9 +63,16 @@ fn App(cx: Scope) -> Element {
 
 #[inline_props]
 fn NotFound(cx: Scope, route: Vec<String>) -> Element {
+    hide_element("intro");
     render! {
         div { format!("Error: page not found: {:?}", route) }
     }
+}
+
+#[inline_props]
+fn Event(cx: Scope) -> Element {
+    hide_element("intro");
+    render! { div { "TODO: create event page" } }
 }
 
 #[inline_props]
@@ -74,13 +82,24 @@ fn Index(cx: Scope) -> Element {
         div { class: "max-w-xlg grid space-y-4 mx-4 my-4",
 
             div { class: "grid justify-items-center",
-                button {
-                    class: "{ACTION_BUTTON_CLASS} font-medium px-2",
-                    onclick: move |_| {
-                        let nav = use_navigator(cx);
-                        nav.push("/game");
-                    },
-                    "New game"
+                div {
+                    button {
+                        class: "{ACTION_BUTTON_CLASS} font-medium px-2 mx-2",
+                        onclick: move |_| {
+                            let nav = use_navigator(cx);
+                            nav.push("/game");
+                        },
+                        "New game"
+                    }
+
+                    button {
+                        class: "{ACTION_BUTTON_CLASS} font-medium px-2 mx-2",
+                        onclick: move |_| {
+                            let nav = use_navigator(cx);
+                            nav.push("/event");
+                        },
+                        "Event"
+                    }
                 }
             }
         }
