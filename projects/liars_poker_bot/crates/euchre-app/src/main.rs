@@ -6,7 +6,8 @@ use dioxus::prelude::*;
 use dioxus_router::prelude::*;
 
 use euchre_app::{
-    base_url, hide_element, in_game::InGame, show_element, PlayerId, ACTION_BUTTON_CLASS, SERVER,
+    base_url, hide_element, in_game::InGame, requests::set_up_ws, show_element, PlayerId,
+    ACTION_BUTTON_CLASS, SERVER,
 };
 use rand::{thread_rng, Rng};
 
@@ -33,6 +34,7 @@ enum Route {
 
 fn main() {
     // launch the web app
+    wasm_logger::init(wasm_logger::Config::default());
     dioxus_web::launch(App);
 }
 
@@ -42,7 +44,7 @@ fn App(cx: Scope) -> Element {
 
     let stored_id = local_storage.get_item(PLAYER_ID_KEY);
 
-    // set_up_ws(&cx);
+    set_up_ws(&cx);
 
     if let Ok(Some(player_id)) = stored_id {
         use_shared_state_provider(cx, || PlayerId {
@@ -72,7 +74,9 @@ fn NotFound(cx: Scope, route: Vec<String>) -> Element {
 #[inline_props]
 fn Event(cx: Scope) -> Element {
     hide_element("intro");
-    render! { div { "TODO: create event page" } }
+    render! {
+        div { input { "test" } }
+    }
 }
 
 #[inline_props]
