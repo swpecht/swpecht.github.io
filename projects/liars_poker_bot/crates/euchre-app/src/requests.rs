@@ -84,23 +84,24 @@ pub fn set_up_ws(cx: &Scope) {
         }
     });
 
-    // let (send, recv): (Sender<JsString>, Receiver<JsString>) = mpsc::channel();
-    let _ws_recv_task: &Coroutine<()> = use_coroutine(cx, |_| async move {
-        // while let Ok(msg) = recv.recv() {
-        //     debug!("message received on update routine: {}", msg)
-        // }
+    let (send, mut recv) = futures::channel::mpsc::unbounded();
 
-        // error!("error receiving message on recv routine");
+    let _ws_recv_task: &Coroutine<JsString> = use_coroutine(cx, |_| async move {
+        while let Some(msg) = recv.next().await {
+            debug!("message received on update routine: {}", msg)
+        }
+
+        error!("error receiving message on recv routine");
     });
 
     let on_msg_callback = Closure::<dyn FnMut(_)>::new(move |e: MessageEvent| {
         match e.data().dyn_into::<js_sys::JsString>() {
             Ok(msg) => {
                 debug!("message received by websocket: {}", msg);
-                // match send.send(msg) {
-                //     Ok(_) => {}
-                //     Err(e) => error!("error sending message to update routine: {:?}", e),
-                // };
+                match send.unbounded_send(msg) {
+                    Ok(_) => {}
+                    Err(e) => error!("error sending message to update routine: {:?}", e),
+                };
             }
             Err(e) => error!("error turning websocket msg to string: {:?}", e),
         };
