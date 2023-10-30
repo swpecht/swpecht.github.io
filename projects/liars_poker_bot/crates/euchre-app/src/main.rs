@@ -44,7 +44,7 @@ fn App(cx: Scope) -> Element {
 
     let stored_id = local_storage.get_item(PLAYER_ID_KEY);
 
-    set_up_ws(&cx);
+    set_up_ws(&cx, "ws://localhost:4000/ws/");
 
     if let Ok(Some(player_id)) = stored_id {
         use_shared_state_provider(cx, || PlayerId {

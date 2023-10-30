@@ -38,18 +38,18 @@ pub async fn make_game_request(req: RequestBuilder) -> InGameState {
     }
 }
 
-/// Holds the channel to aynchronously send messages on the websocket
 struct WsSendMessage {
     msg: String,
 }
 
+/// Send a msg on the websocket
 pub fn send_msg(cx: &Scope, msg: String) {
     let send_task = use_coroutine_handle::<WsSendMessage>(cx).expect("error getting send task");
     send_task.send(WsSendMessage { msg });
 }
 
-pub fn set_up_ws(cx: &Scope) {
-    let url = "ws://localhost:4000/ws/";
+/// Set up a websocket connection and all call backs
+pub fn set_up_ws(cx: &Scope, url: &str) {
     info!("starting web socket connection to {} ...", url);
     let ws = WebSocket::new(url).unwrap();
 
