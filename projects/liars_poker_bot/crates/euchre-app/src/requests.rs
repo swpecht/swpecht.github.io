@@ -3,20 +3,16 @@ use std::time::Duration;
 
 use async_std::stream::StreamExt;
 use async_std::task;
-use client_server_messages::{GameAction, GameData};
-use dioxus::prelude::{
-    use_coroutine, use_coroutine_handle, use_shared_state, use_shared_state_provider, use_state,
-    Coroutine, Scope, UnboundedReceiver,
-};
-use js_sys::JsString;
+use client_server_messages::{ActionRequest, GameAction, GameData};
+use dioxus::prelude::{use_coroutine, use_coroutine_handle, Coroutine, Scope, UnboundedReceiver};
+
 use log::{debug, error, info};
 use reqwest::{RequestBuilder, StatusCode};
 use wasm_bindgen::prelude::*;
-use web_sys::console::log;
+
 use web_sys::{ErrorEvent, MessageEvent, WebSocket};
 
 use crate::in_game::InGameState;
-use crate::PlayerId;
 
 // macro_rules! console_log {
 //     ($($t:tt)*) => (log(&format_args!($($t)*).to_string()))
@@ -38,18 +34,36 @@ pub async fn make_game_request(req: RequestBuilder) -> InGameState {
     }
 }
 
-struct WsSendMessage {
+pub struct WsSendMessage {
     msg: String,
 }
 
+pub fn send_action(
+    ws_task: &Coroutine<WsSendMessage>,
+    action_task: &Coroutine<GameAction>,
+    action: GameAction,
+) {
+    info!("sending action: {:?}", action);
+
+    match serde_json::to_string(&action) {
+        Ok(msg) => send_msg(ws_task, msg),
+        Err(e) => error!(
+            "failed to serialize action request. error: {:?} action request: {:?}",
+            e, action
+        ),
+    };
+
+    // Still do the old method for now
+    action_task.send(action);
+}
+
 /// Send a msg on the websocket
-pub fn send_msg(cx: &Scope, msg: String) {
-    let send_task = use_coroutine_handle::<WsSendMessage>(cx).expect("error getting send task");
+pub fn send_msg(send_task: &Coroutine<WsSendMessage>, msg: String) {
     send_task.send(WsSendMessage { msg });
 }
 
-/// Set up a websocket connection and all call backs
-pub fn set_up_ws(cx: &Scope, url: &str) {
+/// Set up a websocket connection and return a channel of messages received by the WebSocket
+pub fn set_up_ws(cx: &Scope, url: &str) -> UnboundedReceiver<String> {
     info!("starting web socket connection to {} ...", url);
     let ws = WebSocket::new(url).unwrap();
 
@@ -84,21 +98,16 @@ pub fn set_up_ws(cx: &Scope, url: &str) {
         }
     });
 
-    let (send, mut recv) = futures::channel::mpsc::unbounded();
-
-    let _ws_recv_task: &Coroutine<JsString> = use_coroutine(cx, |_| async move {
-        while let Some(msg) = recv.next().await {
-            debug!("message received on update routine: {}", msg)
-        }
-
-        error!("error receiving message on recv routine");
-    });
+    let (send, recv) = futures::channel::mpsc::unbounded();
 
     let on_msg_callback = Closure::<dyn FnMut(_)>::new(move |e: MessageEvent| {
         match e.data().dyn_into::<js_sys::JsString>() {
             Ok(msg) => {
                 debug!("message received by websocket: {}", msg);
-                match send.unbounded_send(msg) {
+                match send.unbounded_send(
+                    msg.as_string()
+                        .expect("error converting JsString to String"),
+                ) {
                     Ok(_) => {}
                     Err(e) => error!("error sending message to update routine: {:?}", e),
                 };
@@ -119,5 +128,5 @@ pub fn set_up_ws(cx: &Scope, url: &str) {
     ws.set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
     onopen_callback.forget();
 
-    send_msg(cx, "test message".to_string());
+    recv
 }

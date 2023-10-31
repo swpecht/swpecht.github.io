@@ -17,7 +17,9 @@ use games::{
 use web_sys::WebSocket;
 
 use crate::{
-    base_url, hide_element, requests::make_game_request, PlayerId, ACTION_BUTTON_CLASS, SERVER,
+    base_url, hide_element,
+    requests::{make_game_request, send_action, WsSendMessage},
+    PlayerId, ACTION_BUTTON_CLASS, SERVER,
 };
 
 #[derive(Debug, Clone)]
@@ -396,6 +398,7 @@ fn PlayArea<T>(cx: Scope<T>, game_data: GameData, south_player: usize) -> Elemen
 
 fn ClearButton<T>(cx: Scope<T>, display_state: GameProcessingState, gd: GameData) -> Element {
     let action_task = use_coroutine_handle::<GameAction>(cx).expect("error getting action task");
+    let ws_task = use_coroutine_handle::<WsSendMessage>(cx).expect("error getting ws task");
     let player_id = use_shared_state::<PlayerId>(cx).unwrap().read().id;
     let gs = gd.to_state();
 
@@ -417,7 +420,7 @@ fn ClearButton<T>(cx: Scope<T>, display_state: GameProcessingState, gd: GameData
                 div { "East/West tricks: {east_wins}" }
                 button {
                     class: "bg-white outline outline-black hover:bg-slate-100 focus:outline-none focus:ring focus:bg-slate-100 active:bg-slate-200 px-5 py-2 text-sm leading-5 rounded-full font-semibold text-black",
-                    onclick: move |_| { action_task.send(GameAction::ReadyTrickClear) },
+                    onclick: move |_| { send_action(ws_task, action_task, GameAction::ReadyTrickClear) },
                     "Next hand"
                 }
             )
@@ -428,7 +431,7 @@ fn ClearButton<T>(cx: Scope<T>, display_state: GameProcessingState, gd: GameData
                 div { "{winner} wins" }
                 button {
                     class: "bg-white outline outline-black hover:bg-slate-100 focus:outline-none focus:ring focus:bg-slate-100 active:bg-slate-200 px-5 py-2 text-sm leading-5 rounded-full font-semibold text-black",
-                    onclick: move |_| { action_task.send(GameAction::ReadyTrickClear) },
+                    onclick: move |_| { send_action(ws_task, action_task, GameAction::ReadyTrickClear) },
                     "Clear trick"
                 }
             )
@@ -437,7 +440,7 @@ fn ClearButton<T>(cx: Scope<T>, display_state: GameProcessingState, gd: GameData
             render!(
                 button {
                     class: "bg-white outline outline-black hover:bg-slate-100 focus:outline-none focus:ring focus:bg-slate-100 active:bg-slate-200 px-5 py-2 text-sm leading-5 rounded-full font-semibold text-black",
-                    onclick: move |_| { action_task.send(GameAction::ReadyBidClear) },
+                    onclick: move |_| { send_action(ws_task, action_task, GameAction::ReadyBidClear) },
                     "Continue game"
                 }
             )
@@ -532,6 +535,7 @@ fn PlayerActions<T>(cx: Scope<T>, gs: EuchreGameState, south_player: usize) -> E
 
     let actions: Vec<EAction> = actions!(gs).into_iter().map(EAction::from).collect();
     let action_task = use_coroutine_handle::<GameAction>(cx).expect("error getting action task");
+    let ws_task = use_coroutine_handle::<WsSendMessage>(cx).expect("error getting ws task");
 
     if gs.cur_player() != south_player {
         // if not out turn, just show our hand
@@ -563,13 +567,17 @@ fn PlayerActions<T>(cx: Scope<T>, gs: EuchreGameState, south_player: usize) -> E
                 div { class: "flex gap-x-4",
                     button {
                         class: "basis-1/2 text-xl {ACTION_BUTTON_CLASS}",
-                        onclick: move |_| { action_task.send(GameAction::TakeAction(EAction::Pickup.into())) },
+                        onclick: move |_| {
+                            send_action(ws_task, action_task, GameAction::TakeAction(EAction::Pickup.into()))
+                        },
                         "{pickup_text}"
                     }
 
                     button {
                         class: "basis-1/2 text-xl {ACTION_BUTTON_CLASS}",
-                        onclick: move |_| { action_task.send(GameAction::TakeAction(EAction::Pass.into())) },
+                        onclick: move |_| {
+                            send_action(ws_task, action_task, GameAction::TakeAction(EAction::Pass.into()))
+                        },
                         "Pass"
                     }
                 }
@@ -588,31 +596,41 @@ fn PlayerActions<T>(cx: Scope<T>, gs: EuchreGameState, south_player: usize) -> E
                 div { class: "flex gap-x-4",
                     button {
                         class: "text-xl text-black {ACTION_BUTTON_CLASS}",
-                        onclick: move |_| { action_task.send(GameAction::TakeAction(EAction::Spades.into())) },
+                        onclick: move |_| {
+                            send_action(ws_task, action_task, GameAction::TakeAction(EAction::Spades.into()))
+                        },
                         Suit::Spades.icon()
                     }
 
                     button {
                         class: "text-xl text-black {ACTION_BUTTON_CLASS}",
-                        onclick: move |_| { action_task.send(GameAction::TakeAction(EAction::Clubs.into())) },
+                        onclick: move |_| {
+                            send_action(ws_task, action_task, GameAction::TakeAction(EAction::Clubs.into()))
+                        },
                         Suit::Clubs.icon()
                     }
 
                     button {
                         class: "text-xl text-red-500 {ACTION_BUTTON_CLASS}",
-                        onclick: move |_| { action_task.send(GameAction::TakeAction(EAction::Hearts.into())) },
+                        onclick: move |_| {
+                            send_action(ws_task, action_task, GameAction::TakeAction(EAction::Hearts.into()))
+                        },
                         Suit::Hearts.icon()
                     }
 
                     button {
                         class: "text-xl text-red-500 {ACTION_BUTTON_CLASS}",
-                        onclick: move |_| { action_task.send(GameAction::TakeAction(EAction::Diamonds.into())) },
+                        onclick: move |_| {
+                            send_action(ws_task, action_task, GameAction::TakeAction(EAction::Diamonds.into()))
+                        },
                         Suit::Diamonds.icon()
                     }
 
                     button {
                         class: "text-xl {ACTION_BUTTON_CLASS}",
-                        onclick: move |_| { action_task.send(GameAction::TakeAction(EAction::Pass.into())) },
+                        onclick: move |_| {
+                            send_action(ws_task, action_task, GameAction::TakeAction(EAction::Pass.into()))
+                        },
                         "Pass"
                     }
                 }
@@ -642,12 +660,13 @@ fn ActionButton<T>(cx: Scope<T>, card: Card, action: Option<EAction>) -> Element
         Hearts | Diamonds => "text-red-500",
     };
     let action_task = use_coroutine_handle::<GameAction>(cx).expect("error getting action task");
+    let ws_task = use_coroutine_handle::<WsSendMessage>(cx).expect("error getting ws task");
 
     if let Some(a) = action {
         render!(
             button {
                 class: "text-7xl py-2 {ACTION_BUTTON_CLASS} {color}",
-                onclick: move |_| { action_task.send(GameAction::TakeAction(a.into())) },
+                onclick: move |_| { send_action(ws_task, action_task, GameAction::TakeAction(a.into())) },
                 card.icon()
             }
         )

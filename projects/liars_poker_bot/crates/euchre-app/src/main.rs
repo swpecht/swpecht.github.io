@@ -6,9 +6,13 @@ use dioxus::prelude::*;
 use dioxus_router::prelude::*;
 
 use euchre_app::{
-    base_url, hide_element, in_game::InGame, requests::set_up_ws, show_element, PlayerId,
-    ACTION_BUTTON_CLASS, SERVER,
+    base_url, hide_element,
+    in_game::InGame,
+    requests::{send_msg, set_up_ws, WsSendMessage},
+    show_element, PlayerId, ACTION_BUTTON_CLASS, SERVER,
 };
+use futures_util::StreamExt;
+use log::{debug, error};
 use rand::{thread_rng, Rng};
 
 const PLAYER_ID_KEY: &str = "PLAYER_ID";
@@ -44,7 +48,18 @@ fn App(cx: Scope) -> Element {
 
     let stored_id = local_storage.get_item(PLAYER_ID_KEY);
 
-    set_up_ws(&cx, "ws://localhost:4000/ws/");
+    let mut recv = set_up_ws(&cx, "ws://localhost:4000/ws/");
+
+    let _ws_recv_task: &Coroutine<String> = use_coroutine(cx, |_| async move {
+        while let Some(msg) = recv.next().await {
+            debug!("message received on update routine: {}", msg)
+        }
+
+        error!("error receiving message on recv routine");
+    });
+
+    let send_task = use_coroutine_handle::<WsSendMessage>(cx).expect("error getting ws task");
+    send_msg(send_task, "test message".to_string());
 
     if let Ok(Some(player_id)) = stored_id {
         use_shared_state_provider(cx, || PlayerId {
