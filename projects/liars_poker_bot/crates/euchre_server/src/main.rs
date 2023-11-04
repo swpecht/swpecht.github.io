@@ -61,10 +61,11 @@ async fn api_index(json: Json<NewGameRequest>, data: web::Data<AppState>) -> imp
     let game_id = Uuid::new_v4();
     let gs = new_game();
 
-    let mut game_date = GameData::new(gs, json.0.player_id);
+    let mut game_data = GameData::new(gs, json.0.player_id);
     // randomize who starts with deal
-    game_date.players.rotate_right(thread_rng().gen_range(0..4));
-    data.games.lock().unwrap().insert(game_id, game_date);
+    game_data.players.rotate_right(thread_rng().gen_range(0..4));
+    progress_game(&mut game_data, &data.bot);
+    data.games.lock().unwrap().insert(game_id, game_data);
 
     info!("new game created");
 
