@@ -58,6 +58,13 @@ impl From<EAction> for Action {
     }
 }
 
+impl From<&EAction> for Action {
+    fn from(val: &EAction) -> Self {
+        let v: u8 = (*val as u32).trailing_zeros().try_into().unwrap();
+        Action(v)
+    }
+}
+
 impl From<Action> for EAction {
     fn from(value: Action) -> Self {
         let repr = 1 << value.0;

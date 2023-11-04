@@ -19,7 +19,7 @@ use web_sys::WebSocket;
 
 use crate::{
     base_url, hide_element,
-    requests::{make_game_request, send_action, send_msg, WsRecvChannel, WsSendMessage},
+    requests::{make_game_request, send_action, send_msg, set_up_ws, WsRecvChannel, WsSendMessage},
     PlayerId, ACTION_BUTTON_CLASS, SERVER,
 };
 

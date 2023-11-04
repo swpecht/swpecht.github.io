@@ -76,7 +76,7 @@ pub fn send_msg(send_task: &Coroutine<WsSendMessage>, msg: String) {
 /// the co-routine of `WsSendMessage`
 ///
 /// Responses are saved to the shared state `WsResponseMsg`
-pub fn set_up_ws(cx: &Scope, url: &str) {
+pub fn set_up_ws<T>(cx: &Scope<T>, url: &str) {
     info!("starting web socket connection to {} ...", url);
 
     use_shared_state_provider(cx, || WsResponseMessage {
