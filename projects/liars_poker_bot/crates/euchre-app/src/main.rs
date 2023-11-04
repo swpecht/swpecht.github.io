@@ -1,14 +1,14 @@
 #![allow(non_snake_case)]
 
-use client_server_messages::{NewGameRequest, NewGameResponse};
+use client_server_messages::{GameData, NewGameRequest, NewGameResponse};
 // import the prelude to get access to the `rsx!` macro and the `Scope` and `Element` types
 use dioxus::prelude::*;
 use dioxus_router::prelude::*;
 
 use euchre_app::{
     base_url, hide_element,
-    in_game::InGame,
-    requests::{send_msg, set_up_ws, WsSendMessage},
+    in_game::{InGame, InGameState},
+    requests::{send_msg, set_up_ws, WsRecvChannel, WsSendMessage},
     show_element, PlayerId, ACTION_BUTTON_CLASS, SERVER,
 };
 use futures_util::StreamExt;
@@ -44,23 +44,13 @@ fn main() {
 
 fn App(cx: Scope) -> Element {
     hide_element("loading");
-    let local_storage = web_sys::window().unwrap().local_storage().unwrap().unwrap();
 
-    let stored_id = local_storage.get_item(PLAYER_ID_KEY);
-
-    let mut recv = set_up_ws(&cx, "ws://localhost:4000/ws/");
-
-    let _ws_recv_task: &Coroutine<String> = use_coroutine(cx, |_| async move {
-        while let Some(msg) = recv.next().await {
-            debug!("message received on update routine: {}", msg)
-        }
-
-        error!("error receiving message on recv routine");
-    });
-
+    set_up_ws(&cx, "ws://localhost:4000/ws/");
     let send_task = use_coroutine_handle::<WsSendMessage>(cx).expect("error getting ws task");
     send_msg(send_task, "test message".to_string());
 
+    let local_storage = web_sys::window().unwrap().local_storage().unwrap().unwrap();
+    let stored_id = local_storage.get_item(PLAYER_ID_KEY);
     if let Ok(Some(player_id)) = stored_id {
         use_shared_state_provider(cx, || PlayerId {
             id: player_id

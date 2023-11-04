@@ -14,11 +14,12 @@ use games::{
     },
     GameState, Player,
 };
+use log::{debug, error};
 use web_sys::WebSocket;
 
 use crate::{
     base_url, hide_element,
-    requests::{make_game_request, send_action, WsSendMessage},
+    requests::{make_game_request, send_action, send_msg, WsRecvChannel, WsSendMessage},
     PlayerId, ACTION_BUTTON_CLASS, SERVER,
 };
 

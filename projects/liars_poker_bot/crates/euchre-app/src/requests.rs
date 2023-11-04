@@ -4,7 +4,7 @@ use std::time::Duration;
 use async_std::stream::StreamExt;
 use async_std::task;
 use client_server_messages::{ActionRequest, GameAction, GameData};
-use dioxus::prelude::{use_coroutine, use_coroutine_handle, Coroutine, Scope, UnboundedReceiver};
+use dioxus::prelude::*;
 
 use log::{debug, error, info};
 use reqwest::{RequestBuilder, StatusCode};
@@ -34,7 +34,15 @@ pub async fn make_game_request(req: RequestBuilder) -> InGameState {
     }
 }
 
+pub struct WsRecvChannel {
+    pub recv: UnboundedReceiver<String>,
+}
+
 pub struct WsSendMessage {
+    msg: String,
+}
+
+pub struct WsResponseMessage {
     msg: String,
 }
 
@@ -62,9 +70,19 @@ pub fn send_msg(send_task: &Coroutine<WsSendMessage>, msg: String) {
     send_task.send(WsSendMessage { msg });
 }
 
-/// Set up a websocket connection and return a channel of messages received by the WebSocket
-pub fn set_up_ws(cx: &Scope, url: &str) -> UnboundedReceiver<String> {
+/// Set up a websocket connection
+///
+/// Messages can be sent on the websocket using the `send_msg` functions or by using
+/// the co-routine of `WsSendMessage`
+///
+/// Responses are saved to the shared state `WsResponseMsg`
+pub fn set_up_ws(cx: &Scope, url: &str) {
     info!("starting web socket connection to {} ...", url);
+
+    use_shared_state_provider(cx, || WsResponseMessage {
+        msg: "".to_string(),
+    });
+
     let ws = WebSocket::new(url).unwrap();
 
     let _ws_send_task = use_coroutine(cx, |mut rx: UnboundedReceiver<WsSendMessage>| {
@@ -98,7 +116,7 @@ pub fn set_up_ws(cx: &Scope, url: &str) -> UnboundedReceiver<String> {
         }
     });
 
-    let (send, recv) = futures::channel::mpsc::unbounded();
+    let (send, mut recv) = futures::channel::mpsc::unbounded();
 
     let on_msg_callback = Closure::<dyn FnMut(_)>::new(move |e: MessageEvent| {
         match e.data().dyn_into::<js_sys::JsString>() {
@@ -128,5 +146,18 @@ pub fn set_up_ws(cx: &Scope, url: &str) -> UnboundedReceiver<String> {
     ws.set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
     onopen_callback.forget();
 
-    recv
+    let response_state = use_shared_state::<WsResponseMessage>(cx).unwrap();
+
+    let _ws_recv_task: &Coroutine<String> = use_coroutine(cx, |_| {
+        debug!("started ws receive routine");
+        let response_state = response_state.to_owned();
+        async move {
+            while let Some(msg) = recv.next().await {
+                debug!("response_state updated: {}", msg);
+                response_state.write_silent().msg = msg;
+            }
+
+            error!("error receiving message on recv routine");
+        }
+    });
 }
