@@ -8,8 +8,9 @@ use dioxus_router::prelude::*;
 use euchre_app::{
     base_url, hide_element,
     in_game::{InGame, InGameState},
+    player_id,
     requests::{send_msg, set_up_ws, WsRecvChannel, WsSendMessage},
-    show_element, PlayerId, ACTION_BUTTON_CLASS, SERVER,
+    set_player_id, show_element, ACTION_BUTTON_CLASS, SERVER,
 };
 use futures_util::StreamExt;
 use log::{debug, error};
@@ -45,24 +46,25 @@ fn main() {
 fn App(cx: Scope) -> Element {
     hide_element("loading");
 
-    set_up_ws(&cx);
-    let send_task = use_coroutine_handle::<WsSendMessage>(cx).expect("error getting ws task");
-    send_msg(send_task, "test message".to_string());
+    // set_up_ws(&cx);
+    // let send_task = use_coroutine_handle::<WsSendMessage>(cx).expect("error getting ws task");
+    // send_msg(send_task, "test message".to_string());
 
     let local_storage = web_sys::window().unwrap().local_storage().unwrap().unwrap();
     let stored_id = local_storage.get_item(PLAYER_ID_KEY);
     if let Ok(Some(player_id)) = stored_id {
-        use_shared_state_provider(cx, || PlayerId {
-            id: player_id
+        set_player_id(
+            cx,
+            player_id
                 .parse()
                 .expect("error parsing previously saved player id"),
-        });
+        );
     } else {
         let player_id: usize = thread_rng().gen();
         local_storage
             .set_item(PLAYER_ID_KEY, player_id.to_string().as_str())
             .expect("error storing player id");
-        use_shared_state_provider(cx, || PlayerId { id: player_id });
+        set_player_id(cx, player_id);
     }
 
     render! { Router::<Route> {} }
@@ -79,9 +81,19 @@ fn NotFound(cx: Scope, route: Vec<String>) -> Element {
 #[inline_props]
 fn Event(cx: Scope) -> Element {
     hide_element("intro");
-    render! {
-        div { input { "test" } }
-    }
+    render!(
+
+        div { class: "mt-10 sm:mx-auto sm:w-full sm:max-w-sm",
+            form { class: "space-y-6", action: "#", method: "POST",
+                label { "Event ID" }
+                input {
+                    class: "block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6",
+                    id: "event"
+                }
+                button { class: "{ACTION_BUTTON_CLASS} font-medium px-2 mx-2", "Submit" }
+            }
+        }
+    )
 }
 
 #[inline_props]
@@ -119,7 +131,7 @@ fn Index(cx: Scope) -> Element {
 fn NewGame(cx: Scope) -> Element {
     hide_element("intro");
 
-    let player_id = use_shared_state::<PlayerId>(cx).unwrap().read().id;
+    let player_id = player_id(cx).unwrap();
     let new_game_req = NewGameRequest::new(player_id);
 
     let client = reqwest::Client::new();

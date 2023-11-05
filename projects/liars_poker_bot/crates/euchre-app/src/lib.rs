@@ -1,3 +1,4 @@
+use dioxus::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::HtmlElement;
 
@@ -7,14 +8,35 @@ pub mod requests;
 pub const SERVER: &str = "api";
 pub const ACTION_BUTTON_CLASS: &str = "bg-white outline outline-black hover:bg-slate-100 focus:outline-none focus:ring focus:bg-slate-100 active:bg-slate-200 rounded-lg disabled:outline-white";
 
-pub struct PlayerId {
-    pub id: usize,
+struct PlayerId {
+    id: usize,
 }
 
 impl From<PlayerId> for usize {
     fn from(value: PlayerId) -> Self {
         value.id
     }
+}
+
+pub fn player_id<T>(cx: Scope<T>) -> Option<usize> {
+    use_shared_state::<PlayerId>(cx).map(|x| x.read().id)
+}
+
+pub fn set_player_id(cx: Scope, id: usize) {
+    use_shared_state_provider(cx, || PlayerId { id });
+}
+
+struct EventId {
+    id: String,
+}
+
+/// Returns the current event id if one has been set
+pub fn event_id<T>(cx: Scope<T>) -> Option<String> {
+    use_shared_state::<EventId>(cx).map(|x| x.read().id.clone())
+}
+
+pub fn set_event_id(cx: Scope, id: String) {
+    use_shared_state_provider(cx, || EventId { id });
 }
 
 pub fn base_url() -> String {

@@ -54,13 +54,13 @@ pub fn send_action(
 ) {
     info!("sending action: {:?}", action);
 
-    match serde_json::to_string(&action) {
-        Ok(msg) => send_msg(ws_task, msg),
-        Err(e) => error!(
-            "failed to serialize action request. error: {:?} action request: {:?}",
-            e, action
-        ),
-    };
+    // match serde_json::to_string(&action) {
+    //     Ok(msg) => send_msg(ws_task, msg),
+    //     Err(e) => error!(
+    //         "failed to serialize action request. error: {:?} action request: {:?}",
+    //         e, action
+    //     ),
+    // };
 
     // Still do the old method for now
     action_task.send(action);
@@ -157,7 +157,7 @@ pub fn set_up_ws<T>(cx: &Scope<T>) {
         async move {
             while let Some(msg) = recv.next().await {
                 debug!("response_state updated: {}", msg);
-                response_state.write_silent().msg = msg;
+                response_state.write().msg = msg;
             }
 
             error!("error receiving message on recv routine");
