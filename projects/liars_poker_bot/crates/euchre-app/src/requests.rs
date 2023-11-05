@@ -12,6 +12,7 @@ use wasm_bindgen::prelude::*;
 
 use web_sys::{ErrorEvent, MessageEvent, WebSocket};
 
+use crate::base_url;
 use crate::in_game::InGameState;
 
 // macro_rules! console_log {
@@ -76,14 +77,16 @@ pub fn send_msg(send_task: &Coroutine<WsSendMessage>, msg: String) {
 /// the co-routine of `WsSendMessage`
 ///
 /// Responses are saved to the shared state `WsResponseMsg`
-pub fn set_up_ws<T>(cx: &Scope<T>, url: &str) {
+pub fn set_up_ws<T>(cx: &Scope<T>) {
+    let base_url = base_url();
+    let url = format!("ws://{}/ws/", &base_url["https://".len() - 1..]);
     info!("starting web socket connection to {} ...", url);
 
     use_shared_state_provider(cx, || WsResponseMessage {
         msg: "".to_string(),
     });
 
-    let ws = WebSocket::new(url).unwrap();
+    let ws = WebSocket::new(url.as_str()).unwrap();
 
     let _ws_send_task = use_coroutine(cx, |mut rx: UnboundedReceiver<WsSendMessage>| {
         let ws = ws.clone();

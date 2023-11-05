@@ -45,7 +45,7 @@ fn main() {
 fn App(cx: Scope) -> Element {
     hide_element("loading");
 
-    set_up_ws(&cx, "ws://localhost:4000/ws/");
+    set_up_ws(&cx);
     let send_task = use_coroutine_handle::<WsSendMessage>(cx).expect("error getting ws task");
     send_msg(send_task, "test message".to_string());
 
