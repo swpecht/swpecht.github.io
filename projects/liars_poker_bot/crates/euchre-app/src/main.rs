@@ -1,5 +1,7 @@
 #![allow(non_snake_case)]
 
+use std::fmt::Display;
+
 use client_server_messages::{GameData, NewGameRequest, NewGameResponse};
 // import the prelude to get access to the `rsx!` macro and the `Scope` and `Element` types
 use dioxus::prelude::*;
@@ -7,13 +9,12 @@ use dioxus_router::prelude::*;
 
 use euchre_app::{
     base_url, hide_element,
-    in_game::{InGame, InGameState},
-    player_id,
-    requests::{send_msg, set_up_ws, WsRecvChannel, WsSendMessage},
-    set_player_id, show_element, ACTION_BUTTON_CLASS, SERVER,
+    in_game::InGame,
+    player_id, set_event_id, set_player_id,
+    settings::{min_players, register_settings, set_min_players},
+    show_element, ACTION_BUTTON_CLASS, SERVER,
 };
-use futures_util::StreamExt;
-use log::{debug, error};
+use log::{debug, error, info};
 use rand::{thread_rng, Rng};
 
 const PLAYER_ID_KEY: &str = "PLAYER_ID";
@@ -24,17 +25,15 @@ enum Route {
     #[route("/")]
     Index {},
 
-    #[route("/event")]
-    Event {},
-
-    #[route("/game")]
-    NewGame {},
-    // if the current location is "/blog", render the Blog component
     #[route("/game/:game_id")]
     InGame { game_id: String },
 
+    // if the current location is "/blog", render the Blog component
     #[route("/:..route")]
     NotFound { route: Vec<String> },
+
+    #[route("/game")]
+    NewGame,
 }
 
 fn main() {
@@ -45,6 +44,8 @@ fn main() {
 
 fn App(cx: Scope) -> Element {
     hide_element("loading");
+
+    register_settings(cx);
 
     // set_up_ws(&cx);
     // let send_task = use_coroutine_handle::<WsSendMessage>(cx).expect("error getting ws task");
@@ -79,26 +80,9 @@ fn NotFound(cx: Scope, route: Vec<String>) -> Element {
 }
 
 #[inline_props]
-fn Event(cx: Scope) -> Element {
-    hide_element("intro");
-    render!(
-
-        div { class: "mt-10 sm:mx-auto sm:w-full sm:max-w-sm",
-            form { class: "space-y-6", action: "#", method: "POST",
-                label { "Event ID" }
-                input {
-                    class: "block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6",
-                    id: "event"
-                }
-                button { class: "{ACTION_BUTTON_CLASS} font-medium px-2 mx-2", "Submit" }
-            }
-        }
-    )
-}
-
-#[inline_props]
 fn Index(cx: Scope) -> Element {
     show_element("intro");
+
     render!(
         div { class: "max-w-xlg grid space-y-4 mx-4 my-4",
 
@@ -107,19 +91,21 @@ fn Index(cx: Scope) -> Element {
                     button {
                         class: "{ACTION_BUTTON_CLASS} font-medium px-2 mx-2",
                         onclick: move |_| {
+                            set_min_players(cx, 1);
                             let nav = use_navigator(cx);
                             nav.push("/game");
                         },
-                        "New game"
+                        "One Player"
                     }
 
                     button {
                         class: "{ACTION_BUTTON_CLASS} font-medium px-2 mx-2",
                         onclick: move |_| {
+                            set_min_players(cx, 2);
                             let nav = use_navigator(cx);
-                            nav.push("/event");
+                            nav.push("/game");
                         },
-                        "Event"
+                        "Two player"
                     }
                 }
             }
@@ -131,8 +117,13 @@ fn Index(cx: Scope) -> Element {
 fn NewGame(cx: Scope) -> Element {
     hide_element("intro");
 
+    // set a default event id
+    set_event_id(cx, "default".to_string());
+
     let player_id = player_id(cx).unwrap();
-    let new_game_req = NewGameRequest::new(player_id);
+    let min_players = min_players(cx);
+    let new_game_req = NewGameRequest::new(player_id, min_players);
+    info!("requesting a new game: {:?}", new_game_req);
 
     let client = reqwest::Client::new();
     let new_game_response = use_future(cx, (), |_| async move {
@@ -151,6 +142,7 @@ fn NewGame(cx: Scope) -> Element {
         Some(Ok(response)) => {
             // use replace here since we want to return to the index page
             // not the game page on back
+            info!("new game created. id: {}", response.id);
             nav.replace(format!("/game/{}", response.id));
             render!({})
         }

@@ -4,6 +4,7 @@ use web_sys::HtmlElement;
 
 pub mod in_game;
 pub mod requests;
+pub mod settings;
 
 pub const SERVER: &str = "api";
 pub const ACTION_BUTTON_CLASS: &str = "bg-white outline outline-black hover:bg-slate-100 focus:outline-none focus:ring focus:bg-slate-100 active:bg-slate-200 rounded-lg disabled:outline-white";
@@ -35,7 +36,7 @@ pub fn event_id<T>(cx: Scope<T>) -> Option<String> {
     use_shared_state::<EventId>(cx).map(|x| x.read().id.clone())
 }
 
-pub fn set_event_id(cx: Scope, id: String) {
+pub fn set_event_id<T>(cx: Scope<T>, id: String) {
     use_shared_state_provider(cx, || EventId { id });
 }
 

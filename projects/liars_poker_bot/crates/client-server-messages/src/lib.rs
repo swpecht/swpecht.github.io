@@ -49,11 +49,15 @@ impl NewGameResponse {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub struct NewGameRequest {
     pub player_id: usize,
+    pub min_players: usize,
 }
 
 impl NewGameRequest {
-    pub fn new(player_id: usize) -> Self {
-        Self { player_id }
+    pub fn new(player_id: usize, min_players: usize) -> Self {
+        Self {
+            player_id,
+            min_players,
+        }
     }
 }
 
