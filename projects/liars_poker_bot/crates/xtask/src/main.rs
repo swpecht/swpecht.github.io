@@ -149,7 +149,7 @@ fn build_and_deploy_app() {
     let sh = Shell::new().unwrap();
     sh.change_dir("crates/euchre-app");
 
-    let result = cmd!(sh, "dx build --profile wasm").run();
+    let result = cmd!(sh, "dx build").run();
     if let Err(e) = result {
         println!("Error: {:?}", e);
     }

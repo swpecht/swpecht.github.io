@@ -17,8 +17,8 @@ use games::{
 use log::info;
 
 use crate::{
-    base_url, hide_element, player_id, requests::make_game_request, PlayerId, ACTION_BUTTON_CLASS,
-    SERVER,
+    base_url, hide_element, requests::make_game_request, settings::get_player_id,
+    ACTION_BUTTON_CLASS, SERVER,
 };
 
 #[derive(Debug, Clone)]
@@ -74,7 +74,7 @@ pub enum InGameState {
 pub fn InGame(cx: Scope, game_id: String) -> Element {
     hide_element("intro");
 
-    let player_id = use_shared_state::<PlayerId>(cx).unwrap().read().id;
+    let player_id = get_player_id(cx).unwrap();
     let client = reqwest::Client::new();
     let game_url = format!("{}/{}/{}", base_url(), SERVER, game_id);
 
@@ -110,7 +110,7 @@ pub fn InGame(cx: Scope, game_id: String) -> Element {
         }
     });
 
-    let player_id = use_shared_state::<PlayerId>(cx).unwrap().read().id;
+    let player_id = get_player_id(cx).unwrap();
     let target = format!("{}/{}/{}", base_url(), SERVER, game_id);
     let _action_task = use_coroutine(cx, |mut rx: UnboundedReceiver<GameAction>| {
         let game_data = state.to_owned();
@@ -398,7 +398,7 @@ fn PlayArea<T>(cx: Scope<T>, game_data: GameData, south_player: usize) -> Elemen
 
 fn ClearButton<T>(cx: Scope<T>, display_state: GameProcessingState, gd: GameData) -> Element {
     let action_task = use_coroutine_handle::<GameAction>(cx).expect("error getting action task");
-    let player_id = player_id(cx).unwrap();
+    let player_id = get_player_id(cx).unwrap();
     let gs = gd.to_state();
 
     match display_state {

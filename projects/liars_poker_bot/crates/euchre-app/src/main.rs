@@ -10,14 +10,11 @@ use dioxus_router::prelude::*;
 use euchre_app::{
     base_url, hide_element,
     in_game::InGame,
-    player_id, set_event_id, set_player_id,
-    settings::{min_players, register_settings, set_min_players},
+    settings::{get_player_id, min_players, register_settings, set_event_id, set_min_players},
     show_element, ACTION_BUTTON_CLASS, SERVER,
 };
 use log::{debug, error, info};
 use rand::{thread_rng, Rng};
-
-const PLAYER_ID_KEY: &str = "PLAYER_ID";
 
 #[derive(Routable, Clone, PartialEq)]
 enum Route {
@@ -28,12 +25,11 @@ enum Route {
     #[route("/game/:game_id")]
     InGame { game_id: String },
 
-    // if the current location is "/blog", render the Blog component
-    #[route("/:..route")]
-    NotFound { route: Vec<String> },
-
     #[route("/game")]
     NewGame,
+
+    #[route("/:..route")]
+    NotFound { route: Vec<String> },
 }
 
 fn main() {
@@ -50,23 +46,6 @@ fn App(cx: Scope) -> Element {
     // set_up_ws(&cx);
     // let send_task = use_coroutine_handle::<WsSendMessage>(cx).expect("error getting ws task");
     // send_msg(send_task, "test message".to_string());
-
-    let local_storage = web_sys::window().unwrap().local_storage().unwrap().unwrap();
-    let stored_id = local_storage.get_item(PLAYER_ID_KEY);
-    if let Ok(Some(player_id)) = stored_id {
-        set_player_id(
-            cx,
-            player_id
-                .parse()
-                .expect("error parsing previously saved player id"),
-        );
-    } else {
-        let player_id: usize = thread_rng().gen();
-        local_storage
-            .set_item(PLAYER_ID_KEY, player_id.to_string().as_str())
-            .expect("error storing player id");
-        set_player_id(cx, player_id);
-    }
 
     render! { Router::<Route> {} }
 }
@@ -117,10 +96,7 @@ fn Index(cx: Scope) -> Element {
 fn NewGame(cx: Scope) -> Element {
     hide_element("intro");
 
-    // set a default event id
-    set_event_id(cx, "default".to_string());
-
-    let player_id = player_id(cx).unwrap();
+    let player_id = get_player_id(cx).unwrap();
     let min_players = min_players(cx);
     let new_game_req = NewGameRequest::new(player_id, min_players);
     info!("requesting a new game: {:?}", new_game_req);
