@@ -61,7 +61,7 @@ async fn api_index(json: Json<NewGameRequest>, data: web::Data<AppState>) -> imp
     let game_id = Uuid::new_v4();
     let gs = new_game();
 
-    let mut game_data = GameData::new(gs, json.0.player_id);
+    let mut game_data = GameData::new(gs, json.0.player_id, json.0.min_players);
     // randomize who starts with deal
     game_data.players.rotate_right(thread_rng().gen_range(0..4));
     progress_game(&mut game_data, &data.bot);
@@ -221,6 +221,18 @@ fn progress_game(game_data: &mut GameData, bot: &Mutex<CFRES<EuchreGameState>>) 
 
     loop {
         let new_state = match &game_data.display_state {
+            WaitingPlayerJoin { min_players } => {
+                if game_data.players.iter().filter(|x| x.is_some()).count() < *min_players {
+                    WaitingPlayerJoin {
+                        min_players: *min_players,
+                    }
+                } else {
+                    match game_data.players[gs.cur_player()] {
+                        Some(_) => WaitingHumanMove,
+                        None => WaitingMachineMoves,
+                    }
+                }
+            }
             WaitingHumanMove | WaitingMachineMoves => {
                 if gs.is_trick_over() {
                     WaitingTrickClear {
@@ -268,6 +280,8 @@ fn progress_game(game_data: &mut GameData, bot: &Mutex<CFRES<EuchreGameState>>) 
                     game_data.display_state.clone()
                 }
             }
+            // this is a terminal state
+            GameOver => GameOver,
         };
         game_data.display_state = new_state;
 

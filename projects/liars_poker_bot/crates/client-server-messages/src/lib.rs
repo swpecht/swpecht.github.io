@@ -4,10 +4,19 @@ use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum GameProcessingState {
+    /// When min_players has been specified but there aren't that many players in the game yet
+    WaitingPlayerJoin {
+        min_players: usize,
+    },
     WaitingHumanMove,
     WaitingMachineMoves,
-    WaitingTrickClear { ready_players: Vec<usize> },
-    WaitingBidClear { ready_players: Vec<usize> },
+    WaitingTrickClear {
+        ready_players: Vec<usize>,
+    },
+    WaitingBidClear {
+        ready_players: Vec<usize>,
+    },
+    GameOver,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -20,13 +29,13 @@ pub struct GameData {
 }
 
 impl GameData {
-    pub fn new(gs: EuchreGameState, player_id: usize) -> Self {
+    pub fn new(gs: EuchreGameState, player_id: usize, min_players: usize) -> Self {
         Self {
             gs: gs.to_string(),
             players: vec![Some(player_id), None, None, None],
             human_score: 0,
             computer_score: 0,
-            display_state: GameProcessingState::WaitingHumanMove,
+            display_state: GameProcessingState::WaitingPlayerJoin { min_players },
         }
     }
 
