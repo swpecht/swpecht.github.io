@@ -134,6 +134,15 @@ pub fn InGame(cx: Scope, game_id: String) -> Element {
     });
 
     match state.get() {
+        InGameState::Ok(gd)
+            if matches!(
+                gd.display_state,
+                GameProcessingState::WaitingPlayerJoin { min_players: _ }
+            ) =>
+        {
+            WaitingForOtherPlayers(cx)
+        }
+
         InGameState::Ok(gd) => {
             let south_player = gd
                 .players
@@ -177,6 +186,12 @@ fn UnknownError<'a, T>(cx: Scope<'a, T>, msg: &'a String) -> Element<'a> {
             p { "Encountered an unexpected error. Try going back and trying again." }
             p { "Error: {msg}" }
         }
+    )
+}
+
+fn WaitingForOtherPlayers<T>(cx: Scope<T>) -> Element {
+    render!(
+        div { "Waiting for other players to join... Send the other player the url of this page" }
     )
 }
 
