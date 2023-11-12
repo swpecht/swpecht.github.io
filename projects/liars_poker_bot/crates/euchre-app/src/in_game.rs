@@ -408,7 +408,7 @@ fn PlayArea<T>(cx: Scope<T>, game_data: GameData, south_player: usize) -> Elemen
             // bottom area
             div { class: "row-start-3 col-span-5 grid justify-items-center",
                 div { class: "self-end", south_label }
-                PlayerActions(cx, gs.clone(), south_player)
+                PlayerActions(cx, gs.clone(), south_player, game_data.display_state.clone())
             }
         }
     })
@@ -545,7 +545,12 @@ fn CardIcon<T>(cx: Scope<T>, c: Card) -> Element {
     })
 }
 
-fn PlayerActions<T>(cx: Scope<T>, gs: EuchreGameState, south_player: usize) -> Element {
+fn PlayerActions<T>(
+    cx: Scope<T>,
+    gs: EuchreGameState,
+    south_player: usize,
+    display_state: GameProcessingState,
+) -> Element {
     if gs.is_chance_node() {
         return render!({});
     }
@@ -553,7 +558,13 @@ fn PlayerActions<T>(cx: Scope<T>, gs: EuchreGameState, south_player: usize) -> E
     let actions: Vec<EAction> = actions!(gs).into_iter().map(EAction::from).collect();
     let action_task = use_coroutine_handle::<GameAction>(cx).expect("error getting action task");
 
-    if gs.cur_player() != south_player {
+    if gs.cur_player() != south_player
+        || matches!(
+            display_state,
+            GameProcessingState::WaitingBidClear { ready_players: _ }
+                | GameProcessingState::WaitingTrickClear { ready_players: _ }
+        )
+    {
         // if not out turn, just show our hand
         let hand = gs.get_hand(south_player);
         render!(
