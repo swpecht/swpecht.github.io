@@ -5,6 +5,7 @@ use std::{fmt::Display, time::Duration};
 use async_std::task;
 use client_server_messages::{ActionRequest, GameAction, GameData, GameProcessingState};
 use dioxus::prelude::*;
+use dioxus_router::prelude::use_navigator;
 use futures_util::StreamExt;
 use games::{
     actions,
@@ -143,6 +144,9 @@ pub fn InGame(cx: Scope, game_id: String) -> Element {
             WaitingForOtherPlayers(cx)
         }
 
+        InGameState::Ok(gd) if matches!(gd.display_state, GameProcessingState::GameOver) => {
+            GameOver(cx, game_id.clone())
+        }
         InGameState::Ok(gd) => {
             let south_player = gd
                 .players
@@ -166,6 +170,32 @@ pub fn InGame(cx: Scope, game_id: String) -> Element {
         InGameState::UnknownError(msg) => UnknownError(cx, msg),
         InGameState::GameFull => GameFull(cx),
     }
+}
+
+fn GameOver<T>(cx: Scope<T>, game_id: String) -> Element {
+    render!(
+        div { class: "px-8 pt-8",
+            div { class: "font-bold text-xl font-large text-black", "Thanks for playing!" }
+            div {
+                "If you completed this game as part of an event, please register your game to be eligible for any applicable prizes: "
+                a {
+                    class: "text-blue-600 visited:text-purple-600",
+                    target: "_blank",
+                    rel: "noopener",
+                    href: "https://docs.google.com/forms/d/e/1FAIpQLSfoLDgRBwXoIHhI-MondqYO4agtvIhom1vHnacgv5brhSKJAA/viewform?usp=pp_url&entry.90030775={game_id}",
+                    "game registration"
+                }
+            }
+            button {
+                class: "{ACTION_BUTTON_CLASS} font-medium px-2 mx-2 mt-8",
+                onclick: move |_| {
+                    let nav = use_navigator(cx);
+                    nav.push("/");
+                },
+                "Return home to start a new game"
+            }
+        }
+    )
 }
 
 fn Loading<T>(cx: Scope<T>) -> Element {

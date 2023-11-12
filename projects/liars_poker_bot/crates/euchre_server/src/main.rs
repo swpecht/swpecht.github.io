@@ -267,11 +267,12 @@ fn progress_game(game_data: &mut GameData, bot: &Mutex<CFRES<EuchreGameState>>) 
                         );
 
                         gs = new_game();
-                        // todo: change who dealer is
                         game_data.players.rotate_left(1);
                     }
 
-                    if game_data.players[gs.cur_player()].is_none() {
+                    if game_data.human_score >= 10 || game_data.computer_score >= 10 {
+                        GameOver
+                    } else if game_data.players[gs.cur_player()].is_none() {
                         WaitingMachineMoves
                     } else {
                         WaitingHumanMove

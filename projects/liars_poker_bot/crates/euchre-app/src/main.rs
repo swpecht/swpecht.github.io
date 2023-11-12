@@ -17,7 +17,7 @@ use log::{debug, error, info};
 use rand::{thread_rng, Rng};
 
 #[derive(Routable, Clone, PartialEq)]
-enum Route {
+pub enum Route {
     // if the current location is "/home", render the Home component
     #[route("/")]
     Index {},
