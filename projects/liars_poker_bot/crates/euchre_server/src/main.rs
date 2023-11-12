@@ -260,7 +260,7 @@ fn progress_game(game_data: &mut GameData, bot: &Mutex<CFRES<EuchreGameState>>) 
                         game_data.computer_score +=
                             gs.evaluate((human_team + 1) % 4).max(0.0) as usize;
                         info!(
-                            "game ended\thuman score:\t{}\tgame:\t{}\thuman players:\t{}",
+                            "hand ended|human:|{}|game:|{}|human players:|{}",
                             game_data.human_score,
                             gs,
                             game_data.players.iter().flatten().count()
@@ -271,6 +271,10 @@ fn progress_game(game_data: &mut GameData, bot: &Mutex<CFRES<EuchreGameState>>) 
                     }
 
                     if game_data.human_score >= 10 || game_data.computer_score >= 10 {
+                        info!(
+                            "game over|human:|{}|computer|{}",
+                            game_data.human_score, game_data.computer_score
+                        );
                         GameOver
                     } else if game_data.players[gs.cur_player()].is_none() {
                         WaitingMachineMoves
