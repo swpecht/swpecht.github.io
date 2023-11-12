@@ -191,7 +191,10 @@ fn UnknownError<'a, T>(cx: Scope<'a, T>, msg: &'a String) -> Element<'a> {
 
 fn WaitingForOtherPlayers<T>(cx: Scope<T>) -> Element {
     render!(
-        div { "Waiting for other players to join... Send the other player the url of this page" }
+        div { class: "px-8 pt-8",
+            div { class: "font-bold text-xl font-large text-black", "Waiting for other players to join..." }
+            div { "Send the other player the url of this page for them to join" }
+        }
     )
 }
 
