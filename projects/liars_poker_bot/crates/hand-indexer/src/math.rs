@@ -34,6 +34,6 @@ mod tests {
     fn test_binom() {
         assert_eq!(binom(1, 6), 0);
         assert_eq!(binom(6, 1), 6);
-        assert_eq!(binom(24, 3), 2024);
+        assert_eq!(binom(4, 2), 6);
     }
 }

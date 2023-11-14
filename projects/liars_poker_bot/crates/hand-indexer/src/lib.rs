@@ -1,5 +1,7 @@
 use rankset::RankSet;
 
+use crate::math::binom;
+
 mod math;
 pub mod rankset;
 
@@ -21,7 +23,7 @@ pub struct Rank(u8);
 ///
 /// The set it represented by a bit mask, 1 representing that card is present
 /// 0 representing it is not
-pub fn index_set(set: &RankSet) -> usize {
+pub fn index_set(mut set: RankSet) -> usize {
     assert!(!set.is_empty(), "cannot take rank of empty set");
 
     // When the set is length one, we can trivially
@@ -33,7 +35,13 @@ pub fn index_set(set: &RankSet) -> usize {
 
     let m = set.len();
 
-    todo!()
+    let mut index = 0;
+    for i in 1..(m + 1) {
+        let a_i = set.largest();
+        set.remove(a_i);
+        index += binom(a_i, m - i + 1)
+    }
+    index
 }
 
 #[cfg(test)]
@@ -44,7 +52,22 @@ mod tests {
     fn test_index_set() {
         for i in 0..N {
             let set = RankSet::new(&[i]);
-            assert_eq!(index_set(&set), i as usize);
+            assert_eq!(index_set(set), i as usize);
         }
+
+        let set = RankSet::new(&[1, 0]);
+        assert_eq!(index_set(set), 0);
+
+        let set = RankSet::new(&[2, 0]);
+        assert_eq!(index_set(set), 1);
+
+        let set = RankSet::new(&[2, 1]);
+        assert_eq!(index_set(set), 2);
+
+        let set = RankSet::new(&[3, 0]);
+        assert_eq!(index_set(set), 3);
+
+        let set = RankSet::new(&[3, 1]);
+        assert_eq!(index_set(set), 4);
     }
 }

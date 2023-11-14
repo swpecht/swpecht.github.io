@@ -18,6 +18,11 @@ impl RankSet {
         self.0 |= 1 << rank;
     }
 
+    pub fn remove(&mut self, rank: u8) {
+        assert!(rank <= N, "can't remove a rank>N");
+        self.0 &= !(1 << rank);
+    }
+
     pub fn len(&self) -> u8 {
         self.0.count_ones() as u8
     }
@@ -39,14 +44,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn largest() {
+    fn test_largest() {
         let mut set = RankSet::default();
 
         set.insert(3);
         assert_eq!(set.largest(), 3);
         set.insert(1);
         assert_eq!(set.largest(), 3);
-
+        set.remove(3);
+        assert_eq!(set.largest(), 1);
         set.insert(5);
         assert_eq!(set.largest(), 5);
     }
