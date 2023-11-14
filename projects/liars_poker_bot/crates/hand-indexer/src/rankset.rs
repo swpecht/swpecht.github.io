@@ -1,5 +1,3 @@
-use crate::N;
-
 #[derive(Default)]
 pub struct RankSet(u16);
 
@@ -14,12 +12,10 @@ impl RankSet {
     }
 
     pub fn insert(&mut self, rank: u8) {
-        assert!(rank <= N, "can't insert a rank>N");
         self.0 |= 1 << rank;
     }
 
     pub fn remove(&mut self, rank: u8) {
-        assert!(rank <= N, "can't remove a rank>N");
         self.0 &= !(1 << rank);
     }
 
