@@ -19,6 +19,21 @@ pub fn binom(n: u8, m: u8) -> usize {
     factorial(n) / (factorial(m) * factorial(n - m))
 }
 
+/// Finds the largest value x such that x choose m <= idx
+pub fn find_x(idx: usize, m: u8) -> u8 {
+    let mut x = 0;
+
+    // TODO: replace with binary search
+    loop {
+        // when we find an x larger than our target index
+        // we return the one before it
+        if binom(x, m) > idx {
+            return x - 1;
+        }
+        x += 1;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,5 +1,6 @@
 use std::default;
 
+use math::find_x;
 use rankset::RankSet;
 
 use crate::math::binom;
@@ -17,6 +18,39 @@ pub mod rankset;
 struct HandIndexer<const N: u8> {}
 
 impl<const N: u8> HandIndexer<N> {
+    /// Compute the index for k M-rank sets of the same suit
+    ///
+    /// These groups must not share cards
+    fn index_group(&self, mut group: Vec<RankSet>, used: RankSet) -> usize {
+        let mut B = match group.pop() {
+            Some(x) => x,
+            None => return 0,
+        };
+
+        // rather than this math, can we just down shift everything?
+
+        let next = self.index_group(group, used.union(&B));
+        let m_1 = B.len();
+        let mut idx = binom(N - used.len(), m_1) * next;
+
+        for i in 1..(m_1 + 1) {
+            let largest = B.largest();
+
+            // count how many lower rank cards have already been used, this is the adapted rank
+            // todo move to rank set function?
+
+            // is there a clearer way to implement this?
+            let lower_used = (!(!0 << largest) & used.0).count_ones() as u8;
+            let rank = largest - lower_used;
+            // check if this is right, should this not be the same as the index_set function?
+            // or should it match what is in the paper
+            idx += binom(rank, m_1 - i + 1);
+            B.remove(largest);
+        }
+
+        idx
+    }
+
     /// Compute the index for M-rank sets
     ///
     /// which are sets of M card (`set.len()`) of the same suit, where
@@ -24,31 +58,25 @@ impl<const N: u8> HandIndexer<N> {
     ///
     /// The set it represented by a bit mask, 1 representing that card is present
     /// 0 representing it is not
-    pub fn index_set(&self, mut set: RankSet) -> usize {
-        assert!(!set.is_empty(), "cannot take rank of empty set");
-        assert!(
-            set.largest() < N,
-            "found rank of: {}, max rank is: {}",
-            set.largest(),
-            N
-        );
+    fn index_set(&self, set: RankSet) -> usize {
+        self.index_group(vec![set], RankSet::default())
+    }
 
-        // When the set is length one, we can trivially
-        // count the sets less than `a` -- it's just the rank
-        // of `a`
-        if set.len() == 1 {
-            return set.largest() as usize;
+    fn unindex_set(&self, idx: usize, m: u8) -> Option<RankSet> {
+        if m == 1 {
+            return Some(RankSet::new(&[idx as u8]));
         }
 
-        let m = set.len();
-
-        let mut index = 0;
-        for i in 1..(m + 1) {
-            let a_i = set.largest();
-            set.remove(a_i);
-            index += binom(a_i, m - i + 1)
+        let x = find_x(idx, m);
+        // Over the max index
+        if x >= N {
+            return None;
         }
-        index
+        let set = RankSet::new(&[x]);
+        let children = self.unindex_set(idx - binom(x, m), m - 1)?;
+        let set = set.union(&children);
+        assert_eq!(set.len(), m);
+        Some(set)
     }
 }
 
@@ -67,11 +95,20 @@ mod tests {
             assert_eq!(indexer.index_set(set), i as usize);
         }
 
+        for i in 0..15 {
+            let set = indexer.unindex_set(i, 2).unwrap();
+            println!("{}: {:?} {}", i, set, indexer.index_set(set));
+            let idx = indexer.index_set(set);
+            assert_eq!(idx, i);
+        }
+
         let set = RankSet::new(&[1, 0]);
         assert_eq!(indexer.index_set(set), 0);
+        assert_eq!(indexer.unindex_set(0, 2).unwrap(), set);
 
         let set = RankSet::new(&[2, 0]);
         assert_eq!(indexer.index_set(set), 1);
+        assert_eq!(indexer.unindex_set(1, 2).unwrap(), set);
 
         let set = RankSet::new(&[2, 1]);
         assert_eq!(indexer.index_set(set), 2);
@@ -81,5 +118,32 @@ mod tests {
 
         let set = RankSet::new(&[3, 1]);
         assert_eq!(indexer.index_set(set), 4);
+
+        for i in 0..20 {
+            let set = indexer.unindex_set(i, 3).unwrap();
+            println!("{}: {:?}", i, set);
+            let idx = indexer.index_set(set);
+            assert_eq!(idx, i);
+        }
+    }
+
+    #[test]
+    fn test_index_group() {
+        let indexer = HandIndexer::<6>::default();
+        let s1 = RankSet::new(&[2]);
+        let s2 = RankSet::new(&[1, 0]);
+        assert_eq!(indexer.index_group(vec![s1, s2], RankSet::default()), 0);
+
+        // s1 could be 1 lower
+        // There are 5 choose 2 options for each s2 rank
+        // 0 + 1 * 5C2
+        let s1 = RankSet::new(&[2]);
+        let s2 = RankSet::new(&[3, 0]);
+        assert_eq!(
+            indexer.index_group(vec![s1, s2], RankSet::default()),
+            binom(5, 2)
+        );
+
+        todo!()
     }
 }
