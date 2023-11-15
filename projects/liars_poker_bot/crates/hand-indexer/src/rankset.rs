@@ -41,6 +41,31 @@ impl RankSet {
         // off by 1 on the leading zeros
         16 - 1 - self.0.leading_zeros() as u8
     }
+
+    pub fn smallest(&self) -> u8 {
+        self.0.trailing_zeros() as u8
+    }
+
+    /// Converts a downshifted rank `rank` to it's true rank assuming
+    /// all items in `self` had already been used
+    pub fn upshift_rank(&self, mut rank: u8) -> u8 {
+        let mut x = *self;
+
+        while x.smallest() <= rank && !x.is_empty() {
+            rank += 1;
+            x.remove(x.smallest());
+        }
+
+        rank
+    }
+
+    /// Convers a true rank to a downshifted rank by subtracting the already used
+    /// items from the rank
+    pub fn donwnshift_rank(&self, rank: u8) -> u8 {
+        // is there a clearer way to implement this?
+        let lower_used = (!(!0 << rank) & self.0).count_ones() as u8;
+        rank - lower_used
+    }
 }
 
 impl Debug for RankSet {

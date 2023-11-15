@@ -22,12 +22,11 @@ impl<const N: u8> HandIndexer<N> {
     ///
     /// These groups must not share cards
     fn index_group(&self, mut group: Vec<RankSet>, used: RankSet) -> usize {
-        let mut B = match group.pop() {
-            Some(x) => x,
-            None => return 0,
-        };
+        if group.is_empty() {
+            return 0;
+        }
 
-        // rather than this math, can we just down shift everything?
+        let mut B = group.remove(0);
 
         let next = self.index_group(group, used.union(&B));
         let m_1 = B.len();
@@ -38,10 +37,8 @@ impl<const N: u8> HandIndexer<N> {
 
             // count how many lower rank cards have already been used, this is the adapted rank
             // todo move to rank set function?
+            let rank = used.donwnshift_rank(largest);
 
-            // is there a clearer way to implement this?
-            let lower_used = (!(!0 << largest) & used.0).count_ones() as u8;
-            let rank = largest - lower_used;
             // check if this is right, should this not be the same as the index_set function?
             // or should it match what is in the paper
             idx += binom(rank, m_1 - i + 1);
@@ -49,6 +46,31 @@ impl<const N: u8> HandIndexer<N> {
         }
 
         idx
+    }
+
+    fn unindex_group(&self, idx: usize, mut ms: Vec<u8>, used: RankSet) -> Option<Vec<RankSet>> {
+        let m_1 = ms.remove(0);
+        let this = idx % binom(N - used.len(), m_1);
+        let next = idx / binom(N - used.len(), m_1);
+
+        let mut B = self.unindex_set(this, m_1)?;
+        let mut A_1 = RankSet::default();
+
+        for _ in 0..B.len() {
+            let b = B.largest();
+            B.remove(b);
+            let a = used.upshift_rank(b);
+            A_1.insert(a);
+        }
+
+        let mut group = vec![A_1];
+        if !ms.is_empty() {
+            let used = used.union(&A_1);
+            let mut children = self.unindex_group(next, ms, used)?;
+            group.append(&mut children);
+        }
+
+        Some(group)
     }
 
     /// Compute the index for M-rank sets
@@ -130,20 +152,17 @@ mod tests {
     #[test]
     fn test_index_group() {
         let indexer = HandIndexer::<6>::default();
-        let s1 = RankSet::new(&[2]);
-        let s2 = RankSet::new(&[1, 0]);
-        assert_eq!(indexer.index_group(vec![s1, s2], RankSet::default()), 0);
 
-        // s1 could be 1 lower
-        // There are 5 choose 2 options for each s2 rank
-        // 0 + 1 * 5C2
-        let s1 = RankSet::new(&[2]);
-        let s2 = RankSet::new(&[3, 0]);
-        assert_eq!(
-            indexer.index_group(vec![s1, s2], RankSet::default()),
-            binom(5, 2)
-        );
+        let set = RankSet::new(&[2, 1]);
+        assert_eq!(indexer.index_group(vec![set], RankSet::new(&[0])), 0);
 
-        todo!()
+        for i in 0..60 {
+            let group = indexer
+                .unindex_group(i, vec![1, 2], RankSet::default())
+                .unwrap();
+            let idx = indexer.index_group(group.clone(), RankSet::default());
+            println!("{}: {:?} {}", i, group, idx);
+            assert_eq!(idx, i);
+        }
     }
 }
