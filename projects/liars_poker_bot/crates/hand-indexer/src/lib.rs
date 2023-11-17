@@ -1,7 +1,7 @@
 use std::default;
 
 use math::find_x;
-use rankset::RankSet;
+use rankset::{Group, RankSet};
 
 use crate::math::binom;
 
@@ -28,18 +28,22 @@ impl<const N: u8> HandIndexer<N> {
             return 0;
         }
 
+        let mut hand: Vec<Group> = hand.into_iter().map(Group).collect();
+        hand.sort();
+        hand.reverse();
+
         // todo: add sorting here to ensure the suits are sorted?
 
         let suit_groupindex: Vec<usize> = hand
             .iter()
-            .map(|h| self.index_group(h.clone(), RankSet::default()))
+            .map(|h| self.index_group(h.0.clone(), RankSet::default()))
             .collect();
 
         let mut idx = suit_groupindex[0];
         for i in 1..suit_groupindex.len() {
             let mut prev_idx_size = 1;
             let mut used_cards = 0;
-            for x in hand[i - 1].iter() {
+            for x in hand[i - 1].0.iter() {
                 prev_idx_size *= binom(N - used_cards, x.len());
                 used_cards += x.len();
             }
@@ -153,6 +157,8 @@ pub struct Rank(u8);
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
 
     #[test]
@@ -188,12 +194,15 @@ mod tests {
         let set = RankSet::new(&[3, 1]);
         assert_eq!(indexer.index_set(set), 4);
 
+        let mut hash_set = HashSet::new();
         for i in 0..20 {
             let set = indexer.unindex_set(i, 3).unwrap();
             println!("{}: {:?}", i, set);
             let idx = indexer.index_set(set);
             assert_eq!(idx, i);
+            hash_set.insert(set);
         }
+        assert_eq!(hash_set.len(), 20);
     }
 
     #[test]
@@ -203,6 +212,7 @@ mod tests {
         let set = RankSet::new(&[2, 1]);
         assert_eq!(indexer.index_group(vec![set], RankSet::new(&[0])), 0);
 
+        let mut hash_set = HashSet::new();
         for i in 0..60 {
             let group = indexer
                 .unindex_group(i, vec![1, 2], RankSet::default())
@@ -210,7 +220,9 @@ mod tests {
             let idx = indexer.index_group(group.clone(), RankSet::default());
             println!("{}: {:?} {}", i, group, idx);
             assert_eq!(idx, i);
+            hash_set.insert(group);
         }
+        assert_eq!(hash_set.len(), 60);
     }
 
     /// Test examples from the paper
@@ -244,6 +256,42 @@ mod tests {
         // Propogating the correction to 300 instead of 306
         // gives the below corrected index
         assert_eq!(idx, 55_212);
+
+        // verify the order doesn't matter
+        let idx = indexer.index_hand(vec![
+            vec![RankSet::default(), RankSet::new(&[11, 9])], // hearts
+            vec![RankSet::new(&[12, 0]), RankSet::new(&[4])], // clubs
+        ]);
+        assert_eq!(idx, 55_212);
+
+        // index for 6♦T ♣|J♣7♦K♥
+        // clubs
+        let idx = indexer.index_group(
+            vec![RankSet::new(&[8]), RankSet::new(&[9])],
+            RankSet::default(),
+        );
+        assert_eq!(idx, 112);
+
+        // diamonds
+        let idx = indexer.index_group(
+            vec![RankSet::new(&[4]), RankSet::new(&[5])],
+            RankSet::default(),
+        );
+        assert_eq!(idx, 56);
+
+        // hearts
+        let idx = indexer.index_group(
+            vec![RankSet::new(&[]), RankSet::new(&[11])],
+            RankSet::default(),
+        );
+        assert_eq!(idx, 11);
+
+        let idx = indexer.index_hand(vec![
+            vec![RankSet::new(&[8]), RankSet::new(&[9])], // clubs
+            vec![RankSet::new(&[4]), RankSet::new(&[5])], // diamonds
+            vec![RankSet::new(&[]), RankSet::new(&[11])], // hearts
+        ]);
+        assert_eq!(idx, 140_078);
 
         todo!()
     }

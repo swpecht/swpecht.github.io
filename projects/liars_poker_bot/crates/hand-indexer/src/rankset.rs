@@ -2,8 +2,8 @@ use std::fmt::Debug;
 
 use crate::Rank;
 
-#[derive(Default, PartialEq, Eq, Clone, Copy)]
-pub struct RankSet(pub(super) u16);
+#[derive(Default, PartialEq, Eq, Clone, Copy, Hash)]
+pub struct RankSet(u16);
 
 impl RankSet {
     pub fn new(ranks: &[u8]) -> Self {
@@ -82,6 +82,38 @@ impl Debug for RankSet {
     }
 }
 
+#[derive(PartialEq, Debug, Eq)]
+pub struct Group(pub(super) Vec<RankSet>);
+
+impl Group {
+    pub fn new(items: Vec<RankSet>) -> Self {
+        Group(items)
+    }
+}
+
+impl PartialOrd for Group {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(&other))
+    }
+}
+
+impl Ord for Group {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        for i in 0..self.0.len().max(other.0.len()) {
+            let self_suit_len = self.0.get(i).map(|x| x.len()).unwrap_or(0);
+            let other_suit_len = other.0.get(i).map(|x| x.len()).unwrap_or(0);
+
+            use std::cmp::Ordering::*;
+            match self_suit_len.cmp(&other_suit_len) {
+                Less => return Less,
+                Equal => continue,
+                Greater => return Greater,
+            };
+        }
+        std::cmp::Ordering::Equal
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -101,5 +133,23 @@ mod tests {
         assert_eq!(set.largest(), 1);
         set.insert(5);
         assert_eq!(set.largest(), 5);
+    }
+
+    #[test]
+    fn test_group_ord() {
+        // group of (2, 1)
+        let g1 = Group::new(vec![RankSet::new(&[0, 1]), RankSet::new(&[0])]);
+        // group of (0, 1)
+        let g2 = Group::new(vec![RankSet::new(&[]), RankSet::new(&[1])]);
+
+        assert!(g1 > g2);
+        assert_eq!(g2, g2);
+        assert_eq!(g1, g1);
+
+        // group of (2), implying (2, 0)
+        let g1 = Group::new(vec![RankSet::new(&[0, 1])]);
+        // group of (2, 1)
+        let g2 = Group::new(vec![RankSet::new(&[0, 1]), RankSet::new(&[1])]);
+        assert!(g2 > g1);
     }
 }
