@@ -18,6 +18,42 @@ pub mod rankset;
 struct HandIndexer<const N: u8> {}
 
 impl<const N: u8> HandIndexer<N> {
+    /// Returns the index for a hand
+    ///
+    /// Each element in hand is the group of a given suit
+    /// hand.len() == num_suits
+    /// hand[0] == hand configuration
+    fn index_hand(&self, hand: Vec<Vec<RankSet>>) -> usize {
+        if hand.is_empty() {
+            return 0;
+        }
+
+        // todo: add sorting here to ensure the suits are sorted?
+
+        let suit_groupindex: Vec<usize> = hand
+            .iter()
+            .map(|h| self.index_group(h.clone(), RankSet::default()))
+            .collect();
+
+        let mut idx = suit_groupindex[0];
+        for i in 1..suit_groupindex.len() {
+            let mut prev_idx_size = 1;
+            let mut used_cards = 0;
+            for x in hand[i - 1].iter() {
+                prev_idx_size *= binom(N - used_cards, x.len());
+                used_cards += x.len();
+            }
+
+            idx += prev_idx_size * suit_groupindex[i]
+        }
+
+        // todo: need to implement the suit configuration indexes to
+        // give the right offsets. Right now, we only index within a
+        // given suit configuration
+
+        idx
+    }
+
     /// Compute the index for k M-rank sets of the same suit
     ///
     /// These groups must not share cards
@@ -34,6 +70,12 @@ impl<const N: u8> HandIndexer<N> {
 
         for i in 1..(m_1 + 1) {
             let largest = B.largest();
+            if largest >= N {
+                panic!(
+                    "attempted to index a rank >= N. N: {}, rank: {}",
+                    N, largest
+                );
+            }
 
             // count how many lower rank cards have already been used, this is the adapted rank
             // todo move to rank set function?
@@ -102,6 +144,11 @@ impl<const N: u8> HandIndexer<N> {
     }
 }
 
+/// Returns the maximum valid index for a given configuration
+pub fn find_max() -> usize {
+    todo!()
+}
+
 pub struct Rank(u8);
 
 #[cfg(test)]
@@ -164,5 +211,40 @@ mod tests {
             println!("{}: {:?} {}", i, group, idx);
             assert_eq!(idx, i);
         }
+    }
+
+    /// Test examples from the paper
+    #[test]
+    fn test_paper_examples() {
+        // 13 cards per suit is a regular deck of cards
+        let indexer = HandIndexer::<13>::default();
+
+        // Compute the index for 2♣A♣|6♣J♥K♥
+        // Spades
+        let idx = indexer.index_group(
+            vec![RankSet::new(&[12, 0]), RankSet::new(&[4])],
+            RankSet::default(),
+        );
+        // This should be 300, there is an error in the published paper
+        // that has this result as 306, but this does not match the actual
+        // evaluation of the intermediate terms listed in the paper
+        assert_eq!(idx, 300);
+
+        // For hearts
+        let idx = indexer.index_group(
+            vec![RankSet::default(), RankSet::new(&[11, 9])],
+            RankSet::default(),
+        );
+        assert_eq!(idx, 64);
+
+        let idx = indexer.index_hand(vec![
+            vec![RankSet::new(&[12, 0]), RankSet::new(&[4])], // clubs
+            vec![RankSet::default(), RankSet::new(&[11, 9])], // hearts
+        ]);
+        // Propogating the correction to 300 instead of 306
+        // gives the below corrected index
+        assert_eq!(idx, 55_212);
+
+        todo!()
     }
 }
