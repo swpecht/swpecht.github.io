@@ -320,8 +320,11 @@ mod tests {
             vec![RankSet::new(&[4]), RankSet::new(&[5])], // diamonds
             vec![RankSet::new(&[]), RankSet::new(&[11])], // hearts
         ]);
-        assert_eq!(idx, 140_078);
 
-        todo!()
+        // This is corrected from the paper. In the paper, it is incorrectly calculated
+        // that \binom{112+1}{2} = 6,216. But it actually is 6,328
+        assert_eq!(idx, 141090);
+
+        todo!("implement un-index example")
     }
 }
