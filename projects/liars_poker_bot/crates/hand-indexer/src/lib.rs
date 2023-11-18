@@ -84,7 +84,7 @@ impl<const N: u8> HandIndexer<N> {
             this += binom(group_index + remaing_tied_suits - 1, remaing_tied_suits);
         }
 
-        this + binom(config_1_size + matching_configs - 1, matching_configs)
+        this + binom(config_1_size + matching_configs - 1, matching_configs) * next
     }
 
     /// Compute the index for k M-rank sets of the same suit
