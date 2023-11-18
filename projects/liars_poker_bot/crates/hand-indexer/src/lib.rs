@@ -1,7 +1,7 @@
 use std::default;
 
 use math::find_x;
-use rankset::{Group, RankSet};
+use rankset::{cmp_group_rank, config_size, group_config, RankSet};
 
 use crate::math::binom;
 
@@ -23,39 +23,68 @@ impl<const N: u8> HandIndexer<N> {
     /// Each element in hand is the group of a given suit
     /// hand.len() == num_suits
     /// hand[0] == hand configuration
-    fn index_hand(&self, hand: Vec<Vec<RankSet>>) -> usize {
+    fn index_hand(&self, mut hand: Vec<Vec<RankSet>>) -> usize {
         if hand.is_empty() {
             return 0;
         }
 
-        let mut hand: Vec<Group> = hand.into_iter().map(Group).collect();
-        hand.sort();
+        // TODO: Move this to be called only once at the start rather than on each iteration
+        // We sort by the group confguration, but if there are equal group configurations,
+        // we sort by the group index
+        hand.sort_by(|a, b| {
+            use std::cmp::Ordering::*;
+            match cmp_group_rank(a, b) {
+                Equal => self
+                    .index_group(a.clone(), RankSet::default())
+                    .cmp(&self.index_group(b.clone(), RankSet::default())),
+                x => x,
+            }
+        });
         hand.reverse();
 
-        // todo: add sorting here to ensure the suits are sorted?
+        // todo: we need to process this in batches of tied suits -- that's actually
+        // what's happening in the paper
+        //
+        // The index is actually:
+        //      sum( nCr(group_index + remaining_tied_suits - 1)(remaining_tied_suits) )
+        // When the number of tied suits is 1, this collapses to
+        //      nCr(group_index)(1) == group_index
+        //
+        // But I still need to figure out how to estimate the size of these combined indexes
+        // for the single case, this is trivial as it's the number of possible cards
+        //
+        // It looks like the 156 in the paper is actually the size of the group index for the given
+        // configuration 12 choose 1 * 11 choose 1
+        // so that factor becomes:
+        //      nCr(group_size + tied_suits - 1)(tied_suits)
 
-        let suit_groupindex: Vec<usize> = hand
-            .iter()
-            .map(|h| self.index_group(h.0.clone(), RankSet::default()))
-            .collect();
+        // todo: group all the suits with the same config together, and then apply the above
+        // todo: look at the recursive description in the paper -- this is essentially what we're doing where j is the tied suit ranks
 
-        let mut idx = suit_groupindex[0];
-        for i in 1..suit_groupindex.len() {
-            let mut prev_idx_size = 1;
-            let mut used_cards = 0;
-            for x in hand[i - 1].0.iter() {
-                prev_idx_size *= binom(N - used_cards, x.len());
-                used_cards += x.len();
-            }
-
-            idx += prev_idx_size * suit_groupindex[i]
+        // Collect all of the groups with the same config to process at once
+        let g_1 = hand.remove(0);
+        let config_1 = group_config(&g_1);
+        let config_1_size = config_size(&config_1, N as usize);
+        let mut same_config_group_indexes = vec![self.index_group(g_1, RankSet::default())];
+        while hand
+            .get(0)
+            .map(|x| group_config(x) == config_1)
+            .unwrap_or(false)
+        {
+            let g_i = hand.remove(0);
+            same_config_group_indexes.push(self.index_group(g_i, RankSet::default()));
         }
 
-        // todo: need to implement the suit configuration indexes to
-        // give the right offsets. Right now, we only index within a
-        // given suit configuration
+        let next = self.index_hand(hand);
 
-        idx
+        let mut this = 0;
+        let matching_configs = same_config_group_indexes.len();
+        for (i, group_index) in same_config_group_indexes.into_iter().enumerate() {
+            let remaing_tied_suits = matching_configs - i;
+            this += binom(group_index + remaing_tied_suits - 1, remaing_tied_suits);
+        }
+
+        this + binom(config_1_size + matching_configs - 1, matching_configs)
     }
 
     /// Compute the index for k M-rank sets of the same suit
@@ -70,7 +99,7 @@ impl<const N: u8> HandIndexer<N> {
 
         let next = self.index_group(group, used.union(&B));
         let m_1 = B.len();
-        let mut idx = binom(N - used.len(), m_1) * next;
+        let mut idx = binom((N - used.len()) as usize, m_1 as usize) * next;
 
         for i in 1..(m_1 + 1) {
             let largest = B.largest();
@@ -87,7 +116,7 @@ impl<const N: u8> HandIndexer<N> {
 
             // check if this is right, should this not be the same as the index_set function?
             // or should it match what is in the paper
-            idx += binom(rank, m_1 - i + 1);
+            idx += binom(rank as usize, (m_1 - i + 1) as usize);
             B.remove(largest);
         }
 
@@ -96,8 +125,8 @@ impl<const N: u8> HandIndexer<N> {
 
     fn unindex_group(&self, idx: usize, mut ms: Vec<u8>, used: RankSet) -> Option<Vec<RankSet>> {
         let m_1 = ms.remove(0);
-        let this = idx % binom(N - used.len(), m_1);
-        let next = idx / binom(N - used.len(), m_1);
+        let this = idx % binom((N - used.len()) as usize, m_1 as usize);
+        let next = idx / binom((N - used.len()) as usize, m_1 as usize);
 
         let mut B = self.unindex_set(this, m_1)?;
         let mut A_1 = RankSet::default();
@@ -141,7 +170,7 @@ impl<const N: u8> HandIndexer<N> {
             return None;
         }
         let set = RankSet::new(&[x]);
-        let children = self.unindex_set(idx - binom(x, m), m - 1)?;
+        let children = self.unindex_set(idx - binom(x as usize, m as usize), m - 1)?;
         let set = set.union(&children);
         assert_eq!(set.len(), m);
         Some(set)

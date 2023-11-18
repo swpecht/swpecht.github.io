@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crate::Rank;
+use crate::{math::binom, Rank};
 
 #[derive(Default, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct RankSet(u16);
@@ -82,36 +82,39 @@ impl Debug for RankSet {
     }
 }
 
-#[derive(PartialEq, Debug, Eq)]
-pub struct Group(pub(super) Vec<RankSet>);
+pub fn cmp_group_rank(a: &Vec<RankSet>, b: &Vec<RankSet>) -> std::cmp::Ordering {
+    for i in 0..a.len().max(b.len()) {
+        let self_suit_len = a.get(i).map(|x| x.len()).unwrap_or(0);
+        let other_suit_len = b.get(i).map(|x| x.len()).unwrap_or(0);
 
-impl Group {
-    pub fn new(items: Vec<RankSet>) -> Self {
-        Group(items)
+        use std::cmp::Ordering::*;
+        match self_suit_len.cmp(&other_suit_len) {
+            Less => return Less,
+            Equal => continue,
+            Greater => return Greater,
+        };
     }
+
+    std::cmp::Ordering::Equal
 }
 
-impl PartialOrd for Group {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(&other))
+/// Return the size of a given config
+///
+/// see the paper for how 156 is arrived at, implement that here
+pub fn config_size(lengths: &[u8], max_items: usize) -> usize {
+    let mut size = 1;
+    let mut used_items = 0;
+
+    for x in lengths {
+        size *= binom(max_items - used_items, *x as usize);
+        used_items += *x as usize;
     }
+
+    size
 }
 
-impl Ord for Group {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        for i in 0..self.0.len().max(other.0.len()) {
-            let self_suit_len = self.0.get(i).map(|x| x.len()).unwrap_or(0);
-            let other_suit_len = other.0.get(i).map(|x| x.len()).unwrap_or(0);
-
-            use std::cmp::Ordering::*;
-            match self_suit_len.cmp(&other_suit_len) {
-                Less => return Less,
-                Equal => continue,
-                Greater => return Greater,
-            };
-        }
-        std::cmp::Ordering::Equal
-    }
+pub fn group_config(a: &[RankSet]) -> Vec<u8> {
+    a.iter().map(|x| x.len()).collect()
 }
 
 #[cfg(test)]
@@ -138,18 +141,26 @@ mod tests {
     #[test]
     fn test_group_ord() {
         // group of (2, 1)
-        let g1 = Group::new(vec![RankSet::new(&[0, 1]), RankSet::new(&[0])]);
+        let g1 = vec![RankSet::new(&[0, 1]), RankSet::new(&[0])];
         // group of (0, 1)
-        let g2 = Group::new(vec![RankSet::new(&[]), RankSet::new(&[1])]);
+        let g2 = vec![RankSet::new(&[]), RankSet::new(&[1])];
 
-        assert!(g1 > g2);
-        assert_eq!(g2, g2);
-        assert_eq!(g1, g1);
+        use std::cmp::Ordering::*;
+        assert_eq!(cmp_group_rank(&g1, &g2), Greater);
+        assert_eq!(cmp_group_rank(&g2, &g2), Equal);
+        assert_eq!(cmp_group_rank(&g1, &g1), Equal);
 
         // group of (2), implying (2, 0)
-        let g1 = Group::new(vec![RankSet::new(&[0, 1])]);
+        let g1 = vec![RankSet::new(&[0, 1])];
         // group of (2, 1)
-        let g2 = Group::new(vec![RankSet::new(&[0, 1]), RankSet::new(&[1])]);
-        assert!(g2 > g1);
+        let g2 = vec![RankSet::new(&[0, 1]), RankSet::new(&[1])];
+        assert_eq!(cmp_group_rank(&g1, &g2), Less);
+    }
+
+    #[test]
+    fn test_config_size() {
+        assert_eq!(config_size(&[1], 13), 13);
+        assert_eq!(config_size(&[1, 1], 13), 156);
+        assert_eq!(config_size(&[2, 1], 13), 858);
     }
 }
