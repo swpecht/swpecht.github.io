@@ -22,7 +22,6 @@ impl<const N: u8> HandIndexer<N> {
     ///
     /// Each element in hand is the group of a given suit
     /// hand.len() == num_suits
-    /// hand[0] == hand configuration
     fn index_hand(&self, mut hand: Vec<Vec<RankSet>>) -> usize {
         if hand.is_empty() {
             return 0;
@@ -85,6 +84,33 @@ impl<const N: u8> HandIndexer<N> {
         }
 
         this + binom(config_1_size + matching_configs - 1, matching_configs) * next
+    }
+
+    fn unindex_hand(
+        &self,
+        idx: usize,
+        mut suit_configutation: Vec<Vec<u8>>,
+    ) -> Option<Vec<Vec<RankSet>>> {
+        assert!(
+            suit_configutation.len() <= 2,
+            "only support 2 suits for now, since manually unrolling"
+        );
+
+        let c_1 = suit_configutation.remove(0);
+        let c_1_size = config_size(&c_1, N as usize);
+        let c_1_idx = idx % c_1_size;
+        let g_1 = self.unindex_group(c_1_idx, c_1, RankSet::default())?;
+
+        let remainder = idx / c_1_size;
+
+        let mut hand = vec![g_1];
+
+        if !suit_configutation.is_empty() {
+            let mut remaining_suits = self.unindex_hand(remainder, suit_configutation)?;
+            hand.append(&mut remaining_suits)
+        }
+
+        Some(hand)
     }
 
     /// Compute the index for k M-rank sets of the same suit
@@ -186,7 +212,7 @@ pub struct Rank(u8);
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use std::{collections::HashSet, vec};
 
     use super::*;
 
@@ -323,8 +349,49 @@ mod tests {
 
         // This is corrected from the paper. In the paper, it is incorrectly calculated
         // that \binom{112+1}{2} = 6,216. But it actually is 6,328
-        assert_eq!(idx, 141090);
+        assert_eq!(idx, 141_090);
 
-        todo!("implement un-index example")
+        // In the paper, this unindexes to: 2♠7♥|8♠6♠4♥
+        // But \binom{13}{1} \binom{12}{2} is incorrectly evaluated as
+        // 198 in the paper. But in reality it is 858. Making this
+        // change results in the below hand
+        assert_eq!(
+            indexer
+                .unindex_hand(6_220, vec![vec![1, 2], vec![1, 1]])
+                .unwrap(),
+            vec![
+                vec![RankSet::new(&[6]), RankSet::new(&[7, 1])],
+                vec![RankSet::new(&[7]), RankSet::new(&[0])]
+            ]
+        );
+    }
+
+    #[test]
+    fn test_hand_integration() {
+        let indexer = HandIndexer::<13>::default();
+
+        // A single handed suit should have \binom{13}{5} combinations
+        validate_hand_config(&indexer, vec![vec![5]], 1_287);
+        // \binom{13}{3} \binom{13}{2}
+        validate_hand_config(&indexer, vec![vec![3], vec![2]], 22_308);
+    }
+
+    fn validate_hand_config<const N: u8>(
+        indexer: &HandIndexer<N>,
+        config: Vec<Vec<u8>>,
+        amount: usize,
+    ) {
+        let mut hash_set = HashSet::new();
+        for i in 0..amount {
+            let hand = indexer.unindex_hand(i, config.clone()).unwrap();
+            hash_set.insert(hand.clone());
+            let idx = indexer.index_hand(hand);
+            assert_eq!(idx, i);
+        }
+
+        // this should wrap to the first hand, so it shouldn't change the hashset size
+        let hand = indexer.unindex_hand(amount, config.clone()).unwrap();
+        hash_set.insert(hand.clone());
+        assert_eq!(hash_set.len(), amount);
     }
 }
