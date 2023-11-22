@@ -43,6 +43,7 @@ use features::features;
 ///
 /// Stop doing the normalizations after a certain number of steps since no longer worth the effort
 const LINEAR_CFR_CUTOFF: usize = 1_000_000;
+type Weight = f32;
 
 counter!(nodes_touched);
 
@@ -63,8 +64,8 @@ enum AverageType {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct InfoState {
     pub actions: ActionList,
-    pub regrets: Vec<f64>,
-    pub avg_strategy: Vec<f64>,
+    pub regrets: Vec<Weight>,
+    pub avg_strategy: Vec<Weight>,
     pub last_iteration: usize,
 }
 
@@ -79,7 +80,7 @@ impl InfoState {
         }
     }
 
-    pub fn avg_strategy(&self) -> Vec<(NormalizedAction, f64)> {
+    pub fn avg_strategy(&self) -> Vec<(NormalizedAction, Weight)> {
         self.actions
             .to_vec()
             .into_iter()
@@ -87,7 +88,7 @@ impl InfoState {
             .collect_vec()
     }
 
-    pub fn regrets(&self) -> Vec<(NormalizedAction, f64)> {
+    pub fn regrets(&self) -> Vec<(NormalizedAction, Weight)> {
         self.actions
             .to_vec()
             .into_iter()
@@ -281,9 +282,9 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
     ///     value: is the value of the state in the game
     ///     obtained as the weighted average of the values
     ///     of the children
-    fn update_regrets(&mut self, gs: &mut G, player: Player, _depth: usize) -> f64 {
+    fn update_regrets(&mut self, gs: &mut G, player: Player, _depth: usize) -> Weight {
         if gs.is_terminal() {
-            return gs.evaluate(player);
+            return gs.evaluate(player) as Weight;
         }
 
         if gs.is_chance_node() {
@@ -303,7 +304,7 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
 
         // If we're at max depth, do the rollout
         if self.depth_checker.is_max_depth(gs) {
-            return self.evaluator.evaluate_player(gs, player);
+            return self.evaluator.evaluate_player(gs, player) as Weight;
         }
 
         let cur_player = gs.cur_player();
@@ -441,15 +442,15 @@ impl<G> CFRES<G> {
 ///
 /// Returns:
 ///   probability of taking each action
-fn regret_matching(regrets: &Vec<(Action, f64)>) -> ActionVec<f64> {
-    let sum_pos_regrets: f64 = regrets.iter().map(|(_, b)| b.max(0.0)).sum();
+fn regret_matching(regrets: &Vec<(Action, Weight)>) -> ActionVec<Weight> {
+    let sum_pos_regrets: Weight = regrets.iter().map(|(_, b)| b.max(0.0)).sum();
 
     let actions = regrets.iter().map(|(a, _)| *a).collect_vec();
     let mut policy = ActionVec::new(&actions);
 
     if sum_pos_regrets <= 0.0 {
         for a in &actions {
-            policy[*a] = 1.0 / actions.len() as f64;
+            policy[*a] = 1.0 / actions.len() as Weight;
         }
     } else {
         for (a, r) in regrets {
@@ -460,7 +461,12 @@ fn regret_matching(regrets: &Vec<(Action, f64)>) -> ActionVec<f64> {
     policy
 }
 
-fn add_regret(infostate: &mut InfoState, action: NormalizedAction, amount: f64, iteration: usize) {
+fn add_regret(
+    infostate: &mut InfoState,
+    action: NormalizedAction,
+    amount: Weight,
+    iteration: usize,
+) {
     // Implement linear CFR for the early iterations.
     //
     // We do the update on write of regrets to avoid needing to touch nodes that haven't been updated
@@ -477,8 +483,8 @@ fn add_regret(infostate: &mut InfoState, action: NormalizedAction, amount: f64, 
         && infostate.last_iteration > 0
     {
         // We only apply the factor up to the cutoff amount
-        let factor: f64 = (infostate.last_iteration..iteration.min(LINEAR_CFR_CUTOFF))
-            .map(|i| i as f64 / (i as f64 + 1.0))
+        let factor: Weight = (infostate.last_iteration..iteration.min(LINEAR_CFR_CUTOFF))
+            .map(|i| i as Weight / (i as Weight + 1.0))
             .product();
 
         infostate.regrets.iter_mut().for_each(|r| *r *= factor);
@@ -493,7 +499,7 @@ fn add_regret(infostate: &mut InfoState, action: NormalizedAction, amount: f64, 
     infostate.regrets[idx] += amount;
 }
 
-fn add_avstrat(infostate: &mut InfoState, action: NormalizedAction, amount: f64) {
+fn add_avstrat(infostate: &mut InfoState, action: NormalizedAction, amount: Weight) {
     let idx = infostate
         .actions
         .index(action)
@@ -525,11 +531,11 @@ impl<G: GameState + ResampleFromInfoState + Send> Policy<G> for CFRES<G> {
                 let policy_sum: f64 = retrieved_infostate
                     .avg_strategy()
                     .iter()
-                    .map(|(_, v)| *v)
+                    .map(|(_, v)| *v as f64)
                     .sum();
                 for (norm_a, s) in retrieved_infostate.avg_strategy() {
                     let a = self.normalizer.denormalize_action(norm_a, gs);
-                    policy[a] = s / policy_sum;
+                    policy[a] = s as f64 / policy_sum;
                 }
             } else {
                 for a in actions.iter() {

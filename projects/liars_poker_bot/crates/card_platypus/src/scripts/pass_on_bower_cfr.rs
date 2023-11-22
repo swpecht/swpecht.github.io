@@ -256,13 +256,18 @@ pub fn parse_weights(infostate_path: &str) {
             .map(|&x| EAction::from(x).to_string())
             .collect_vec();
 
-        let policy_sum: f64 = v.avg_strategy().to_vec().iter().map(|(_, v)| *v).sum();
+        let policy_sum: f64 = v
+            .avg_strategy()
+            .to_vec()
+            .iter()
+            .map(|(_, v)| *v as f64)
+            .sum();
         let mut policy = HashMap::new();
 
         for (a, w) in v.avg_strategy() {
             // we can undo the normalization here
             let action = EAction::from(a.get()).to_string();
-            policy.insert(action, w / policy_sum);
+            policy.insert(action, w as f64 / policy_sum);
         }
 
         json_infostates.push(JSONRow {
