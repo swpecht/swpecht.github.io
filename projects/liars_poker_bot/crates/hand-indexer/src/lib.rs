@@ -1,8 +1,5 @@
-use core::prelude::rust_2015;
-use std::{default, ffi::c_long};
-
 use configurations::enumerate_suit_configs;
-use itertools::Itertools;
+
 use math::find_x;
 use rankset::{cmp_group_rank, config_size, group_config, RankSet};
 
@@ -11,9 +8,6 @@ use crate::math::binom;
 mod configurations;
 mod math;
 pub mod rankset;
-
-const ROUND_SHIFT: usize = 4;
-const ROUND_MASK: usize = 0b1111;
 
 /// Translates a euchre hand to a conanical index
 ///
@@ -221,49 +215,6 @@ impl<const N: usize, const S: usize> HandIndexer<N, S> {
         let set = set.union(&children);
         assert_eq!(set.len(), m);
         Some(set)
-    }
-
-    /// Convert a suit configuration into an index
-    ///
-    /// Is this somehow related to selection with replacement?
-    ///
-    /// Let's assume there is 1 card in 1 spot: <1>, with S=4 suits
-    /// configs:
-    ///     1
-    ///
-    /// Now config <2>:
-    ///     2, 0, 0, 0
-    ///     1, 1, 0, 0
-    ///
-    /// <3>:
-    ///     3, 0, 0, 0
-    ///     2, 1, 0, 0
-    ///     1, 1, 1
-    ///
-    /// <4>: 5
-    ///     4
-    ///     3, 1
-    ///     2, 2
-    ///     2, 1, 1
-    ///     1, 1, 1, 1
-    ///
-    /// Can we use the index set?
-    /// M= number of cards
-    /// N = number of suits?
-    ///
-    /// And then we can count the number of times a given suit appears?
-    fn index_suit_config(&self, config: Vec<Vec<u8>>) -> usize {
-        todo!()
-    }
-
-    /// Returns the indexed suit config for  a given round. Can later get all combinations
-    /// between rounds for the full config lists
-    ///
-
-    fn unindex_suit_config(&self, idx: usize) -> Option<Vec<usize>> {
-        todo!()
-        // let configs = self.enumerate_suit_configs(cards_in_rounds);
-        // configs.get(idx).cloned()
     }
 }
 
