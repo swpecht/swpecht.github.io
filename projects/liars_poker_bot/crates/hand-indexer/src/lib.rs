@@ -32,15 +32,6 @@ impl<const N: u8, const S: usize> HandIndexer<N, S> {
             permutations: vec![0; cards_per_round.len()],
             configurations: vec![0; cards_per_round.len()],
         };
-        indexer.enumerate_permutations_r(
-            cards_per_round.len(),
-            cards_per_round,
-            0,
-            cards_per_round[0],
-            0,
-            &mut vec![0; S as usize],
-            &mut vec![0; S as usize],
-        );
 
         indexer
     }
@@ -266,13 +257,54 @@ impl<const N: u8, const S: usize> HandIndexer<N, S> {
     /// between rounds for the full config lists
     ///
 
-    fn unindex_suit_config(&self, idx: usize, cards_in_rounds: usize) -> Option<Vec<usize>> {
-        let configs = self.enumerate_suit_configs(cards_in_rounds);
-        configs.get(idx).cloned()
+    fn unindex_suit_config(&self, idx: usize) -> Option<Vec<usize>> {
+        todo!()
+        // let configs = self.enumerate_suit_configs(cards_in_rounds);
+        // configs.get(idx).cloned()
     }
 
     /// Enumerates all suit configurations for a given size of round
-    fn enumerate_suit_configs(&self, cards_in_rounds: usize) -> Vec<Vec<usize>> {
+    fn enumerate_suit_configs(&self, cards_per_round: &[usize]) -> Vec<Vec<Vec<usize>>> {
+        let mut round_configs = cards_per_round
+            .into_iter()
+            .map(|x| self.enumerate_suit_configs_round(*x))
+            .collect_vec();
+
+        let suit_counts = round_configs
+            .into_iter()
+            .multi_cartesian_product()
+            .collect_vec();
+
+        let mut configs = Vec::new();
+        for x in suit_counts {
+            let mut c = vec![vec![0; cards_per_round.len()]; S];
+            for s in 0..S {
+                for r in 0..cards_per_round.len() {
+                    c[s][r] = x[r][s];
+                }
+            }
+
+            // Remove the all 0 suit configs
+            c.retain(|x| x.iter().sum::<usize>() > 0);
+
+            c.sort();
+            c.reverse();
+            // we do not want to de-dupe c as it's possible for multiple
+            // suits to have the same config
+            configs.push(c);
+        }
+
+        // Remove all invalid configs where we may have more that the number of cards per suit in a given
+        // suit
+        configs.retain(|x| x.iter().all(|y| y.iter().sum::<usize>() <= N as usize));
+
+        configs.sort();
+        configs.reverse();
+        configs.dedup();
+        configs
+    }
+
+    fn enumerate_suit_configs_round(&self, cards_in_rounds: usize) -> Vec<Vec<usize>> {
         let mut configs = Vec::new();
 
         // Iterate through all possible deals of cards by looking at their suit only
@@ -282,10 +314,8 @@ impl<const N: u8, const S: usize> HandIndexer<N, S> {
             for d in deal {
                 c[d] += 1;
             }
-            // Sort the suits so they are in a pre-defined order where the largest
-            // suit count is first
-            c.sort();
-            c.reverse();
+            // We do not want to sort at this level since we want to keep the different
+            // suit configurations for when we combine by round
             configs.push(c.to_vec());
         }
 
@@ -293,176 +323,8 @@ impl<const N: u8, const S: usize> HandIndexer<N, S> {
         configs.sort();
         configs.reverse();
         configs.dedup();
+
         configs
-    }
-
-    fn unindex_suit_config_r(
-        &self,
-        idx: usize,
-        remaining_suits: usize,
-        remaining_cards: usize,
-        last_suit: usize,
-    ) -> Option<Vec<usize>> {
-        // if there is only 1 suit remaining, all remaining cards
-        // must be used by that suit
-        // TODO: handle errors where there aren't that many cards in the suit left
-        if remaining_suits == 1 {
-            return Some(vec![remaining_cards]);
-        }
-
-        if remaining_cards <= 1 {
-            let mut config = vec![0; remaining_suits];
-            config[0] = remaining_cards;
-            return Some(config);
-        }
-
-        if idx == 0 {
-            let mut config = vec![0; remaining_suits];
-            let mut l_suit = last_suit;
-            let mut r_cards = remaining_cards;
-
-            for c in config.iter_mut() {
-                if r_cards == 0 {
-                    break;
-                }
-
-                let next_suit = l_suit.min(r_cards);
-                *c = next_suit;
-                l_suit = next_suit;
-                r_cards -= next_suit;
-            }
-
-            return Some(config);
-        }
-
-        let mut x = 1;
-        let mut count_lower = 1;
-        // TODO: replace with binary search
-        loop {
-            count_lower += x;
-            // when we find an x larger than our target index
-            // we return the one before it
-            if count_lower > idx {
-                break;
-            }
-            x += 1;
-        }
-        let cards_in_suit = (remaining_cards - x).min(last_suit);
-
-        // Shouldn't have more cards in the remainder than in the first
-        // suit, otherwise we break the order
-        // Fix this check, we can actually have more cards, as long
-        // as no child suit has more cards than the "parent"
-        // e.g. 3, 1, 1, 1
-        // Maybe pass a max cards flag to go with it?
-
-        // Need to get rid of 3, 1, 2, 0
-        // 2, 4, 0, 0
-        // 2, 3, 1, 0
-        // etc
-
-        let mut config = vec![cards_in_suit];
-        let remaining = (idx + x - count_lower) % x;
-        // Need to fix the calc of the child index -- not quite right
-        // println!("remaining: {}", remaining);
-        let mut childrend = self.unindex_suit_config_r(
-            remaining,
-            remaining_suits - 1,
-            remaining_cards - cards_in_suit,
-            cards_in_suit,
-        )?;
-
-        config.append(&mut childrend);
-
-        Some(config)
-    }
-
-    fn enumerate_configurations(&self, cards_per_round: Vec<usize>) -> usize {
-        todo!()
-    }
-
-    fn enumerate_permutations_r(
-        &mut self,
-        rounds: usize,
-        cards_per_round: &[usize],
-        round: usize,
-        remaining: usize,
-        suit: usize,
-        used: &mut [usize],
-        count: &mut [usize],
-    ) {
-        if suit == S as usize {
-            //     observe(round, count, data);
-            self.count_permutations(round, count, cards_per_round, rounds);
-            self.count_configurations(round);
-
-            if round + 1 < rounds {
-                self.enumerate_permutations_r(
-                    rounds,
-                    cards_per_round,
-                    round + 1,
-                    cards_per_round[round + 1],
-                    0,
-                    used,
-                    count,
-                )
-            }
-        } else {
-            let min = if suit == S as usize - 1 { remaining } else { 0 };
-            let mut max = N as usize - used[suit];
-            if remaining < max {
-                max = remaining;
-            }
-
-            let old_count = count[suit];
-            let old_used = used[suit];
-
-            for i in min..max + 1 {
-                let new_count = old_count | i << (ROUND_SHIFT * (rounds - round - 1));
-                used[suit] = old_used + i;
-                count[suit] = new_count;
-                self.enumerate_permutations_r(
-                    rounds,
-                    cards_per_round,
-                    round,
-                    remaining - i,
-                    suit + 1,
-                    used,
-                    count,
-                );
-                count[suit] = old_count;
-                used[suit] = old_used;
-            }
-        }
-    }
-
-    fn count_configurations(&mut self, round: usize) {
-        self.configurations[round] += 1;
-    }
-
-    fn count_permutations(
-        &mut self,
-        round: usize,
-        count: &[usize],
-        cards_per_round: &[usize],
-        rounds: usize,
-    ) {
-        let mut idx = 0;
-        let mut mult = 1;
-        for i in 0..round + 1 {
-            let mut remaining = cards_per_round[i];
-            for j in 0..S as usize - 1 {
-                // the round shift mask is being used to store a vec inside the count variable -- data for all rounds is store there in the upper bits
-                let size = count[j] >> ((rounds - i - 1) * ROUND_SHIFT) & ROUND_MASK;
-                idx += mult * size;
-                mult += remaining + 1;
-                remaining -= size;
-            }
-        }
-
-        if self.permutations[round] < idx + 1 {
-            self.permutations[round] = idx + 1;
-        }
     }
 }
 
@@ -481,34 +343,38 @@ mod tests {
 
     #[test]
     fn test_unindex_suit_config() {
+        // test to make sure we filter out configs with too many cards in a single suit
+        let indexer = HandIndexer::<1, 4>::default();
+        assert_eq!(
+            indexer.enumerate_suit_configs(&[2, 1]),
+            vec![vec![vec![1, 0], vec![1, 0], vec![0, 1]]]
+        );
+
         let indexer = HandIndexer::<13, 4>::default();
+        assert_eq!(
+            indexer.enumerate_suit_configs(&[2, 1]),
+            vec![
+                vec![vec![2, 1]],
+                vec![vec![2, 0], vec![0, 1]],
+                vec![vec![1, 1], vec![1, 0]],
+                vec![vec![1, 0], vec![1, 0], vec![0, 1]]
+            ]
+        );
 
-        println!("{:?}", indexer.enumerate_suit_configs(6));
-
-        // for i in 0..7 {
-        //     let config = indexer.unindex_suit_config(i, 2, 6).unwrap();
-        //     println!("{:?}", config);
-        // }
-
-        indexer.unindex_suit_config(6, 6);
-
-        for i in 0..10 {
-            let config = indexer.unindex_suit_config(i, 6).unwrap();
-            println!("{}: {:?}", i, config);
-            for i in 1..config.len() {
-                assert!(
-                    config[i] <= config[i - 1],
-                    "future items but be <= previous item"
-                );
-            }
-        }
-
-        // todo: add test that later numbers are strictly <= to the number before it
-
-        // let indexer = HandIndexer::<13, 4>::new(&[1, 5]);
-        // println!("{:?}", indexer.configurations);
-
-        todo!()
+        assert_eq!(
+            indexer.enumerate_suit_configs(&[6]),
+            vec![
+                vec![vec![6]],
+                vec![vec![5], vec![1]],
+                vec![vec![4], vec![2]],
+                vec![vec![4], vec![1], vec![1]],
+                vec![vec![3], vec![3]],
+                vec![vec![3], vec![2], vec![1]],
+                vec![vec![3], vec![1], vec![1], vec![1]],
+                vec![vec![2], vec![2], vec![2]],
+                vec![vec![2], vec![2], vec![1], vec![1]],
+            ]
+        );
     }
 
     #[test]
