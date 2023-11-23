@@ -1,7 +1,7 @@
 use itertools::Itertools;
 
 /// Enumerates all suit configurations for a given size of round
-fn enumerate_suit_configs<const N: usize, const S: usize>(
+pub fn enumerate_suit_configs<const N: usize, const S: usize>(
     cards_per_round: &[usize],
 ) -> Vec<Vec<Vec<usize>>> {
     let mut round_configs = cards_per_round

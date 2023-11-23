@@ -1,6 +1,7 @@
 use core::prelude::rust_2015;
 use std::{default, ffi::c_long};
 
+use configurations::enumerate_suit_configs;
 use itertools::Itertools;
 use math::find_x;
 use rankset::{cmp_group_rank, config_size, group_config, RankSet};
@@ -22,13 +23,15 @@ const ROUND_MASK: usize = 0b1111;
 /// Based on:
 ///     https://www.cs.cmu.edu/~waugh/publications/isomorphism13.pdf
 #[derive(Default)]
-struct HandIndexer<const N: u8, const S: usize> {
+struct HandIndexer<const N: usize, const S: usize> {
     /// Contains the sorted list of configurations and the index each of those configurations starts at
     configurations: Vec<(usize, Vec<Vec<usize>>)>,
 }
 
-impl<const N: u8, const S: usize> HandIndexer<N, S> {
+impl<const N: usize, const S: usize> HandIndexer<N, S> {
     pub fn new(cards_per_round: &[usize]) -> Self {
+        let configs = enumerate_suit_configs::<N, S>(cards_per_round);
+
         let mut indexer = HandIndexer {
             configurations: vec![Default::default(); cards_per_round.len()],
         };
@@ -143,11 +146,11 @@ impl<const N: u8, const S: usize> HandIndexer<N, S> {
 
         let next = self.index_group(group, used.union(&B));
         let m_1 = B.len();
-        let mut idx = binom((N - used.len()) as usize, m_1 as usize) * next;
+        let mut idx = binom(N - used.len() as usize, m_1 as usize) * next;
 
         for i in 1..(m_1 + 1) {
             let largest = B.largest();
-            if largest >= N {
+            if largest >= N as u8 {
                 panic!(
                     "attempted to index a rank >= N. N: {}, rank: {}",
                     N, largest
@@ -169,8 +172,8 @@ impl<const N: u8, const S: usize> HandIndexer<N, S> {
 
     fn unindex_group(&self, idx: usize, mut ms: Vec<u8>, used: RankSet) -> Option<Vec<RankSet>> {
         let m_1 = ms.remove(0);
-        let this = idx % binom((N - used.len()) as usize, m_1 as usize);
-        let next = idx / binom((N - used.len()) as usize, m_1 as usize);
+        let this = idx % binom((N as u8 - used.len()) as usize, m_1 as usize);
+        let next = idx / binom((N as u8 - used.len()) as usize, m_1 as usize);
 
         let mut B = self.unindex_set(this, m_1)?;
         let mut A_1 = RankSet::default();
@@ -210,7 +213,7 @@ impl<const N: u8, const S: usize> HandIndexer<N, S> {
 
         let x = find_x(idx, m);
         // Over the max index
-        if x >= N {
+        if x >= N as u8 {
             return None;
         }
         let set = RankSet::new(&[x]);
@@ -437,7 +440,7 @@ mod tests {
         validate_hand_config(&indexer, vec![vec![3], vec![2]], 22_308);
     }
 
-    fn validate_hand_config<const N: u8, const S: usize>(
+    fn validate_hand_config<const N: usize, const S: usize>(
         indexer: &HandIndexer<N, S>,
         config: Vec<Vec<u8>>,
         amount: usize,
