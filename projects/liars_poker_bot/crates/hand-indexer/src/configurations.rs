@@ -1,5 +1,7 @@
 use itertools::Itertools;
 
+use crate::{math::binom, rankset::suit_config_size};
+
 /// Enumerates all suit configurations for a given size of round
 pub fn enumerate_suit_configs<const N: usize, const S: usize>(
     cards_per_round: &[usize],
@@ -68,11 +70,52 @@ fn enumerate_suit_configs_round<const N: usize, const S: usize>(
     configs
 }
 
+/// Returns the total size of the index for a given configuration
+///
+/// for the (1)(1) config with N=13, should be 91
+/// (1)(1)          91 (choose with replacement, or sum(i, 1 to N))
+/// (1)(1)(1)       455
+/// (1)(1)(1)(1)    1820
+/// (2)(1)
+pub fn configuration_index_size(config: &Vec<Vec<usize>>, cards_per_suit: usize) -> usize {
+    if config.len() == 1 {
+        return suit_config_size(&config[0], 13);
+    }
+
+    todo!()
+}
+
 #[cfg(test)]
 mod tests {
     use std::vec;
 
     use super::*;
+
+    #[test]
+    fn test_config_index_size() {
+        // When there is only a single suit, it is equivalent to
+        // 13 choose N (no replacement)
+        assert_eq!(configuration_index_size(&vec![vec![1]], 13), 13);
+        assert_eq!(configuration_index_size(&vec![vec![2]], 13), 78);
+        assert_eq!(configuration_index_size(&vec![vec![3]], 13), 286);
+
+        // When only choose a single card from each suit, we can model this as
+        // 13 choose 2 with replacement
+        assert_eq!(configuration_index_size(&vec![vec![1]; 2], 13), 91);
+        assert_eq!(configuration_index_size(&vec![vec![1]; 3], 13), 455);
+        assert_eq!(configuration_index_size(&vec![vec![1]; 4], 13), 1820);
+
+        // todo: fix this, tbd on what this should calculate to
+        // Suit 1   Suit 2  Count
+        // 12, 11   0..12 = 13
+        // 12, 10   0..12 = 13
+        // 12, 9    0..12 = 13
+        // ...      ...     ...
+        // 12, 0    0..12 = 13
+        // 11, 10   0..12
+        // is this (N-1) * (1)(1) = 91 * 12 = 1092?
+        assert_eq!(configuration_index_size(&vec![vec![2], vec![1]], 13), 1092);
+    }
 
     #[test]
     fn test_unindex_suit_config() {

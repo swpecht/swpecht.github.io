@@ -1,7 +1,7 @@
-use configurations::enumerate_suit_configs;
+use configurations::{configuration_index_size, enumerate_suit_configs};
 
 use math::find_x;
-use rankset::{cmp_group_rank, config_size, group_config, RankSet};
+use rankset::{cmp_group_rank, group_config, suit_config_size, RankSet};
 
 use crate::math::binom;
 
@@ -17,23 +17,33 @@ pub mod rankset;
 /// Based on:
 ///     https://www.cs.cmu.edu/~waugh/publications/isomorphism13.pdf
 #[derive(Default)]
-struct HandIndexer<const N: usize, const S: usize> {
+pub struct HandIndexer<const N: usize, const S: usize> {
     /// Contains the sorted list of configurations and the index each of those configurations starts at
     configurations: Vec<(usize, Vec<Vec<usize>>)>,
 }
 
 impl<const N: usize, const S: usize> HandIndexer<N, S> {
+    /// TODO: add offset for cards in just the earlier rounds
     pub fn new(cards_per_round: &[usize]) -> Self {
-        let configs = enumerate_suit_configs::<N, S>(cards_per_round);
+        let mut configurations = Vec::new();
+        let mut index_start = 0;
 
-        let mut indexer = HandIndexer {
-            configurations: vec![Default::default(); cards_per_round.len()],
-        };
+        for c in enumerate_suit_configs::<N, S>(cards_per_round) {
+            let size = configuration_index_size(&c, N);
+            configurations.push((index_start, c));
+            index_start += size;
+        }
 
-        indexer
+        HandIndexer { configurations }
     }
 
-    /// Returns the index for a hand
+    /// Returns the maxmimum index for the indexer
+    pub fn max_index(&self) -> usize {
+        let (idx, c) = self.configurations.last().unwrap();
+        idx + configuration_index_size(c, N)
+    }
+
+    /// Returns the relative index for a hand within a given suit configuration
     ///
     /// Each element in hand is the group of a given suit
     /// hand.len() == num_suits
@@ -78,7 +88,7 @@ impl<const N: usize, const S: usize> HandIndexer<N, S> {
         // Collect all of the groups with the same config to process at once
         let g_1 = hand.remove(0);
         let config_1 = group_config(&g_1);
-        let config_1_size = config_size(&config_1, N as usize);
+        let config_1_size = suit_config_size(&config_1, N);
         let mut same_config_group_indexes = vec![self.index_group(g_1, RankSet::default())];
         while hand
             .get(0)
@@ -104,15 +114,12 @@ impl<const N: usize, const S: usize> HandIndexer<N, S> {
     fn unindex_hand(
         &self,
         idx: usize,
-        mut suit_configutation: Vec<Vec<u8>>,
+        mut suit_configutation: Vec<Vec<usize>>,
     ) -> Option<Vec<Vec<RankSet>>> {
-        assert!(
-            suit_configutation.len() <= 2,
-            "only support 2 suits for now, since manually unrolling"
-        );
+        assert!(suit_configutation.len() < S);
 
         let c_1 = suit_configutation.remove(0);
-        let c_1_size = config_size(&c_1, N as usize);
+        let c_1_size = suit_config_size(&c_1, N);
         let c_1_idx = idx % c_1_size;
         let g_1 = self.unindex_group(c_1_idx, c_1, RankSet::default())?;
 
@@ -164,7 +171,19 @@ impl<const N: usize, const S: usize> HandIndexer<N, S> {
         idx
     }
 
-    fn unindex_group(&self, idx: usize, mut ms: Vec<u8>, used: RankSet) -> Option<Vec<RankSet>> {
+    fn unindex_group(&self, idx: usize, mut ms: Vec<usize>, used: RankSet) -> Option<Vec<RankSet>> {
+        // Calcuate the size of the index group to see if we're at an impossible index
+        let mut size = 1;
+        for i in 0..ms.len() {
+            size *= binom(
+                N - ms.iter().take(i).sum::<usize>() as usize,
+                ms[i] as usize,
+            );
+        }
+        if idx >= size {
+            return None;
+        }
+
         let m_1 = ms.remove(0);
         let this = idx % binom((N as u8 - used.len()) as usize, m_1 as usize);
         let next = idx / binom((N as u8 - used.len()) as usize, m_1 as usize);
@@ -200,20 +219,20 @@ impl<const N: usize, const S: usize> HandIndexer<N, S> {
         self.index_group(vec![set], RankSet::default())
     }
 
-    fn unindex_set(&self, idx: usize, m: u8) -> Option<RankSet> {
+    fn unindex_set(&self, idx: usize, m: usize) -> Option<RankSet> {
         if m == 1 {
             return Some(RankSet::new(&[idx as u8]));
         }
 
-        let x = find_x(idx, m);
+        let x = find_x(idx, m as u8);
         // Over the max index
         if x >= N as u8 {
             return None;
         }
         let set = RankSet::new(&[x]);
-        let children = self.unindex_set(idx - binom(x as usize, m as usize), m - 1)?;
+        let children = self.unindex_set(idx - binom(x as usize, m), m - 1)?;
         let set = set.union(&children);
-        assert_eq!(set.len(), m);
+        assert_eq!(set.len() as usize, m);
         Some(set)
     }
 }
@@ -230,6 +249,51 @@ mod tests {
     use std::{collections::HashSet, vec};
 
     use super::*;
+
+    #[test]
+    fn max_index() {
+        // The deal in texas holdem
+        // (2): 13 choose 2 = 78
+        // (1)(1): 13 choose 2 with replacement = 91
+
+        // Look the paper again to see how the config sizes are calculated -- doing something wrong here
+        // maybe use the indexer to figure this out? Figure out what the max possible index is? for a given config?
+        let indexer = HandIndexer::<13, 4>::new(&[2]);
+        assert_eq!(indexer.max_index(), 169);
+
+        // flop
+        //
+        // [[2, 3]]                             12870
+        // [[2, 2], [0, 1]]                     55770
+        // [[2, 1], [0, 2]]                     66924
+        // [[2, 1], [0, 1], [0, 1]]             145002
+        // [[2, 0], [0, 3]]                     22308
+        // [[2, 0], [0, 2], [0, 1]]             79092
+        // [[2, 0], [0, 1], [0, 1], [0, 1]]     171366
+        // [[1, 3], [1, 0]]                     37180
+        // [[1, 2], [1, 1]]
+        // [[1, 2], [1, 0], [0, 1]]
+        // [[1, 1], [1, 1], [0, 1]]
+        // [[1, 1], [1, 0], [0, 2]]
+        // [[1, 1], [1, 0], [0, 1], [0, 1]]
+        // [[1, 0], [1, 0], [0, 3]]
+        // [[1, 0], [1, 0], [0, 2], [0, 1]]
+        let indexer = HandIndexer::<13, 4>::new(&[2, 3]);
+        let configs = enumerate_suit_configs::<13, 4>(&[2, 3]);
+        for c in configs {
+            println!("{:?}", c);
+        }
+
+        assert_eq!(indexer.max_index(), 1_286_792); // from isomorphism paper
+
+        // turn
+        let indexer = HandIndexer::<13, 4>::new(&[2, 3, 1]);
+        assert_eq!(indexer.max_index(), 55_190_538); // from isomorphism paper
+
+        // river
+        let indexer = HandIndexer::<13, 4>::new(&[2, 3, 1, 1]);
+        assert_eq!(indexer.max_index(), 2_428_287_420); // from isomorphism paper
+    }
 
     #[test]
     fn test_index_set() {
@@ -393,7 +457,7 @@ mod tests {
 
     fn validate_hand_config<const N: usize, const S: usize>(
         indexer: &HandIndexer<N, S>,
-        config: Vec<Vec<u8>>,
+        config: Vec<Vec<usize>>,
         amount: usize,
     ) {
         let mut hash_set = HashSet::new();

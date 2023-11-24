@@ -101,7 +101,7 @@ pub fn cmp_group_rank(a: &Vec<RankSet>, b: &Vec<RankSet>) -> std::cmp::Ordering 
 /// Return the size of a given config
 ///
 /// see the paper for how 156 is arrived at, implement that here
-pub fn config_size(lengths: &[u8], max_items: usize) -> usize {
+pub fn suit_config_size(lengths: &[usize], max_items: usize) -> usize {
     let mut size = 1;
     let mut used_items = 0;
 
@@ -113,8 +113,8 @@ pub fn config_size(lengths: &[u8], max_items: usize) -> usize {
     size
 }
 
-pub fn group_config(a: &[RankSet]) -> Vec<u8> {
-    a.iter().map(|x| x.len()).collect()
+pub fn group_config(a: &[RankSet]) -> Vec<usize> {
+    a.iter().map(|x| x.len() as usize).collect()
 }
 
 #[cfg(test)]
@@ -158,9 +158,9 @@ mod tests {
     }
 
     #[test]
-    fn test_config_size() {
-        assert_eq!(config_size(&[1], 13), 13);
-        assert_eq!(config_size(&[1, 1], 13), 156);
-        assert_eq!(config_size(&[2, 1], 13), 858);
+    fn test_suit_config_size() {
+        assert_eq!(suit_config_size(&[1], 13), 13);
+        assert_eq!(suit_config_size(&[1, 1], 13), 156);
+        assert_eq!(suit_config_size(&[2, 1], 13), 858);
     }
 }
