@@ -64,7 +64,7 @@ async fn api_index(json: Json<NewGameRequest>, data: web::Data<AppState>) -> imp
     let mut game_data = GameData::new(gs, json.0.player_id, json.0.min_players);
     // randomize who starts with deal
     game_data.players.rotate_right(thread_rng().gen_range(0..4));
-    progress_game(&mut game_data, &data.bot);
+    progress_game(&mut game_data, &data.bot, &game_id);
     data.games.lock().unwrap().insert(game_id, game_data);
 
     info!("new game created");
@@ -126,7 +126,7 @@ async fn post_game(
         return x;
     }
 
-    progress_game(game_data, &data.bot);
+    progress_game(game_data, &data.bot, &game_id);
 
     HttpResponse::Ok().json(&game_data)
 }
@@ -212,7 +212,7 @@ fn handle_register_player(game_data: &mut GameData, player_id: usize) -> Result<
     Ok(())
 }
 
-fn progress_game(game_data: &mut GameData, bot: &Mutex<CFRES<EuchreGameState>>) {
+fn progress_game(game_data: &mut GameData, bot: &Mutex<CFRES<EuchreGameState>>, game_id: &Uuid) {
     let mut gs = EuchreGameState::from(game_data.gs.as_str());
 
     use GameProcessingState::*;
@@ -260,10 +260,12 @@ fn progress_game(game_data: &mut GameData, bot: &Mutex<CFRES<EuchreGameState>>) 
                         game_data.computer_score +=
                             gs.evaluate((human_team + 1) % 4).max(0.0) as usize;
                         info!(
-                            "hand ended|human:|{}|game:|{}|human players:|{}",
+                            "hand ended|id|{}|human:|{}|game:|{}|human players:|{}|player ids|{:?}",
+                            game_id,
                             game_data.human_score,
                             gs,
-                            game_data.players.iter().flatten().count()
+                            game_data.players.iter().flatten().count(),
+                            game_data.players,
                         );
 
                         gs = new_game();
@@ -272,8 +274,11 @@ fn progress_game(game_data: &mut GameData, bot: &Mutex<CFRES<EuchreGameState>>) 
 
                     if game_data.human_score >= 10 || game_data.computer_score >= 10 {
                         info!(
-                            "game over|human:|{}|computer|{}",
-                            game_data.human_score, game_data.computer_score
+                            "game over|id|{}|human:|{}|computer|{}|player ids|{:?}",
+                            game_id,
+                            game_data.human_score,
+                            game_data.computer_score,
+                            game_data.players
                         );
                         GameOver
                     } else if game_data.players[gs.cur_player()].is_none() {
