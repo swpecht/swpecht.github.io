@@ -28,11 +28,11 @@ impl<const N: usize, const S: usize> HandIndexer<N, S> {
         let mut configurations = Vec::new();
         let mut index_start = 0;
 
-        for c in enumerate_suit_configs::<N, S>(cards_per_round) {
-            let size = configuration_index_size(&c, N);
-            configurations.push((index_start, c));
-            index_start += size;
-        }
+        // for c in enumerate_suit_configs(cards_per_round, [N; S]) {
+        //     let size = configuration_index_size(&c, [N; S]);
+        //     configurations.push((index_start, c));
+        //     index_start += size;
+        // }
 
         HandIndexer { configurations }
     }
@@ -40,7 +40,8 @@ impl<const N: usize, const S: usize> HandIndexer<N, S> {
     /// Returns the maxmimum index for the indexer
     pub fn max_index(&self) -> usize {
         let (idx, c) = self.configurations.last().unwrap();
-        idx + configuration_index_size(c, N)
+        todo!()
+        // idx + configuration_index_size(c, [N; S])
     }
 
     /// Returns the relative index for a hand within a given suit configuration
@@ -279,11 +280,7 @@ mod tests {
         // [[1, 0], [1, 0], [0, 3]]
         // [[1, 0], [1, 0], [0, 2], [0, 1]]
         let indexer = HandIndexer::<13, 4>::new(&[2, 3]);
-        let configs = enumerate_suit_configs::<13, 4>(&[2, 3]);
-        for c in configs {
-            println!("{:?}", c);
-        }
-
+        let configs = enumerate_suit_configs(&[2, 3], [13; 4]);
         assert_eq!(indexer.max_index(), 1_286_792); // from isomorphism paper
 
         // turn

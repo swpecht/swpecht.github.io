@@ -1,3 +1,5 @@
+use itertools::Itertools;
+
 pub fn factorial(n: usize) -> usize {
     let mut result: usize = 1;
 
@@ -43,6 +45,29 @@ pub fn find_x(idx: usize, m: u8) -> u8 {
         }
         x += 1;
     }
+}
+
+/// Return the count of the number of variants when selecting `n`
+/// cards from each suit with a different number of cards in each
+///
+/// For cases where all suits have the same number of cards in them, this should
+/// be the same as the [multi-set coefficient](https://en.wikipedia.org/wiki/Multiset#Counting_multisets).
+pub fn variants(n: usize, num_cards: &[usize]) -> usize {
+    let mut v = num_cards
+        .iter()
+        .map(|x| (0..*x).combinations(2).sorted())
+        .multi_cartesian_product()
+        .map(|mut x| {
+            x.sort();
+            x
+        })
+        .collect_vec();
+
+    v.sort();
+    v.dedup();
+
+    // println!("{:?}", v);
+    v.len()
 }
 
 #[cfg(test)]
