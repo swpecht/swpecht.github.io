@@ -47,32 +47,52 @@ pub fn find_x(idx: usize, m: u8) -> u8 {
     }
 }
 
-/// Return the count of the number of variants when selecting `n`
-/// cards from each suit with a different number of cards in each
+/// Returns the coefficient of `x^{target}` when the expressions are expanded
 ///
-/// For cases where all suits have the same number of cards in them, this should
-/// be the same as the [multi-set coefficient](https://en.wikipedia.org/wiki/Multiset#Counting_multisets).
-pub fn variants(n: usize, num_cards: &[usize]) -> usize {
-    let mut v = num_cards
-        .iter()
-        .map(|x| (0..*x).combinations(2).sorted())
-        .multi_cartesian_product()
-        .map(|mut x| {
-            x.sort();
-            x
-        })
-        .collect_vec();
+/// Expressions are a vector of coefficients for: [x^0, x^1, ...]
+///
+/// For example: $(1+x)^{13}$ is `vec![vec![1, 1]; 13]`
+pub fn coefficient(mut expressions: Vec<Vec<usize>>, target: usize) -> usize {
+    let mut a = expressions.pop().unwrap_or_default();
+    while let Some(b) = expressions.pop() {
+        a = coefficient_a_b(&a, &b);
+    }
 
-    v.sort();
-    v.dedup();
+    a[target]
+}
 
-    // println!("{:?}", v);
-    v.len()
+fn coefficient_a_b(coeffs_a: &[usize], coeffs_b: &[usize]) -> Vec<usize> {
+    let num_terms = (coeffs_a.len() - 1) + (coeffs_b.len() - 1) + 1;
+    let mut result = vec![0; num_terms];
+    for (a, c_a) in coeffs_a.iter().enumerate() {
+        for (b, c_b) in coeffs_b.iter().enumerate() {
+            result[a + b] += c_a * c_b;
+        }
+    }
+
+    result
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_coefficient() {
+        assert_eq!(coefficient(vec![vec![1, 1]], 1), 1);
+        assert_eq!(coefficient(vec![vec![1, 1]; 2], 1), 2);
+
+        // test equal for binomial coefficients
+        assert_eq!(coefficient(vec![vec![1, 1]; 13], 2), binom(13, 2));
+
+        // Confirm an equality from wolfram alpha
+        // Coefficient[(1+x+x^2)^13, x^4]
+        assert_eq!(coefficient(vec![vec![1, 1, 1]; 13], 4), 1651);
+        // Coefficient[(1+x+x^2)^12*(1+x), x^4]
+        let mut e = vec![vec![1, 1, 1]; 12];
+        e.push(vec![1, 1]);
+        assert_eq!(coefficient(e, 4), 1573);
+    }
 
     #[test]
     fn test_factorial() {
