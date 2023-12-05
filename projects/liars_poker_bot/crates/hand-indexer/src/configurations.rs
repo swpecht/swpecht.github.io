@@ -83,9 +83,12 @@ fn enumerate_suit_configs_round<const S: usize>(
 ) -> Vec<RoundConfig<S>> {
     let mut configs = Vec::new();
 
-    let deck = get_deck(cards_per_suit);
+    let deck = (0..S).collect_vec();
     // Iterate through all possible deals of cards by looking at their suit only
-    for deal in deck.into_iter().combinations(cards_in_round) {
+    for deal in deck
+        .into_iter()
+        .combinations_with_replacement(cards_in_round)
+    {
         // transform the deal into a count by suit
         let mut c = RoundConfig::empty();
         for d in deal {
@@ -161,15 +164,6 @@ pub fn configuration_index_size<const S: usize>(
     }
 
     config_sizes
-}
-
-/// Return a vector where each item is the suit index of a given card
-fn get_deck<const S: usize>(cards_per_suit: [usize; S]) -> Vec<SuitIndex> {
-    let mut cards = Vec::with_capacity(cards_per_suit.iter().sum());
-    for (i, num_cards) in cards_per_suit.iter().enumerate() {
-        cards.append(&mut vec![i; *num_cards]);
-    }
-    cards
 }
 
 fn suit_counts_to_config<const S: usize>(suit_count: Vec<RoundConfig<S>>) -> Vec<Vec<usize>> {
