@@ -7,7 +7,10 @@ use std::{
 
 use itertools::Itertools;
 
-use crate::{math::binom, rankset::suit_config_size};
+use crate::{
+    math::{binom, coefficient},
+    rankset::suit_config_size,
+};
 
 type SuitIndex = usize;
 
@@ -45,6 +48,9 @@ pub fn enumerate_suit_configs<const S: usize>(
     cards_per_round: &[usize],
     cards_per_suit: [usize; S],
 ) -> Vec<Vec<Vec<usize>>> {
+    // todo!(
+    //     "change back to doing combinations with repetition for the suit index to speed things up"
+    // );
     let suit_counts = unique_suit_counts(cards_per_round, cards_per_suit);
 
     // Transform the suit counts into standard suit configuration format, i.e. change te top level of the list to be by
@@ -195,11 +201,127 @@ fn config_to_suit_counts<const S: usize>(config: Vec<Vec<usize>>) -> Vec<RoundCo
     counts
 }
 
+fn coefficient_config_size<const S: usize>(
+    config: Vec<Vec<usize>>,
+    mut cards_per_suit: [usize; S],
+) -> usize {
+    let suit_counts = config_to_suit_counts::<S>(config);
+
+    let mut size = 1;
+    for round in suit_counts {
+        // We set the remaining cards to 0 for suits that aren't used this round
+        let mut remaining_mask = [0; S];
+        for i in 0..S {
+            remaining_mask[i] = if round[i] > 0 { cards_per_suit[i] } else { 0 };
+        }
+
+        // We process based on the number of cards chosen, suits with different numbers of cards chosen are independent
+        // https://math.stackexchange.com/questions/4813416/calculating-the-number-of-non-equivalent-hands-for-a-given-suit-configuration
+        for &x in round.iter().filter(|a| **a > 0).unique() {
+            let y = round.iter().filter(|a| **a == x).count();
+            // in the simple case where there is only 1 suit, the `binom` function gives the size of the combination
+            if y == 1 {
+                let remaining_cards = *remaining_mask.iter().max().unwrap_or(&0);
+                size *= binom(remaining_cards, x);
+            // } else if y == 2 {
+            //     let mut generating_function = Vec::new();
+            //     let n_min = *remaining_mask.iter().min().unwrap_or(&0);
+            //     let n_max = *remaining_mask.iter().max().unwrap_or(&0);
+            //     // These combinations are present in both suits and can be chosen up to 2 times
+            //     // hence the generating function is 1+x+x^2
+            //     generating_function.append(&mut vec![vec![1, 1, 1]; binom(n_min, x)]);
+
+            //     // these combinations are only present in the suit with the higher number of cards. They
+            //     // can only be chosen once. The generating function is 1+x
+            //     generating_function
+            //         .append(&mut vec![vec![1, 1]; binom(n_max, x) - binom(n_min, x)]);
+
+            //     size *= coefficient(generating_function, y);
+            } else {
+                size *= variant_size(x, &remaining_mask);
+                // panic!(
+                //     "only support at most 2 matching suits since we're manually unrolling things"
+                // )
+            }
+        }
+
+        // subtract used cards
+        cards_per_suit
+            .iter_mut()
+            .zip(round.iter())
+            .for_each(|(c, used)| *c -= used);
+    }
+
+    size
+}
+
+fn variant_size(cards_to_choose: usize, remaining_cards: &[usize]) -> usize {
+    let mut valid_suits = 0;
+    let mut unique_counts = Vec::new();
+    let mut suits_gte_count = Vec::new();
+
+    for &r in remaining_cards {
+        if r == 0 {
+            continue;
+        }
+
+        valid_suits += 1;
+        if !unique_counts.contains(&r) {
+            unique_counts.push(r);
+        }
+    }
+
+    unique_counts.sort();
+    for c in &unique_counts {
+        suits_gte_count.push(remaining_cards.iter().filter(|x| **x >= *c).count());
+    }
+    assert_eq!(suits_gte_count[0], valid_suits);
+
+    let mut generating_function = Vec::new();
+
+    // start with the smallest of the remaining cards, we don't need to subtract any variants from this
+    generating_function.append(&mut vec![
+        vec![1; suits_gte_count[0] + 1];
+        binom(unique_counts[0], cards_to_choose)
+    ]);
+
+    for i in 1..unique_counts.len() {
+        generating_function.append(&mut vec![
+            vec![1; suits_gte_count[i] + 1];
+            binom(unique_counts[i], cards_to_choose)
+                - binom(unique_counts[i - 1], cards_to_choose)
+        ]);
+    }
+
+    coefficient(generating_function, valid_suits)
+}
+
 #[cfg(test)]
 mod tests {
     use std::vec;
 
     use super::*;
+
+    #[test]
+    fn test_coefficient_config_size() {
+        assert_eq!(coefficient_config_size(vec![vec![2]], [13; 4]), 78);
+        assert_eq!(coefficient_config_size(vec![vec![1], vec![1]], [13; 4]), 91);
+
+        // https://www.wolframalpha.com/input?i=coefficient%5B%281%2Bx%2Bx%5E2%29%5E55*%281%2Bx%29%5E%2878-55%29%2C+x%5E2%5D
+        assert_eq!(
+            coefficient_config_size(vec![vec![2], vec![2]], [13, 11]),
+            3058
+        );
+
+        todo!();
+        let configs = enumerate_suit_configs(&[2, 3], [13; 4]);
+        let mut size = 0;
+        for c in configs {
+            size += coefficient_config_size(c, [13; 4]);
+        }
+        assert_eq!(size, 1_286_792);
+        todo!()
+    }
 
     #[test]
     fn test_config_index_size() {
