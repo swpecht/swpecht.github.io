@@ -56,6 +56,10 @@ pub fn coefficient(mut expressions: Vec<Vec<usize>>, target: usize) -> usize {
     let mut a = expressions.pop().unwrap_or_default();
     while let Some(b) = expressions.pop() {
         a = coefficient_a_b(&a, &b);
+        // Here we can truncate to target + 1 as coefficients of a higher order
+        // than are target number can never influence the target coefficient
+        // The +1 is needed because truncate takes a len and not a max index
+        a.truncate(target + 1);
     }
 
     a[target]
