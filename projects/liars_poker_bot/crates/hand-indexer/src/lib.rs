@@ -5,6 +5,7 @@ use rankset::{cmp_group_rank, group_config, suit_config_size, RankSet};
 
 use crate::math::binom;
 
+pub mod cards;
 mod configurations;
 mod math;
 pub mod rankset;

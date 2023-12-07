@@ -203,43 +203,29 @@ fn coefficient_config_size<const S: usize>(
 
     let mut size = 1;
     for round in suit_counts {
-        // We set the remaining cards to 0 for suits that aren't used this round
-        let mut remaining_mask = [0; S];
-        for i in 0..S {
-            remaining_mask[i] = if round[i] > 0 { cards_per_suit[i] } else { 0 };
-        }
-
         // We process based on the number of cards chosen, suits with different numbers of cards chosen are independent
         // https://math.stackexchange.com/questions/4813416/calculating-the-number-of-non-equivalent-hands-for-a-given-suit-configuration
-        for &x in round.iter().filter(|a| **a > 0).unique() {
-            let y = round.iter().filter(|a| **a == x).count();
+        let uniq_counts = round.iter().filter(|x| **x > 0).unique().collect_vec();
+        for &count in uniq_counts {
+            // since all of these suits have the same number of cards in this round, we don't need to actually
+            // attach a specific count to any suit. Instead, we just collect the remaining card
+            // counts for all suits where we need that many cards
+            let mut remaining_cards = Vec::new();
+            for i in 0..S {
+                if round[i] == count {
+                    remaining_cards.push(cards_per_suit[i]);
+                }
+            }
+
             // in the simple case where there is only 1 suit, the `binom` function gives the size of the combination
-            if y == 1 {
-                let remaining_cards = *remaining_mask.iter().max().unwrap_or(&0);
-                size *= binom(remaining_cards, x);
-            // } else if y == 2 {
-            //     let mut generating_function = Vec::new();
-            //     let n_min = *remaining_mask.iter().min().unwrap_or(&0);
-            //     let n_max = *remaining_mask.iter().max().unwrap_or(&0);
-            //     // These combinations are present in both suits and can be chosen up to 2 times
-            //     // hence the generating function is 1+x+x^2
-            //     generating_function.append(&mut vec![vec![1, 1, 1]; binom(n_min, x)]);
-
-            //     // these combinations are only present in the suit with the higher number of cards. They
-            //     // can only be chosen once. The generating function is 1+x
-            //     generating_function
-            //         .append(&mut vec![vec![1, 1]; binom(n_max, x) - binom(n_min, x)]);
-
-            //     size *= coefficient(generating_function, y);
+            if remaining_cards.len() == 1 {
+                size *= binom(remaining_cards[0], count);
             } else {
-                size *= variant_size(x, &remaining_mask);
-                // panic!(
-                //     "only support at most 2 matching suits since we're manually unrolling things"
-                // )
+                size *= variant_size(count, &remaining_cards);
             }
         }
 
-        // subtract used cards
+        // subtract used cards after the round is over
         cards_per_suit
             .iter_mut()
             .zip(round.iter())
@@ -249,6 +235,7 @@ fn coefficient_config_size<const S: usize>(
     size
 }
 
+// Calculates the size of the variant using generating functions
 fn variant_size(cards_to_choose: usize, remaining_cards: &[usize]) -> usize {
     let mut valid_suits = 0;
     let mut unique_counts = Vec::new();
@@ -307,61 +294,47 @@ mod tests {
             3058
         );
 
-        todo!();
-        let configs = enumerate_suit_configs(&[2, 3], [13; 4]);
-        let mut size = 0;
-        for c in configs {
-            size += coefficient_config_size(c, [13; 4]);
-        }
-        assert_eq!(size, 1_286_792);
-        todo!()
+        assert_eq!(
+            coefficient_config_size(vec![vec![2], vec![2]], [13; 4]),
+            3081
+        );
+        assert_eq!(
+            coefficient_config_size(vec![vec![2], vec![2], vec![1]], [13; 4]),
+            3081 * 13
+        );
+        assert_eq!(
+            coefficient_config_size(vec![vec![2, 1], vec![2], vec![1]], [13; 4]),
+            3081 * 13 * 11
+        );
+
+        // 13 choose 2 with replacement * 13 choose 2 with replacement * 12
+        // 91 * 91 * 12
+        // what is actually the right number for this? -- might be the source of error in our estimate
+        // do we need special consideration between rounds?
+        // https://github.com/botm/hand-isomorphism/blob/master/src/mbot/poker/handindex/HandIndexer.java
+        // assert_eq!(
+        //     coefficient_config_size(
+        //         vec![vec![1, 1], vec![1, 0], vec![0, 1], vec![0, 1]],
+        //         [13; 4]
+        //     ),
+        //     99_372
+        // );
+
+        assert_eq!(get_round_size(&[2]), 169);
+        assert_eq!(get_round_size(&[2, 3]), 1_286_792);
+        assert_eq!(get_round_size(&[2, 3, 1]), 55_190_538);
+        assert_eq!(get_round_size(&[2, 3, 1, 1]), 2_428_287_420);
     }
 
-    #[test]
-    fn test_config_index_size() {
-        let sizes = configuration_index_size(&[2], [13; 4]);
-        assert_eq!(*sizes.get(&vec![vec![2]]).unwrap(), 78);
-        assert_eq!(*sizes.get(&vec![vec![1], vec![1]]).unwrap(), 91);
-        assert_eq!(sizes.values().sum::<usize>(), 169);
-        // When there is only a single suit, it is equivalent to
-        // 13 choose N (no replacement)
-        // assert_eq!(configuration_index_size(&[vec![vec![1]]], [13; 4]), 13);
-        // assert_eq!(configuration_index_size(&vec![vec![2]], [13; 4]), 78);
-        // assert_eq!(configuration_index_size(&vec![vec![3]], [13; 4]), 286);
-
-        // // When only choose a single card from each suit, we can model this as
-        // // 13 choose 2 with replacement
-        // assert_eq!(configuration_index_size(&vec![vec![1]; 2], [13; 4]), 91);
-        // assert_eq!(configuration_index_size(&vec![vec![1]; 3], [13; 4]), 455);
-        // assert_eq!(configuration_index_size(&vec![vec![1]; 4], [13; 4]), 1820);
-
-        // assert_eq!(
-        //     configuration_index_size(&vec![vec![2], vec![2]], [13; 4]),
-        //     3081
-        // );
-
-        // assert_eq!(
-        //     configuration_index_size(&vec![vec![2], vec![1]], [13; 4]),
-        //     1014
-        // );
-        // assert_eq!(
-        //     configuration_index_size(&vec![vec![2], vec![2], vec![1]], [13; 4]),
-        //     40053
-        // );
-
-        // // test that rounds are working
-        // assert_eq!(
-        //     configuration_index_size(&vec![vec![1, 2], vec![0, 2]], 13),
-        //     13 * 2805
-        // );
-
-        // // there should only be 11 cards left for the first suit, so the factor
-        // // is 11 choose 1
-        // assert_eq!(
-        //     configuration_index_size(&vec![vec![2, 1], vec![2], vec![1]], 13),
-        //     40053 * 11
-        // );
-        todo!()
+    fn get_round_size(cards_per_round: &[usize]) -> usize {
+        let configs = enumerate_suit_configs(cards_per_round, [13; 4]);
+        let mut size = 0;
+        for c in configs {
+            let s = coefficient_config_size(c.clone(), [13; 4]);
+            println!("{:?}: {}", c, s);
+            size += s;
+        }
+        size
     }
 
     #[test]
@@ -394,6 +367,27 @@ mod tests {
                 vec![vec![3], vec![1], vec![1], vec![1]],
                 vec![vec![2], vec![2], vec![2]],
                 vec![vec![2], vec![2], vec![1], vec![1]],
+            ]
+        );
+
+        assert_eq!(
+            enumerate_suit_configs(&[2, 3], [13; 4]),
+            vec![
+                vec![vec![2, 3],],
+                vec![vec![2, 2], vec![0, 1],],
+                vec![vec![2, 1], vec![0, 2],],
+                vec![vec![2, 1], vec![0, 1], vec![0, 1],],
+                vec![vec![2, 0], vec![0, 3],],
+                vec![vec![2, 0], vec![0, 2], vec![0, 1],],
+                vec![vec![2, 0], vec![0, 1], vec![0, 1], vec![0, 1],],
+                vec![vec![1, 3], vec![1, 0],],
+                vec![vec![1, 2], vec![1, 1],],
+                vec![vec![1, 2], vec![1, 0], vec![0, 1],],
+                vec![vec![1, 1], vec![1, 1], vec![0, 1],],
+                vec![vec![1, 1], vec![1, 0], vec![0, 2],],
+                vec![vec![1, 1], vec![1, 0], vec![0, 1], vec![0, 1],],
+                vec![vec![1, 0], vec![1, 0], vec![0, 3],],
+                vec![vec![1, 0], vec![1, 0], vec![0, 2], vec![0, 1],],
             ]
         );
     }
