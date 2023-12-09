@@ -241,7 +241,7 @@ fn increment_set_index_r(index: &[usize], max_rank: usize) -> Option<Vec<usize>>
     }
 }
 
-fn index_to_card_set(index: &Vec<usize>, deck: &Deck) -> Option<CardSet> {
+fn index_to_card_set(index: &[usize], deck: &Deck) -> Option<CardSet> {
     let mut set = CardSet::default();
 
     for c in index.iter().map(|x| Card::new(*x)) {
@@ -292,7 +292,7 @@ mod tests {
         let deck = Deck::standard();
         let mut count = 0;
 
-        for c in DealEnumerationIterator::new(deck, [2]) {
+        for c in DealEnumerationIterator::new(deck, cards_per_round) {
             println!("{:?}", c);
             count += 1;
         }
