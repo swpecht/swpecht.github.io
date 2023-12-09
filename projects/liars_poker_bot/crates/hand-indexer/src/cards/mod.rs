@@ -169,25 +169,23 @@ struct DealEnumerationIterator<const R: usize> {
     cards_per_round: [usize; R],
     /// the index for the next card set
     /// these are the counter variables if generating in a loop
-    cur_set_index: [Vec<usize>; R],
+    next_candidate_idx: [Vec<usize>; R],
     deck: Deck,
 }
 
 impl<const R: usize> DealEnumerationIterator<R> {
     pub fn new(deck: Deck, cards_per_round: [usize; R]) -> Self {
         let mut first_index = std::array::from_fn(|_| Vec::new());
-        let mut i = 0;
         for r in 0..R {
-            for _ in 0..cards_per_round[r] {
+            for i in 0..cards_per_round[r] {
                 first_index[r].push(i);
-                i += 1;
             }
         }
 
         Self {
             cards_per_round,
             deck,
-            cur_set_index: first_index,
+            next_candidate_idx: first_index,
         }
     }
 }
@@ -196,29 +194,47 @@ impl<const R: usize> Iterator for DealEnumerationIterator<R> {
     type Item = [CardSet; R];
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut cur_set = [CardSet::default(); R];
+        let mut full_set = [CardSet::default(); R];
+        let mut full_idx: [Vec<usize>; R] = std::array::from_fn(|_| Vec::new());
+        full_idx
+            .iter_mut()
+            .zip(self.cards_per_round)
+            .for_each(|(idx, cards)| *idx = (0..cards).collect_vec());
 
-        let mut candidate_index = self.cur_set_index.clone();
-        loop {
-            if let Some(next_set) = index_to_card_set(&candidate_index[0], &self.deck) {
-                cur_set[0] = next_set;
-                break;
-            }
-            candidate_index[0] = increment_set_index(&candidate_index[0])?;
-        }
+        let (set, next_candidate_idx) =
+            find_next_cardset(self.next_candidate_idx[0].clone(), self.deck)?;
 
-        self.cur_set_index[0] = increment_set_index(&candidate_index[0]).unwrap();
-        Some(cur_set)
+        full_set[0] = set;
+        full_idx[0] = next_candidate_idx;
+        self.next_candidate_idx = full_idx;
+
+        Some(full_set)
     }
+}
+
+fn find_next_cardset(mut candidate_index: Vec<usize>, deck: Deck) -> Option<(CardSet, Vec<usize>)> {
+    let set;
+
+    loop {
+        if let Some(found_set) = index_to_card_set(&candidate_index, &deck) {
+            set = found_set;
+            break;
+        }
+        candidate_index = increment_set_index_round(&candidate_index)?;
+    }
+
+    let next_candidate_index = increment_set_index_round(&candidate_index).unwrap();
+    Some((set, next_candidate_index))
 }
 
 /// Increments the set index, "carrying" when the last digit gets to
 /// MAX_CARDS
-fn increment_set_index(index: &[usize]) -> Option<Vec<usize>> {
-    increment_set_index_r(index, MAX_CARDS)
+fn increment_set_index_round(index: &[usize]) -> Option<Vec<usize>> {
+    // TODO: how do we allow this to wrap for later rounds? -- start at 0 each time we go through a new round?
+    increment_set_index_round_r(index, MAX_CARDS)
 }
 
-fn increment_set_index_r(index: &[usize], max_rank: usize) -> Option<Vec<usize>> {
+fn increment_set_index_round_r(index: &[usize], max_rank: usize) -> Option<Vec<usize>> {
     let last = index.last()?;
     // handle the simple case where no carrying occurs
     if last + 1 < max_rank {
@@ -230,7 +246,7 @@ fn increment_set_index_r(index: &[usize], max_rank: usize) -> Option<Vec<usize>>
     // recursively do all the carrying for the base index
     let mut index_start = index.to_vec();
     index_start.pop();
-    let mut new_index = increment_set_index_r(&index_start, max_rank - 1)?;
+    let mut new_index = increment_set_index_round_r(&index_start, max_rank - 1)?;
 
     if new_index.last()? + 1 < max_rank {
         new_index.push(new_index.last()? + 1);
