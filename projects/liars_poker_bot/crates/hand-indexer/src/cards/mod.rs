@@ -141,7 +141,6 @@ impl Iterator for DeckIterator {
 ///
 /// Want to store an array or iterators for the different combinations of cards
 struct DealEnumerationIterator<const R: usize> {
-    cards_per_round: [usize; R],
     next_candidate_set: Option<[CardSet; R]>,
     deck: Deck,
 }
@@ -160,7 +159,6 @@ impl<const R: usize> DealEnumerationIterator<R> {
         assert!(is_valid(first_candidate_set, CardSet::all()));
 
         Self {
-            cards_per_round,
             deck,
             next_candidate_set: Some(first_candidate_set),
         }
