@@ -259,6 +259,7 @@ fn incremenet_deal<const R: usize>(
     for r in (updated_round + 1)..R {
         let mut valid_cards = round_valid_cards(deal, deck_cards);
         let mut new_set = CardSet::default();
+        // As an optimization, we start the sets with the lowest possible valid cards rather than just the lowest cards
         for _ in 0..cards_per_round[r] {
             new_set.insert(valid_cards[r].pop_lowest().unwrap())
         }
@@ -301,11 +302,12 @@ mod tests {
         assert_eq!(count_combinations([2, 2]), 1_624_350);
         // Flop: 52 choose 2 * 50 choose 3
         assert_eq!(count_combinations([2, 3]), 25_989_600);
+
+        // TODO: move to test rather than integration tests given run time
         // // Turn: 52 choose 2 * 50 choose 3 * 47
         // assert_eq!(count_combinations([2, 3, 1]), 1_221_511_200);
         // // River: 52 choose 2 * 50 choose 3 * 47 * 46
         // assert_eq!(count_combinations([2, 3, 1, 1]), 56_189_515_200);
-        todo!()
     }
 
     fn count_combinations<const R: usize>(cards_per_round: [usize; R]) -> usize {
