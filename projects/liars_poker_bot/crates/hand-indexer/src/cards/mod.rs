@@ -241,15 +241,23 @@ fn incremenet_deal<const R: usize>(
         cards_per_round[r] = deal[r].len();
     }
 
+    // This doesn't need to be recalculated each loop since we're going over them in reverse order and later
+    // rounds can't impact earlier rounds
+    let valid_cards = round_valid_cards(deal, deck_cards);
     let mut updated_round = R;
-    for r in (0..R).rev() {
-        if let Some(set) = increment_cardset(deal[r]) {
+    'round_loop: for r in (0..R).rev() {
+        loop {
+            let set = match (increment_cardset(deal[r]), r) {
+                (Some(x), _) => x,
+                (None, 0) => return None, // if can't increment round 0 anymore, we're at the ned of the iterator
+                (None, _) => continue 'round_loop,
+            };
+
             deal[r] = set;
-            updated_round = r;
-            break;
-        } else if r == 0 {
-            // if we fail to find an increment for round 0, we're at the end of the iterator
-            return None;
+            if valid_cards[r].constains_all(set) {
+                updated_round = r;
+                break 'round_loop;
+            }
         }
     }
 
