@@ -1,16 +1,17 @@
 use itertools::{Combinations, Itertools};
 use std::fmt::Debug;
 
-use self::cardset::CardSet;
+use self::{cardset::CardSet, iterators::DeckIterator};
 
 const SPADES: u64 = 0b1111111111111;
 const CLUBS: u64 = SPADES << 13;
 const HEARTS: u64 = CLUBS << 13;
 const DIAMONDS: u64 = HEARTS << 13;
 
-const MAX_CARDS: usize = 64;
+pub(super) const MAX_CARDS: usize = 64;
 
 pub mod cardset;
+pub mod iterators;
 
 /// Represents a single card
 ///
@@ -35,8 +36,14 @@ impl Debug for Card {
 }
 
 /// A bit mask determining which cards are in a suit
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Suit(u64);
+
+impl Debug for Suit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{:#b}", self.0))
+    }
+}
 
 /// Contains information about possible configurations of cards,
 /// e.g. which cards are valid, what are the suits, etc.
@@ -125,156 +132,6 @@ impl IntoIterator for Deck {
     }
 }
 
-pub struct DeckIterator {
-    deck: Deck,
-}
-
-impl Iterator for DeckIterator {
-    type Item = Card;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.deck.pop()
-    }
-}
-
-/// Enumerates over all possible deals
-///
-/// Want to store an array or iterators for the different combinations of cards
-struct DealEnumerationIterator<const R: usize> {
-    next_candidate_set: Option<[CardSet; R]>,
-    deck: Deck,
-}
-
-impl<const R: usize> DealEnumerationIterator<R> {
-    pub fn new(deck: Deck, cards_per_round: [usize; R]) -> Self {
-        let mut first_candidate_set = [CardSet::default(); R];
-        let mut i = 0;
-        for r in 0..R {
-            for _ in 0..cards_per_round[r] {
-                first_candidate_set[r].insert(Card::new(i));
-                i += 1;
-            }
-        }
-
-        assert!(is_valid(first_candidate_set, CardSet::all()));
-
-        Self {
-            deck,
-            next_candidate_set: Some(first_candidate_set),
-        }
-    }
-}
-
-impl<const R: usize> Iterator for DealEnumerationIterator<R> {
-    type Item = [CardSet; R];
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let mut candidate = self.next_candidate_set?;
-
-        while !is_valid(candidate, self.deck.remaining_cards) {
-            candidate = incremenet_deal(candidate, self.deck.remaining_cards)?;
-        }
-
-        let cur_set = candidate;
-        self.next_candidate_set = incremenet_deal(candidate, self.deck.remaining_cards);
-        Some(cur_set)
-    }
-}
-
-/// Returns the valid possible cards for each round
-fn round_valid_cards<const R: usize>(deal: [CardSet; R], starting_valid: CardSet) -> [CardSet; R] {
-    let mut round_valid_cards = [CardSet::default(); R];
-    round_valid_cards[0] = starting_valid;
-    for r in 1..R {
-        round_valid_cards[r] = round_valid_cards[r - 1];
-        round_valid_cards[r].remove_all(deal[r - 1]);
-    }
-    round_valid_cards
-}
-
-fn is_valid<const R: usize>(deal: [CardSet; R], valid_cards: CardSet) -> bool {
-    let mut check_set = CardSet::default();
-    for set in deal {
-        check_set.insert_all(set);
-    }
-
-    let each_round_different_cards = deal.iter().map(|x| x.len()).sum::<usize>() == check_set.len();
-    let each_card_valid = deal.into_iter().all(|x| valid_cards.constains_all(x));
-
-    each_round_different_cards && each_card_valid
-}
-
-/// Increments the set index, "carrying" when the last digit gets to
-/// MAX_CARDS
-fn increment_cardset(set: CardSet) -> Option<CardSet> {
-    // TODO: how do we allow this to wrap for later rounds? -- start at 0 each time we go through a new round?
-    increment_cardset_r(set, MAX_CARDS)
-}
-
-fn increment_cardset_r(mut set: CardSet, max_rank: usize) -> Option<CardSet> {
-    let last = set.highest()?.rank();
-    // handle the simple case where no carrying occurs
-    if last + 1 < max_rank {
-        set = set.increment_highest()?;
-        return Some(set);
-    }
-
-    // recursively do all the carrying for the base index
-    set.pop_highest();
-    set = increment_cardset_r(set, max_rank - 1)?;
-
-    if set.highest()?.rank() + 1 < max_rank {
-        set.insert(Card::new(set.highest()?.rank() + 1));
-        Some(set)
-    } else {
-        // no further indexes are possible
-        None
-    }
-}
-
-fn incremenet_deal<const R: usize>(
-    mut deal: [CardSet; R],
-    deck_cards: CardSet,
-) -> Option<[CardSet; R]> {
-    let mut cards_per_round = [0; R];
-    for r in 0..R {
-        cards_per_round[r] = deal[r].len();
-    }
-
-    // This doesn't need to be recalculated each loop since we're going over them in reverse order and later
-    // rounds can't impact earlier rounds
-    let valid_cards = round_valid_cards(deal, deck_cards);
-    let mut updated_round = R;
-    'round_loop: for r in (0..R).rev() {
-        loop {
-            let set = match (increment_cardset(deal[r]), r) {
-                (Some(x), _) => x,
-                (None, 0) => return None, // if can't increment round 0 anymore, we're at the ned of the iterator
-                (None, _) => continue 'round_loop,
-            };
-
-            deal[r] = set;
-            if valid_cards[r].constains_all(set) {
-                updated_round = r;
-                break 'round_loop;
-            }
-        }
-    }
-
-    // fill the forward rounds with the lowest index and values
-    for r in (updated_round + 1)..R {
-        let mut valid_cards = round_valid_cards(deal, deck_cards);
-        let mut new_set = CardSet::default();
-        // As an optimization, we start the sets with the lowest possible valid cards rather than just the lowest cards
-        for _ in 0..cards_per_round[r] {
-            new_set.insert(valid_cards[r].pop_lowest().unwrap())
-        }
-        deal[r] = new_set;
-    }
-
-    Some(deal)
-}
-
 #[cfg(test)]
 mod tests {
 
@@ -296,34 +153,5 @@ mod tests {
         assert_eq!(set.highest().unwrap(), Card(0b100));
         set.insert(Card(0b1));
         assert_eq!(set.highest().unwrap(), Card(0b100));
-    }
-
-    #[test]
-    fn test_enumerate_deals() {
-        assert_eq!(count_combinations([1]), 52);
-
-        // 52 choose 2 for the pockets cards in hold em
-        assert_eq!(count_combinations([2]), 1326);
-
-        assert_eq!(count_combinations([2, 2]), 1_624_350);
-        // Flop: 52 choose 2 * 50 choose 3
-        assert_eq!(count_combinations([2, 3]), 25_989_600);
-
-        // TODO: move to test rather than integration tests given run time
-        // // Turn: 52 choose 2 * 50 choose 3 * 47
-        // assert_eq!(count_combinations([2, 3, 1]), 1_221_511_200);
-        // // River: 52 choose 2 * 50 choose 3 * 47 * 46
-        // assert_eq!(count_combinations([2, 3, 1, 1]), 56_189_515_200);
-    }
-
-    fn count_combinations<const R: usize>(cards_per_round: [usize; R]) -> usize {
-        let deck = Deck::standard();
-        let mut count = 0;
-
-        for _ in DealEnumerationIterator::new(deck, cards_per_round) {
-            count += 1;
-        }
-
-        count
     }
 }

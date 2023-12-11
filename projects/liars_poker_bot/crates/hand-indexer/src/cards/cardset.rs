@@ -1,8 +1,8 @@
 use std::fmt::Debug;
 
-use super::Card;
+use super::{Card, Suit};
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, PartialEq, PartialOrd)]
 pub struct CardSet(pub(super) u64);
 
 impl CardSet {
@@ -79,6 +79,11 @@ impl CardSet {
 
     pub fn len(&self) -> usize {
         self.0.count_ones() as usize
+    }
+
+    /// Returns the number of items in self that are also in `set`
+    pub fn count(&self, suit: &Suit) -> usize {
+        (self.0 & suit.0).count_ones() as usize
     }
 }
 

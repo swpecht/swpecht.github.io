@@ -8,17 +8,19 @@ use std::{
 use itertools::Itertools;
 
 use crate::{
+    cards::{cardset::CardSet, Deck},
     math::{binom, coefficient},
     rankset::suit_config_size,
 };
 
 type SuitIndex = usize;
 
+/// The number of cards for each suit in a given round
 #[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
-struct RoundConfig<const S: usize>([usize; S]);
+pub(super) struct RoundConfig<const S: usize>([usize; S]);
 
 impl<const S: usize> RoundConfig<S> {
-    fn empty() -> Self {
+    pub fn empty() -> Self {
         RoundConfig([0; S])
     }
 }
@@ -275,6 +277,11 @@ fn variant_size(cards_to_choose: usize, remaining_cards: &[usize]) -> usize {
     }
 
     coefficient(generating_function, valid_suits)
+}
+
+fn deal_to_suit_counts<const R: usize>(deal: [CardSet; R], deck: Deck) -> [RoundConfig<4>; R] {
+    // Implement this function, then can use it to filter enumeration by suit config, and validate which ones are wrong
+    todo!()
 }
 
 #[cfg(test)]
