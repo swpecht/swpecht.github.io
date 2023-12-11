@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use super::{Card, Suit};
 
-#[derive(Clone, Copy, Default, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Default, PartialEq, PartialOrd, Hash, Eq, Ord)]
 pub struct CardSet(pub(super) u64);
 
 impl CardSet {
