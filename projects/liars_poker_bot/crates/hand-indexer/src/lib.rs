@@ -113,7 +113,7 @@ impl<const N: usize, const S: usize> HandIndexer<N, S> {
         this + binom(config_1_size + matching_configs - 1, matching_configs) * next
     }
 
-    fn unindex_hand(
+    pub fn unindex_hand(
         &self,
         idx: usize,
         mut suit_configutation: Vec<Vec<usize>>,
@@ -451,6 +451,10 @@ mod tests {
         validate_hand_config(&indexer, vec![vec![5]], 1_287);
         // \binom{13}{3} \binom{13}{2}
         validate_hand_config(&indexer, vec![vec![3], vec![2]], 22_308);
+
+        // isomorphic hands for pocket deal in poker
+        validate_hand_config(&indexer, vec![vec![2]], 78);
+        validate_hand_config(&indexer, vec![vec![1], vec![1]], 91);
     }
 
     fn validate_hand_config<const N: usize, const S: usize>(
@@ -462,8 +466,8 @@ mod tests {
         for i in 0..amount {
             let hand = indexer.unindex_hand(i, config.clone()).unwrap();
             hash_set.insert(hand.clone());
-            let idx = indexer.index_hand(hand);
-            assert_eq!(idx, i);
+            let idx = indexer.index_hand(hand.clone());
+            assert_eq!(idx, i, "{:?}", hand);
         }
 
         // this should wrap to the first hand, so it shouldn't change the hashset size

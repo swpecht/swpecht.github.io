@@ -3,10 +3,10 @@ use std::fmt::Debug;
 
 use self::{cardset::CardSet, iterators::DeckIterator};
 
-const SPADES: u64 = 0b1111111111111;
-const CLUBS: u64 = SPADES << 13;
-const HEARTS: u64 = CLUBS << 13;
-const DIAMONDS: u64 = HEARTS << 13;
+const SPADES: u64 = 0b1111111111111111;
+const CLUBS: u64 = SPADES << 16;
+const HEARTS: u64 = CLUBS << 16;
+const DIAMONDS: u64 = HEARTS << 16;
 
 pub(super) const MAX_CARDS: usize = 64;
 
@@ -57,7 +57,9 @@ impl Deck {
     /// Returns a standard 52 card playing deck
     pub fn standard() -> Self {
         let deck = Self {
-            remaining_cards: CardSet(!(!0 << 52)),
+            remaining_cards: CardSet(
+                0b0001111111111111000111111111111100011111111111110001111111111111,
+            ),
             suits: [Suit(SPADES), Suit(CLUBS), Suit(HEARTS), Suit(DIAMONDS)],
         };
         deck.validate();
@@ -80,16 +82,6 @@ impl Deck {
             all_suits.count_ones(),
             self.suits.iter().map(|x| x.0.count_ones()).sum()
         );
-    }
-
-    // Enumerates all possible combination of cards from the deck
-    // ordering within a round doesn't matter. No simplifications are made, e.g. As is different from Ac
-    // todo: should we make this an iterator
-    pub fn enumerate_deals<const N: usize>(
-        &self,
-        cards_per_round: [usize; N],
-    ) -> Vec<[CardSet; N]> {
-        todo!()
     }
 
     /// Returns the lowest rank card in the deck by representation, this

@@ -1,6 +1,10 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, path::Display};
 
-use super::{Card, Suit};
+use itertools::Itertools;
+
+use crate::{cards::SPADES, rankset::RankSet, Rank};
+
+use super::{Card, Deck, Suit};
 
 #[derive(Clone, Copy, Default, PartialEq, PartialOrd, Hash, Eq, Ord)]
 pub struct CardSet(pub(super) u64);
@@ -90,6 +94,31 @@ impl CardSet {
 impl Debug for CardSet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!("{:#b}", self.0))
+    }
+}
+
+/// Convert a vector of ranksets into a Cardset with a decks suit configuration
+pub(super) fn to_cardset(ranksets: &Vec<Vec<RankSet>>, deck: &Deck) -> Vec<CardSet> {
+    let mut sets = Vec::new();
+    let rounds = ranksets.iter().map(|x| x.len()).max().unwrap();
+
+    for r in 0..rounds {
+        let mut set = CardSet::default();
+        let mut suit_offset = 0;
+        for (s, rankset) in deck.suits.iter().zip(ranksets) {
+            let cards = rankset.get(r).copied().unwrap_or_default();
+            set.0 |= (cards.0 as u64) << suit_offset;
+            suit_offset += s.0.count_ones();
+        }
+        sets.push(set);
+    }
+
+    sets
+}
+
+impl From<CardSet> for [RankSet; 4] {
+    fn from(value: CardSet) -> Self {
+        unsafe { std::mem::transmute(value.0) }
     }
 }
 

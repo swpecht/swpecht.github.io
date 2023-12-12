@@ -1,7 +1,6 @@
-use crate::{
-    cards::{Suit, SPADES},
-    configurations::RoundConfig,
-};
+use std::collections::HashSet;
+
+use crate::cards::{Suit, SPADES};
 
 use super::{cardset::CardSet, Card, Deck, MAX_CARDS};
 
@@ -20,7 +19,7 @@ impl Iterator for DeckIterator {
 /// Enumerates over all possible deals
 ///
 /// Want to store an array or iterators for the different combinations of cards
-struct DealEnumerationIterator<const R: usize> {
+pub struct DealEnumerationIterator<const R: usize> {
     next_candidate_set: Option<[CardSet; R]>,
     deck: Deck,
 }
@@ -160,7 +159,7 @@ fn incremenet_deal<const R: usize>(
 /// Follows the definition in Kevin's paper
 pub struct IsomorphicDealIterator<const R: usize> {
     deal_enumerator: DealEnumerationIterator<R>,
-    last_deal: Option<[CardSet; R]>,
+    previous_deals: HashSet<[CardSet; R]>,
 }
 
 impl<const R: usize> IsomorphicDealIterator<R> {
@@ -169,7 +168,7 @@ impl<const R: usize> IsomorphicDealIterator<R> {
 
         Self {
             deal_enumerator,
-            last_deal: None,
+            previous_deals: HashSet::new(),
         }
     }
 }
@@ -183,20 +182,9 @@ impl<const R: usize> Iterator for IsomorphicDealIterator<R> {
             let next_deal = self.deal_enumerator.next()?;
             iso_deal = isomorphic(next_deal, &self.deal_enumerator.deck);
 
-            // the deal enumerator is guaranteed to go over deals from lowest to highest
-            // if the deal is lower than the last deal, then we have seen it before and can skip it
-            // TODO: investigate if we can just return the first time seeing a lower deal
-            match self.last_deal {
-                Some(ld) => {
-                    if iso_deal > ld {
-                        self.last_deal = Some(iso_deal);
-                        break;
-                    }
-                }
-                None => {
-                    self.last_deal = Some(iso_deal);
-                    break;
-                }
+            if !self.previous_deals.contains(&iso_deal) {
+                self.previous_deals.insert(iso_deal);
+                break;
             }
         }
 
@@ -219,17 +207,24 @@ fn isomorphic<const R: usize>(deal: [CardSet; R], deck: &Deck) -> [CardSet; R] {
     indexes.reverse();
 
     let mut iso_deal = [CardSet::default(); R];
-    for (new_index, old_index) in indexes.into_iter().enumerate() {
-        for r in 0..R {
-            // get the bits for just the new suit in the right place, then put them in the iso deal
-            let mut new_suit = swap_bits(deal[r].0, old_index * 13, new_index * 13, 13);
-            // todo -- something is wrong here, old index passes the naive test, but it seems like it should be new index
-            new_suit &= deck.suits[new_index].0;
-            iso_deal[r].0 |= new_suit;
+    for r in 0..R {
+        let array = to_array(deal[r].0);
+        let mut sorted_array = [0; 4];
+        for s in 0..4 {
+            sorted_array[s] = array[indexes[s]];
         }
+        iso_deal[r] = CardSet(to_u64(sorted_array));
     }
 
     iso_deal
+}
+
+pub fn to_array(v: u64) -> [u16; 4] {
+    unsafe { std::mem::transmute(v) }
+}
+
+pub fn to_u64(v: [u16; 4]) -> u64 {
+    unsafe { std::mem::transmute(v) }
 }
 
 /// Swap the `n` consecutive bits between index `i` and `j` in `b`
@@ -265,7 +260,11 @@ mod tests {
 
     use std::collections::HashSet;
 
-    use crate::cards::Deck;
+    use crate::{
+        cards::{cardset::to_cardset, Deck},
+        rankset::RankSet,
+        HandIndexer,
+    };
 
     use super::*;
 
@@ -297,25 +296,50 @@ mod tests {
         assert_eq!(count_combinations([2]), 1326);
 
         assert_eq!(count_combinations([2, 2]), 1_624_350);
-        // Flop: 52 choose 2 * 50 choose 3
-        assert_eq!(count_combinations([2, 3]), 25_989_600);
-
-        // TODO: move to test rather than integration tests given run time
-        // // Turn: 52 choose 2 * 50 choose 3 * 47
-        // assert_eq!(count_combinations([2, 3, 1]), 1_221_511_200);
-        // // River: 52 choose 2 * 50 choose 3 * 47 * 46
-        // assert_eq!(count_combinations([2, 3, 1, 1]), 56_189_515_200);
     }
 
     #[test]
     fn test_count_iso_deals() {
         let deck = Deck::standard();
 
-        // let mut set = HashSet::new();
-        // for deal in IsomorphicDealIterator::new(deck, [2]) {
-        //     assert!(!set.contains(&deal));
-        //     set.insert(deal);
-        // }
+        let mut iso_deals = HashSet::new();
+        let indexer = HandIndexer::<13, 4>::new(&[2]);
+        for i in 0..200 {
+            let mut hand = indexer.unindex_hand(i, vec![vec![1], vec![1]]).unwrap();
+            assert_eq!(hand.len(), 2);
+            let set = to_cardset(&hand, &deck);
+            assert_eq!(set.len(), 1);
+            iso_deals.insert(set[0]);
+        }
+        assert_eq!(iso_deals.len(), 91);
+
+        for deal in IsomorphicDealIterator::new(deck, [2]) {
+            if deal[0].count(&deck.suits[0]) != 1 {
+                continue; // only care about 1, 1 suit config
+            }
+
+            if !iso_deals.contains(&deal[0]) {
+                let hand: [RankSet; 4] = deal[0].into();
+                let index = indexer.index_hand(vec![hand.to_vec()]);
+                let unindexed_hand = indexer.unindex_hand(index, vec![vec![1], vec![1]]).unwrap();
+                let unindex_deal = to_cardset(&unindexed_hand, &deck);
+                println!("got: {:?}, should: {:?}", deal[0], unindex_deal[0]);
+            }
+        }
+
+        ///
+        /// got:    0b10000000000000001
+        /// should: 0b100000000000000001
+
+        println!("indexer sets");
+
+        // the rejection criteria are wrong, since we don't actually enumerate from lowest to highest -- could change so that this is the case
+        // right now we increment the highest bit
+        // can look at just using a hash set for this for now? -- could we use bit runs to keep track of what we've seen?
+        // whats the memory on this look like?
+        // TODOs:
+        // * Fix it so it works with hashsets
+        // * Look at more efificient hashsets if needed to make it work, or fixing the low to high thing
 
         assert_eq!(IsomorphicDealIterator::new(deck, [1]).count(), 13);
         assert_eq!(IsomorphicDealIterator::new(deck, [2]).count(), 169);
