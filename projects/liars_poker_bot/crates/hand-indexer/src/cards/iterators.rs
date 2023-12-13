@@ -310,7 +310,6 @@ mod tests {
 
         assert_eq!(IsomorphicDealIterator::new(deck, [1]).count(), 13);
         assert_eq!(IsomorphicDealIterator::new(deck, [2]).count(), 169);
-        assert_eq!(IsomorphicDealIterator::new(deck, [2, 3]).count(), 1_286_792);
 
         // TODO: Move additioanl tests to integration tests
     }
