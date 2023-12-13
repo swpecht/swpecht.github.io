@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{cmp::Ordering, collections::HashSet};
 
 use crate::cards::{Suit, SPADES};
 
@@ -203,7 +203,14 @@ fn isomorphic<const R: usize>(deal: [CardSet; R], deck: &Deck) -> [CardSet; R] {
 
     let counts = suit_counts(deal, deck);
     let mut indexes = [0, 1, 2, 3];
-    indexes.sort_by_key(|&x| &counts[x]);
+    let card_arrays = card_array(deal);
+    // sort by suit counts first
+    // if the counts are equal, we sort by the cards with earlier rounds having priorty
+    indexes.sort_by(|&a, &b| match counts[a].cmp(&counts[b]) {
+        Ordering::Greater => Ordering::Greater,
+        Ordering::Less => Ordering::Less,
+        Ordering::Equal => card_arrays[a].cmp(&card_arrays[b]),
+    });
     indexes.reverse();
 
     let mut iso_deal = [CardSet::default(); R];
@@ -227,21 +234,6 @@ pub fn to_u64(v: [u16; 4]) -> u64 {
     unsafe { std::mem::transmute(v) }
 }
 
-/// Swap the `n` consecutive bits between index `i` and `j` in `b`
-///
-/// Adapted from: https://graphics.stanford.edu/~seander/bithacks.html#SwappingBitsXOR
-fn swap_bits(b: u64, i: usize, j: usize, n: usize) -> u64 {
-    // unsigned int i, j; // positions of bit sequences to swap
-    // unsigned int n;    // number of consecutive bits in each sequence
-    // unsigned int b;    // bits to swap reside in b
-    // unsigned int r;    // bit-swapped result goes here
-    // unsigned int x = ((b >> i) ^ (b >> j)) & ((1U << n) - 1); // XOR temporary
-    // r = b ^ ((x << i) | (x << j));
-
-    let x = ((b >> i) ^ (b >> j)) & ((1 << n) - 1); // XOR temporary
-    b ^ ((x << i) | (x << j))
-}
-
 /// Convert a deal to suit counts (round configs)
 fn suit_counts<const R: usize>(deal: [CardSet; R], deck: &Deck) -> [[usize; R]; 4] {
     let mut counts = [[0; R]; 4];
@@ -253,6 +245,19 @@ fn suit_counts<const R: usize>(deal: [CardSet; R], deck: &Deck) -> [[usize; R]; 
     }
 
     counts
+}
+
+fn card_array<const R: usize>(deal: [CardSet; R]) -> [[u16; R]; 4] {
+    let mut cards = [[0; R]; 4];
+
+    for (r, set) in deal.iter().enumerate() {
+        let array = to_array(set.0);
+        for s in 0..4 {
+            cards[s][r] = array[s];
+        }
+    }
+
+    cards
 }
 
 #[cfg(test)]
@@ -279,33 +284,65 @@ mod tests {
     }
 
     #[test]
-    fn test_swap_bits() {
-        assert_eq!(
-            swap_bits(0b1111111111111, 0, 13, 13),
-            0b11111111111110000000000000
-        );
-
-        assert_eq!(swap_bits(0b11111, 13, 13, 13), 0b11111);
-    }
-
-    #[test]
     fn test_enumerate_deals() {
-        assert_eq!(count_combinations([1]), 52);
+        let deck = Deck::standard();
+        assert_eq!(DealEnumerationIterator::new(deck, [1]).count(), 52);
 
         // 52 choose 2 for the pockets cards in hold em
-        assert_eq!(count_combinations([2]), 1326);
-
-        assert_eq!(count_combinations([2, 2]), 1_624_350);
+        assert_eq!(DealEnumerationIterator::new(deck, [2]).count(), 1326);
+        assert_eq!(
+            DealEnumerationIterator::new(deck, [2, 2]).count(),
+            1_624_350
+        );
     }
 
     #[test]
     fn test_count_iso_deals() {
         let deck = Deck::standard();
 
+        // the rejection criteria are wrong, since we don't actually enumerate from lowest to highest -- could change so that this is the case
+        // right now we increment the highest bit
+        // can look at just using a hash set for this for now? -- could we use bit runs to keep track of what we've seen?
+        // whats the memory on this look like?
+        // TODOs:
+        // * Fix it so it works with hashsets
+        // * Look at more efificient hashsets if needed to make it work, or fixing the low to high thing
+
+        assert_eq!(IsomorphicDealIterator::new(deck, [1]).count(), 13);
+        assert_eq!(IsomorphicDealIterator::new(deck, [2]).count(), 169);
+        assert_eq!(IsomorphicDealIterator::new(deck, [2, 3]).count(), 1_286_792);
+
+        // TODO: Move additioanl tests to integration tests
+    }
+
+    fn count_combinations<const R: usize>(cards_per_round: [usize; R]) -> usize {
+        let deck = Deck::standard();
+        let mut count = 0;
+
+        for _ in DealEnumerationIterator::new(deck, cards_per_round) {
+            count += 1;
+        }
+
+        count
+    }
+
+    #[test]
+    fn test_with_hand_indexer() {
+        let deck = Deck::standard();
+
+        for deal in IsomorphicDealIterator::new(deck, [2]) {
+            let counts = suit_counts(deal, &deck);
+            assert!(counts[0][0] == 2 || (counts[0][0] == 1 && counts[1][0] == 1));
+            let array = to_array(deal[0].0);
+            assert!(array[0] >= array[1]);
+        }
+
+        assert_eq!(IsomorphicDealIterator::new(deck, [2]).count(), 169);
+
         let mut iso_deals = HashSet::new();
         let indexer = HandIndexer::<13, 4>::new(&[2]);
         for i in 0..200 {
-            let mut hand = indexer.unindex_hand(i, vec![vec![1], vec![1]]).unwrap();
+            let hand = indexer.unindex_hand(i, vec![vec![1], vec![1]]).unwrap();
             assert_eq!(hand.len(), 2);
             let set = to_cardset(&hand, &deck);
             assert_eq!(set.len(), 1);
@@ -332,30 +369,5 @@ mod tests {
         /// should: 0b100000000000000001
 
         println!("indexer sets");
-
-        // the rejection criteria are wrong, since we don't actually enumerate from lowest to highest -- could change so that this is the case
-        // right now we increment the highest bit
-        // can look at just using a hash set for this for now? -- could we use bit runs to keep track of what we've seen?
-        // whats the memory on this look like?
-        // TODOs:
-        // * Fix it so it works with hashsets
-        // * Look at more efificient hashsets if needed to make it work, or fixing the low to high thing
-
-        assert_eq!(IsomorphicDealIterator::new(deck, [1]).count(), 13);
-        assert_eq!(IsomorphicDealIterator::new(deck, [2]).count(), 169);
-        assert_eq!(IsomorphicDealIterator::new(deck, [2, 3]).count(), 1_286_792);
-
-        // TODO: Move additioanl tests to integration tests
-    }
-
-    fn count_combinations<const R: usize>(cards_per_round: [usize; R]) -> usize {
-        let deck = Deck::standard();
-        let mut count = 0;
-
-        for _ in DealEnumerationIterator::new(deck, cards_per_round) {
-            count += 1;
-        }
-
-        count
     }
 }

@@ -62,6 +62,7 @@ impl Deck {
             ),
             suits: [Suit(SPADES), Suit(CLUBS), Suit(HEARTS), Suit(DIAMONDS)],
         };
+        assert_eq!(deck.remaining_cards.len(), 52);
         deck.validate();
         deck
     }

@@ -100,6 +100,9 @@ impl<const N: usize, const S: usize> HandIndexer<N, S> {
             let g_i = hand.remove(0);
             same_config_group_indexes.push(self.index_group(g_i, RankSet::default()));
         }
+        // todo: does this need to be here? we want to process the largest one first
+        same_config_group_indexes.sort();
+        same_config_group_indexes.reverse();
 
         let next = self.index_hand(hand);
 
@@ -177,18 +180,15 @@ impl<const N: usize, const S: usize> HandIndexer<N, S> {
         // Calcuate the size of the index group to see if we're at an impossible index
         let mut size = 1;
         for i in 0..ms.len() {
-            size *= binom(
-                N - ms.iter().take(i).sum::<usize>() as usize,
-                ms[i] as usize,
-            );
+            size *= binom(N - ms.iter().take(i).sum::<usize>(), ms[i]);
         }
         if idx >= size {
             return None;
         }
 
         let m_1 = ms.remove(0);
-        let this = idx % binom((N as u8 - used.len()) as usize, m_1 as usize);
-        let next = idx / binom((N as u8 - used.len()) as usize, m_1 as usize);
+        let this = idx % binom((N as u8 - used.len()) as usize, m_1);
+        let next = idx / binom((N as u8 - used.len()) as usize, m_1);
 
         let mut B = self.unindex_set(this, m_1)?;
         let mut A_1 = RankSet::default();
@@ -446,6 +446,10 @@ mod tests {
     #[test]
     fn test_hand_integration() {
         let indexer = HandIndexer::<13, 4>::default();
+        let hand = indexer.unindex_hand(2, vec![vec![1], vec![1]]).unwrap();
+        let idx = indexer.index_hand(hand.clone());
+        println!("{:?}", hand);
+        println!("{}", idx);
 
         // A single handed suit should have \binom{13}{5} combinations
         validate_hand_config(&indexer, vec![vec![5]], 1_287);
@@ -467,7 +471,8 @@ mod tests {
             let hand = indexer.unindex_hand(i, config.clone()).unwrap();
             hash_set.insert(hand.clone());
             let idx = indexer.index_hand(hand.clone());
-            assert_eq!(idx, i, "{:?}", hand);
+            let unindexed_hand = indexer.unindex_hand(idx, config.clone());
+            assert_eq!(idx, i, "{:?} {:?}", unindexed_hand, hand);
         }
 
         // this should wrap to the first hand, so it shouldn't change the hashset size
