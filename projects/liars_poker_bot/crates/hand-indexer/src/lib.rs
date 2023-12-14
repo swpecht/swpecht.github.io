@@ -112,8 +112,7 @@ impl<const N: usize, const S: usize> HandIndexer<N, S> {
     fn multiset_colex(&self, group_indexes: Vec<usize>) -> usize {
         let mut this = 0;
         let matching_configs = group_indexes.len();
-        // TODO: should this be in reverse order?
-        for (i, group_index) in group_indexes.into_iter().rev().enumerate() {
+        for (i, group_index) in group_indexes.into_iter().enumerate() {
             let remaing_tied_suits = matching_configs - i;
             this += binom(group_index + remaing_tied_suits - 1, remaing_tied_suits);
             // this += binom(group_index, remaing_tied_suits + 1);
@@ -204,47 +203,6 @@ impl<const N: usize, const S: usize> HandIndexer<N, S> {
         }
 
         Some(hand)
-        // for i in 0..S {
-        //     let remaining_matching_suits = suit_configutation
-        //         .iter()
-        //         .skip(i)
-        //         .filter(|&x| x == &suit_configutation[i])
-        //         .count();
-
-        //     let c_i = &suit_configutation[i];
-        //     let suit_size = suit_config_size(c_i, N);
-        //     let group_size = binom(
-        //         suit_size + remaining_matching_suits - 1,
-        //         remaining_matching_suits,
-        //     );
-        //     let group_index = idx % group_size;
-        // }
-
-        // // TODO: this needs to be adapted to support suits with the same config
-        // let c_1 = suit_configutation.remove(0);
-        // let c_1_size = suit_config_size(&c_1, N);
-
-        // let mut group_size = 0;
-        // for i in 0..matching_suits {
-        //     group_size += binom(c_1_size + matching_suits - i, matching_suits - i);
-        // }
-
-        // let c_1_idx = idx % group_size;
-        // let remainder = idx / group_size;
-
-        // let mut hand = Vec::with_capacity(matching_suits);
-        // for i in 0..matching_suits {
-        //     find_x(idx, (matching_suits - i) as u8);
-        // }
-
-        // let g_1 = self.unindex_group(c_1_idx, c_1, RankSet::default())?;
-
-        // hand.push(g_1);
-
-        // if !suit_configutation.is_empty() {
-        //     let mut remaining_suits = self.unindex_hand(remainder, suit_configutation)?;
-        //     hand.append(&mut remaining_suits)
-        // }
     }
 
     /// Compute the index for k M-rank sets of the same suit
