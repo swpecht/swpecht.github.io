@@ -1,8 +1,6 @@
 #![allow(non_snake_case)]
 
-use std::fmt::Display;
-
-use client_server_messages::{GameData, NewGameRequest, NewGameResponse};
+use client_server_messages::{NewGameRequest, NewGameResponse};
 // import the prelude to get access to the `rsx!` macro and the `Scope` and `Element` types
 use dioxus::prelude::*;
 use dioxus_router::prelude::*;
@@ -10,13 +8,13 @@ use dioxus_router::prelude::*;
 use euchre_app::{
     base_url, hide_element,
     in_game::InGame,
-    settings::{get_player_id, min_players, register_settings, set_event_id, set_min_players},
+    settings::{get_player_id, min_players, register_settings, set_min_players},
     show_element, ACTION_BUTTON_CLASS, SERVER,
 };
-use log::{debug, error, info};
-use rand::{thread_rng, Rng};
+use log::info;
 
 #[derive(Routable, Clone, PartialEq)]
+#[rustfmt::skip]
 pub enum Route {
     // if the current location is "/home", render the Home component
     #[route("/")]
@@ -28,8 +26,8 @@ pub enum Route {
     #[route("/game")]
     NewGame,
 
-    #[route("/:..route")]
-    NotFound { route: Vec<String> },
+    #[route("/:..segments")]
+    NotFound { segments: Vec<String> },
 }
 
 fn main() {
@@ -50,15 +48,15 @@ fn App(cx: Scope) -> Element {
     render! { Router::<Route> {} }
 }
 
-#[inline_props]
-fn NotFound(cx: Scope, route: Vec<String>) -> Element {
+#[component]
+fn NotFound(cx: Scope, segments: Vec<String>) -> Element {
     hide_element("intro");
     render! {
-        div { format!("Error: page not found: {:?}", route) }
+        div { format!("Error: page not found: {:?}", segments) }
     }
 }
 
-#[inline_props]
+#[component]
 fn Index(cx: Scope) -> Element {
     show_element("intro");
 
@@ -92,7 +90,7 @@ fn Index(cx: Scope) -> Element {
     )
 }
 
-#[inline_props]
+#[component]
 fn NewGame(cx: Scope) -> Element {
     hide_element("intro");
 
