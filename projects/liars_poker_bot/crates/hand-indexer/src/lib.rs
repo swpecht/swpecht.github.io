@@ -9,7 +9,6 @@ pub mod cards;
 mod configurations;
 mod math;
 pub mod rankset;
-pub mod translation;
 
 /// Translates a euchre hand to a conanical index
 ///
