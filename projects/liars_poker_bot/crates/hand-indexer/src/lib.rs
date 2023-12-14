@@ -115,7 +115,6 @@ impl<const N: usize, const S: usize> HandIndexer<N, S> {
         for (i, group_index) in group_indexes.into_iter().enumerate() {
             let remaing_tied_suits = matching_configs - i;
             this += binom(group_index + remaing_tied_suits - 1, remaing_tied_suits);
-            // this += binom(group_index, remaing_tied_suits + 1);
         }
 
         this
@@ -515,16 +514,6 @@ mod tests {
             let hand = indexer.unindex_hand(i % 13, vec![vec![1]]).unwrap();
             assert_eq!(hand[0][0].largest(), (i % 13) as u8);
         }
-
-        for i in 0..5 {
-            let hand = indexer.unindex_hand(i, vec![vec![1], vec![1]]).unwrap();
-            println!("{}: {:?}", i, hand);
-        }
-
-        // // this should be <1><1>
-        // let idx = indexer.index_hand(hand.clone());
-        // println!("{:?}", hand);
-        // println!("{}", idx);
 
         // A single handed suit should have \binom{13}{5} combinations
         validate_hand_config(&indexer, vec![vec![5]], 1_287);
