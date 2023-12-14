@@ -2,6 +2,7 @@ use dioxus::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::HtmlElement;
 
+pub mod app;
 pub mod in_game;
 pub mod requests;
 pub mod settings;

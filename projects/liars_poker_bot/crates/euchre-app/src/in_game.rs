@@ -5,7 +5,7 @@ use std::{fmt::Display, time::Duration};
 use async_std::task;
 use client_server_messages::{ActionRequest, GameAction, GameData, GameProcessingState};
 use dioxus::prelude::*;
-use dioxus_router::prelude::use_navigator;
+use dioxus_router::prelude::*;
 use futures_util::StreamExt;
 use games::{
     actions,
@@ -18,7 +18,7 @@ use games::{
 use log::info;
 
 use crate::{
-    base_url, hide_element, requests::make_game_request, settings::get_player_id,
+    app::Route, base_url, hide_element, requests::make_game_request, settings::get_player_id,
     ACTION_BUTTON_CLASS, SERVER,
 };
 
@@ -190,7 +190,7 @@ fn GameOver<T>(cx: Scope<T>, game_id: String) -> Element {
                 class: "{ACTION_BUTTON_CLASS} font-medium px-2 mx-2 mt-8",
                 onclick: move |_| {
                     let nav = use_navigator(cx);
-                    nav.push("/");
+                    nav.push(Route::Index {});
                 },
                 "Return home to start a new game"
             }
