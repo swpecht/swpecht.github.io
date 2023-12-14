@@ -106,7 +106,7 @@ pub fn suit_config_size(lengths: &[usize], max_items: usize) -> usize {
     let mut used_items = 0;
 
     for x in lengths {
-        size *= binom(max_items - used_items, *x as usize);
+        size *= binom(max_items - used_items, *x);
         used_items += *x;
     }
 

@@ -9,6 +9,7 @@ pub mod cards;
 mod configurations;
 mod math;
 pub mod rankset;
+pub mod translation;
 
 /// Translates a euchre hand to a conanical index
 ///
@@ -111,9 +112,11 @@ impl<const N: usize, const S: usize> HandIndexer<N, S> {
     fn multiset_colex(&self, group_indexes: Vec<usize>) -> usize {
         let mut this = 0;
         let matching_configs = group_indexes.len();
-        for (i, group_index) in group_indexes.into_iter().enumerate() {
+        // TODO: should this be in reverse order?
+        for (i, group_index) in group_indexes.into_iter().rev().enumerate() {
             let remaing_tied_suits = matching_configs - i;
             this += binom(group_index + remaing_tied_suits - 1, remaing_tied_suits);
+            // this += binom(group_index, remaing_tied_suits + 1);
         }
 
         this
@@ -121,26 +124,127 @@ impl<const N: usize, const S: usize> HandIndexer<N, S> {
 
     pub fn unindex_hand(
         &self,
-        idx: usize,
-        mut suit_configutation: Vec<Vec<usize>>,
+        mut index: usize,
+        suit_configutation: Vec<Vec<usize>>,
     ) -> Option<Vec<Vec<RankSet>>> {
         assert!(suit_configutation.len() < S);
 
-        let c_1 = suit_configutation.remove(0);
-        let c_1_size = suit_config_size(&c_1, N);
-        let c_1_idx = idx % c_1_size;
-        let g_1 = self.unindex_group(c_1_idx, c_1, RankSet::default())?;
+        let mut suit_index = [0; S];
+        let mut i = 0;
+        while i < suit_configutation.len() {
+            let mut j = i + 1;
+            while j < suit_configutation.len() && suit_configutation[i] == suit_configutation[j] {
+                j += 1;
+            }
 
-        let remainder = idx / c_1_size;
+            let c_i = &suit_configutation[i];
+            let suit_size = suit_config_size(c_i, N);
+            // use the multiset coefficieint to calculate the size of tied groups, when there are no tied groups,
+            // this becomes just the suit size
+            let group_size = binom(suit_size + j - i - 1, j - i);
+            let mut group_index = index % group_size;
+            index /= group_size;
 
-        let mut hand = vec![g_1];
+            while i < j - 1 {
+                // low = floor(exp(log(group_index)/(j-i) - 1 + log(j-i))-j-i);
+                // high = ceil(exp(log(group_index)/(j-i) + log(j-i))-j+i+1);
+                let mut low = f64::floor(
+                    f64::exp(
+                        f64::ln(group_index as f64) / ((j - i) as f64) - 1f64
+                            + f64::ln((j - i) as f64),
+                    ) - j as f64
+                        - i as f64,
+                ) as usize;
 
-        if !suit_configutation.is_empty() {
-            let mut remaining_suits = self.unindex_hand(remainder, suit_configutation)?;
-            hand.append(&mut remaining_suits)
+                let mut high = f64::ceil(
+                    f64::exp(
+                        f64::ln(group_index as f64) / ((j - i) as f64) + f64::ln((j - i) as f64),
+                    ) - j as f64
+                        - i as f64
+                        + 1f64,
+                ) as usize;
+
+                suit_index[i] = low;
+                if high > suit_size {
+                    high = suit_size;
+                }
+                if high <= low {
+                    low = 0;
+                }
+
+                while low < high {
+                    let mid = (low + high) / 2;
+                    if binom(mid + j - i - 1, j - i) <= group_index {
+                        suit_index[i] = mid;
+                        low = mid + 1;
+                    } else {
+                        high = mid;
+                    }
+                }
+
+                //     }
+
+                //     //for(suit_index[i]=0; nCr_groups[suit_index[i]+1+j-i-1][j-i] <= group_index; ++suit_index[i]) {}
+                group_index -= binom(suit_index[i] + j - i - 1, j - i);
+
+                i += 1;
+            }
+
+            suit_index[i] = group_index;
+            i += 1;
+        }
+
+        let mut hand = Vec::with_capacity(suit_configutation.len());
+        for i in 0..suit_configutation.len() {
+            hand.push(self.unindex_group(
+                suit_index[i],
+                suit_configutation[i].clone(),
+                RankSet::default(),
+            )?);
         }
 
         Some(hand)
+        // for i in 0..S {
+        //     let remaining_matching_suits = suit_configutation
+        //         .iter()
+        //         .skip(i)
+        //         .filter(|&x| x == &suit_configutation[i])
+        //         .count();
+
+        //     let c_i = &suit_configutation[i];
+        //     let suit_size = suit_config_size(c_i, N);
+        //     let group_size = binom(
+        //         suit_size + remaining_matching_suits - 1,
+        //         remaining_matching_suits,
+        //     );
+        //     let group_index = idx % group_size;
+        // }
+
+        // // TODO: this needs to be adapted to support suits with the same config
+        // let c_1 = suit_configutation.remove(0);
+        // let c_1_size = suit_config_size(&c_1, N);
+
+        // let mut group_size = 0;
+        // for i in 0..matching_suits {
+        //     group_size += binom(c_1_size + matching_suits - i, matching_suits - i);
+        // }
+
+        // let c_1_idx = idx % group_size;
+        // let remainder = idx / group_size;
+
+        // let mut hand = Vec::with_capacity(matching_suits);
+        // for i in 0..matching_suits {
+        //     find_x(idx, (matching_suits - i) as u8);
+        // }
+
+        // let g_1 = self.unindex_group(c_1_idx, c_1, RankSet::default())?;
+
+        // hand.push(g_1);
+
+        // if !suit_configutation.is_empty() {
+        //     let mut remaining_suits = self.unindex_hand(remainder, suit_configutation)?;
+        //     hand.append(&mut remaining_suits)
+        // }
     }
 
     /// Compute the index for k M-rank sets of the same suit
@@ -454,10 +558,15 @@ mod tests {
             assert_eq!(hand[0][0].largest(), (i % 13) as u8);
         }
 
-        let hand = indexer.unindex_hand(2, vec![vec![1], vec![1]]).unwrap();
-        let idx = indexer.index_hand(hand.clone());
-        println!("{:?}", hand);
-        println!("{}", idx);
+        for i in 0..5 {
+            let hand = indexer.unindex_hand(i, vec![vec![1], vec![1]]).unwrap();
+            println!("{}: {:?}", i, hand);
+        }
+
+        // // this should be <1><1>
+        // let idx = indexer.index_hand(hand.clone());
+        // println!("{:?}", hand);
+        // println!("{}", idx);
 
         // A single handed suit should have \binom{13}{5} combinations
         validate_hand_config(&indexer, vec![vec![5]], 1_287);
