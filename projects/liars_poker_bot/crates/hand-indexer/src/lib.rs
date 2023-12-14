@@ -100,20 +100,23 @@ impl<const N: usize, const S: usize> HandIndexer<N, S> {
             let g_i = hand.remove(0);
             same_config_group_indexes.push(self.index_group(g_i, RankSet::default()));
         }
-        // todo: does this need to be here? we want to process the largest one first
-        same_config_group_indexes.sort();
-        same_config_group_indexes.reverse();
 
+        let matching_configs = same_config_group_indexes.len();
+        let this = self.multiset_colex(same_config_group_indexes);
         let next = self.index_hand(hand);
 
+        this + binom(config_1_size + matching_configs - 1, matching_configs) * next
+    }
+
+    fn multiset_colex(&self, group_indexes: Vec<usize>) -> usize {
         let mut this = 0;
-        let matching_configs = same_config_group_indexes.len();
-        for (i, group_index) in same_config_group_indexes.into_iter().enumerate() {
+        let matching_configs = group_indexes.len();
+        for (i, group_index) in group_indexes.into_iter().enumerate() {
             let remaing_tied_suits = matching_configs - i;
             this += binom(group_index + remaing_tied_suits - 1, remaing_tied_suits);
         }
 
-        this + binom(config_1_size + matching_configs - 1, matching_configs) * next
+        this
     }
 
     pub fn unindex_hand(
@@ -446,6 +449,11 @@ mod tests {
     #[test]
     fn test_hand_integration() {
         let indexer = HandIndexer::<13, 4>::default();
+        for i in 0..100 {
+            let hand = indexer.unindex_hand(i % 13, vec![vec![1]]).unwrap();
+            assert_eq!(hand[0][0].largest(), (i % 13) as u8);
+        }
+
         let hand = indexer.unindex_hand(2, vec![vec![1], vec![1]]).unwrap();
         let idx = indexer.index_hand(hand.clone());
         println!("{:?}", hand);
