@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     fs::OpenOptions,
     path::{Path, PathBuf},
+    str::FromStr,
     sync::Mutex,
 };
 
@@ -49,8 +50,23 @@ impl Default for AppState {
         ));
         info!("loaded bot with {n} infostates and 3 max cards played");
 
+        let games: Mutex<HashMap<Uuid, GameData>> = Default::default();
+        let pick_suit_game = GameData {
+            gs: "AsJhJdQdAd|QcTs9h9dTd|TcKcJsQsKd|9sKsThQhAh|9c|PPPP".to_string(),
+            players: vec![Some(0), None, Some(42), None],
+            human_score: 2,
+            computer_score: 0,
+            display_state: GameProcessingState::WaitingHumanMove,
+        };
+        games.lock().unwrap().insert(
+            Uuid::from_str("e8aa648a-9483-4bcf-8f81-292222a30557").unwrap(),
+            pick_suit_game,
+        );
+
+        info!("loaded debuging gamestates: {:?}", games.lock().unwrap());
+
         Self {
-            games: Default::default(),
+            games,
             bot: Mutex::new(bot),
         }
     }

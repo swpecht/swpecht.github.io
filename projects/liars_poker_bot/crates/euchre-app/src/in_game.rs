@@ -595,7 +595,7 @@ fn PlayerActions<T>(
                 | GameProcessingState::WaitingTrickClear { ready_players: _ }
         )
     {
-        // if not out turn, just show our hand
+        // if not our turn, just show our hand
         let hand = gs.get_hand(south_player);
         render!(
             div { class: "grid gap-y-4 justify-items-center",
@@ -636,8 +636,9 @@ fn PlayerActions<T>(
                 }
             }
         )
-    } else if actions.contains(&EAction::Clubs) {
-        // special case for choosing suit
+    } else if actions.contains(&EAction::Clubs) || actions.contains(&EAction::Spades) {
+        // special case for choosing suit, we test for two suits in case one of them was the face up card and is not
+        // a valid suit selection action
         let hand = gs.get_hand(south_player);
         render!(
             div { class: "grid gap-y-4",
