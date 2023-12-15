@@ -215,7 +215,7 @@ fn handle_take_action(
 fn handle_register_player(game_data: &mut GameData, player_id: usize) -> Result<(), HttpResponse> {
     let num_humans = game_data.players.iter().flatten().count();
     if num_humans >= 2 {
-        return Err(HttpResponse::BadRequest().body("game alrady has 2 human players"));
+        return Err(HttpResponse::Forbidden().body("game already has 2 human players"));
     }
 
     let cur_player_index = game_data
