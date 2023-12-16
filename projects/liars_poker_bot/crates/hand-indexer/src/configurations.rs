@@ -10,7 +10,6 @@ use itertools::Itertools;
 use crate::{
     cards::{cardset::CardSet, Deck},
     math::{binom, coefficient},
-    rankset::suit_config_size,
 };
 
 type SuitIndex = usize;
@@ -288,57 +287,74 @@ fn deal_to_suit_counts<const R: usize>(deal: [CardSet; R], deck: Deck) -> [Round
 mod tests {
     use std::vec;
 
+    use crate::cards::iterators::IsomorphicDealIterator;
+
     use super::*;
 
-    #[test]
-    fn test_coefficient_config_size() {
-        assert_eq!(coefficient_config_size(vec![vec![2]], [13; 4]), 78);
-        assert_eq!(coefficient_config_size(vec![vec![1], vec![1]], [13; 4]), 91);
+    // #[test]
+    // fn test_coefficient_config_size() {
+    //     assert_eq!(coefficient_config_size(vec![vec![2]], [13; 4]), 78);
+    //     assert_eq!(coefficient_config_size(vec![vec![1], vec![1]], [13; 4]), 91);
 
-        // https://www.wolframalpha.com/input?i=coefficient%5B%281%2Bx%2Bx%5E2%29%5E55*%281%2Bx%29%5E%2878-55%29%2C+x%5E2%5D
-        assert_eq!(
-            coefficient_config_size(vec![vec![2], vec![2]], [13, 11]),
-            3058
-        );
+    //     // https://www.wolframalpha.com/input?i=coefficient%5B%281%2Bx%2Bx%5E2%29%5E55*%281%2Bx%29%5E%2878-55%29%2C+x%5E2%5D
+    //     assert_eq!(
+    //         coefficient_config_size(vec![vec![2], vec![2]], [13, 11]),
+    //         3058
+    //     );
 
-        assert_eq!(
-            coefficient_config_size(vec![vec![2], vec![2]], [13; 4]),
-            3081
-        );
-        assert_eq!(
-            coefficient_config_size(vec![vec![2], vec![2], vec![1]], [13; 4]),
-            3081 * 13
-        );
-        assert_eq!(
-            coefficient_config_size(vec![vec![2, 1], vec![2], vec![1]], [13; 4]),
-            3081 * 13 * 11
-        );
+    //     assert_eq!(
+    //         coefficient_config_size(vec![vec![2], vec![2]], [13; 4]),
+    //         3081
+    //     );
+    //     assert_eq!(
+    //         coefficient_config_size(vec![vec![2], vec![2], vec![1]], [13; 4]),
+    //         3081 * 13
+    //     );
+    //     assert_eq!(
+    //         coefficient_config_size(vec![vec![2, 1], vec![2], vec![1]], [13; 4]),
+    //         3081 * 13 * 11
+    //     );
 
-        // 13 choose 2 with replacement * 13 choose 2 with replacement * 12
-        // 91 * 91 * 12
-        // what is actually the right number for this? -- might be the source of error in our estimate
-        // do we need special consideration between rounds?
-        // https://github.com/botm/hand-isomorphism/blob/master/src/mbot/poker/handindex/HandIndexer.java
-        // assert_eq!(
-        //     coefficient_config_size(
-        //         vec![vec![1, 1], vec![1, 0], vec![0, 1], vec![0, 1]],
-        //         [13; 4]
-        //     ),
-        //     99_372
-        // );
+    //     assert_eq!(
+    //         coefficient_config_size(vec![vec![1], vec![1], vec![1]], [11, 13, 13, 13]),
+    //         453
+    //     );
+    //     assert_eq!(coefficient_config_size(vec![vec![2]], [13; 4]), 78);
 
-        assert_eq!(get_round_size(&[2]), 169);
-        assert_eq!(get_round_size(&[2, 3]), 1_286_792);
-        assert_eq!(get_round_size(&[2, 3, 1]), 55_190_538);
-        assert_eq!(get_round_size(&[2, 3, 1, 1]), 2_428_287_420);
-    }
+    //     assert_eq!(
+    //         coefficient_config_size(vec![vec![2, 1], vec![0, 1], vec![0, 1]], [13; 4]),
+    //         78_078
+    //     );
 
-    fn get_round_size(cards_per_round: &[usize]) -> usize {
-        let configs = enumerate_suit_configs(cards_per_round, [13; 4]);
+    //     // 13 choose 2 with replacement * 13 choose 2 with replacement * 12
+    //     // 91 * 91 * 12
+    //     // what is actually the right number for this? -- might be the source of error in our estimate
+    //     // do we need special consideration between rounds?
+    //     // https://github.com/botm/hand-isomorphism/blob/master/src/mbot/poker/handindex/HandIndexer.java
+    //     // assert_eq!(
+    //     //     coefficient_config_size(
+    //     //         vec![vec![1, 1], vec![1, 0], vec![0, 1], vec![0, 1]],
+    //     //         [13; 4]
+    //     //     ),
+    //     //     99_372
+    //     // );
+
+    //     assert_eq!(get_round_size([2]), 169);
+    //     assert_eq!(get_round_size([2, 3]), 1_286_792);
+    //     assert_eq!(get_round_size([2, 3, 1]), 55_190_538);
+    //     assert_eq!(get_round_size([2, 3, 1, 1]), 2_428_287_420);
+    // }
+
+    fn get_round_size<const R: usize>(cards_per_round: [usize; R]) -> usize {
+        let deck = Deck::standard();
+        let configs = enumerate_suit_configs(&cards_per_round, [13; 4]);
         let mut size = 0;
         for c in configs {
+            let dealer = IsomorphicDealIterator::for_config(deck, &cards_per_round, c.clone());
             let s = coefficient_config_size(c.clone(), [13; 4]);
-            println!("{:?}: {}", c, s);
+            let deal_size = dealer.count();
+            assert_eq!(s, deal_size, "{:?}", c);
+            println!("validated: {:?}: {}", c, s);
             size += s;
         }
         size

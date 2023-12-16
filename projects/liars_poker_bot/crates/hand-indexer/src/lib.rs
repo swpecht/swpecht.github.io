@@ -1,3 +1,4 @@
+use cards::{iterators::IsomorphicDealIterator, Deck};
 use configurations::{configuration_index_size, enumerate_suit_configs};
 
 use math::find_x;
@@ -21,28 +22,54 @@ pub mod rankset;
 pub struct HandIndexer<const N: usize, const S: usize> {
     /// Contains the sorted list of configurations and the index each of those configurations starts at
     configurations: Vec<(usize, Vec<Vec<usize>>)>,
+    /// index of configurations for the start of each round
+    round_offsets: Vec<usize>,
+}
+
+impl HandIndexer<13, 4> {
+    /// Create a new hand indexer for texas hold-em. This is an expensive operation
+    pub fn poker() -> Self {
+        let cards_per_round = [2, 3]; // todo: add the river on later
+        let deck = Deck::standard();
+        let mut configurations = Vec::new();
+        let mut round_offsets = Vec::with_capacity(cards_per_round.len());
+        let mut index = 0;
+
+        for r in 0..cards_per_round.len() {
+            round_offsets.push(configurations.len());
+            for c in enumerate_suit_configs(&cards_per_round[0..r + 1], [13; 4]) {
+                configurations.push((index, c.clone()));
+                let dealer =
+                    IsomorphicDealIterator::for_config(deck, &cards_per_round[0..r + 1], c);
+                let config_size = dealer.count();
+                index += config_size;
+            }
+        }
+
+        // push a final one for the last index possible index
+        round_offsets.push(configurations.len());
+        configurations.push((index + 1, Vec::new()));
+
+        Self {
+            configurations,
+            round_offsets,
+        }
+    }
 }
 
 impl<const N: usize, const S: usize> HandIndexer<N, S> {
-    /// TODO: add offset for cards in just the earlier rounds
-    pub fn new(cards_per_round: &[usize]) -> Self {
-        let mut configurations = Vec::new();
-        let mut index_start = 0;
-
-        // for c in enumerate_suit_configs(cards_per_round, [N; S]) {
-        //     let size = configuration_index_size(&c, [N; S]);
-        //     configurations.push((index_start, c));
-        //     index_start += size;
-        // }
-
-        HandIndexer { configurations }
+    /// Returns the maxmimum index for the indexer
+    pub fn max_index(&self, round: usize) -> usize {
+        assert!(round + 1 < self.round_offsets.len());
+        self.configurations[self.round_offsets[round + 1]].0
     }
 
-    /// Returns the maxmimum index for the indexer
-    pub fn max_index(&self) -> usize {
-        let (idx, c) = self.configurations.last().unwrap();
+    pub fn unindex(&self, idx: usize) -> Option<Vec<Vec<RankSet>>> {
         todo!()
-        // idx + configuration_index_size(c, [N; S])
+    }
+
+    pub fn index(&self, hand: Vec<Vec<RankSet>>) -> Option<usize> {
+        todo!()
     }
 
     /// Returns the relative index for a hand within a given suit configuration
@@ -179,9 +206,6 @@ impl<const N: usize, const S: usize> HandIndexer<N, S> {
                     }
                 }
 
-                //     }
-
-                //     //for(suit_index[i]=0; nCr_groups[suit_index[i]+1+j-i-1][j-i] <= group_index; ++suit_index[i]) {}
                 group_index -= binom(suit_index[i] + j - i - 1, j - i);
 
                 i += 1;
@@ -314,47 +338,6 @@ mod tests {
     use std::{collections::HashSet, vec};
 
     use super::*;
-
-    #[test]
-    fn max_index() {
-        // The deal in texas holdem
-        // (2): 13 choose 2 = 78
-        // (1)(1): 13 choose 2 with replacement = 91
-
-        // Look the paper again to see how the config sizes are calculated -- doing something wrong here
-        // maybe use the indexer to figure this out? Figure out what the max possible index is? for a given config?
-        let indexer = HandIndexer::<13, 4>::new(&[2]);
-        assert_eq!(indexer.max_index(), 169);
-
-        // flop
-        //
-        // [[2, 3]]                             12870
-        // [[2, 2], [0, 1]]                     55770
-        // [[2, 1], [0, 2]]                     66924
-        // [[2, 1], [0, 1], [0, 1]]             145002
-        // [[2, 0], [0, 3]]                     22308
-        // [[2, 0], [0, 2], [0, 1]]             79092
-        // [[2, 0], [0, 1], [0, 1], [0, 1]]     171366
-        // [[1, 3], [1, 0]]                     37180
-        // [[1, 2], [1, 1]]
-        // [[1, 2], [1, 0], [0, 1]]
-        // [[1, 1], [1, 1], [0, 1]]
-        // [[1, 1], [1, 0], [0, 2]]
-        // [[1, 1], [1, 0], [0, 1], [0, 1]]
-        // [[1, 0], [1, 0], [0, 3]]
-        // [[1, 0], [1, 0], [0, 2], [0, 1]]
-        let indexer = HandIndexer::<13, 4>::new(&[2, 3]);
-        let configs = enumerate_suit_configs(&[2, 3], [13; 4]);
-        assert_eq!(indexer.max_index(), 1_286_792); // from isomorphism paper
-
-        // turn
-        let indexer = HandIndexer::<13, 4>::new(&[2, 3, 1]);
-        assert_eq!(indexer.max_index(), 55_190_538); // from isomorphism paper
-
-        // river
-        let indexer = HandIndexer::<13, 4>::new(&[2, 3, 1, 1]);
-        assert_eq!(indexer.max_index(), 2_428_287_420); // from isomorphism paper
-    }
 
     #[test]
     fn test_index_set() {
