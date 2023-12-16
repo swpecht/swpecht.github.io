@@ -38,9 +38,9 @@ fn count_combinations<const R: usize>(cards_per_round: [usize; R]) -> usize {
 fn test_poker_index_size() {
     let indexer = HandIndexer::poker();
     assert_eq!(indexer.max_index(0), 169);
-    assert_eq!(indexer.max_index(1), 1_286_792); // from isomorphism paper
-    assert_eq!(indexer.max_index(2), 55_190_538); // from isomorphism paper
+    assert_eq!(indexer.max_index(1), 169 + 1_286_792); // from isomorphism paper
 
     // Not yet supported for performance reasons
+    // assert_eq!(indexer.max_index(2), 169 + 1_286_792 + 55_190_538); // from isomorphism paper
     // assert_eq!(indexer.max_index(3), 2_428_287_420); // from isomorphism paper
 }

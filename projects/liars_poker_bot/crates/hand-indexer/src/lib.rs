@@ -48,7 +48,7 @@ impl HandIndexer<13, 4> {
 
         // push a final one for the last index possible index
         round_offsets.push(configurations.len());
-        configurations.push((index + 1, Vec::new()));
+        configurations.push((index, Vec::new()));
 
         Self {
             configurations,
