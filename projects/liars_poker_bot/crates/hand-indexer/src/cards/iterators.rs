@@ -158,6 +158,11 @@ fn incremenet_deal<const R: usize>(
     Some(deal)
 }
 
+enum IsoType {
+    Standard,
+    Euchre,
+}
+
 /// Iterates over all possible isomorphic deals of a deck -- suit can be changed, but rank cannot
 ///
 /// Follows the definition in Kevin's paper
@@ -165,6 +170,7 @@ pub struct IsomorphicDealIterator {
     deal_enumerator: DealEnumerationIterator,
     previous_deals: HashSet<[CardSet; MAX_ROUNDS]>,
     suit_counts_filter: Option<[[usize; MAX_ROUNDS]; 4]>,
+    iso_type: IsoType,
 }
 
 impl IsomorphicDealIterator {
@@ -175,6 +181,7 @@ impl IsomorphicDealIterator {
             deal_enumerator,
             previous_deals: HashSet::new(),
             suit_counts_filter: None,
+            iso_type: IsoType::Standard,
         }
     }
 
@@ -199,6 +206,7 @@ impl IsomorphicDealIterator {
             deal_enumerator,
             previous_deals: HashSet::new(),
             suit_counts_filter: Some(suit_counts),
+            iso_type: IsoType::Standard,
         }
     }
 }
@@ -210,7 +218,10 @@ impl Iterator for IsomorphicDealIterator {
         let mut iso_deal;
         loop {
             let next_deal = self.deal_enumerator.next()?;
-            iso_deal = isomorphic(next_deal, &self.deal_enumerator.deck);
+            iso_deal = match self.iso_type {
+                IsoType::Standard => isomorphic(next_deal, &self.deal_enumerator.deck),
+                IsoType::Euchre => euchre_isomorphic(next_deal),
+            };
 
             if let Some(count_filter) = self.suit_counts_filter {
                 let suit_counts = suit_counts(iso_deal);
