@@ -249,7 +249,50 @@ fn isomorphic<const R: usize>(deal: [CardSet; R], deck: &Deck) -> [CardSet; R] {
         Ordering::Equal => card_arrays[a].cmp(&card_arrays[b]),
     });
     indexes.reverse();
+    reorder_deal(deal, indexes)
+}
 
+/// Adjusts the suits in the cardset to make isomorphic for euchre rules
+/// we don't split up red and black suits given how the jack behaves with trump
+fn euchre_isomorphic<const R: usize>(deal: [CardSet; R]) -> [CardSet; R] {
+    let counts = suit_counts(deal);
+    let mut indexes = [0, 1, 2, 3];
+    let card_arrays = card_array(deal);
+    // sort by suit counts first
+    // if the counts are equal, we sort by the cards with earlier rounds having priorty
+    indexes.sort_by(|&a, &b| match counts[a].cmp(&counts[b]) {
+        Ordering::Greater => Ordering::Greater,
+        Ordering::Less => Ordering::Less,
+        Ordering::Equal => card_arrays[a].cmp(&card_arrays[b]),
+    });
+    indexes.reverse();
+
+    // Fix the indexes by rotating them until the proper compliment
+    let complement = match indexes[0] {
+        0 => 1,
+        1 => 0,
+        2 => 3,
+        3 => 2,
+        _ => panic!("invalid index"),
+    };
+
+    while indexes[1] != complement {
+        indexes[1..].rotate_left(1);
+    }
+
+    // sort the last 2 indexes
+    indexes[2..].sort_by(|&a, &b| match counts[a].cmp(&counts[b]) {
+        Ordering::Greater => Ordering::Greater,
+        Ordering::Less => Ordering::Less,
+        Ordering::Equal => card_arrays[a].cmp(&card_arrays[b]),
+    });
+    indexes[2..].reverse();
+
+    reorder_deal(deal, indexes)
+}
+
+/// Re-order the suits to match the order in indexes. indexes[0] will be the new first suit
+fn reorder_deal<const R: usize>(deal: [CardSet; R], indexes: [usize; 4]) -> [CardSet; R] {
     let mut iso_deal = [CardSet::default(); R];
     for r in 0..R {
         let array = to_array(deal[r].0);
