@@ -200,37 +200,36 @@ fn coefficient_config_size<const S: usize>(
     config: Vec<Vec<usize>>,
     mut cards_per_suit: [usize; S],
 ) -> usize {
-    let suit_counts = config_to_suit_counts::<S>(config);
+    let rounds = config.iter().map(|x| x.len()).max().unwrap_or(0);
 
     let mut size = 1;
-    for round in suit_counts {
-        // We process based on the number of cards chosen, suits with different numbers of cards chosen are independent
-        // https://math.stackexchange.com/questions/4813416/calculating-the-number-of-non-equivalent-hands-for-a-given-suit-configuration
-        let uniq_counts = round.iter().filter(|x| **x > 0).unique().collect_vec();
-        for &count in uniq_counts {
-            // since all of these suits have the same number of cards in this round, we don't need to actually
-            // attach a specific count to any suit. Instead, we just collect the remaining card
-            // counts for all suits where we need that many cards
-            let mut remaining_cards = Vec::new();
-            for i in 0..S {
-                if round[i] == count {
-                    remaining_cards.push(cards_per_suit[i]);
-                }
-            }
-
-            // in the simple case where there is only 1 suit, the `binom` function gives the size of the combination
-            if remaining_cards.len() == 1 {
-                size *= binom(remaining_cards[0], count);
-            } else {
-                size *= variant_size(count, &remaining_cards);
+    let mut s = 0;
+    while s < config.len() {
+        // get all suits with the same config up to the current round, these are dependant on each other
+        // j-1 is the index of the last matching suit
+        // todo: actually want to do this over all rounds
+        let mut j = s + 1;
+        for i in j..config.len() {
+            if config[s] == config[i] {
+                j += 1;
             }
         }
+        let matching_suits = j - s;
+        for r in 0..rounds {
+            let cards_to_deal_per_suit = *config.get(s).and_then(|x| x.get(r)).unwrap_or(&0);
+            let remaining_cards = cards_per_suit[s];
+            let variant_size = coefficient(
+                vec![vec![1; matching_suits + 1]; binom(remaining_cards, cards_to_deal_per_suit)],
+                matching_suits,
+            );
 
-        // subtract used cards after the round is over
-        cards_per_suit
-            .iter_mut()
-            .zip(round.iter())
-            .for_each(|(c, used)| *c -= used);
+            size *= variant_size;
+
+            for i in s..j {
+                cards_per_suit[i] -= cards_to_deal_per_suit;
+            }
+        }
+        s = j;
     }
 
     size
@@ -291,59 +290,31 @@ mod tests {
 
     use super::*;
 
-    // #[test]
-    // fn test_coefficient_config_size() {
-    //     assert_eq!(coefficient_config_size(vec![vec![2]], [13; 4]), 78);
-    //     assert_eq!(coefficient_config_size(vec![vec![1], vec![1]], [13; 4]), 91);
+    #[test]
+    fn test_coefficient_config_size() {
+        assert_eq!(coefficient_config_size(vec![vec![2]], [13; 4]), 78);
+        assert_eq!(coefficient_config_size(vec![vec![1], vec![1]], [13; 4]), 91);
 
-    //     // https://www.wolframalpha.com/input?i=coefficient%5B%281%2Bx%2Bx%5E2%29%5E55*%281%2Bx%29%5E%2878-55%29%2C+x%5E2%5D
-    //     assert_eq!(
-    //         coefficient_config_size(vec![vec![2], vec![2]], [13, 11]),
-    //         3058
-    //     );
+        assert_eq!(
+            coefficient_config_size(vec![vec![2], vec![2]], [13; 4]),
+            3081
+        );
 
-    //     assert_eq!(
-    //         coefficient_config_size(vec![vec![2], vec![2]], [13; 4]),
-    //         3081
-    //     );
-    //     assert_eq!(
-    //         coefficient_config_size(vec![vec![2], vec![2], vec![1]], [13; 4]),
-    //         3081 * 13
-    //     );
-    //     assert_eq!(
-    //         coefficient_config_size(vec![vec![2, 1], vec![2], vec![1]], [13; 4]),
-    //         3081 * 13 * 11
-    //     );
+        assert_eq!(
+            coefficient_config_size(vec![vec![1, 1], vec![1, 1]], [13; 4]),
+            brute_force(vec![vec![1, 1], vec![1, 1]])
+        );
 
-    //     assert_eq!(
-    //         coefficient_config_size(vec![vec![1], vec![1], vec![1]], [11, 13, 13, 13]),
-    //         453
-    //     );
-    //     assert_eq!(coefficient_config_size(vec![vec![2]], [13; 4]), 78);
+        assert_eq!(
+            coefficient_config_size(vec![vec![2, 1], vec![0, 1], vec![0, 1]], [13; 4]),
+            78_078
+        );
 
-    //     assert_eq!(
-    //         coefficient_config_size(vec![vec![2, 1], vec![0, 1], vec![0, 1]], [13; 4]),
-    //         78_078
-    //     );
-
-    //     // 13 choose 2 with replacement * 13 choose 2 with replacement * 12
-    //     // 91 * 91 * 12
-    //     // what is actually the right number for this? -- might be the source of error in our estimate
-    //     // do we need special consideration between rounds?
-    //     // https://github.com/botm/hand-isomorphism/blob/master/src/mbot/poker/handindex/HandIndexer.java
-    //     // assert_eq!(
-    //     //     coefficient_config_size(
-    //     //         vec![vec![1, 1], vec![1, 0], vec![0, 1], vec![0, 1]],
-    //     //         [13; 4]
-    //     //     ),
-    //     //     99_372
-    //     // );
-
-    //     assert_eq!(get_round_size([2]), 169);
-    //     assert_eq!(get_round_size([2, 3]), 1_286_792);
-    //     assert_eq!(get_round_size([2, 3, 1]), 55_190_538);
-    //     assert_eq!(get_round_size([2, 3, 1, 1]), 2_428_287_420);
-    // }
+        assert_eq!(get_round_size([2]), 169);
+        assert_eq!(get_round_size([2, 3]), 1_286_792);
+        assert_eq!(get_round_size([2, 3, 1]), 55_190_538);
+        assert_eq!(get_round_size([2, 3, 1, 1]), 2_428_287_420);
+    }
 
     fn get_round_size<const R: usize>(cards_per_round: [usize; R]) -> usize {
         let deck = Deck::standard();
@@ -358,6 +329,17 @@ mod tests {
             size += s;
         }
         size
+    }
+
+    fn brute_force(config: Vec<Vec<usize>>) -> usize {
+        let deck = Deck::standard();
+        let rounds = config.iter().map(|x| x.len()).max().unwrap_or(0);
+        let mut cards_per_round = Vec::new();
+        for r in 0..rounds {
+            cards_per_round.push(config.iter().map(|x| x.get(r).unwrap_or(&0)).sum())
+        }
+
+        IsomorphicDealIterator::for_config(deck, &cards_per_round, config).count()
     }
 
     #[test]
