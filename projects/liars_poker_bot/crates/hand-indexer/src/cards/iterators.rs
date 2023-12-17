@@ -158,7 +158,7 @@ fn incremenet_deal<const R: usize>(
     Some(deal)
 }
 
-enum IsoType {
+pub enum DeckType {
     Standard,
     Euchre,
 }
@@ -170,18 +170,33 @@ pub struct IsomorphicDealIterator {
     deal_enumerator: DealEnumerationIterator,
     previous_deals: HashSet<[CardSet; MAX_ROUNDS]>,
     suit_counts_filter: Option<[[usize; MAX_ROUNDS]; 4]>,
-    iso_type: IsoType,
+    deck_type: DeckType,
 }
 
 impl IsomorphicDealIterator {
-    pub fn new(deck: Deck, cards_per_round: &[usize]) -> Self {
+    pub fn new(cards_per_round: &[usize], deck_type: DeckType) -> Self {
+        let deck = match deck_type {
+            DeckType::Standard => Deck::standard(),
+            DeckType::Euchre => Deck::euchre(),
+        };
         let deal_enumerator = DealEnumerationIterator::new(deck, cards_per_round);
 
         Self {
             deal_enumerator,
             previous_deals: HashSet::new(),
             suit_counts_filter: None,
-            iso_type: IsoType::Standard,
+            deck_type,
+        }
+    }
+
+    pub fn std(deck: Deck, cards_per_round: &[usize]) -> Self {
+        let deal_enumerator = DealEnumerationIterator::new(deck, cards_per_round);
+
+        Self {
+            deal_enumerator,
+            previous_deals: HashSet::new(),
+            suit_counts_filter: None,
+            deck_type: DeckType::Standard,
         }
     }
 
@@ -206,7 +221,7 @@ impl IsomorphicDealIterator {
             deal_enumerator,
             previous_deals: HashSet::new(),
             suit_counts_filter: Some(suit_counts),
-            iso_type: IsoType::Standard,
+            deck_type: DeckType::Standard,
         }
     }
 }
@@ -218,9 +233,9 @@ impl Iterator for IsomorphicDealIterator {
         let mut iso_deal;
         loop {
             let next_deal = self.deal_enumerator.next()?;
-            iso_deal = match self.iso_type {
-                IsoType::Standard => isomorphic(next_deal, &self.deal_enumerator.deck),
-                IsoType::Euchre => euchre_isomorphic(next_deal),
+            iso_deal = match self.deck_type {
+                DeckType::Standard => isomorphic(next_deal, &self.deal_enumerator.deck),
+                DeckType::Euchre => euchre_isomorphic(next_deal),
             };
 
             if let Some(count_filter) = self.suit_counts_filter {
@@ -399,22 +414,23 @@ mod tests {
             DealEnumerationIterator::new(deck, &[2, 2]).count(),
             1_624_350
         );
+
+        let deck = Deck::euchre();
+        assert_eq!(DealEnumerationIterator::new(deck, &[1]).count(), 24);
+        assert_eq!(DealEnumerationIterator::new(deck, &[1, 5]).count(), 807_576);
     }
 
     #[test]
     fn test_count_iso_deals() {
         let deck = Deck::standard();
 
-        // the rejection criteria are wrong, since we don't actually enumerate from lowest to highest -- could change so that this is the case
-        // right now we increment the highest bit
-        // can look at just using a hash set for this for now? -- could we use bit runs to keep track of what we've seen?
-        // whats the memory on this look like?
-        // TODOs:
-        // * Fix it so it works with hashsets
-        // * Look at more efificient hashsets if needed to make it work, or fixing the low to high thing
+        assert_eq!(IsomorphicDealIterator::std(deck, &[1]).count(), 13);
+        assert_eq!(IsomorphicDealIterator::std(deck, &[2]).count(), 169);
 
-        assert_eq!(IsomorphicDealIterator::new(deck, &[1]).count(), 13);
-        assert_eq!(IsomorphicDealIterator::new(deck, &[2]).count(), 169);
+        assert_eq!(
+            IsomorphicDealIterator::new(&[1, 5], DeckType::Euchre).count(),
+            4_896
+        )
     }
 
     fn count_combinations<const R: usize>(cards_per_round: [usize; R]) -> usize {
@@ -432,14 +448,14 @@ mod tests {
     fn test_with_hand_indexer() {
         let deck = Deck::standard();
 
-        for deal in IsomorphicDealIterator::new(deck, &[2]) {
+        for deal in IsomorphicDealIterator::std(deck, &[2]) {
             let counts = suit_counts(deal);
             assert!(counts[0][0] == 2 || (counts[0][0] == 1 && counts[1][0] == 1));
             let array = to_array(deal[0].0);
             assert!(array[0] >= array[1]);
         }
 
-        assert_eq!(IsomorphicDealIterator::new(deck, &[2]).count(), 169);
+        assert_eq!(IsomorphicDealIterator::std(deck, &[2]).count(), 169);
 
         let mut iso_deals = HashSet::new();
         let indexer = HandIndexer::poker();
@@ -452,7 +468,7 @@ mod tests {
         }
         assert_eq!(iso_deals.len(), 91);
 
-        for deal in IsomorphicDealIterator::new(deck, &[2]) {
+        for deal in IsomorphicDealIterator::std(deck, &[2]) {
             if deal[0].count(&deck.suits[0]) != 1 {
                 continue; // only care about 1, 1 suit config
             }

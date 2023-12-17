@@ -69,7 +69,15 @@ impl Deck {
 
     /// Returns a euchre deck
     pub fn euchre() -> Self {
-        todo!()
+        let deck = Self {
+            remaining_cards: CardSet(
+                0b0000000000111111000000000011111100000000001111110000000000111111,
+            ),
+            suits: [Suit(SPADES), Suit(CLUBS), Suit(HEARTS), Suit(DIAMONDS)],
+        };
+        assert_eq!(deck.remaining_cards.len(), 24);
+        deck.validate();
+        deck
     }
 
     /// Returns if a given configuration is valid

@@ -16,9 +16,9 @@ fn test_count_deals() {
     // assert_eq!(count_combinations([2, 3, 1, 1]), 56_189_515_200);
 
     let deck = Deck::standard();
-    assert_eq!(IsomorphicDealIterator::new(deck, &[2]).count(), 169);
+    assert_eq!(IsomorphicDealIterator::std(deck, &[2]).count(), 169);
     assert_eq!(
-        IsomorphicDealIterator::new(deck, &[2, 3]).count(),
+        IsomorphicDealIterator::std(deck, &[2, 3]).count(),
         1_286_792
     );
 }
