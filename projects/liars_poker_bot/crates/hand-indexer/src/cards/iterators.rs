@@ -233,6 +233,13 @@ impl Iterator for IsomorphicDealIterator {
         let mut iso_deal;
         loop {
             let next_deal = self.deal_enumerator.next()?;
+            // Once we no longer have spades (suit0) in the first round,
+            // we know we're repeating rounds -- this is dependant on how we iterate
+            // through the cards though
+            if next_deal[0].count(&Suit(SPADES)) == 0 {
+                return None;
+            }
+
             iso_deal = match self.deck_type {
                 DeckType::Standard => isomorphic(next_deal, &self.deal_enumerator.deck),
                 DeckType::Euchre => euchre_isomorphic(next_deal),
