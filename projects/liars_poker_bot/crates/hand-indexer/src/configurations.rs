@@ -395,5 +395,28 @@ mod tests {
                 vec![vec![1, 0], vec![1, 0], vec![0, 2], vec![0, 1],],
             ]
         );
+
+        // euchre
+        assert_eq!(
+            enumerate_suit_configs(&[1, 5], [6; 4]),
+            vec![
+                vec![vec![1, 5],],
+                vec![vec![1, 4], vec![0, 1],],
+                vec![vec![1, 3], vec![0, 2],],
+                vec![vec![1, 3], vec![0, 1], vec![0, 1],],
+                vec![vec![1, 2], vec![0, 3],],
+                vec![vec![1, 2], vec![0, 2], vec![0, 1],],
+                vec![vec![1, 2], vec![0, 1], vec![0, 1], vec![0, 1],],
+                vec![vec![1, 1], vec![0, 4],],
+                vec![vec![1, 1], vec![0, 3], vec![0, 1],],
+                vec![vec![1, 1], vec![0, 2], vec![0, 2],],
+                vec![vec![1, 1], vec![0, 2], vec![0, 1], vec![0, 1],],
+                vec![vec![1, 0], vec![0, 5],],
+                vec![vec![1, 0], vec![0, 4], vec![0, 1],],
+                vec![vec![1, 0], vec![0, 3], vec![0, 2],],
+                vec![vec![1, 0], vec![0, 3], vec![0, 1], vec![0, 1],],
+                vec![vec![1, 0], vec![0, 2], vec![0, 2], vec![0, 1],],
+            ]
+        );
     }
 }
