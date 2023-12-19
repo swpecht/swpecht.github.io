@@ -30,7 +30,7 @@ pub struct HandIndexer<const N: usize, const S: usize> {
 impl HandIndexer<13, 4> {
     /// Create a new hand indexer for texas hold-em. This is an expensive operation
     pub fn poker() -> Self {
-        let cards_per_round = [2]; //, 3]; // todo: add the river on later
+        let cards_per_round = [2, 3]; // todo: add the river on later
         let deck = Deck::standard();
         let mut configurations = Vec::new();
         let mut round_offsets = Vec::with_capacity(cards_per_round.len());

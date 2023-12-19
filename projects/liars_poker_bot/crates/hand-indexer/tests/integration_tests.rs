@@ -3,12 +3,11 @@ use std::collections::HashSet;
 use hand_indexer::{
     cards::{
         cardset::CardSet,
-        iterators::{DealEnumerationIterator, IsomorphicDealIterator},
-        Card, Deck,
+        iterators::{isomorphic, DealEnumerationIterator, IsomorphicDealIterator},
+        Deck,
     },
     HandIndexer,
 };
-use itertools::Itertools;
 
 #[test]
 fn test_count_deals() {
@@ -34,63 +33,44 @@ fn test_poker_indexer() {
 
     // round 0, pocket
     for d in IsomorphicDealIterator::std(deck, &[2]) {
-        let deal = d
-            .into_iter()
-            .filter(|&x| x != CardSet::default())
-            .collect_vec();
-        brute_set.insert(deal);
+        brute_set.insert(d);
     }
 
-    // // round 1, flop
-    // for d in IsomorphicDealIterator::std(deck, &[2, 3]) {
-    //     let deal = d
-    //         .into_iter()
-    //         .filter(|&x| x != CardSet::default())
-    //         .collect_vec();
-    //     brute_set.insert(deal);
-    // }
+    // round 1, flop
+    for d in IsomorphicDealIterator::std(deck, &[2, 3]) {
+        brute_set.insert(d);
+    }
 
     let mut index_set = HashSet::new();
 
     let indexer = HandIndexer::poker();
     let h = indexer.unindex(0).unwrap();
     indexer.index(&h);
-    for idx in 0..indexer.index_size(0) {
-        let deal = indexer.unindex(idx).unwrap();
-        assert!(deal.iter().all(|&x| x != CardSet::default()));
-        assert!(!deal.is_empty(), "{} is empty", idx);
+    for idx in 0..indexer.index_size(0) + indexer.index_size(1) {
+        let deal = indexer
+            .unindex(idx)
+            .unwrap_or_else(|| panic!("failed to unindex: {}", idx));
         assert_eq!(
             indexer.index(&deal),
             Some(idx),
             "failed to reindex deal: {:?}",
             deal
         );
-        assert_eq!(deal.len(), 1, "{}: {:?}", idx, deal);
-        index_set.insert(deal);
+
+        // apply the same isomorphism transform so that we can directly compare the hands
+        let mut iso_deal = [CardSet::default(); 5];
+        deal.into_iter()
+            .enumerate()
+            .for_each(|(i, x)| iso_deal[i] = x);
+        index_set.insert(isomorphic(iso_deal));
     }
 
     assert_eq!(index_set.len(), brute_set.len());
-    // assert_eq!(index_set, brute_set);
-
-    for deal in index_set {
-        assert!(brute_set.contains(&deal), "{:?}", deal);
-    }
-    // 10000 0000000000001
-
-    // let mut index_list = index_set.into_iter().collect_vec();
-    // index_list.sort();
-
-    // let mut brute_list = brute_set.into_iter().collect_vec();
-    // brute_list.sort();
-
-    // // assert_eq!(index_list, brute_list);
-    // let mut diff = Vec::new();
-    // for i in 0..index_list.len() {
-    //     if index_list[i] != brute_list[i] {
-    //         diff.push((i, index_list[i].clone(), brute_list[i].clone()));
-    //     }
-    // }
-    // assert!(diff.is_empty(), "{:#?}", diff);
+    assert_eq!(
+        index_set.len(),
+        indexer.index_size(0) + indexer.index_size(1)
+    );
+    assert_eq!(index_set, brute_set);
 }
 
 fn count_combinations<const R: usize>(cards_per_round: [usize; R]) -> usize {

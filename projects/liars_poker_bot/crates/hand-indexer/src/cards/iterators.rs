@@ -241,7 +241,7 @@ impl Iterator for IsomorphicDealIterator {
             }
 
             iso_deal = match self.deck_type {
-                DeckType::Standard => isomorphic(next_deal, &self.deal_enumerator.deck),
+                DeckType::Standard => isomorphic(next_deal),
                 DeckType::Euchre => euchre_isomorphic(next_deal),
             };
 
@@ -264,13 +264,7 @@ impl Iterator for IsomorphicDealIterator {
 
 // Adjusts suits on the cardset to make the deal isomorphic, specicially, we
 // make the lowest suit be the highest suit configurations
-fn isomorphic<const R: usize>(deal: [CardSet; R], deck: &Deck) -> [CardSet; R] {
-    assert_eq!(
-        deck.suits[0],
-        Suit(SPADES),
-        "only support the standard, contiguous suits for now"
-    );
-
+pub fn isomorphic<const R: usize>(deal: [CardSet; R]) -> [CardSet; R] {
     let counts = suit_counts(deal);
     let mut indexes = [0, 1, 2, 3];
     let card_arrays = card_array(deal);
@@ -406,7 +400,7 @@ mod tests {
         let deck = Deck::standard();
         for s in deck.suits {
             let set = CardSet(s.0);
-            assert_eq!(isomorphic([set], &deck)[0].0, deck.suits[0].0);
+            assert_eq!(isomorphic([set])[0].0, deck.suits[0].0);
         }
     }
 
