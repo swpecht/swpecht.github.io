@@ -1,10 +1,14 @@
+use std::collections::HashSet;
+
 use hand_indexer::{
     cards::{
+        cardset::CardSet,
         iterators::{DealEnumerationIterator, IsomorphicDealIterator},
         Deck,
     },
     HandIndexer,
 };
+use itertools::Itertools;
 
 #[test]
 fn test_count_deals() {
@@ -21,6 +25,41 @@ fn test_count_deals() {
         IsomorphicDealIterator::std(deck, &[2, 3]).count(),
         1_286_792
     );
+}
+
+#[test]
+fn test_poker_indexer() {
+    let deck = Deck::standard();
+    let mut brute_set = HashSet::new();
+
+    // round 0, pocket
+    for d in IsomorphicDealIterator::std(deck, &[2]) {
+        let deal = d
+            .into_iter()
+            .filter(|&x| x != CardSet::default())
+            .collect_vec();
+        brute_set.insert(deal);
+    }
+
+    // round 1, flop
+    for d in IsomorphicDealIterator::std(deck, &[2, 3]) {
+        let deal = d
+            .into_iter()
+            .filter(|&x| x != CardSet::default())
+            .collect_vec();
+        brute_set.insert(deal);
+    }
+
+    let mut index_set = HashSet::new();
+
+    let indexer = HandIndexer::poker();
+    for idx in 0..indexer.max_index(1) {
+        let deal = indexer.unindex(idx).unwrap();
+        assert_eq!(indexer.index(&deal), Some(idx));
+        index_set.insert(deal);
+    }
+
+    assert_eq!(index_set, brute_set);
 }
 
 fn count_combinations<const R: usize>(cards_per_round: [usize; R]) -> usize {

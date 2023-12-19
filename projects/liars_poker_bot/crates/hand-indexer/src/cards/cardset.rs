@@ -122,6 +122,12 @@ impl From<CardSet> for [RankSet; 4] {
     }
 }
 
+impl From<[RankSet; 4]> for CardSet {
+    fn from(value: [RankSet; 4]) -> Self {
+        unsafe { std::mem::transmute(value) }
+    }
+}
+
 #[cfg(test)]
 mod tests {
 

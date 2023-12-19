@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use crate::{math::binom, Rank};
 
 #[derive(Default, PartialEq, Eq, Clone, Copy, Hash)]
-pub struct RankSet(pub(super) u16);
+pub(super) struct RankSet(pub(super) u16);
 
 impl RankSet {
     pub fn new(ranks: &[u8]) -> Self {

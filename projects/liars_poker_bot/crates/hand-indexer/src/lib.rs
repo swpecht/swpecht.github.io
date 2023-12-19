@@ -1,6 +1,7 @@
-use cards::{iterators::IsomorphicDealIterator, Deck};
+use cards::{cardset::CardSet, iterators::IsomorphicDealIterator, Deck};
 use configurations::{configuration_index_size, enumerate_suit_configs};
 
+use itertools::Itertools;
 use math::find_x;
 use rankset::{cmp_group_rank, group_config, suit_config_size, RankSet};
 
@@ -64,12 +65,34 @@ impl<const N: usize, const S: usize> HandIndexer<N, S> {
         self.configurations[self.round_offsets[round + 1]].0
     }
 
-    pub fn unindex(&self, idx: usize) -> Option<Vec<Vec<RankSet>>> {
-        todo!()
+    pub fn unindex(&self, idx: usize) -> Option<Vec<CardSet>> {
+        let (config_offset, config) = self.configurations.iter().filter(|x| x.0 <= idx).last()?;
+        let hand = self.unindex_hand(idx - config_offset, config.clone())?;
+
+        let mut result = Vec::with_capacity(hand.len());
+        for round in hand {
+            let mut cards = [RankSet::default(); 4];
+            for (i, suit) in round.into_iter().enumerate() {
+                cards[i] = suit;
+            }
+            result.push(cards.into());
+        }
+
+        Some(result)
     }
 
-    pub fn index(&self, hand: Vec<Vec<RankSet>>) -> Option<usize> {
-        todo!()
+    /// Index a hand where each CardSet is a round
+    pub fn index(&self, hand: &[CardSet]) -> Option<usize> {
+        let hand: Vec<Vec<RankSet>> = hand
+            .iter()
+            .map(|x| <[RankSet; 4]>::from(*x).to_vec())
+            .collect_vec();
+
+        let config = hand.iter().map(|x| group_config(x)).collect_vec();
+
+        let config_offset = self.configurations.iter().find(|x| x.1 == config)?.0;
+
+        Some(config_offset + self.index_hand(hand))
     }
 
     /// Returns the relative index for a hand within a given suit configuration
@@ -146,7 +169,7 @@ impl<const N: usize, const S: usize> HandIndexer<N, S> {
         this
     }
 
-    pub fn unindex_hand(
+    fn unindex_hand(
         &self,
         mut index: usize,
         suit_configutation: Vec<Vec<usize>>,
@@ -324,11 +347,6 @@ impl<const N: usize, const S: usize> HandIndexer<N, S> {
         assert_eq!(set.len() as usize, m);
         Some(set)
     }
-}
-
-/// Returns the maximum valid index for a given configuration
-pub fn find_max() -> usize {
-    todo!()
 }
 
 pub struct Rank(u8);
