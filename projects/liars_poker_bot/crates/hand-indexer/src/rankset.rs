@@ -113,7 +113,7 @@ pub fn suit_config_size(lengths: &[usize], max_items: usize) -> usize {
     size
 }
 
-pub fn group_config(a: &[RankSet]) -> Vec<usize> {
+pub(super) fn group_config(a: &[RankSet]) -> Vec<usize> {
     a.iter().map(|x| x.len() as usize).collect()
 }
 

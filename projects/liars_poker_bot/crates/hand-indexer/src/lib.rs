@@ -30,7 +30,7 @@ pub struct HandIndexer<const N: usize, const S: usize> {
 impl HandIndexer<13, 4> {
     /// Create a new hand indexer for texas hold-em. This is an expensive operation
     pub fn poker() -> Self {
-        let cards_per_round = [2, 3]; // todo: add the river on later
+        let cards_per_round = [2]; //, 3]; // todo: add the river on later
         let deck = Deck::standard();
         let mut configurations = Vec::new();
         let mut round_offsets = Vec::with_capacity(cards_per_round.len());
@@ -60,20 +60,22 @@ impl HandIndexer<13, 4> {
 
 impl<const N: usize, const S: usize> HandIndexer<N, S> {
     /// Returns the maxmimum index for the indexer
-    pub fn max_index(&self, round: usize) -> usize {
+    pub fn index_size(&self, round: usize) -> usize {
         assert!(round + 1 < self.round_offsets.len());
         self.configurations[self.round_offsets[round + 1]].0
+            - self.configurations[self.round_offsets[round]].0
     }
 
     pub fn unindex(&self, idx: usize) -> Option<Vec<CardSet>> {
         let (config_offset, config) = self.configurations.iter().filter(|x| x.0 <= idx).last()?;
         let hand = self.unindex_hand(idx - config_offset, config.clone())?;
+        let rounds = hand.iter().map(|x| x.len()).max().unwrap_or(0);
 
         let mut result = Vec::with_capacity(hand.len());
-        for round in hand {
+        for r in 0..rounds {
             let mut cards = [RankSet::default(); 4];
-            for (i, suit) in round.into_iter().enumerate() {
-                cards[i] = suit;
+            for s in 0..hand.len() {
+                cards[s] = *hand[s].get(r).unwrap_or(&RankSet::default());
             }
             result.push(cards.into());
         }
@@ -83,16 +85,25 @@ impl<const N: usize, const S: usize> HandIndexer<N, S> {
 
     /// Index a hand where each CardSet is a round
     pub fn index(&self, hand: &[CardSet]) -> Option<usize> {
-        let hand: Vec<Vec<RankSet>> = hand
-            .iter()
-            .map(|x| <[RankSet; 4]>::from(*x).to_vec())
-            .collect_vec();
+        let rounds = hand.len();
+        let mut rank_hand = vec![vec![RankSet::default(); rounds]; 4];
 
-        let config = hand.iter().map(|x| group_config(x)).collect_vec();
+        for r in 0..rounds {
+            let suits: [RankSet; 4] = hand[r].into();
+            for s in 0..4 {
+                rank_hand[s][r] = suits[s];
+            }
+        }
+
+        let config = rank_hand
+            .iter()
+            .map(|x| group_config(x)) // Remove any 0 size suits
+            .filter(|x| !x.iter().all(|&c| c == 0))
+            .collect_vec();
 
         let config_offset = self.configurations.iter().find(|x| x.1 == config)?.0;
 
-        Some(config_offset + self.index_hand(hand))
+        Some(config_offset + self.index_hand(rank_hand))
     }
 
     /// Returns the relative index for a hand within a given suit configuration
@@ -169,6 +180,7 @@ impl<const N: usize, const S: usize> HandIndexer<N, S> {
         this
     }
 
+    /// The first level is the suit
     fn unindex_hand(
         &self,
         mut index: usize,
