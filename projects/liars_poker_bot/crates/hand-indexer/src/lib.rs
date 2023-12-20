@@ -299,15 +299,6 @@ impl<const N: usize, const S: usize> HandIndexer<N, S> {
     }
 
     fn unindex_group(&self, idx: usize, mut ms: Vec<usize>, used: RankSet) -> Option<Vec<RankSet>> {
-        // Calcuate the size of the index group to see if we're at an impossible index
-        let mut size = 1;
-        for i in 0..ms.len() {
-            size *= binom(N - ms.iter().take(i).sum::<usize>(), ms[i]);
-        }
-        if idx >= size {
-            return None;
-        }
-
         let m_1 = ms.remove(0);
         let this = idx % binom((N as u8 - used.len()) as usize, m_1);
         let next = idx / binom((N as u8 - used.len()) as usize, m_1);

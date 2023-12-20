@@ -9,6 +9,7 @@ const HEARTS: u64 = CLUBS << 16;
 const DIAMONDS: u64 = HEARTS << 16;
 
 pub(super) const MAX_CARDS: usize = 64;
+pub(super) const MAX_CARDS_PER_SUIT: usize = 16;
 
 pub mod cardset;
 pub mod iterators;
