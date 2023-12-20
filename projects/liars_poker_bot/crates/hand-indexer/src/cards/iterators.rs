@@ -129,8 +129,12 @@ fn incremenet_deal<const R: usize>(
     let valid_cards = round_valid_cards(deal, deck_cards);
     let mut updated_round = R;
     'round_loop: for r in (0..R).rev() {
+        if cards_per_round[r] == 0 {
+            continue;
+        }
         loop {
             let set = match (increment_cardset(deal[r]), r) {
+                // let set = match (deal[r].next(), r) {
                 (Some(x), _) => x,
                 (None, 0) => return None, // if can't increment round 0 anymore, we're at the ned of the iterator
                 (None, _) => continue 'round_loop,

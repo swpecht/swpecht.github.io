@@ -44,7 +44,7 @@ fn test_poker_indexer() {
     let mut index_set = HashSet::new();
 
     let indexer = HandIndexer::poker();
-    let h = indexer.unindex(0).unwrap();
+    let h = indexer.unindex(1027).unwrap();
     indexer.index(&h);
     for idx in 0..indexer.index_size(0) + indexer.index_size(1) {
         let deal = indexer

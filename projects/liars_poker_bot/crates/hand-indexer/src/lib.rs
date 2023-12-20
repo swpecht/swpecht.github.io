@@ -277,7 +277,7 @@ impl<const N: usize, const S: usize> HandIndexer<N, S> {
         let mut idx = binom(N - used.len() as usize, m_1 as usize) * next;
 
         for i in 1..(m_1 + 1) {
-            let largest = B.largest();
+            let largest = B.largest().unwrap();
             if largest >= N as u8 {
                 panic!(
                     "attempted to index a rank >= N. N: {}, rank: {}",
@@ -307,7 +307,7 @@ impl<const N: usize, const S: usize> HandIndexer<N, S> {
         let mut A_1 = RankSet::default();
 
         for _ in 0..B.len() {
-            let b = B.largest();
+            let b = B.largest()?;
             B.remove(b);
             let a = used.upshift_rank(b);
             A_1.insert(a);
@@ -335,6 +335,10 @@ impl<const N: usize, const S: usize> HandIndexer<N, S> {
     }
 
     fn unindex_set(&self, idx: usize, m: usize) -> Option<RankSet> {
+        if m == 0 {
+            return Some(RankSet::default());
+        }
+
         if m == 1 {
             return Some(RankSet::new(&[idx as u8]));
         }
@@ -515,7 +519,7 @@ mod tests {
         let indexer = HandIndexer::<13, 4>::default();
         for i in 0..100 {
             let hand = indexer.unindex_hand(i % 13, vec![vec![1]]).unwrap();
-            assert_eq!(hand[0][0].largest(), (i % 13) as u8);
+            assert_eq!(hand[0][0].largest(), Some((i % 13) as u8));
         }
 
         // A single handed suit should have \binom{13}{5} combinations

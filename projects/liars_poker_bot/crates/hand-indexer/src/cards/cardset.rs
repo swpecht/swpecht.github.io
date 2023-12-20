@@ -4,7 +4,7 @@ use itertools::Itertools;
 
 use crate::{cards::SPADES, rankset::RankSet, Rank};
 
-use super::{Card, Deck, Suit};
+use super::{Card, Deck, Suit, MAX_CARDS_PER_SUIT};
 
 #[derive(Clone, Copy, Default, PartialEq, PartialOrd, Hash, Eq, Ord)]
 pub struct CardSet(pub(super) u64);
@@ -59,6 +59,36 @@ impl CardSet {
         new.0 &= !highest_mask;
         new.0 |= highest_mask.checked_shl(1)?;
         Some(new)
+    }
+
+    /// Returns the next highest CardSet if one exists
+    pub fn next(&self) -> Option<CardSet> {
+        let mut ranks = <[RankSet; 4]>::from(*self);
+
+        // try to increment the earliest rank set
+        let mut i = 0;
+        loop {
+            if let Some(new) = increment_rankset(ranks[i]) {
+                ranks[i] = new;
+                break;
+            }
+            i += 1;
+
+            // Can't increment anything
+            if i >= 4 {
+                return None;
+            }
+        }
+
+        // todo: figure out how to jump to the next suit
+
+        // set all the earlier ones to the smallest setting
+        for s in 0..i {
+            let num_ranks = ranks[i].len();
+            ranks[i] = RankSet(!(!0 << num_ranks));
+        }
+
+        Some(ranks.into())
     }
 
     pub fn remove(&mut self, card: Card) {
@@ -125,6 +155,41 @@ impl From<CardSet> for [RankSet; 4] {
 impl From<[RankSet; 4]> for CardSet {
     fn from(value: [RankSet; 4]) -> Self {
         unsafe { std::mem::transmute(value) }
+    }
+}
+
+impl From<CardSet> for [u16; 4] {
+    fn from(value: CardSet) -> Self {
+        unsafe { std::mem::transmute(value.0) }
+    }
+}
+
+/// Increments the set index, "carrying" when the last digit gets to
+/// MAX_CARDS_PER_SUIT
+fn increment_rankset(set: RankSet) -> Option<RankSet> {
+    increment_rankset_r(set, MAX_CARDS_PER_SUIT as u8)
+}
+
+fn increment_rankset_r(mut set: RankSet, max_rank: u8) -> Option<RankSet> {
+    let last = set.largest()?;
+    // handle the simple case where no carrying occurs
+    if last + 1 < max_rank {
+        let highest_mask = 1 << last;
+        set.0 &= !highest_mask;
+        set.0 |= highest_mask.checked_shl(1)?;
+        return Some(set);
+    }
+
+    // recursively do all the carrying for the base index
+    set.pop_largest();
+    set = increment_rankset_r(set, max_rank - 1)?;
+
+    if set.largest()? + 1 < max_rank {
+        set.insert(set.largest()? + 1);
+        Some(set)
+    } else {
+        // no further indexes are possible
+        None
     }
 }
 

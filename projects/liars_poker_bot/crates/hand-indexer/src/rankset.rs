@@ -23,6 +23,12 @@ impl RankSet {
         self.0 &= !(1 << rank);
     }
 
+    pub fn pop_largest(&mut self) -> Option<u8> {
+        let largest = self.largest()?;
+        self.remove(largest);
+        Some(largest)
+    }
+
     pub fn len(&self) -> u8 {
         self.0.count_ones() as u8
     }
@@ -36,10 +42,13 @@ impl RankSet {
     }
 
     /// Return the rank of the largest item in the set
-    pub fn largest(&self) -> u8 {
+    pub fn largest(&self) -> Option<u8> {
+        if self.is_empty() {
+            return None;
+        }
         // 16 bits for the u16
         // off by 1 on the leading zeros
-        16 - 1 - self.0.leading_zeros() as u8
+        Some(16 - 1 - self.0.leading_zeros() as u8)
     }
 
     pub fn smallest(&self) -> u8 {
@@ -74,7 +83,7 @@ impl Debug for RankSet {
 
         f.debug_list()
             .entries((0..x.len()).map(|_| {
-                let l = x.largest();
+                let l = x.largest().unwrap();
                 x.remove(l);
                 l
             }))
@@ -129,13 +138,13 @@ mod tests {
         assert_eq!(set.len(), 1);
 
         set.insert(3);
-        assert_eq!(set.largest(), 3);
+        assert_eq!(set.largest(), Some(3));
         set.insert(1);
-        assert_eq!(set.largest(), 3);
+        assert_eq!(set.largest(), Some(3));
         set.remove(3);
-        assert_eq!(set.largest(), 1);
+        assert_eq!(set.largest(), Some(1));
         set.insert(5);
-        assert_eq!(set.largest(), 5);
+        assert_eq!(set.largest(), Some(5));
     }
 
     #[test]
