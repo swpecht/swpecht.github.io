@@ -12,7 +12,6 @@ mod configurations;
 mod math;
 mod phf;
 pub mod rankset;
-pub mod translated;
 
 /// Translates a euchre hand to a conanical index
 ///
