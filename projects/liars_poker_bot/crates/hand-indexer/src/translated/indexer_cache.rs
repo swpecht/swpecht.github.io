@@ -1,13 +1,13 @@
 use super::{MAX_GROUP_INDEX, RANKS, SUITS};
 
 pub(super) struct IndexerCache {
-    nth_unset: Vec<[i32; RANKS]>,
-    equal: [[bool; SUITS]; 1 << (SUITS - 1)],
-    ncr_ranks: [[usize; RANKS + 1]; RANKS + 1],
-    rank_set_to_index: Vec<usize>,
-    index_to_rank_set: [[i32; 1 << RANKS]; RANKS + 1],
-    suit_permutations: Vec<[i32; SUITS]>,
-    ncr_groups: Vec<[u128; SUITS + 1]>,
+    pub nth_unset: Vec<[i32; RANKS]>,
+    pub equal: [[bool; SUITS]; 1 << (SUITS - 1)],
+    pub ncr_ranks: [[usize; RANKS + 1]; RANKS + 1],
+    pub rank_set_to_index: Vec<usize>,
+    pub index_to_rank_set: [[i32; 1 << RANKS]; RANKS + 1],
+    pub suit_permutations: Vec<[i32; SUITS]>,
+    pub ncr_groups: Vec<[u128; SUITS + 1]>,
 }
 
 impl Default for IndexerCache {

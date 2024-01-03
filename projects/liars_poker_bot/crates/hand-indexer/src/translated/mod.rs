@@ -1,4 +1,4 @@
-use crate::Rank;
+use crate::{configurations, Rank};
 
 mod indexer_cache;
 
@@ -9,7 +9,7 @@ const RANKS: usize = 13;
 const CARDS: usize = 52;
 const MAX_GROUP_INDEX: usize = 0x1000000;
 const ROUND_SHIFT: usize = 4;
-const ROUND_MASK: u32 = 0xf;
+const ROUND_MASK: usize = 0xf;
 
 /// Translation of https://github.com/botm/hand-isomorphism
 pub struct TranslatedIndexer {
@@ -28,9 +28,78 @@ pub struct TranslatedIndexer {
 }
 
 impl TranslatedIndexer {
+    /// Create a new indexer. This is expensive as it generates lookup tables.
     pub fn new(cards_per_round: &[usize]) -> Self {
-        indexer_cache::IndexerCache::default();
-        todo!()
+        let rounds = cards_per_round.len();
+
+        //     permutationToConfiguration = new int[rounds][];
+        //     permutationToPi = new int[rounds][];
+        //     configurationToEqual = new int[rounds][];
+        //     configuration = new int[rounds][][];
+        //     configurationToSuitSize = new int[rounds][][];
+        //     configurationToOffset = new long[rounds][];
+
+        assert!(
+            cards_per_round.iter().sum::<usize>() <= CARDS,
+            "Too many cards"
+        );
+
+        let mut round_start = vec![0; rounds];
+        let mut j = 0;
+        for i in 0..rounds {
+            round_start[i] = j;
+            j += cards_per_round[i];
+        }
+
+        let mut configurations = vec![0; rounds];
+        enumerate_configurations(&mut configurations, cards_per_round, false); //count
+
+        // let configu
+        //     for (int i = 0; i < rounds; ++i) {
+        //       configurationToEqual[i] = new int[configurations[i]];
+        //       configurationToOffset[i] = new long[configurations[i]];
+        //       configuration[i] = new int[configurations[i]][SUITS];
+        //       configurationToSuitSize[i] = new int[configurations[i]][SUITS];
+        //     }
+
+        //     configurations = new int[rounds];
+        //     enumerateConfigurations(true); //tabulate
+
+        //     roundSize = new long[rounds];
+        //     for (int i = 0; i < rounds; ++i) {
+        //       long accum = 0;
+        //       for (int j = 0; j < configurations[i]; ++j) {
+        //         long next = accum + configurationToOffset[i][j];
+        //         configurationToOffset[i][j] = accum;
+        //         accum = next;
+        //       }
+        //       roundSize[i] = accum;
+        //     }
+
+        //     permutations = new int[rounds];
+
+        //     enumeratePermutations(false); //count
+
+        //     for (int i = 0; i < rounds; ++i) {
+        //       permutationToConfiguration[i] = new int[permutations[i]];
+        //       permutationToPi[i] = new int[permutations[i]];
+        //     }
+
+        //     enumeratePermutations(true); //tabulate
+        Self {
+            rounds,
+            cards_per_round: cards_per_round.to_vec(),
+            configurations: todo!(),
+            permutations: todo!(),
+            round_size: todo!(),
+            round_start: todo!(),
+            permutations_to_configuration: todo!(),
+            permutations_to_pi: todo!(),
+            configuration_to_equal: todo!(),
+            configuration: todo!(),
+            configuration_to_suit_size: todo!(),
+            configuration_to_offset: todo!(),
+        }
     }
 }
 
@@ -39,71 +108,6 @@ impl TranslatedIndexer {
 //  * and map an index to a canonical poker hand
 //  */
 // public class HandIndexer {
-
-//   /**
-//    * Construct and initialize a hand indexer. This generates a number of lookup tables and is
-//    * relatively expensive compared to indexing a hand.
-//    * @param cardsPerRound number of cards in each round
-//    */
-//   public HandIndexer(int... cardsPerRound) {
-//     this.cardsPerRound = cardsPerRound;
-//     rounds = cardsPerRound.length;
-
-//     permutationToConfiguration = new int[rounds][];
-//     permutationToPi = new int[rounds][];
-//     configurationToEqual = new int[rounds][];
-//     configuration = new int[rounds][][];
-//     configurationToSuitSize = new int[rounds][][];
-//     configurationToOffset = new long[rounds][];
-
-//     for (int i = 0, count = 0; i < rounds; ++i) {
-//       count += cardsPerRound[i];
-//       if (count > CARDS)
-//         throw new RuntimeException("Too many cards!");
-//     }
-
-//     roundStart = new int[rounds];
-
-//     for (int i = 0, j = 0; i < rounds; ++i) {
-//       roundStart[i] = j;
-//       j += cardsPerRound[i];
-//     }
-
-//     configurations = new int[rounds];
-//     enumerateConfigurations(false); //count
-
-//     for (int i = 0; i < rounds; ++i) {
-//       configurationToEqual[i] = new int[configurations[i]];
-//       configurationToOffset[i] = new long[configurations[i]];
-//       configuration[i] = new int[configurations[i]][SUITS];
-//       configurationToSuitSize[i] = new int[configurations[i]][SUITS];
-//     }
-
-//     configurations = new int[rounds];
-//     enumerateConfigurations(true); //tabulate
-
-//     roundSize = new long[rounds];
-//     for (int i = 0; i < rounds; ++i) {
-//       long accum = 0;
-//       for (int j = 0; j < configurations[i]; ++j) {
-//         long next = accum + configurationToOffset[i][j];
-//         configurationToOffset[i][j] = accum;
-//         accum = next;
-//       }
-//       roundSize[i] = accum;
-//     }
-
-//     permutations = new int[rounds];
-
-//     enumeratePermutations(false); //count
-
-//     for (int i = 0; i < rounds; ++i) {
-//       permutationToConfiguration[i] = new int[permutations[i]];
-//       permutationToPi[i] = new int[permutations[i]];
-//     }
-
-//     enumeratePermutations(true); //tabulate
-//   }
 
 //   /**
 //    * Index a hand on every round. This is not more expensive than just indexing the last round.
@@ -321,112 +325,157 @@ impl TranslatedIndexer {
 //     }
 //   }
 
-//   private void enumerateConfigurations(boolean tabulate) {
-//     int[] used = new int[SUITS];
-//     int[] configuration = new int[SUITS];
+fn enumerate_configurations(
+    configurations: &mut Vec<usize>,
+    cards_per_round: &[usize],
+    tabulate: bool,
+) {
+    // TODO: can pass in variable to save results later if needed
 
-//     enumerateConfigurationsR(0, cardsPerRound[0], 0, (1 << SUITS) - 2, used, configuration,
-//         tabulate);
-//   }
+    let used = [0; SUITS];
+    let configuration = [0; SUITS];
 
-//   private void enumerateConfigurationsR(int round, int remaining, int suit, int equal, int[]
-//       used, int[] configuration, boolean tabulate) {
-//     if (suit == SUITS) {
-//       if (tabulate)
-//         tabulateConfigurations(round, configuration);
-//       else
-//         ++configurations[round];
+    enumerate_configurations_r(
+        configurations,
+        cards_per_round,
+        0,
+        cards_per_round[0],
+        0,
+        (1 << SUITS) - 2,
+        used,
+        configuration,
+        tabulate,
+    );
+}
 
-//       if (round + 1 < rounds) {
-//         enumerateConfigurationsR(round + 1, cardsPerRound[round + 1], 0, equal, used,
-//             configuration, tabulate);
-//       }
-//     } else {
-//       int min = 0;
-//       if (suit == SUITS - 1) {
-//         min = remaining;
-//       }
+fn enumerate_configurations_r<const S: usize>(
+    configurations: &mut Vec<usize>,
+    cards_per_round: &[usize],
+    round: usize,
+    remaining: usize,
+    suit: usize,
+    equal: usize,
+    mut used: [usize; S],
+    mut configuration: [usize; S],
+    tabulate: bool,
+) {
+    let rounds = cards_per_round.len();
+    if suit == S {
+        if tabulate {
+            tabulate_configurations(round, configuration);
+        } else {
+            configurations[round] += 1;
+        }
+        if round + 1 < rounds {
+            enumerate_configurations_r(
+                configurations,
+                cards_per_round,
+                round + 1,
+                cards_per_round[round + 1],
+                0,
+                equal,
+                used,
+                configuration,
+                tabulate,
+            )
+        }
+    } else {
+        let min = if suit == S - 1 { remaining } else { 0 };
+        let mut max = RANKS - used[suit];
+        if remaining < max {
+            max = remaining;
+        }
 
-//       int max = RANKS - used[suit];
-//       if (remaining < max) {
-//         max = remaining;
-//       }
+        let mut previous = (RANKS + 1);
+        let was_equal = (equal & 1 << suit) != 0;
+        if was_equal {
+            previous =
+                (configuration[suit - 1] >> (ROUND_SHIFT * (rounds - round - 1))) & ROUND_MASK;
+            if (previous) < max {
+                max = previous;
+            }
+        }
 
-//       int previous = RANKS + 1;
-//       boolean wasEqual = (equal & 1 << suit) != 0;
-//       if (wasEqual) {
-//         previous = configuration[suit - 1] >> ROUND_SHIFT * (rounds - round - 1) & ROUND_MASK;
-//         if (previous < max) {
-//           max = previous;
-//         }
-//       }
+        let old_configuration = configuration[suit];
+        let old_used = used[suit];
 
-//       int oldConfiguration = configuration[suit], oldUsed = used[suit];
-//       for (int i = min; i <= max; ++i) {
-//         int newConfiguration = oldConfiguration | i << ROUND_SHIFT * (rounds - round - 1);
-//         int newEqual = (equal & ~(1 << suit)) | (wasEqual & (i == previous) ? 1 : 0) << suit;
+        for i in min..max + 1 {
+            let new_configuration = old_configuration | i << (ROUND_SHIFT * (rounds - round - 1));
+            let new_equal = (equal & !(1 << suit))
+                | ((if was_equal & (i == previous) { 1 } else { 0 }) << suit);
+            used[suit] = old_used + i;
+            configuration[suit] = new_configuration;
+            enumerate_configurations_r(
+                configurations,
+                cards_per_round,
+                round,
+                remaining - i,
+                suit + 1,
+                new_equal,
+                used,
+                configuration,
+                tabulate,
+            );
+            configuration[suit] = old_configuration;
+            used[suit] = old_used;
+        }
+    }
+}
 
-//         used[suit] = oldUsed + i;
-//         configuration[suit] = newConfiguration;
-//         enumerateConfigurationsR(round, remaining - i, suit + 1, newEqual, used, configuration,
-//             tabulate);
-//         configuration[suit] = oldConfiguration;
-//         used[suit] = oldUsed;
-//       }
-//     }
-//   }
+fn tabulate_configurations<const S: usize>(round: usize, configuartion: [usize; S]) {
+    //   private void tabulateConfigurations(int round, int[] configuration) {
+    //     int id = configurations[round]++;
+    //     OUT:
+    //     for (; id > 0; --id) {
+    //       for (int i = 0; i < SUITS; ++i) {
+    //         if (configuration[i] < this.configuration[round][id - 1][i]) {
+    //           break;
+    //         } else if (configuration[i] > this.configuration[round][id - 1][i]) {
+    //           break OUT;
+    //         }
+    //       }
+    //       for (int i = 0; i < SUITS; ++i) {
+    //         this.configuration[round][id][i] = this.configuration[round][id - 1][i];
+    //         configurationToSuitSize[round][id][i] = configurationToSuitSize[round][id - 1][i];
+    //       }
+    //       configurationToOffset[round][id] = configurationToOffset[round][id - 1];
+    //       configurationToEqual[round][id] = configurationToEqual[round][id - 1];
+    //     }
 
-//   private void tabulateConfigurations(int round, int[] configuration) {
-//     int id = configurations[round]++;
-//     OUT:
-//     for (; id > 0; --id) {
-//       for (int i = 0; i < SUITS; ++i) {
-//         if (configuration[i] < this.configuration[round][id - 1][i]) {
-//           break;
-//         } else if (configuration[i] > this.configuration[round][id - 1][i]) {
-//           break OUT;
-//         }
-//       }
-//       for (int i = 0; i < SUITS; ++i) {
-//         this.configuration[round][id][i] = this.configuration[round][id - 1][i];
-//         configurationToSuitSize[round][id][i] = configurationToSuitSize[round][id - 1][i];
-//       }
-//       configurationToOffset[round][id] = configurationToOffset[round][id - 1];
-//       configurationToEqual[round][id] = configurationToEqual[round][id - 1];
-//     }
+    //     configurationToOffset[round][id] = 1;
+    //     System.arraycopy(configuration, 0, this.configuration[round][id], 0, SUITS);
 
-//     configurationToOffset[round][id] = 1;
-//     System.arraycopy(configuration, 0, this.configuration[round][id], 0, SUITS);
+    //     int equal = 0;
+    //     for (int i = 0; i < SUITS; ) {
+    //       int size = 1;
+    //       for (int j = 0, remaining = RANKS; j <= round; ++j) {
+    //         int ranks = configuration[i] >> ROUND_SHIFT * (rounds - j - 1) & ROUND_MASK;
+    //         size *= nCrRanks[remaining][ranks];
+    //         remaining -= ranks;
+    //       }
 
-//     int equal = 0;
-//     for (int i = 0; i < SUITS; ) {
-//       int size = 1;
-//       for (int j = 0, remaining = RANKS; j <= round; ++j) {
-//         int ranks = configuration[i] >> ROUND_SHIFT * (rounds - j - 1) & ROUND_MASK;
-//         size *= nCrRanks[remaining][ranks];
-//         remaining -= ranks;
-//       }
+    //       int j = i + 1;
+    //       while (j < SUITS && configuration[j] == configuration[i]) {
+    //         ++j;
+    //       }
 
-//       int j = i + 1;
-//       while (j < SUITS && configuration[j] == configuration[i]) {
-//         ++j;
-//       }
+    //       for (int k = i; k < j; ++k) {
+    //         configurationToSuitSize[round][id][k] = size;
+    //       }
 
-//       for (int k = i; k < j; ++k) {
-//         configurationToSuitSize[round][id][k] = size;
-//       }
+    //       configurationToOffset[round][id] *= nCrGroups[size + j - i - 1][j - i];
 
-//       configurationToOffset[round][id] *= nCrGroups[size + j - i - 1][j - i];
+    //       for (int k = i + 1; k < j; ++k) {
+    //         equal |= 1 << k;
+    //       }
 
-//       for (int k = i + 1; k < j; ++k) {
-//         equal |= 1 << k;
-//       }
+    //       i = j;
+    //     }
 
-//       i = j;
-//     }
-
-//     configurationToEqual[round][id] = equal >> 1;
-//   }
+    //     configurationToEqual[round][id] = equal >> 1;
+    //   }
+    todo!()
+}
 
 //   private void enumeratePermutations(boolean tabulate) {
 //     int[] used = new int[SUITS];
@@ -563,6 +612,7 @@ mod tests {
 
     #[test]
     fn test_construct_indexer() {
+        let index = TranslatedIndexer::new(&[2, 3]);
         todo!()
     }
 }
