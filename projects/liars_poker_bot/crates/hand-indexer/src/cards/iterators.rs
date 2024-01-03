@@ -21,6 +21,7 @@ impl Iterator for DeckIterator {
 /// Enumerates over all possible deals
 ///
 /// Want to store an array or iterators for the different combinations of cards
+#[derive(Clone)]
 pub struct DealEnumerationIterator {
     next_candidate_set: Option<[CardSet; MAX_ROUNDS]>,
     deck: Deck,
@@ -162,6 +163,7 @@ fn incremenet_deal<const R: usize>(
     Some(deal)
 }
 
+#[derive(Clone, Copy)]
 pub enum DeckType {
     Standard,
     Euchre,
@@ -170,6 +172,7 @@ pub enum DeckType {
 /// Iterates over all possible isomorphic deals of a deck -- suit can be changed, but rank cannot
 ///
 /// Follows the definition in Kevin's paper
+#[derive(Clone)]
 pub struct IsomorphicDealIterator {
     deal_enumerator: DealEnumerationIterator,
     previous_deals: HashSet<[CardSet; MAX_ROUNDS]>,

@@ -10,6 +10,7 @@ use crate::math::binom;
 pub mod cards;
 mod configurations;
 mod math;
+mod phf;
 pub mod rankset;
 pub mod translated;
 
