@@ -9,6 +9,7 @@ use crate::math::binom;
 
 pub mod cards;
 mod configurations;
+pub mod indexer;
 mod math;
 mod phf;
 pub mod rankset;

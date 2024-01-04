@@ -81,6 +81,19 @@ impl Deck {
         deck
     }
 
+    /// Returns a euchre deck
+    pub fn kuhn_poker() -> Self {
+        let deck = Self {
+            remaining_cards: CardSet(
+                0b0000111000000000000000000000000000000000000000000000000000000000,
+            ),
+            suits: [Suit(SPADES), Suit(CLUBS), Suit(HEARTS), Suit(DIAMONDS)],
+        };
+        assert_eq!(deck.remaining_cards.len(), 3);
+        deck.validate();
+        deck
+    }
+
     /// Returns if a given configuration is valid
     fn validate(&self) {
         // ensure no overlap in suits

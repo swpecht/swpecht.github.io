@@ -1,6 +1,6 @@
 use boomphf::Mphf;
 use itertools::Itertools;
-use std::{fmt::Debug, hash::Hash};
+use std::{fmt::Debug, hash::Hash, iter};
 
 use crate::cards::{cardset::CardSet, iterators::IsomorphicDealIterator, Deck};
 
@@ -8,29 +8,42 @@ const GAMMA: f64 = 1.7;
 const DEFAULT_CHUNK_SIZE: usize = 1_000_000;
 
 /// Perfect hasher
-pub struct PerfectIndexer<T> {
+pub struct RoundIndexer<T> {
     phf: Mphf<T>,
+    size: usize,
 }
 
-impl<T: Send + Hash + Debug> PerfectIndexer<T> {
+impl<T: Send + Hash + Debug> RoundIndexer<T> {
     pub fn new<I>(iterator: I) -> Self
     where
         I: Iterator<Item = T>,
     {
-        let phf = Mphf::new(GAMMA, &iterator.collect_vec());
-        Self { phf }
+        let items = iterator.collect_vec();
+        let size = items.len();
+        let phf = Mphf::new(GAMMA, &items);
+        Self { phf, size }
     }
 
-    pub fn index(&self, item: &T) -> usize {
-        self.phf.hash(item) as usize
+    /// Returns the round index for a given item. This may return None if the item was not in the set
+    /// used to generate the phf, but this is not guaranteed.
+    ///
+    /// This method does not do any normalizing of the input.
+    pub fn index(&self, item: &T) -> Option<usize> {
+        self.phf.try_hash(item).map(|x| x as usize)
     }
 }
 
-impl PerfectIndexer<[CardSet; 5]> {
+impl<T> RoundIndexer<T> {
+    pub fn size(&self) -> usize {
+        self.size
+    }
+}
+
+impl RoundIndexer<[CardSet; 5]> {
     /// Creates a perfect indexer for the pocker cards in texas holdem
-    pub fn pocket() -> Self {
+    pub fn _pocket() -> Self {
         let deals = IsomorphicDealIterator::new(&[2], crate::cards::iterators::DeckType::Standard);
-        PerfectIndexer::new(deals)
+        RoundIndexer::new(deals)
     }
 }
 
@@ -39,17 +52,20 @@ mod tests {
 
     use std::collections::HashSet;
 
+    use crate::cards::iterators::DeckType;
+
     use super::*;
 
     #[test]
     fn test_pocket_phf() {
-        let indexer = PerfectIndexer::pocket();
-        let deals = IsomorphicDealIterator::new(&[2], crate::cards::iterators::DeckType::Standard);
+        let indexer = RoundIndexer::_pocket();
+        assert_eq!(indexer.size, 169);
+        let deals = IsomorphicDealIterator::new(&[2], DeckType::Standard);
 
         let mut indexes = HashSet::new();
         let count = deals.clone().count();
         for deal in deals {
-            indexes.insert(indexer.index(&deal));
+            indexes.insert(indexer.index(&deal).unwrap());
         }
 
         assert_eq!(indexes.len(), count);

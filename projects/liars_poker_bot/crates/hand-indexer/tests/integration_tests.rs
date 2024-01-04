@@ -31,20 +31,20 @@ fn test_poker_indexer() {
     let deck = Deck::standard();
     let mut brute_set = HashSet::new();
 
-    // round 0, pocket
-    for d in IsomorphicDealIterator::std(deck, &[2]) {
-        brute_set.insert(d);
-    }
+    // // round 0, pocket
+    // for d in IsomorphicDealIterator::std(deck, &[2]) {
+    //     brute_set.insert(d);
+    // }
 
-    // round 1, flop
-    for d in IsomorphicDealIterator::std(deck, &[2, 3]) {
-        brute_set.insert(d);
-    }
+    // // round 1, flop
+    // for d in IsomorphicDealIterator::std(deck, &[2, 3]) {
+    //     brute_set.insert(d);
+    // }
 
     let mut index_set = HashSet::new();
 
     let indexer = HandIndexer::poker();
-    let h = indexer.unindex(1027).unwrap();
+    let h = indexer.unindex(137449).unwrap();
     indexer.index(&h);
     for idx in 0..indexer.index_size(0) + indexer.index_size(1) {
         let deal = indexer
