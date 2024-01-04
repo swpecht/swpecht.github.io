@@ -1,8 +1,6 @@
-use std::{fmt::Debug, path::Display};
+use std::fmt::Debug;
 
-use itertools::Itertools;
-
-use crate::{cards::SPADES, rankset::RankSet, Rank};
+use crate::rankset::RankSet;
 
 use super::{Card, Deck, Suit, MAX_CARDS_PER_SUIT};
 
@@ -190,6 +188,30 @@ fn increment_rankset_r(mut set: RankSet, max_rank: u8) -> Option<RankSet> {
     } else {
         // no further indexes are possible
         None
+    }
+}
+
+pub struct CardSetIterator {
+    remaining_cards: CardSet,
+}
+
+impl Iterator for CardSetIterator {
+    type Item = Card;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.remaining_cards.pop_lowest()
+    }
+}
+
+impl IntoIterator for CardSet {
+    type Item = Card;
+
+    type IntoIter = CardSetIterator;
+
+    fn into_iter(self) -> Self::IntoIter {
+        CardSetIterator {
+            remaining_cards: self,
+        }
     }
 }
 

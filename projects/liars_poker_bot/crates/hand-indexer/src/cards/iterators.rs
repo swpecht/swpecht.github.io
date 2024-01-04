@@ -96,7 +96,7 @@ fn increment_cardset(set: CardSet) -> Option<CardSet> {
 }
 
 fn increment_cardset_r(mut set: CardSet, max_rank: usize) -> Option<CardSet> {
-    let last = set.highest()?.rank();
+    let last = set.highest()?.index();
     // handle the simple case where no carrying occurs
     if last + 1 < max_rank {
         set = set.increment_highest()?;
@@ -107,8 +107,8 @@ fn increment_cardset_r(mut set: CardSet, max_rank: usize) -> Option<CardSet> {
     set.pop_highest();
     set = increment_cardset_r(set, max_rank - 1)?;
 
-    if set.highest()?.rank() + 1 < max_rank {
-        set.insert(Card::new(set.highest()?.rank() + 1));
+    if set.highest()?.index() + 1 < max_rank {
+        set.insert(Card::new(set.highest()?.index() + 1));
         Some(set)
     } else {
         // no further indexes are possible

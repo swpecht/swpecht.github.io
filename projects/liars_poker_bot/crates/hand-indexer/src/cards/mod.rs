@@ -25,7 +25,7 @@ impl Card {
         Card(1 << idx)
     }
 
-    pub fn rank(&self) -> usize {
+    pub fn index(&self) -> usize {
         self.0.trailing_zeros() as usize
     }
 }
@@ -132,7 +132,7 @@ impl Deck {
 
     /// Remove all cards lower than and including c from the deck
     pub fn remove_lower(&mut self, c: Card) {
-        let rank = c.rank();
+        let rank = c.index();
         self.remaining_cards.0 &= !0 << (rank + 1);
     }
 }

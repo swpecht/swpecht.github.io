@@ -1,12 +1,13 @@
 use games::{istate::IStateKey, Action};
+use smallvec::SmallVec;
 
 use crate::{
-    cards::{
-        iterators::{DealEnumerationIterator, IsomorphicDealIterator},
-        Deck,
-    },
+    cards::{cardset::CardSet, iterators::DealEnumerationIterator, Deck},
     phf::RoundIndexer,
 };
+
+/// Performant type for storing a varying number of actions
+pub type ActionVec = SmallVec<[Action; 20]>;
 
 /// Define different rounds for a game to index. Games are fully defined by a collection of GameRounds
 ///
@@ -26,7 +27,7 @@ pub enum RoundType {
     /// Support for arbitrary collection of actions
     /// TODO: have this try to match the longest possible collection first
     Choice {
-        choices: Vec<Vec<Action>>,
+        choices: Vec<ActionVec>,
     },
 }
 
@@ -34,7 +35,7 @@ pub enum RoundType {
 ///
 /// This struct is responsible for all normalizing of inputs
 pub struct GameIndexer {
-    round_indexers: Vec<RoundIndexer<Vec<Action>>>,
+    round_indexers: Vec<RoundIndexer<ActionVec>>,
 }
 
 impl GameIndexer {
@@ -49,7 +50,7 @@ impl GameIndexer {
                     deck,
                     cards_per_round,
                 } => custom_deck_indexer(deck, &cards_per_round),
-                RoundType::Choice { choices } => todo!(),
+                RoundType::Choice { choices } => choice_indexer(choices),
             };
             round_indexers.push(round_indexer);
         }
@@ -69,11 +70,11 @@ impl GameIndexer {
             },
             Choice {
                 choices: vec![
-                    vec![Pass.into()],
-                    vec![Pass.into(), Pass.into()],
-                    vec![Pass.into(), Bet.into()],
-                    vec![Pass.into(), Bet.into(), Pass.into()],
-                    vec![Pass.into(), Bet.into(), Bet.into()],
+                    vec![Pass.into()].into(),
+                    vec![Pass.into(), Pass.into()].into(),
+                    vec![Pass.into(), Bet.into()].into(),
+                    vec![Pass.into(), Bet.into(), Pass.into()].into(),
+                    vec![Pass.into(), Bet.into(), Bet.into()].into(),
                 ],
             },
         ])
@@ -92,10 +93,25 @@ impl GameIndexer {
     }
 }
 
-fn custom_deck_indexer(deck: Deck, cards_per_round: &[usize]) -> RoundIndexer<Vec<Action>> {
-    let iterator = DealEnumerationIterator::new(deck, cards_per_round);
-    let indexer = RoundIndexer::new(iterator);
-    indexer
+fn custom_deck_indexer(deck: Deck, cards_per_round: &[usize]) -> RoundIndexer<ActionVec> {
+    let iterator = DealEnumerationIterator::new(deck, cards_per_round).map(deal_to_actions);
+    RoundIndexer::new(iterator)
+}
+
+fn choice_indexer(choices: Vec<ActionVec>) -> RoundIndexer<ActionVec> {
+    RoundIndexer::new(choices.into_iter())
+}
+
+fn deal_to_actions(deal: [CardSet; 5]) -> ActionVec {
+    let mut actions = SmallVec::new();
+
+    for round in deal {
+        for card in round {
+            actions.push(Action(card.index() as u8));
+        }
+    }
+
+    actions
 }
 
 #[cfg(test)]
@@ -108,8 +124,14 @@ mod tests {
     #[test]
     fn test_kuhn_poker() {
         let indexer = GameIndexer::kuhn_poker();
-        // todo: fix this
-        assert_eq!(indexer.size(), 500);
+        // 1st card: 3 options
+        // 2nd card: 2 options
+        // P
+        // PP
+        // PB
+        // PBB
+        // PBP
+        assert_eq!(indexer.size(), 30);
 
         let mut gs = KuhnPoker::new_state();
     }
