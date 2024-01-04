@@ -1,4 +1,5 @@
 use games::{istate::IStateKey, Action};
+use itertools::Itertools;
 use smallvec::SmallVec;
 
 use crate::{
@@ -12,6 +13,7 @@ pub type ActionVec = SmallVec<[Action; 20]>;
 /// Define different rounds for a game to index. Games are fully defined by a collection of GameRounds
 ///
 /// Each game round must be independent from the others
+#[derive(Clone)]
 pub enum RoundType {
     Standard {
         cards_per_round: Vec<usize>,
@@ -31,10 +33,43 @@ pub enum RoundType {
     },
 }
 
+impl RoundType {
+    /// Returns the longest number of actions that match this RoundType
+    pub fn matching_actions(&self, actions: &[Action]) -> Option<usize> {
+        match self {
+            RoundType::Standard { cards_per_round }
+            | RoundType::Euchre { cards_per_round }
+            | RoundType::CustomDeck {
+                deck: _,
+                cards_per_round,
+            } => {
+                let count = cards_per_round.iter().sum::<usize>();
+                assert!(
+                    count <= actions.len(),
+                    "need to implement handling only some of the rounds being dealt"
+                );
+                Some(count)
+            }
+            RoundType::Choice { choices } => {
+                let mut found_match: Option<&[Action]> = None;
+                for c in choices {
+                    if c[..] == actions[..c.len()]
+                        && c.len() > found_match.map(|x| x.len()).unwrap_or(0)
+                    {
+                        found_match = Some(&c[..])
+                    }
+                }
+                found_match.map(|x| x.len())
+            }
+        }
+    }
+}
+
 /// Convert an information state into an index across all rounds.
 ///
 /// This struct is responsible for all normalizing of inputs
 pub struct GameIndexer {
+    round_types: Vec<RoundType>,
     round_indexers: Vec<RoundIndexer<ActionVec>>,
 }
 
@@ -42,7 +77,7 @@ impl GameIndexer {
     pub fn new(rounds: Vec<RoundType>) -> Self {
         let mut round_indexers = Vec::new();
 
-        for round_type in rounds {
+        for round_type in rounds.clone() {
             let round_indexer = match round_type {
                 RoundType::Standard { cards_per_round } => todo!(),
                 RoundType::Euchre { cards_per_round } => todo!(),
@@ -55,7 +90,10 @@ impl GameIndexer {
             round_indexers.push(round_indexer);
         }
 
-        Self { round_indexers }
+        Self {
+            round_indexers,
+            round_types: rounds,
+        }
     }
 
     pub fn kuhn_poker() -> Self {
@@ -66,7 +104,7 @@ impl GameIndexer {
         GameIndexer::new(vec![
             CustomDeck {
                 deck,
-                cards_per_round: vec![1, 1],
+                cards_per_round: vec![1],
             },
             Choice {
                 choices: vec![
@@ -82,8 +120,38 @@ impl GameIndexer {
 
     /// Calculates the index for a given IStateKey
     ///
-    /// This function will perform all necessary istate normalization
-    pub fn index(&self, istate: IStateKey) -> usize {
+    /// This function will perform all necessary istate normalization.
+    ///
+    /// IStates with the same starting rounds are grouped near each other.
+    pub fn index(&self, istate: IStateKey) -> Option<usize> {
+        // todo: implement normalization
+
+        let mut istate_cursor = 0;
+        let mut indexes: SmallVec<[usize; 20]> = SmallVec::new();
+        for (i, round_type) in self.round_types.iter().enumerate() {
+            let len = round_type.matching_actions(&istate[istate_cursor..])?;
+            let actions_vec = SmallVec::from_slice(&istate[istate_cursor..istate_cursor + len]);
+            let round_index = self.round_indexers[i].index(&actions_vec)?;
+            indexes.push(round_index);
+            istate_cursor += len;
+
+            if istate_cursor >= istate.len() {
+                break;
+            }
+        }
+
+        let mut offsets: SmallVec<[usize; 20]> = SmallVec::new();
+        let mut cur_offset = 1;
+        for indexer in self.round_indexers.iter().rev() {
+            cur_offset *= indexer.size();
+            offsets.push(cur_offset);
+        }
+
+        offsets.reverse();
+        Some(indexes.iter().zip(offsets).map(|(a, b)| *a * b).sum())
+    }
+
+    fn round_index(&self, key_part: &[Action]) -> Option<usize> {
         todo!()
     }
 
@@ -117,7 +185,11 @@ fn deal_to_actions(deal: [CardSet; 5]) -> ActionVec {
 #[cfg(test)]
 mod tests {
 
-    use games::gamestates::kuhn_poker::KuhnPoker;
+    use std::collections::HashSet;
+
+    use games::{gamestates::kuhn_poker::KuhnPoker, GameState};
+    use itertools::Itertools;
+    use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
     use super::*;
 
@@ -125,15 +197,40 @@ mod tests {
     fn test_kuhn_poker() {
         let indexer = GameIndexer::kuhn_poker();
         // 1st card: 3 options
-        // 2nd card: 2 options
         // P
         // PP
         // PB
         // PBB
         // PBP
-        assert_eq!(indexer.size(), 30);
+        // 3 *  5
+        assert_eq!(indexer.size(), 15);
 
-        let mut gs = KuhnPoker::new_state();
+        let mut indexes = HashSet::new();
+        let mut rng: StdRng = SeedableRng::seed_from_u64(42);
+
+        let mut actions = Vec::new();
+        for _ in 0..10000 {
+            let mut gs = KuhnPoker::new_state();
+
+            while !gs.is_terminal() {
+                if !gs.is_chance_node() {
+                    let istate = gs.istate_key(gs.cur_player());
+                    let idx = indexer
+                        .index(istate)
+                        .unwrap_or_else(|| panic!("failed to index: {}, {:?}", gs, istate));
+                    indexes.insert(idx);
+                }
+
+                gs.legal_actions(&mut actions);
+                let a = *actions.choose(&mut rng).unwrap();
+                gs.apply_action(a);
+            }
+        }
+
+        assert_eq!(
+            indexes.into_iter().sorted().collect_vec(),
+            (0..30).collect_vec()
+        );
     }
 
     #[test]

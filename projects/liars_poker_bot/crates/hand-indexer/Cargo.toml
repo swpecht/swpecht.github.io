@@ -12,3 +12,4 @@ itertools = "0.12"
 lazy_static = "1.4.0"
 boomphf = {version = "0.6", git = "https://github.com/10XGenomics/rust-boomphf.git", features = ["serde"]}
 smallvec = "1.11"
+rand = "0.8"
