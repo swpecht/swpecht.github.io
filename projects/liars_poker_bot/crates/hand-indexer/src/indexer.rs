@@ -122,8 +122,8 @@ impl GameIndexer {
         let mut offsets: SmallVec<[usize; 20]> = SmallVec::new();
         let mut cur_offset = 1;
         for indexer in self.round_indexers.iter().rev() {
-            cur_offset *= indexer.size();
             offsets.push(cur_offset);
+            cur_offset *= indexer.size();
         }
 
         offsets.reverse();
@@ -145,7 +145,9 @@ fn custom_deck_indexer(deck: Deck, cards_per_round: &[usize]) -> RoundIndexer<Ac
     RoundIndexer::new(iterator)
 }
 
-fn choice_indexer(choices: Vec<ActionVec>) -> RoundIndexer<ActionVec> {
+fn choice_indexer(mut choices: Vec<ActionVec>) -> RoundIndexer<ActionVec> {
+    choices.sort();
+    choices.dedup();
     RoundIndexer::new(choices.into_iter())
 }
 

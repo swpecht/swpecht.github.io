@@ -15,16 +15,9 @@ use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 fn kuhn_poker_indexer_test() {
     let indexer = kuhn_poker();
     // 1st card: 3 options
-    // P
-    // PP
-    // PB
-    // PBB
-    // PBP
-    // B
-    // BP
-    // BB
-    // 3 *  8
-    assert_eq!(indexer.size(), 24);
+    // bets: 3 non-terminal options: P, B, PB
+    // 3 *  3
+    assert_eq!(indexer.size(), 9);
 
     indexer.index(&[4, 0]).unwrap();
 
@@ -52,7 +45,7 @@ fn kuhn_poker_indexer_test() {
 
     assert_eq!(
         indexes.into_iter().sorted().collect_vec(),
-        (0..30).collect_vec()
+        (0..9).collect_vec()
     );
 }
 
@@ -70,24 +63,16 @@ pub fn kuhn_poker() -> GameIndexer {
         })
         .collect_vec();
 
-    let bet_choices = vec![
-        vec![Pass],
-        vec![Pass, Pass],
-        vec![Pass, Bet],
-        vec![Pass, Bet, Pass],
-        vec![Pass, Bet, Bet],
-        vec![Bet],
-        vec![Bet, Bet],
-        vec![Pass, Pass],
-    ]
-    .into_iter()
-    .map(|x| {
-        x.into_iter()
-            .map(|y| u8::from(Action::from(y)))
-            .collect_vec()
-            .into()
-    })
-    .collect_vec();
+    // only include non-terminal actions
+    let bet_choices = vec![vec![Pass], vec![Pass, Bet], vec![Bet]]
+        .into_iter()
+        .map(|x| {
+            x.into_iter()
+                .map(|y| u8::from(Action::from(y)))
+                .collect_vec()
+                .into()
+        })
+        .collect_vec();
 
     GameIndexer::new(vec![
         Choice {

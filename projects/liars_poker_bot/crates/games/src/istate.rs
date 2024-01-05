@@ -100,6 +100,16 @@ impl IStateKey {
     pub fn to_vec(&self) -> Vec<Action> {
         self.actions[..self.len].to_vec()
     }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        let action_slice: &[Action] = self;
+        unsafe { std::slice::from_raw_parts(action_slice.as_ptr() as *const u8, self.len()) }
+    }
+
+    pub fn as_bytes_mut(&mut self) -> &mut [u8] {
+        let action_slice: &mut [Action] = self;
+        unsafe { std::slice::from_raw_parts_mut(action_slice.as_mut_ptr() as *mut u8, self.len()) }
+    }
 }
 
 impl ToString for IStateKey {
