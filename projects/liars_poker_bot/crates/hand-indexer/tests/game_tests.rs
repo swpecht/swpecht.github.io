@@ -20,8 +20,13 @@ fn kuhn_poker_indexer_test() {
     // PB
     // PBB
     // PBP
-    // 3 *  5
-    assert_eq!(indexer.size(), 15);
+    // B
+    // BP
+    // BB
+    // 3 *  8
+    assert_eq!(indexer.size(), 24);
+
+    indexer.index(&[4, 0]).unwrap();
 
     let mut indexes = HashSet::new();
     let mut rng: StdRng = SeedableRng::seed_from_u64(42);
@@ -71,6 +76,9 @@ pub fn kuhn_poker() -> GameIndexer {
         vec![Pass, Bet],
         vec![Pass, Bet, Pass],
         vec![Pass, Bet, Bet],
+        vec![Bet],
+        vec![Bet, Bet],
+        vec![Pass, Pass],
     ]
     .into_iter()
     .map(|x| {
