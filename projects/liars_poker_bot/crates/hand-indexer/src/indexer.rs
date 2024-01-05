@@ -53,7 +53,8 @@ impl RoundType {
             RoundType::Choice { choices } => {
                 let mut found_match: Option<&[Action]> = None;
                 for c in choices {
-                    if c[..] == actions[..c.len()]
+                    if c.len() <= actions.len()
+                        && c[..] == actions[..c.len()]
                         && c.len() > found_match.map(|x| x.len()).unwrap_or(0)
                     {
                         found_match = Some(&c[..])
