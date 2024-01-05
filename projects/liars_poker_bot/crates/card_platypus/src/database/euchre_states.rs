@@ -1,11 +1,7 @@
 use std::collections::HashSet;
 
 use games::{
-    gamestates::euchre::{
-        actions::{Card, EAction},
-        util::generate_face_up_deals,
-    },
-    istate::IStateKey,
+    gamestates::euchre::{actions::Card, util::generate_face_up_deals},
     Action, GameState,
 };
 use rand::{seq::SliceRandom, thread_rng};
@@ -31,32 +27,6 @@ pub fn collect_istates(
             gs.apply_action(*a);
         }
     }
-}
-
-fn translate_euchre_key(key: IStateKey) -> IStateKey {
-    // All of our keys have the NS as the baseline faceup card
-    let baseline_card: Action = EAction::from(Card::NS).into();
-    let shard = get_euchre_shard(&key);
-
-    let mut new_key = IStateKey::default();
-    key.iter().for_each(|a| {
-        let new_a = match a {
-            x if *x == shard => baseline_card,
-            x if *x == baseline_card => shard,
-            x => *x,
-        };
-        new_key.push(new_a);
-    });
-
-    new_key
-}
-
-/// We shard the istates by the face up card, for euchre, this is the action at position
-/// 20 in the istatekey.
-fn get_euchre_shard(key: &IStateKey) -> Action {
-    const FACE_UP_INDEX: usize = 20;
-    *key.get(FACE_UP_INDEX)
-        .expect("only support full deals of cards")
 }
 
 #[cfg(test)]

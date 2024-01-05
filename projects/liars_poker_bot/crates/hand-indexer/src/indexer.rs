@@ -1,4 +1,3 @@
-use itertools::Itertools;
 use smallvec::SmallVec;
 
 use crate::{
@@ -27,7 +26,6 @@ pub enum RoundType {
         cards_per_round: Vec<usize>,
     },
     /// Support for arbitrary collection of actions
-    /// TODO: have this try to match the longest possible collection first
     Choice {
         choices: Vec<ActionVec>,
     },
@@ -128,10 +126,6 @@ impl GameIndexer {
 
         offsets.reverse();
         Some(indexes.iter().zip(offsets).map(|(a, b)| *a * b).sum())
-    }
-
-    fn round_index(&self, key_part: &[Action]) -> Option<usize> {
-        todo!()
     }
 
     /// Returns the size of the indexer. The maximum index is size-1

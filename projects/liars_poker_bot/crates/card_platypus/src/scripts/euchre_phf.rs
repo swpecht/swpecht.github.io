@@ -157,12 +157,6 @@ fn count_lower(actions: &mut Vec<EAction>) -> anyhow::Result<usize> {
 #[cfg(test)]
 mod tests {
     use anyhow::Ok;
-    use games::{
-        gamestates::euchre::actions::{Card, EAction},
-        istate::IStateKey,
-    };
-
-    use crate::scripts::euchre_phf::to_index;
 
     use super::VALID_ACTIONS;
 
