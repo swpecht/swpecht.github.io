@@ -1,4 +1,3 @@
-use games::{istate::IStateKey, Action};
 use itertools::Itertools;
 use smallvec::SmallVec;
 
@@ -7,8 +6,9 @@ use crate::{
     phf::RoundIndexer,
 };
 
+type Action = u8;
 /// Performant type for storing a varying number of actions
-pub type ActionVec = SmallVec<[Action; 20]>;
+pub type ActionVec = SmallVec<[u8; 20]>;
 
 /// Define different rounds for a game to index. Games are fully defined by a collection of GameRounds
 ///
@@ -96,34 +96,12 @@ impl GameIndexer {
         }
     }
 
-    pub fn kuhn_poker() -> Self {
-        let deck = Deck::kuhn_poker();
-
-        use games::gamestates::kuhn_poker::KPAction::*;
-        use RoundType::*;
-        GameIndexer::new(vec![
-            CustomDeck {
-                deck,
-                cards_per_round: vec![1],
-            },
-            Choice {
-                choices: vec![
-                    vec![Pass.into()].into(),
-                    vec![Pass.into(), Pass.into()].into(),
-                    vec![Pass.into(), Bet.into()].into(),
-                    vec![Pass.into(), Bet.into(), Pass.into()].into(),
-                    vec![Pass.into(), Bet.into(), Bet.into()].into(),
-                ],
-            },
-        ])
-    }
-
     /// Calculates the index for a given IStateKey
     ///
     /// This function will perform all necessary istate normalization.
     ///
     /// IStates with the same starting rounds are grouped near each other.
-    pub fn index(&self, istate: IStateKey) -> Option<usize> {
+    pub fn index(&self, istate: &[Action]) -> Option<usize> {
         // todo: implement normalization
 
         let mut istate_cursor = 0;
@@ -175,7 +153,7 @@ fn deal_to_actions(deal: [CardSet; 5]) -> ActionVec {
 
     for round in deal {
         for card in round {
-            actions.push(Action(card.index() as u8));
+            actions.push(card.index() as Action);
         }
     }
 
@@ -185,53 +163,7 @@ fn deal_to_actions(deal: [CardSet; 5]) -> ActionVec {
 #[cfg(test)]
 mod tests {
 
-    use std::collections::HashSet;
-
-    use games::{gamestates::kuhn_poker::KuhnPoker, GameState};
-    use itertools::Itertools;
-    use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
-
     use super::*;
-
-    #[test]
-    fn test_kuhn_poker() {
-        let indexer = GameIndexer::kuhn_poker();
-        // 1st card: 3 options
-        // P
-        // PP
-        // PB
-        // PBB
-        // PBP
-        // 3 *  5
-        assert_eq!(indexer.size(), 15);
-
-        let mut indexes = HashSet::new();
-        let mut rng: StdRng = SeedableRng::seed_from_u64(42);
-
-        let mut actions = Vec::new();
-        for _ in 0..10000 {
-            let mut gs = KuhnPoker::new_state();
-
-            while !gs.is_terminal() {
-                if !gs.is_chance_node() {
-                    let istate = gs.istate_key(gs.cur_player());
-                    let idx = indexer
-                        .index(istate)
-                        .unwrap_or_else(|| panic!("failed to index: {}, {:?}", gs, istate));
-                    indexes.insert(idx);
-                }
-
-                gs.legal_actions(&mut actions);
-                let a = *actions.choose(&mut rng).unwrap();
-                gs.apply_action(a);
-            }
-        }
-
-        assert_eq!(
-            indexes.into_iter().sorted().collect_vec(),
-            (0..30).collect_vec()
-        );
-    }
 
     #[test]
     fn test_iso_morphism() {
