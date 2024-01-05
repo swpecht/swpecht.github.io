@@ -1,7 +1,13 @@
 use std::collections::HashSet;
 
-use games::{gamestates::kuhn_poker::KuhnPoker, Action, GameState};
-use hand_indexer::{cards::Deck, indexer::GameIndexer};
+use games::{
+    gamestates::kuhn_poker::{KPAction, KuhnPoker},
+    Action, GameState,
+};
+use hand_indexer::{
+    cards::{Card, Deck},
+    indexer::GameIndexer,
+};
 use itertools::Itertools;
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
@@ -46,12 +52,20 @@ fn kuhn_poker_indexer_test() {
 }
 
 pub fn kuhn_poker() -> GameIndexer {
-    let deck = Deck::kuhn_poker();
-
     use games::gamestates::kuhn_poker::KPAction::*;
     use hand_indexer::indexer::RoundType::*;
 
-    let choices = vec![
+    let card_choices = vec![vec![Jack], vec![Queen], vec![King]]
+        .into_iter()
+        .map(|x| {
+            x.into_iter()
+                .map(|y| u8::from(Action::from(y)))
+                .collect_vec()
+                .into()
+        })
+        .collect_vec();
+
+    let bet_choices = vec![
         vec![Pass],
         vec![Pass, Pass],
         vec![Pass, Bet],
@@ -68,10 +82,11 @@ pub fn kuhn_poker() -> GameIndexer {
     .collect_vec();
 
     GameIndexer::new(vec![
-        CustomDeck {
-            deck,
-            cards_per_round: vec![1],
+        Choice {
+            choices: card_choices,
         },
-        Choice { choices },
+        Choice {
+            choices: bet_choices,
+        },
     ])
 }
