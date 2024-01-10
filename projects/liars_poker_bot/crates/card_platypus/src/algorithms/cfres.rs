@@ -25,7 +25,7 @@ use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, Rng, SeedableRng};
 use rayon::prelude::*;
 
 use serde::{Deserialize, Serialize};
-use tinyvec::{array_vec, ArrayVec};
+use tinyvec::ArrayVec;
 
 use crate::{
     agents::{Agent, Seedable},
@@ -83,7 +83,7 @@ unsafe impl Zeroable for InfoState {}
 impl InfoState {
     pub fn new(normalized_actions: Vec<NormalizedAction>) -> Self {
         let n = normalized_actions.len();
-        let mut regrets: ArrayVec<[Weight; 6]> = ArrayVec::new();
+        let mut regrets = ArrayVec::new();
         let mut avg_strategy = ArrayVec::default();
 
         for _ in 0..n {
