@@ -2,7 +2,7 @@ use std::{collections::HashSet, vec};
 
 use games::{
     gamestates::{
-        euchre::{processors::post_cards_played, Euchre, EuchreGameState},
+        euchre::{actions::EAction, processors::post_cards_played, Euchre, EuchreGameState},
         kuhn_poker::{KPAction, KuhnPoker},
     },
     Action, GameState,
@@ -72,9 +72,13 @@ fn euchre_indexer_test() {
         while !gs.is_terminal() && !post_cards_played(&gs, 4) {
             if !gs.is_chance_node() {
                 let istate = gs.istate_key(gs.cur_player());
-                let idx = indexer
-                    .index(istate.as_bytes())
-                    .unwrap_or_else(|| panic!("failed to index: {}, {:?}", gs, istate));
+                let idx = indexer.index(istate.as_bytes()).unwrap_or_else(|| {
+                    panic!(
+                        "failed to index: {}, {:?}",
+                        gs,
+                        istate.into_iter().map(EAction::from).collect_vec()
+                    )
+                });
             }
 
             gs.legal_actions(&mut actions);
@@ -83,7 +87,7 @@ fn euchre_indexer_test() {
         }
     }
 
-    todo!("implement the remaining tests and confirm the total index size")
+    todo!("implement the remaining tests and confirm the total index size, add some specific index tests")
 }
 
 #[test]
@@ -149,6 +153,8 @@ pub fn bluff22() -> GameIndexer {
 }
 
 pub fn euchre() -> GameIndexer {
+    todo!("fix bug with discard card");
+
     use games::gamestates::euchre::actions::EAction::*;
 
     let bids = vec![
