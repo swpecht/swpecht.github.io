@@ -1,7 +1,11 @@
 use smallvec::SmallVec;
 
 use crate::{
-    cards::{cardset::CardSet, iterators::DealEnumerationIterator, Deck},
+    cards::{
+        cardset::CardSet,
+        iterators::{DealEnumerationIterator, IsomorphicDealIterator},
+        Deck,
+    },
     phf::RoundIndexer,
 };
 
@@ -79,7 +83,7 @@ impl GameIndexer {
         for round_type in rounds.clone() {
             let round_indexer = match round_type {
                 RoundType::Standard { cards_per_round } => todo!(),
-                RoundType::Euchre { cards_per_round } => todo!(),
+                RoundType::Euchre { cards_per_round } => euchre_indexer(&cards_per_round),
                 RoundType::CustomDeck {
                     deck,
                     cards_per_round,
@@ -143,6 +147,13 @@ fn choice_indexer(mut choices: Vec<ActionVec>) -> RoundIndexer<ActionVec> {
     choices.sort();
     choices.dedup();
     RoundIndexer::new(choices.into_iter())
+}
+
+fn euchre_indexer(cards_per_round: &[usize]) -> RoundIndexer<ActionVec> {
+    let iterator =
+        IsomorphicDealIterator::new(cards_per_round, crate::cards::iterators::DeckType::Euchre)
+            .map(deal_to_actions);
+    RoundIndexer::new(iterator)
 }
 
 fn deal_to_actions(deal: [CardSet; 5]) -> ActionVec {
