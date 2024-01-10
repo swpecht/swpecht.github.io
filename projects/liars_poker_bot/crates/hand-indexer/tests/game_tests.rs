@@ -49,9 +49,15 @@ fn kuhn_poker_indexer_test() {
     );
 }
 
+#[test]
+fn bluff22_indexer_test() {
+    let indexer = bluff22();
+    assert_eq!(indexer.size(), 21);
+    todo!("add second round")
+}
+
 pub fn kuhn_poker() -> GameIndexer {
     use games::gamestates::kuhn_poker::KPAction::*;
-    use hand_indexer::indexer::RoundType::*;
 
     let card_choices = vec![vec![Jack], vec![Queen], vec![King]]
         .into_iter()
@@ -74,6 +80,7 @@ pub fn kuhn_poker() -> GameIndexer {
         })
         .collect_vec();
 
+    use hand_indexer::indexer::RoundType::*;
     GameIndexer::new(vec![
         Choice {
             choices: card_choices,
@@ -82,4 +89,25 @@ pub fn kuhn_poker() -> GameIndexer {
             choices: bet_choices,
         },
     ])
+}
+
+pub fn bluff22() -> GameIndexer {
+    use games::gamestates::bluff::BluffActions::*;
+    use games::gamestates::bluff::Dice::*;
+    let rolls = vec![
+        Roll(One),
+        Roll(Two),
+        Roll(Three),
+        Roll(Four),
+        Roll(Five),
+        Roll(Wild),
+    ]
+    .into_iter()
+    .map(|x| u8::from(Action::from(x)))
+    .combinations_with_replacement(2)
+    .map(|x| x.into())
+    .collect_vec();
+
+    use hand_indexer::indexer::RoundType::*;
+    GameIndexer::new(vec![Choice { choices: rolls }])
 }
