@@ -16,7 +16,7 @@ use crate::algorithms::cfres::InfoState;
 
 pub mod euchre_states;
 
-const BUCKET_SIZE: usize = 200; // approximation of size of serialized infostate
+const BUCKET_SIZE: usize = std::mem::size_of::<InfoState>();
 const REMAP_INCREMENT: usize = 10_000_000;
 
 /// We use a vectorized version of the istates instead of the array to reduce memory usage
@@ -117,10 +117,11 @@ impl NodeStore {
         }
 
         let data = &self.mmap[start..start + BUCKET_SIZE];
-        let info = match rmp_serde::from_slice(data) {
-            Ok(x) => x,
-            Err(_) => return None,
-        };
+        let info = bytemuck::cast_slice::<u8, InfoState>(data)[0];
+        // let info = match rmp_serde::from_slice(data) {
+        //     Ok(x) => x,
+        //     Err(_) => return None,
+        // };
         Some(info)
     }
 
@@ -136,9 +137,11 @@ impl NodeStore {
             debug!("resized mmap");
         }
 
-        let data = rmp_serde::to_vec(value).unwrap();
+        // let data = rmp_serde::to_vec(value).unwrap();
+        let value = [*value];
+        let data = bytemuck::cast_slice::<InfoState, u8>(&value);
         assert!(data.len() <= BUCKET_SIZE); // if this is false, we're overflowing into another bucket
-        self.mmap[start..start + data.len()].copy_from_slice(&data);
+        self.mmap[start..start + data.len()].copy_from_slice(data);
     }
 
     pub fn commit(&mut self) -> anyhow::Result<()> {

@@ -32,6 +32,7 @@ memmap2 = "0.7.1"
 boomphf = {version = "0.6", git = "https://github.com/10XGenomics/rust-boomphf.git", features = ["serde"]}
 bytemuck = "1.14"
 half = "2.3"
+tinyvec = {version="1.6", features =["serde"]}
 
 [dev-dependencies]
 criterion = "0.4"

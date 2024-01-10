@@ -6,6 +6,7 @@ use std::{
     },
 };
 
+use bytemuck::{Pod, Zeroable};
 use dashmap::DashMap;
 use dyn_clone::DynClone;
 use games::{
@@ -24,6 +25,7 @@ use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, Rng, SeedableRng};
 use rayon::prelude::*;
 
 use serde::{Deserialize, Serialize};
+use tinyvec::{array_vec, ArrayVec};
 
 use crate::{
     agents::{Agent, Seedable},
@@ -61,21 +63,38 @@ enum AverageType {
     Simple,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+/// Number of actions we can store in a given "slot" of the database
+const MAX_ACTIONS_PER_SLOT: usize = 6;
+
+#[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct InfoState {
     pub actions: ActionList,
-    pub regrets: Vec<Weight>,
-    pub avg_strategy: Vec<Weight>,
+    pub regrets: ArrayVec<[Weight; MAX_ACTIONS_PER_SLOT]>,
+    pub avg_strategy: ArrayVec<[Weight; MAX_ACTIONS_PER_SLOT]>,
     pub last_iteration: usize,
 }
 
+unsafe impl Pod for InfoState {}
+unsafe impl Zeroable for InfoState {}
+
+/// TODO: Remove the generics, instead make it a run-time thing where we can set how many slots we need for games that have more than 6
+/// possible actions in a round -- lose some efficieny, but it should work well for the games we care about
+/// Or we can just use a different code path for bluff
 impl InfoState {
     pub fn new(normalized_actions: Vec<NormalizedAction>) -> Self {
         let n = normalized_actions.len();
+        let mut regrets: ArrayVec<[Weight; 6]> = ArrayVec::new();
+        let mut avg_strategy = ArrayVec::default();
+
+        for _ in 0..n {
+            regrets.push(1.0 / 1e6);
+            avg_strategy.push(1.0 / 1e6);
+        }
+
         Self {
             actions: ActionList::new(&normalized_actions),
-            regrets: vec![1.0 / 1e6; n],
-            avg_strategy: vec![1.0 / 1e6; n],
+            regrets,
+            avg_strategy,
             last_iteration: 0,
         }
     }
@@ -210,6 +229,7 @@ impl CFRES<KPGameState> {
     }
 }
 
+/// Placeholder lenght for bluff for now
 impl CFRES<BluffGameState> {
     pub fn new_bluff_11() -> Self {
         let mut rng: StdRng = SeedableRng::seed_from_u64(43);
