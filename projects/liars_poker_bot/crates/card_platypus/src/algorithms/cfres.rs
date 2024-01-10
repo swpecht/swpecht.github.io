@@ -103,7 +103,7 @@ impl InfoState {
         self.actions
             .to_vec()
             .into_iter()
-            .zip(self.avg_strategy.clone())
+            .zip(self.avg_strategy)
             .collect_vec()
     }
 
@@ -111,7 +111,7 @@ impl InfoState {
         self.actions
             .to_vec()
             .into_iter()
-            .zip(self.regrets.clone())
+            .zip(self.regrets)
             .collect_vec()
     }
 }
