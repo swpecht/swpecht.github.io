@@ -44,14 +44,7 @@ impl RoundType {
             | RoundType::CustomDeck {
                 deck: _,
                 cards_per_round,
-            } => {
-                let count = cards_per_round.iter().sum::<usize>();
-                assert!(
-                    count <= actions.len(),
-                    "need to implement handling only some of the rounds being dealt"
-                );
-                Some(count)
-            }
+            } => valid_match_length(cards_per_round, actions),
             RoundType::Choice { choices } => {
                 let mut found_match: Option<&[Action]> = None;
                 for c in choices {
@@ -66,6 +59,27 @@ impl RoundType {
             }
         }
     }
+}
+
+/// Returns the valid match for a cards_per_round RoundType
+///
+/// This is the longest possible sum of the cards per round that is less than actions
+fn valid_match_length(cards_per_round: &[usize], actions: &[Action]) -> Option<usize> {
+    let mut valid_matches = Vec::new();
+    let mut sum = 0;
+    for x in cards_per_round {
+        sum += x;
+        valid_matches.push(sum);
+    }
+
+    // Can't match to a round greater than remaining actions
+    if !valid_matches.contains(&actions.len()) && actions.len() < sum {
+        panic!("trying to match an invalid action sequence. The actions to match are neither longer than the whole round, 
+        or a multiple of the rounds, cards_per_round: {:?}, actions.len(): {}", cards_per_round, actions.len());
+    }
+
+    valid_matches.retain(|&x| x <= actions.len());
+    valid_matches.into_iter().max()
 }
 
 /// Convert an information state into an index across all rounds.

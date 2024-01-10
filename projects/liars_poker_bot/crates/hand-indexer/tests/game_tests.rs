@@ -86,6 +86,12 @@ fn euchre_indexer_test() {
     todo!("implement the remaining tests and confirm the total index size")
 }
 
+#[test]
+fn hold_em_indexer_test() {
+    // test indexer for just pockets cards, then flop, etc.
+    todo!("implement this test")
+}
+
 pub fn kuhn_poker() -> GameIndexer {
     use games::gamestates::kuhn_poker::KPAction::*;
 
