@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use games::{
-    gamestates::euchre::{actions::Card, util::generate_face_up_deals},
+    gamestates::euchre::{actions::Card, util::generate_face_up_deals, Euchre},
     Action, GameState,
 };
 use rand::{seq::SliceRandom, thread_rng};
