@@ -6,7 +6,8 @@ use std::{
 
 pub mod gamestates;
 pub mod istate;
-mod pool;
+pub mod iterator;
+pub mod pool;
 pub mod resample;
 
 use rand::{rngs::StdRng, seq::SliceRandom};

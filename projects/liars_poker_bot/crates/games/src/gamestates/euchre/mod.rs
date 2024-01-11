@@ -28,6 +28,7 @@ pub(super) const CARDS_PER_HAND: usize = 5;
 pub mod actions;
 mod deck;
 pub mod ismorphic;
+pub mod iterator;
 mod parser;
 pub mod processors;
 pub mod util;

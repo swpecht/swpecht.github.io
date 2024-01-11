@@ -230,5 +230,13 @@ impl<G> IStateNormalizer<G> for NoOpNormalizer {
     }
 }
 
+/// Translate an istate to a vector of game specific actions
+#[macro_export]
+macro_rules! translate_istate {
+    ( $x:expr, $t:ty ) => {{
+        $x.iter().map(|&y| <$t>::from(y)).collect_vec()
+    }};
+}
+
 #[cfg(test)]
 mod tests {}
