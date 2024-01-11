@@ -1,8 +1,8 @@
 use tinyvec::ArrayVec;
 
-use crate::istate::IStateKey;
+use crate::istate::{self, IStateKey, IStateNormalizer};
 
-use super::{actions::EAction, EPhase, EuchreGameState};
+use super::{actions::EAction, ismorphic::EuchreNormalizer, EPhase, EuchreGameState};
 
 use EAction::*;
 const CARDS: [EAction; 24] = [
@@ -15,6 +15,7 @@ const MAX_ACTIONS: usize = 24;
 
 pub struct EuchreIsomorphicIStateIterator {
     stack: Vec<EuchreIState>,
+    normalizer: EuchreNormalizer,
     is_max_depth: fn(&EuchreGameState) -> bool,
 }
 
@@ -24,6 +25,7 @@ impl EuchreIsomorphicIStateIterator {
         Self {
             stack,
             is_max_depth,
+            normalizer: EuchreNormalizer::default(),
         }
     }
 
@@ -51,7 +53,13 @@ impl Iterator for EuchreIsomorphicIStateIterator {
             // Don't want to return the chance nodes
             if state.is_valid() && !matches!(state.phase(), EPhase::DealHands | EPhase::DealFaceUp)
             {
-                return Some(state.key());
+                let key = state.key();
+                let norm_key = self.normalizer.isomorphic_istate(&key);
+
+                // skip returning anything not in isomorphic form
+                if key == norm_key {
+                    return Some(state.key());
+                }
             }
         }
 
@@ -66,7 +74,8 @@ struct EuchreIState {
 }
 
 impl EuchreIState {
-    /// Uses the resampling logic to check if the current istate is valid
+    /// Uses the resampling logic to check if the current istate is valid -- or only return actions which can be valid, tbd
+    /// the istate logic will be more robust and avoid some extra invalid states, tbd if perf tradeoff is worth it
     fn is_valid(&self) -> bool {
         // todo!()
         true

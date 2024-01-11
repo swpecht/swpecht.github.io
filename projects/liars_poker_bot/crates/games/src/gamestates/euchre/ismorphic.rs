@@ -136,6 +136,31 @@ pub(super) fn get_cards(suit: Suit, trump: Option<Suit>) -> &'static [Card] {
 #[derive(Default, Clone)]
 pub struct EuchreNormalizer {}
 
+impl EuchreNormalizer {
+    /// Converts an istate into it's isomorphic form:
+    /// * Hand is sorted
+    /// * Spades is always the face up card
+    pub fn isomorphic_istate(&self, istate: &IStateKey) -> IStateKey {
+        if istate.len() <= 6 {
+            let mut new_istate = *istate;
+            new_istate.sort_range(0, 5.min(new_istate.len()));
+            return new_istate;
+        }
+
+        let mut new_istate = IStateKey::default();
+        let face_up_suit = EAction::from(istate[5]).card().suit();
+
+        for a in *istate {
+            let norm_a = transform(a, face_up_suit);
+            new_istate.push(norm_a);
+        }
+
+        // re-sort the hand
+        new_istate.sort_range(0, 5.min(new_istate.len()));
+        new_istate
+    }
+}
+
 impl IStateNormalizer<EuchreGameState> for EuchreNormalizer {
     /// Normalizes the suit to have Spades always be the faceup card.
     fn normalize_action(&self, action: Action, gs: &EuchreGameState) -> NormalizedAction {
