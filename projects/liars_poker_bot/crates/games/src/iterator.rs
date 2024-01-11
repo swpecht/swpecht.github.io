@@ -54,7 +54,10 @@ fn walk_istates<G: GameState>(
 #[cfg(test)]
 mod tests {
     use crate::{
-        gamestates::kuhn_poker::{KPAction, KuhnPoker},
+        gamestates::{
+            bluff::Bluff,
+            kuhn_poker::{KPAction, KuhnPoker},
+        },
         translate_istate,
     };
 
@@ -81,6 +84,11 @@ mod tests {
 
     #[test]
     fn test_bluff_iterator() {
-        todo!()
+        let gs = Bluff::new_state(1, 1);
+        let mut istates = IStateIterator::new(gs).collect_vec();
+        assert_eq!(istates.len(), 6144,);
+        istates.sort();
+        istates.dedup();
+        assert_eq!(istates.len(), 6144);
     }
 }
