@@ -14,8 +14,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::algorithms::cfres::InfoState;
 
-pub mod euchre_states;
-
 const BUCKET_SIZE: usize = std::mem::size_of::<InfoState>();
 const REMAP_INCREMENT: usize = 10_000_000;
 
