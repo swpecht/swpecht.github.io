@@ -7,10 +7,21 @@ use serde::{Deserialize, Serialize};
 use crate::Action;
 
 #[derive(
-    PartialEq, Clone, Copy, Serialize, Deserialize, Eq, FromPrimitive, ToPrimitive, PartialOrd, Ord,
+    PartialEq,
+    Clone,
+    Copy,
+    Serialize,
+    Deserialize,
+    Eq,
+    FromPrimitive,
+    ToPrimitive,
+    PartialOrd,
+    Ord,
+    Default,
 )]
 #[repr(u32)]
 pub enum EAction {
+    #[default]
     NC = Card::NC as u32,
     TC = Card::TC as u32,
     JC = Card::JC as u32,
