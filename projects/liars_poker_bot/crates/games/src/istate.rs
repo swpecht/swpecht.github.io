@@ -234,6 +234,7 @@ impl<G> IStateNormalizer<G> for NoOpNormalizer {
 #[macro_export]
 macro_rules! translate_istate {
     ( $x:expr, $t:ty ) => {{
+        use itertools::Itertools;
         $x.iter().map(|&y| <$t>::from(y)).collect_vec()
     }};
 }
