@@ -180,9 +180,9 @@ impl EuchreIState {
                 && !self.actions.contains(&EAction::DiscardMarker)
         {
             return EPhase::Play;
-        } else if self.actions.len() >= 6 && self.actions.len() <= 10 {
+        } else if self.actions.len() >= 6 && self.actions.len() < 10 {
             return EPhase::Pickup;
-        } else if self.actions.len() > 10 {
+        } else if self.actions.len() >= 10 {
             return EPhase::ChooseTrump;
         }
 
@@ -236,10 +236,21 @@ pub fn find_child_istates() {
 
 #[cfg(test)]
 mod tests {
+    use rand::{seq::IteratorRandom, thread_rng};
+
+    use crate::translate_istate;
+
     use super::*;
 
     #[test]
     fn test_euchre_deal_istates() {
+        let iterator = EuchreIsomorphicIStateIterator::new(0);
+        println!(
+            "{:?}",
+            iterator
+                .map(|x| translate_istate!(x, EAction))
+                .choose_multiple(&mut thread_rng(), 20)
+        );
         let iterator = EuchreIsomorphicIStateIterator::new(0);
         // todo: find the right number
         // 201_894
