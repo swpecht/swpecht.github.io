@@ -1,8 +1,12 @@
 use tinyvec::ArrayVec;
 
-use crate::istate::{self, IStateKey, IStateNormalizer};
+use crate::istate::IStateKey;
 
-use super::{actions::EAction, ismorphic::EuchreNormalizer, EPhase, EuchreGameState};
+use super::{
+    actions::{EAction, Suit},
+    ismorphic::EuchreNormalizer,
+    EPhase, EuchreGameState,
+};
 
 use EAction::*;
 const CARDS: [EAction; 24] = [
@@ -16,22 +20,23 @@ const MAX_ACTIONS: usize = 24;
 pub struct EuchreIsomorphicIStateIterator {
     stack: Vec<EuchreIState>,
     normalizer: EuchreNormalizer,
-    is_max_depth: fn(&EuchreGameState) -> bool,
+    max_cards_played: usize,
 }
 
 impl EuchreIsomorphicIStateIterator {
-    pub fn new(is_max_depth: fn(&EuchreGameState) -> bool) -> Self {
+    pub fn new(max_cards_played: usize) -> Self {
         let stack = vec![EuchreIState::default()];
         Self {
             stack,
-            is_max_depth,
+            max_cards_played,
             normalizer: EuchreNormalizer::default(),
         }
     }
 
     fn next_unfiltered(&mut self) -> Option<EuchreIState> {
         let state = self.stack.pop()?;
-        if !(state.phase() == EPhase::Pickup) {
+        if !(state.cards_played() >= self.max_cards_played && matches!(state.phase(), EPhase::Play))
+        {
             let mut actions = ArrayVec::new();
             state.legal_actions(&mut actions);
             for a in actions {
@@ -82,6 +87,13 @@ impl EuchreIState {
     }
 
     fn apply_action(&mut self, a: EAction) {
+        if self.actions.len() >= 20 {
+            panic!(
+                "attempting to create an istate larger than storage: {:?}\nPhase: {:?}",
+                self.actions,
+                self.phase()
+            )
+        }
         self.actions.push(a)
     }
 
@@ -95,15 +107,15 @@ impl EuchreIState {
             EPhase::DealHands => self.legal_actions_deal_hand(actions),
             // only spades can be face up
             EPhase::DealFaceUp => self.legal_actions_deal_face_up(actions),
-            EPhase::Pickup => todo!(),
-            EPhase::Discard => {} // no valid actions from discard
-            EPhase::ChooseTrump => todo!(),
+            EPhase::Pickup => self.legal_actions_pickup(actions),
+            EPhase::Discard => self.legal_actions_discard(actions),
+            EPhase::ChooseTrump => self.legal_actions_choose_trump(actions),
             EPhase::Play => todo!(),
         }
     }
 
     /// Only allow dealing cards > cards that were previously dealt
-    fn legal_actions_deal_hand(&self, actions: &mut ArrayVec<[EAction; 24]>) {
+    fn legal_actions_deal_hand(&self, actions: &mut ArrayVec<[EAction; MAX_ACTIONS]>) {
         actions.set_len(CARDS.len());
         actions.copy_from_slice(&CARDS);
 
@@ -113,10 +125,44 @@ impl EuchreIState {
     }
 
     /// Return all undealt spades
-    fn legal_actions_deal_face_up(&self, actions: &mut ArrayVec<[EAction; 24]>) {
+    fn legal_actions_deal_face_up(&self, actions: &mut ArrayVec<[EAction; MAX_ACTIONS]>) {
         actions.set_len(SPADES.len());
         actions.copy_from_slice(&SPADES);
         actions.retain(|x| !self.actions.contains(x));
+    }
+
+    fn legal_actions_pickup(&self, actions: &mut ArrayVec<[EAction; MAX_ACTIONS]>) {
+        actions.push(EAction::Pass);
+        actions.push(EAction::Pickup);
+    }
+
+    fn legal_actions_discard(&self, actions: &mut ArrayVec<[EAction; MAX_ACTIONS]>) {
+        // Can discard any of the cards in hand or the face up card
+        for card in &self.actions[0..6] {
+            actions.push(*card);
+        }
+    }
+
+    fn legal_actions_choose_trump(&self, actions: &mut ArrayVec<[EAction; MAX_ACTIONS]>) {
+        // Can only pass if we're not the dealer on the last time around
+        if self.actions.iter().filter(|&&x| x == EAction::Pass).count() <= 7 {
+            actions.push(EAction::Pass);
+        }
+
+        // Can't call the face up suit
+        let face_up = self.actions[5].card().suit();
+        if face_up != Suit::Spades {
+            actions.push(EAction::Spades);
+        }
+        if face_up != Suit::Clubs {
+            actions.push(EAction::Clubs);
+        }
+        if face_up != Suit::Hearts {
+            actions.push(EAction::Hearts);
+        }
+        if face_up != Suit::Diamonds {
+            actions.push(EAction::Diamonds);
+        }
     }
 
     fn phase(&self) -> EPhase {
@@ -124,10 +170,20 @@ impl EuchreIState {
             return EPhase::DealHands;
         } else if self.actions.len() == 5 {
             return EPhase::DealFaceUp;
-        } else if *self.actions.last().unwrap() == EAction::Pickup {
+        } else if *self.actions.last().unwrap() == EAction::DiscardMarker {
             return EPhase::Discard;
-        } else if self.actions.len() >= 6 {
+        } else if self.actions.contains(&EAction::Pickup)
+            || self.actions.contains(&EAction::Clubs)
+            || self.actions.contains(&EAction::Spades)
+            || self.actions.contains(&EAction::Hearts)
+            || self.actions.contains(&EAction::Diamonds)
+                && !self.actions.contains(&EAction::DiscardMarker)
+        {
+            return EPhase::Play;
+        } else if self.actions.len() >= 6 && self.actions.len() <= 10 {
             return EPhase::Pickup;
+        } else if self.actions.len() > 10 {
+            return EPhase::ChooseTrump;
         }
 
         // todo: how to handle discard marker case
@@ -141,6 +197,10 @@ impl EuchreIState {
             key.push(a.into());
         }
         key
+    }
+
+    fn cards_played(&self) -> usize {
+        0
     }
 }
 
@@ -180,7 +240,7 @@ mod tests {
 
     #[test]
     fn test_euchre_deal_istates() {
-        let iterator = EuchreIsomorphicIStateIterator::new(|x| x.phase() == EPhase::Pickup);
+        let iterator = EuchreIsomorphicIStateIterator::new(0);
         // todo: find the right number
         // 201_894
         assert_eq!(iterator.count(), 100);
