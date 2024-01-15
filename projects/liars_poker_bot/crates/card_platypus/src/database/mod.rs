@@ -6,7 +6,17 @@ use std::{
 
 use anyhow::{bail, Context};
 use boomphf::Mphf;
-use games::{actions, istate::IStateKey, Action, GameState};
+use games::{
+    actions,
+    gamestates::{
+        bluff::{Bluff, BluffGameState},
+        euchre::iterator::EuchreIsomorphicIStateIterator,
+        kuhn_poker::{KPGameState, KuhnPoker},
+    },
+    istate::IStateKey,
+    iterator::IStateIterator,
+    Action, GameState,
+};
 use itertools::Itertools;
 use log::{debug, warn};
 use memmap2::MmapMut;
@@ -16,6 +26,7 @@ use crate::algorithms::cfres::InfoState;
 
 const BUCKET_SIZE: usize = std::mem::size_of::<InfoState>();
 const REMAP_INCREMENT: usize = 10_000_000;
+const GAMMA: f64 = 1.7;
 
 /// We use a vectorized version of the istates instead of the array to reduce memory usage
 #[derive(Default, Serialize, Deserialize)]
@@ -55,8 +66,8 @@ impl HashStore {
 
 // A performant, optionally diskback node storage system
 pub struct NodeStore {
-    // phf: Mphf<IStateKey>,
-    phf: HashStore,
+    phf: Mphf<IStateKey>,
+    // phf: HashStore,
     mmap: MmapMut,
     path: Option<PathBuf>,
 }
@@ -66,16 +77,23 @@ impl NodeStore {
     pub fn new_euchre(path: Option<&Path>) -> anyhow::Result<Self> {
         // let (phf, n) = generate_euchre_phf().context("failed to generate phf")?;
 
-        let phf = match load_phf(path) {
-            Ok(x) => x,
-            Err(x) => {
-                if path.is_some() {
-                    warn!("failed to load index: {}", x);
-                }
-                HashStore::default()
-            }
-        };
-        let mmap = get_mmap(path, phf.len().max(20_000_000)).context("failed to create mmap")?;
+        // let phf = match load_phf(path) {
+        //     Ok(x) => x,
+        //     Err(x) => {
+        //         if path.is_some() {
+        //             warn!("failed to load index: {}", x);
+        //         }
+        //         HashStore::default()
+        //     }
+        // };
+
+        // TODO: in the future can use make it so the hashing happens in stages so that later istates are offset from others as a way to save space
+        // Or can pass in the max num cards as a parameter
+        let istate_iter = EuchreIsomorphicIStateIterator::new(4);
+        let istates = istate_iter.collect_vec();
+        let phf = Mphf::new(GAMMA, &istates);
+        let mmap =
+            get_mmap(path, istates.len().max(20_000_000)).context("failed to create mmap")?;
 
         let path = path.map(|x| x.to_path_buf());
         Ok(Self { phf, mmap, path })
@@ -88,26 +106,32 @@ impl NodeStore {
         }
 
         let mmap = get_mmap(path, 1_000)?;
-        let phf = HashStore::default();
+
+        let istate_iter = IStateIterator::new(KuhnPoker::new_state());
+        let istates = istate_iter.collect_vec();
+        let phf = Mphf::new(GAMMA, &istates);
+
         let path = path.map(|x| x.to_path_buf());
         Ok(Self { phf, mmap, path })
     }
 
     pub fn new_bluff_11(path: Option<&Path>) -> anyhow::Result<Self> {
-        // let (phf, n) = generate_phf(|| Bluff::new_state(1, 1))?;
-
         if path.is_some() {
             panic!("serialization not supported for this game type")
         }
         let mmap = get_mmap(path, 10_000)?;
-        let phf = HashStore::default();
+
+        let istate_iter = IStateIterator::new(Bluff::new_state(1, 1));
+        let istates = istate_iter.collect_vec();
+        let phf = Mphf::new(GAMMA, &istates);
+
         let path = path.map(|x| x.to_path_buf());
         Ok(Self { phf, mmap, path })
     }
 
     pub fn get(&self, key: &IStateKey) -> Option<InfoState> {
-        // let index: usize = self.phf.hash(key) as usize;
-        let index: usize = self.phf.get_hash(key)?;
+        let index: usize = self.phf.hash(key) as usize;
+        // let index: usize = self.phf.get_hash(key)?;
         let start = index * BUCKET_SIZE;
 
         if start + BUCKET_SIZE > self.mmap.len() {
@@ -115,6 +139,12 @@ impl NodeStore {
         }
 
         let data = &self.mmap[start..start + BUCKET_SIZE];
+
+        // Check if the data is uninitialized
+        if data.iter().all(|&x| x == 0) {
+            return None;
+        }
+
         let info = bytemuck::cast_slice::<u8, InfoState>(data)[0];
         // let info = match rmp_serde::from_slice(data) {
         //     Ok(x) => x,
@@ -124,7 +154,8 @@ impl NodeStore {
     }
 
     pub fn put(&mut self, key: &IStateKey, value: &InfoState) {
-        let index: usize = self.phf.hash(key);
+        let index: usize = self.phf.hash(key) as usize;
+        // let index: usize = self.phf.hash(key);
         let start = index * BUCKET_SIZE;
 
         if start + BUCKET_SIZE > self.mmap.len() {
@@ -153,8 +184,10 @@ impl NodeStore {
         anyhow::Ok(())
     }
 
+    /// TODO: fix this
     pub fn len(&self) -> usize {
-        self.phf.len()
+        // self.phf.len()
+        0
     }
 
     #[must_use]
@@ -196,23 +229,6 @@ fn load_phf(path: Option<&Path>) -> anyhow::Result<HashStore> {
     } else {
         bail!("path is none")
     }
-}
-
-pub fn generate_euchre_phf() -> anyhow::Result<(Mphf<IStateKey>, usize)> {
-    // let mut builder = IStateBuilder::default();
-    // let mut istates = HashSet::new();
-    // generate_euchre_states(
-    //     &mut builder,
-    //     &mut istates,
-    //     euchre_states::Termination::Play { cards: 1 },
-    // );
-
-    // let n = istates.len();
-    // let phf = Mphf::new_parallel(1.7, &istates.iter().copied().collect_vec(), None);
-    // validate_phf(&istates, &phf);
-
-    // Ok((phf, n))
-    todo!()
 }
 
 fn generate_phf<T: GameState>(new_state: fn() -> T) -> anyhow::Result<(Mphf<IStateKey>, usize)> {

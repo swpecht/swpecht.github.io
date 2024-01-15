@@ -286,7 +286,7 @@ mod tests {
     fn test_euchre_deal_istates() {
         let iterator = EuchreIsomorphicIStateIterator::new(1);
 
-        for state in iterator.clone().choose_multiple(&mut thread_rng(), 50) {
+        for state in iterator.clone().choose_multiple(&mut thread_rng(), 100) {
             println!("{:?}", translate_istate!(state, EAction))
         }
 
