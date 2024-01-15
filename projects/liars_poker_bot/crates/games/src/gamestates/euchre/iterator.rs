@@ -26,6 +26,10 @@ pub struct EuchreIsomorphicIStateIterator {
 
 impl EuchreIsomorphicIStateIterator {
     pub fn new(max_cards_played: usize) -> Self {
+        if max_cards_played > 4 {
+            panic!("only support istates for the first trick");
+        }
+
         let stack = vec![EuchreIState::default()];
         Self {
             stack,
