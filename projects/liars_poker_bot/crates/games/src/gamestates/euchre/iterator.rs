@@ -83,6 +83,32 @@ impl Iterator for EuchreIsomorphicIStateIterator {
     }
 }
 
+impl ExactSizeIterator for EuchreIsomorphicIStateIterator {
+    fn len(&self) -> usize {
+        todo!()
+    }
+}
+
+pub struct EuchreIsomorphicIStates {
+    max_cards_played: usize,
+}
+
+impl EuchreIsomorphicIStates {
+    pub fn new(max_cards_played: usize) -> Self {
+        Self { max_cards_played }
+    }
+}
+
+impl IntoIterator for EuchreIsomorphicIStates {
+    type Item = IStateKey;
+
+    type IntoIter = EuchreIsomorphicIStateIterator;
+
+    fn into_iter(self) -> Self::IntoIter {
+        EuchreIsomorphicIStateIterator::new(self.max_cards_played)
+    }
+}
+
 /// Helper struct for enumerating euchre istates
 #[derive(Default, Clone, Copy)]
 struct EuchreIState {

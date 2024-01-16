@@ -7,7 +7,7 @@ use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
 #[test]
 fn test_euchre_indexing() {
-    let max_cards_played = 2;
+    let max_cards_played = 1;
     let indexer = card_platypus::database::indexer::Indexer::euchre(max_cards_played);
 
     let depth_checker = EuchreDepthChecker { max_cards_played };

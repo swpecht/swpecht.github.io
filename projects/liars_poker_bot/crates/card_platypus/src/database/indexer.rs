@@ -2,7 +2,10 @@ use boomphf::Mphf;
 use games::{
     gamestates::{
         bluff::Bluff,
-        euchre::{ismorphic::normalize_euchre_istate, iterator::EuchreIsomorphicIStateIterator},
+        euchre::{
+            ismorphic::normalize_euchre_istate,
+            iterator::{EuchreIsomorphicIStateIterator, EuchreIsomorphicIStates},
+        },
         kuhn_poker::KuhnPoker,
     },
     istate::IStateKey,
@@ -40,6 +43,11 @@ impl Indexer {
         let istate_iter = EuchreIsomorphicIStateIterator::new(max_cards_played);
         let istates = istate_iter.collect_vec();
         let phf = Mphf::new(GAMMA, &istates);
+        // Mphf::from_chunked_iterator(
+        //     GAMMA,
+        //     &vec![EuchreIsomorphicIStates::new(max_cards_played)],
+        //     100,
+        // );
         Self {
             phf,
             len: istates.len(),
