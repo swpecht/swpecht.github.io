@@ -1,15 +1,13 @@
 use std::{
-    collections::{btree_map::Entry, BTreeMap},
     fs::OpenOptions,
     path::{Path, PathBuf},
 };
 
-use anyhow::{bail, Context};
+use anyhow::Context;
 
-use games::{istate::IStateKey, Action};
+use games::istate::IStateKey;
 use log::debug;
 use memmap2::MmapMut;
-use serde::{Deserialize, Serialize};
 
 use crate::algorithms::cfres::InfoState;
 
@@ -19,42 +17,6 @@ pub mod indexer;
 
 const BUCKET_SIZE: usize = std::mem::size_of::<InfoState>();
 const REMAP_INCREMENT: usize = 10_000_000;
-
-/// We use a vectorized version of the istates instead of the array to reduce memory usage
-#[derive(Default, Serialize, Deserialize)]
-struct HashStore {
-    index: BTreeMap<Vec<Action>, usize>,
-    next: usize,
-}
-
-impl HashStore {
-    pub fn hash(&mut self, key: &IStateKey) -> usize {
-        let key = key.to_vec();
-        match self.index.entry(key) {
-            Entry::Occupied(x) => return *x.get(),
-            Entry::Vacant(x) => {
-                let hash = self.next;
-                self.next += 1;
-                x.insert(hash);
-                hash
-            }
-        }
-    }
-
-    pub fn get_hash(&self, key: &IStateKey) -> Option<usize> {
-        let key = key.to_vec();
-        self.index.get(&key).copied()
-    }
-
-    pub fn len(&self) -> usize {
-        self.next
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-}
 
 // A performant, optionally diskback node storage system
 pub struct NodeStore {
@@ -191,14 +153,4 @@ fn get_mmap(dir: Option<&Path>, len: usize) -> anyhow::Result<MmapMut> {
     // Inform that re-ahead may not be useful
     mmap.advise(memmap2::Advice::Random)?;
     Ok(mmap)
-}
-
-fn load_phf(path: Option<&Path>) -> anyhow::Result<HashStore> {
-    if let Some(path) = &path {
-        let content = std::fs::read(path.join("index"))?;
-        let phf: HashStore = rmp_serde::decode::from_slice(&content)?;
-        Ok(phf)
-    } else {
-        bail!("path is none")
-    }
 }

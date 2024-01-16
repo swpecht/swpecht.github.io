@@ -1,4 +1,4 @@
-use std::{collections::HashMap, default, fs, ops::Deref, path::Path};
+use std::{collections::HashMap, fs, ops::Deref, path::Path};
 
 use card_platypus::{
     agents::{Agent, Seedable},

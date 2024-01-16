@@ -13,7 +13,6 @@ use log::{set_max_level, LevelFilter};
 use scripts::agent_exploitability::calcualte_agent_exploitability;
 use scripts::benchmark::{run_benchmark, BenchmarkArgs};
 use scripts::estimate_euchre_game_tree::estimate_euchre_game_tree;
-use scripts::euchre_phf::{euchre_phf, EuchrePhfMode};
 use scripts::pass_on_bower::open_hand_score_pass_on_bower;
 use scripts::pass_on_bower_alpha::benchmark_pass_on_bower;
 use scripts::pass_on_bower_cfr::{
@@ -45,23 +44,11 @@ enum Commands {
     Scratch,
     Exploitability,
     PassOnBowerOpenHand,
-    PassOnBowerAlpha {
-        num_games: usize,
-    },
-    EuchreCFRTrain {
-        profile: String,
-    },
+    PassOnBowerAlpha { num_games: usize },
+    EuchreCFRTrain { profile: String },
     PassOnBowerCFRTrain(PassOnBowerCFRArgs),
-    PassOnBowerCFRParseWeights {
-        infostate_path: String,
-    },
-    PassOnBowerCFRAnalyzeIstate {
-        num_games: usize,
-    },
-    EuchrePhf {
-        #[command(subcommand)]
-        command: EuchrePhfMode,
-    },
+    PassOnBowerCFRParseWeights { infostate_path: String },
+    PassOnBowerCFRAnalyzeIstate { num_games: usize },
 }
 
 /// Simple program to greet a person
@@ -147,7 +134,6 @@ fn main() {
         }
         Commands::PassOnBowerCFRAnalyzeIstate { num_games } => analyze_istate(num_games),
         Commands::EuchreCFRTrain { profile } => train_cfr_from_config(profile.as_str()).unwrap(),
-        Commands::EuchrePhf { command } => euchre_phf(command),
     }
 }
 
@@ -157,6 +143,7 @@ fn run_scratch(_args: Args) {
     println!("euchre size: {}", mem::size_of::<EuchreGameState>());
 
     println!("cfres node {}", mem::size_of::<InfoState>());
+    card_platypus::database::indexer::Indexer::euchre(1);
 }
 
 fn run_analyze(args: Args) {
