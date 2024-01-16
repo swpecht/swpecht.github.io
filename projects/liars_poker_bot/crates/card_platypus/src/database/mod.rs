@@ -81,7 +81,7 @@ impl NodeStore {
 
         let path = path.map(|x| x.to_path_buf());
         Ok(Self {
-            indexer: Indexer::euchre(),
+            indexer: Indexer::euchre(4),
             mmap,
             path,
         })

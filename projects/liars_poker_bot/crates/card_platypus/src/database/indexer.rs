@@ -1,9 +1,14 @@
 use boomphf::Mphf;
 use games::{
     gamestates::{
-        bluff::Bluff, euchre::iterator::EuchreIsomorphicIStateIterator, kuhn_poker::KuhnPoker,
+        bluff::Bluff,
+        euchre::{
+            ismorphic::{normalize_euchre_istate, EuchreNormalizer},
+            iterator::EuchreIsomorphicIStateIterator,
+        },
+        kuhn_poker::KuhnPoker,
     },
-    istate::IStateKey,
+    istate::{IStateKey, IStateNormalizer, NoOpNormalizer},
     iterator::IStateIterator,
 };
 use itertools::Itertools;
@@ -13,12 +18,14 @@ const GAMMA: f64 = 1.7;
 pub struct Indexer {
     phf: Mphf<IStateKey>,
     len: usize,
+    normalizer: fn(&IStateKey) -> IStateKey,
 }
 
 impl Indexer {
     /// May return None if the key isn't in the original function, but this isn't guaranteed
     pub fn index(&self, key: &IStateKey) -> Option<usize> {
-        self.phf.try_hash(key).map(|x| x as usize)
+        let normed = (self.normalizer)(key);
+        self.phf.try_hash(&normed).map(|x| x as usize)
     }
 
     pub fn len(&self) -> usize {
@@ -30,15 +37,16 @@ impl Indexer {
         self.len() == 0
     }
 
-    pub fn euchre() -> Self {
+    pub fn euchre(max_cards_played: usize) -> Self {
         // TODO: in the future can use make it so the hashing happens in stages so that later istates are offset from others as a way to save space
         // Or can pass in the max num cards as a parameter
-        let istate_iter = EuchreIsomorphicIStateIterator::new(4);
+        let istate_iter = EuchreIsomorphicIStateIterator::new(max_cards_played);
         let istates = istate_iter.collect_vec();
         let phf = Mphf::new(GAMMA, &istates);
         Self {
             phf,
             len: istates.len(),
+            normalizer: normalize_euchre_istate,
         }
     }
 
@@ -49,6 +57,7 @@ impl Indexer {
         Self {
             phf,
             len: istates.len(),
+            normalizer: |x| *x,
         }
     }
 
@@ -59,6 +68,7 @@ impl Indexer {
         Self {
             phf,
             len: istates.len(),
+            normalizer: |x| *x,
         }
     }
 }

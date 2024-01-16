@@ -4,7 +4,7 @@ use crate::{istate::IStateKey, translate_istate};
 
 use super::{
     actions::{EAction, Suit},
-    ismorphic::EuchreNormalizer,
+    ismorphic::{normalize_euchre_istate, EuchreNormalizer},
     EPhase, EuchreGameState,
 };
 
@@ -64,13 +64,12 @@ impl Iterator for EuchreIsomorphicIStateIterator {
             if state.is_valid() && !matches!(state.phase(), EPhase::DealHands | EPhase::DealFaceUp)
             {
                 let key = state.key();
-                let norm_key = self.normalizer.isomorphic_istate(&key);
+                let norm_key = normalize_euchre_istate(&key);
 
-                // // skip returning anything not in isomorphic form
-                // if key == norm_key {
-                //     return Some(state.key());
-                // }
-                return Some(state.key());
+                // skip returning anything not in isomorphic form
+                if key == norm_key {
+                    return Some(state.key());
+                }
             }
         }
 
@@ -85,6 +84,14 @@ struct EuchreIState {
 }
 
 impl EuchreIState {
+    pub fn new(history: &[EAction]) -> Self {
+        let mut actions = ArrayVec::new();
+        for &a in history.iter() {
+            actions.push(a);
+        }
+        Self { actions }
+    }
+
     /// Uses the resampling logic to check if the current istate is valid -- or only return actions which can be valid, tbd
     /// the istate logic will be more robust and avoid some extra invalid states, tbd if perf tradeoff is worth it
     fn is_valid(&self) -> bool {
@@ -178,15 +185,11 @@ impl EuchreIState {
             actions.push(EAction::DiscardMarker);
         }
 
-        // Can play any card that's not in our hand
+        // Can play any card that's not in our hand or the face up card
         for card in CARDS {
-            if !self.actions[0..5].contains(&card) {
+            if !self.actions[0..6].contains(&card) {
                 actions.push(card);
             }
-        }
-
-        if self.actions.contains(&EAction::DiscardMarker) {
-            panic!("don't yet support play actions for dealer")
         }
     }
 
@@ -277,6 +280,7 @@ pub fn find_child_istates() {
 #[cfg(test)]
 mod tests {
     use rand::{seq::IteratorRandom, thread_rng};
+    use tinyvec::array_vec;
 
     use crate::translate_istate;
 
@@ -284,6 +288,12 @@ mod tests {
 
     #[test]
     fn test_euchre_deal_istates() {
+        use EAction::*;
+        let istate = EuchreIState::new(&[NC, NS, KS, TD, JD]);
+        let mut actions = ArrayVec::new();
+        istate.legal_actions(&mut actions);
+        assert_eq!(actions, array_vec!());
+
         let iterator = EuchreIsomorphicIStateIterator::new(1);
 
         for state in iterator.clone().choose_multiple(&mut thread_rng(), 100) {

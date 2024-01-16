@@ -1,24 +1,21 @@
-use card_platypus::{
-    algorithms::cfres::{DepthChecker, EuchreDepthChecker},
-    database::NodeStore,
-};
+use card_platypus::algorithms::cfres::{DepthChecker, EuchreDepthChecker};
 use games::{
-    gamestates::euchre::{actions::EAction, Euchre, EuchreGameState},
+    gamestates::euchre::{actions::EAction, Euchre},
     translate_istate, GameState,
 };
-use rand::{seq::SliceRandom, thread_rng};
+use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
 
 #[test]
 fn test_euchre_indexing() {
-    let indexer = card_platypus::database::indexer::Indexer::euchre();
+    let max_cards_played = 0;
+    let indexer = card_platypus::database::indexer::Indexer::euchre(max_cards_played);
 
-    let depth_checker = EuchreDepthChecker {
-        max_cards_played: 4,
-    };
+    let depth_checker = EuchreDepthChecker { max_cards_played };
 
     let mut actions = Vec::new();
-    let mut rng = thread_rng();
+    let mut rng: StdRng = SeedableRng::seed_from_u64(42);
 
+    let mut successful_indexes = 0;
     for _ in 0..1_000_000 {
         let mut gs = Euchre::new_state();
 
@@ -26,8 +23,13 @@ fn test_euchre_indexing() {
             if !gs.is_chance_node() {
                 let key = gs.istate_key(gs.cur_player());
                 indexer.index(&key).unwrap_or_else(|| {
-                    panic!("failed to index: {:?}", translate_istate!(key, EAction))
+                    panic!(
+                        "failed to index after {} successful: {:?}",
+                        successful_indexes,
+                        translate_istate!(key, EAction)
+                    )
                 });
+                successful_indexes += 1;
             }
 
             gs.legal_actions(&mut actions);
