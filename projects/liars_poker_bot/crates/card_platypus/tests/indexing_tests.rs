@@ -1,6 +1,6 @@
 use card_platypus::algorithms::cfres::{DepthChecker, EuchreDepthChecker};
 use games::{
-    gamestates::euchre::{actions::EAction, Euchre},
+    gamestates::euchre::{actions::EAction, ismorphic::normalize_euchre_istate, Euchre},
     translate_istate, GameState,
 };
 use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
@@ -23,10 +23,12 @@ fn test_euchre_indexing() {
             if !gs.is_chance_node() {
                 let key = gs.istate_key(gs.cur_player());
                 indexer.index(&key).unwrap_or_else(|| {
+                    let normed = normalize_euchre_istate(&key);
                     panic!(
-                        "failed to index after {} successful: {:?}",
+                        "failed to index after {} successful\n\tistate: {:?}\n\tnormed: {:?}",
                         successful_indexes,
-                        translate_istate!(key, EAction)
+                        translate_istate!(key, EAction),
+                        translate_istate!(normed, EAction)
                     )
                 });
                 successful_indexes += 1;

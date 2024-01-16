@@ -170,7 +170,7 @@ impl IStateNormalizer<EuchreGameState> for EuchreNormalizer {
 /// * Hand is sorted
 /// * Spades is always the face up card
 pub fn normalize_euchre_istate(istate: &IStateKey) -> IStateKey {
-    if istate.len() <= 6 {
+    if istate.len() < 6 {
         let mut new_istate = *istate;
         new_istate.sort_range(0, 5.min(new_istate.len()));
         return new_istate;
