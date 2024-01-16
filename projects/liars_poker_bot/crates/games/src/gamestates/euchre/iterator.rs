@@ -5,7 +5,7 @@ use crate::{istate::IStateKey, translate_istate};
 use super::{
     actions::{EAction, Suit},
     ismorphic::{normalize_euchre_istate, EuchreNormalizer},
-    EPhase, EuchreGameState,
+    EPhase,
 };
 
 use EAction::*;
@@ -20,7 +20,6 @@ const MAX_ACTIONS: usize = 24;
 #[derive(Clone)]
 pub struct EuchreIsomorphicIStateIterator {
     stack: Vec<EuchreIState>,
-    normalizer: EuchreNormalizer,
     max_cards_played: usize,
 }
 
@@ -34,7 +33,6 @@ impl EuchreIsomorphicIStateIterator {
         Self {
             stack,
             max_cards_played,
-            normalizer: EuchreNormalizer::default(),
         }
     }
 

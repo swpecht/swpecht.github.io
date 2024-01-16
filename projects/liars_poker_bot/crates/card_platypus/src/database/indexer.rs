@@ -2,13 +2,10 @@ use boomphf::Mphf;
 use games::{
     gamestates::{
         bluff::Bluff,
-        euchre::{
-            ismorphic::{normalize_euchre_istate, EuchreNormalizer},
-            iterator::EuchreIsomorphicIStateIterator,
-        },
+        euchre::{ismorphic::normalize_euchre_istate, iterator::EuchreIsomorphicIStateIterator},
         kuhn_poker::KuhnPoker,
     },
-    istate::{IStateKey, IStateNormalizer, NoOpNormalizer},
+    istate::IStateKey,
     iterator::IStateIterator,
 };
 use itertools::Itertools;
