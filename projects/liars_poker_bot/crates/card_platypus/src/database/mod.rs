@@ -32,7 +32,7 @@ impl NodeStore {
 
         let path = path.map(|x| x.to_path_buf());
         Ok(Self {
-            indexer: Indexer::euchre(4),
+            indexer: Indexer::euchre(1),
             mmap,
             path,
         })
@@ -97,7 +97,7 @@ impl NodeStore {
             .unwrap_or_else(|| panic!("failed to index {:?}", key));
         let start = index * BUCKET_SIZE;
 
-        if start + BUCKET_SIZE > self.mmap.len() {
+        while start + BUCKET_SIZE >= self.mmap.len() {
             let cur_len = self.mmap.len() / BUCKET_SIZE;
             self.mmap.flush().expect("failed to flush mmap");
             self.mmap = get_mmap(self.path.as_deref(), cur_len + REMAP_INCREMENT)
@@ -118,10 +118,8 @@ impl NodeStore {
         anyhow::Ok(())
     }
 
-    /// TODO: fix this
     pub fn len(&self) -> usize {
-        // self.phf.len()
-        0
+        self.indexer.len()
     }
 
     #[must_use]
