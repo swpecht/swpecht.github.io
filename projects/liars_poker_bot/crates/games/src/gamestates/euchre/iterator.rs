@@ -17,11 +17,16 @@ const SPADES: [EAction; 6] = [NS, TS, JS, QS, KS, AS];
 
 const MAX_ACTIONS: usize = 24;
 
+/// The pre-computer size of the iterator for a single face up cards per number of played cards allowed
+const ITERATOR_SIZE_BY_CARDS_PLAYED: [usize; 4] = [1_884_344, 0, 0, 0];
+
 #[derive(Clone)]
 pub struct EuchreIsomorphicIStateIterator {
     stack: Vec<EuchreIState>,
     max_cards_played: usize,
     face_up_cards: ArrayVec<[EAction; MAX_ACTIONS]>,
+    /// Number of items left in the iterator
+    len: usize,
 }
 
 impl EuchreIsomorphicIStateIterator {
@@ -36,6 +41,20 @@ impl EuchreIsomorphicIStateIterator {
             panic!("only support istates for the first trick");
         }
 
+        assert!(
+            face_up_cards.iter().all(|x| SPADES.contains(x)),
+            "must provide only spades as face up cards"
+        );
+
+        let mut cards = face_up_cards.to_vec();
+        cards.sort();
+        cards.dedup();
+        assert_eq!(
+            cards.len(),
+            face_up_cards.len(),
+            "duplicate cards cannot be provided for face up cards"
+        );
+
         let face_up_cards = ArrayVec::from_iter(face_up_cards.iter().copied());
 
         let stack = vec![EuchreIState::default()];
@@ -43,6 +62,7 @@ impl EuchreIsomorphicIStateIterator {
             stack,
             max_cards_played,
             face_up_cards,
+            len: ITERATOR_SIZE_BY_CARDS_PLAYED[max_cards_played] * face_up_cards.len(),
         }
     }
 
@@ -91,6 +111,7 @@ impl Iterator for EuchreIsomorphicIStateIterator {
 
                 // skip returning anything not in isomorphic form
                 if key == norm_key {
+                    self.len -= 1;
                     return Some(state.key());
                 }
             }
@@ -102,27 +123,39 @@ impl Iterator for EuchreIsomorphicIStateIterator {
 
 impl ExactSizeIterator for EuchreIsomorphicIStateIterator {
     fn len(&self) -> usize {
-        todo!()
+        self.len
     }
 }
 
-pub struct EuchreIsomorphicIStates {
+#[derive(Clone, Copy)]
+pub struct EuchreIsomorphicIStates<'a> {
     max_cards_played: usize,
+    face_up_cards: &'a [EAction],
 }
 
-impl EuchreIsomorphicIStates {
+impl<'a> EuchreIsomorphicIStates<'a> {
     pub fn new(max_cards_played: usize) -> Self {
-        Self { max_cards_played }
+        Self {
+            max_cards_played,
+            face_up_cards: &SPADES,
+        }
+    }
+
+    pub fn with_face_up(max_cards_played: usize, face_up_cards: &'a [EAction]) -> Self {
+        Self {
+            max_cards_played,
+            face_up_cards,
+        }
     }
 }
 
-impl IntoIterator for EuchreIsomorphicIStates {
+impl<'a> IntoIterator for &EuchreIsomorphicIStates<'a> {
     type Item = IStateKey;
 
     type IntoIter = EuchreIsomorphicIStateIterator;
 
     fn into_iter(self) -> Self::IntoIter {
-        EuchreIsomorphicIStateIterator::new(self.max_cards_played)
+        EuchreIsomorphicIStateIterator::with_face_up(self.max_cards_played, self.face_up_cards)
     }
 }
 
@@ -301,7 +334,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_euchre_deal_istates() {
+    fn test_euchre_istate_iterator() {
         // let mut iterator = EuchreIsomorphicIStateIterator::new(0);
         // assert!(iterator.any(|x| *x.last().unwrap() == EAction::DiscardMarker.into()));
 
@@ -320,9 +353,9 @@ mod tests {
         // todo: find the right number
 
         let iterator = EuchreIsomorphicIStateIterator::new(0);
-        assert_eq!(iterator.count(), 11306064);
+        assert_eq!(iterator.count(), ITERATOR_SIZE_BY_CARDS_PLAYED[0] * 6);
 
         let iterator = EuchreIsomorphicIStateIterator::with_face_up(0, &[EAction::NS]);
-        assert_eq!(iterator.count(), 11306064 / 6);
+        assert_eq!(iterator.count(), ITERATOR_SIZE_BY_CARDS_PLAYED[0]);
     }
 }
