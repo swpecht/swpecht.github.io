@@ -21,18 +21,28 @@ const MAX_ACTIONS: usize = 24;
 pub struct EuchreIsomorphicIStateIterator {
     stack: Vec<EuchreIState>,
     max_cards_played: usize,
+    face_up_cards: ArrayVec<[EAction; MAX_ACTIONS]>,
 }
 
 impl EuchreIsomorphicIStateIterator {
     pub fn new(max_cards_played: usize) -> Self {
+        EuchreIsomorphicIStateIterator::with_face_up(max_cards_played, &SPADES)
+    }
+
+    /// Return an iterator that only includes the provided face up cards, useful for sharding as
+    /// deals with different face up cards are independent
+    pub fn with_face_up(max_cards_played: usize, face_up_cards: &[EAction]) -> Self {
         if max_cards_played > 4 {
             panic!("only support istates for the first trick");
         }
+
+        let face_up_cards = ArrayVec::from_iter(face_up_cards.iter().copied());
 
         let stack = vec![EuchreIState::default()];
         Self {
             stack,
             max_cards_played,
+            face_up_cards,
         }
     }
 
@@ -66,6 +76,13 @@ impl Iterator for EuchreIsomorphicIStateIterator {
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(state) = self.next_unfiltered() {
+            // skip istates no in the face up card set
+            if let Some(face_up) = state.actions.get(5) {
+                if !self.face_up_cards.contains(face_up) {
+                    continue;
+                }
+            }
+
             // Don't want to return the chance nodes
             if state.is_valid() && !matches!(state.phase(), EPhase::DealHands | EPhase::DealFaceUp)
             {
@@ -274,36 +291,6 @@ impl EuchreIState {
     }
 }
 
-/// Do this is stages
-///
-/// Is there a way to see what the valid actions are for extending a given istate? We can use the logic to check if resampling is possible?
-/// Use the "search for deal" function
-/// Then we can just try all possible euchre actions and see which ones are valid?
-///
-/// for a in all_actions {
-///     istate.append(a)
-///     if istate.is_valid() { // re-sample logic
-///         save(istate)
-///         find_all(istate)
-///     }
-///     istate.pop(a)
-/// }
-///
-/// Can use the EuchreIState function for this, rather than needing to construct a gamestate -- we can pull the constraints from it
-/// should be pretty simple since only doing the first round of play
-///
-/// Start with an empty one, then slowly append -- might need to re-create some of the logic for phase changes, but should be minimal
-///
-/// Make a naive gamestate iterator -- for bluff, and kuhn poker, just go over all actions
-/// Then make a euchre specific one that has all the optimizations, base it on validating istates using the re-sample logic
-///
-/// Consider re-writing based on the sudoku solver example -- constraint propogation
-///
-/// Re-use the isomorphism logic from euchre istates here to check if they are isomorphic
-pub fn find_child_istates() {
-    todo!()
-}
-
 #[cfg(test)]
 mod tests {
     use rand::{seq::IteratorRandom, thread_rng};
@@ -326,15 +313,16 @@ mod tests {
         // istate.legal_actions(&mut actions);
         // assert_eq!(actions, array_vec!());
 
-        let iterator = EuchreIsomorphicIStateIterator::new(1);
-
-        for state in iterator.clone().choose_multiple(&mut thread_rng(), 100) {
-            println!("{:?}", translate_istate!(state, EAction))
-        }
+        // for state in iterator.clone().choose_multiple(&mut thread_rng(), 100) {
+        //     println!("{:?}", translate_istate!(state, EAction))
+        // }
 
         // todo: find the right number
-        // 201_894
-        assert_eq!(iterator.count(), 100);
-        todo!()
+
+        let iterator = EuchreIsomorphicIStateIterator::new(0);
+        assert_eq!(iterator.count(), 11306064);
+
+        let iterator = EuchreIsomorphicIStateIterator::with_face_up(0, &[EAction::NS]);
+        assert_eq!(iterator.count(), 11306064 / 6);
     }
 }
