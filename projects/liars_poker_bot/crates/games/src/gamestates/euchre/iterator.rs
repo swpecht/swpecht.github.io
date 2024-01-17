@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use tinyvec::ArrayVec;
 
 use crate::{istate::IStateKey, translate_istate};
@@ -122,11 +123,11 @@ struct EuchreIState {
 
 impl EuchreIState {
     pub fn new(history: &[EAction]) -> Self {
-        let mut actions = ArrayVec::new();
+        let mut istate = Self::default();
         for &a in history.iter() {
-            actions.push(a);
+            istate.apply_action(a);
         }
-        Self { actions }
+        istate
     }
 
     /// Uses the resampling logic to check if the current istate is valid -- or only return actions which can be valid, tbd
@@ -145,10 +146,6 @@ impl EuchreIState {
             )
         }
         self.actions.push(a)
-    }
-
-    fn pop(&mut self) -> Option<EAction> {
-        self.actions.pop()
     }
 
     fn legal_actions(&self, actions: &mut ArrayVec<[EAction; MAX_ACTIONS]>) {
@@ -253,6 +250,13 @@ impl EuchreIState {
     }
 
     fn key(&self) -> IStateKey {
+        // check if we can use the fast path
+        if !self.actions.contains(&EAction::DiscardMarker) {
+            return IStateKey::copy_from_slice(
+                &self.actions.iter().map(|x| x.into()).collect_vec(),
+            );
+        }
+
         let mut key = IStateKey::default();
         for a in self.actions {
             // don't include the discard marker

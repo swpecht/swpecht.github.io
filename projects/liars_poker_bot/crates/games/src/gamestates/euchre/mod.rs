@@ -79,8 +79,9 @@ pub struct EuchreGameState {
     phase: EPhase,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Copy, Serialize, Deserialize, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Copy, Serialize, Deserialize, Hash, Default)]
 pub enum EPhase {
+    #[default]
     DealHands,
     DealFaceUp,
     Pickup,

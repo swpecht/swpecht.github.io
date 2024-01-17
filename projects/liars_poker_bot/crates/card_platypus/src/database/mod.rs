@@ -27,12 +27,12 @@ pub struct NodeStore {
 
 impl NodeStore {
     /// len is the number of infostates to provision for
-    pub fn new_euchre(path: Option<&Path>) -> anyhow::Result<Self> {
+    pub fn new_euchre(path: Option<&Path>, max_cards_played: usize) -> anyhow::Result<Self> {
         let mmap = get_mmap(path, 20_000_000).context("failed to create mmap")?;
 
         let path = path.map(|x| x.to_path_buf());
         Ok(Self {
-            indexer: Indexer::euchre(1),
+            indexer: Indexer::euchre(max_cards_played),
             mmap,
             path,
         })

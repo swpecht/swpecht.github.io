@@ -1,6 +1,7 @@
 use dyn_clone::DynClone;
 use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;
+use tinyvec::ArrayVec;
 
 use std::{
     fmt::Debug,
@@ -112,6 +113,15 @@ impl IStateKey {
     pub fn as_bytes_mut(&mut self) -> &mut [u8] {
         let action_slice: &mut [Action] = self;
         unsafe { std::slice::from_raw_parts_mut(action_slice.as_mut_ptr() as *mut u8, self.len()) }
+    }
+
+    pub fn copy_from_slice(actions: &[Action]) -> Self {
+        let mut action_buf = [Action::default(); 64];
+        action_buf[..actions.len()].copy_from_slice(actions);
+        Self {
+            len: actions.len(),
+            actions: action_buf,
+        }
     }
 }
 

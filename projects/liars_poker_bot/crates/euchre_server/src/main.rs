@@ -45,9 +45,10 @@ impl Default for AppState {
             3,
         );
 
-        let n = bot.load(Path::new(
-            "/var/lib/card_platypus/infostate.three_card_played",
-        ));
+        let n = bot.load(
+            Path::new("/var/lib/card_platypus/infostate.three_card_played"),
+            3,
+        );
         info!("loaded bot with {n} infostates and 3 max cards played");
 
         let games: Mutex<HashMap<Uuid, GameData>> = Default::default();

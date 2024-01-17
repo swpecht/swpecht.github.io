@@ -176,7 +176,9 @@ impl CFRES<EuchreGameState> {
             vector_pool: Pool::new(Vec::new),
             game_generator,
             average_type: AverageType::default(),
-            infostates: Arc::new(Mutex::new(NodeStore::new_euchre(None).unwrap())),
+            infostates: Arc::new(Mutex::new(
+                NodeStore::new_euchre(None, max_cards_played).unwrap(),
+            )),
             // is_max_depth: post_discard_phase,
             depth_checker: Box::new(EuchreDepthChecker { max_cards_played }),
             play_bot: PIMCTSBot::new(
@@ -190,8 +192,10 @@ impl CFRES<EuchreGameState> {
         }
     }
 
-    pub fn load(&mut self, path: &Path) -> usize {
-        self.infostates = Arc::new(Mutex::new(NodeStore::new_euchre(Some(path)).unwrap()));
+    pub fn load(&mut self, path: &Path, max_cards_played: usize) -> usize {
+        self.infostates = Arc::new(Mutex::new(
+            NodeStore::new_euchre(Some(path), max_cards_played).unwrap(),
+        ));
         debug!("counting loaded infostates not yet supported");
         let len = self.infostates.lock().unwrap().len();
         debug!(

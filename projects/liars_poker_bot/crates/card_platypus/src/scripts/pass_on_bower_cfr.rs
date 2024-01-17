@@ -129,7 +129,7 @@ pub fn train_cfr_shot(
     };
 
     let infostate_path = args.weight_file.as_str();
-    let loaded_states = alg.load(Path::new(infostate_path));
+    let loaded_states = alg.load(Path::new(infostate_path), args.max_cards_played);
     info!(
         "loaded {} info states from {}",
         loaded_states, infostate_path
@@ -236,7 +236,7 @@ pub fn parse_weights(infostate_path: &str) {
     let generator = || generate_face_up_deals(Card::JS);
     let mut alg = CFRES::new_euchre(generator, get_rng(), 0);
 
-    let loaded_states = alg.load(Path::new(infostate_path));
+    let loaded_states = alg.load(Path::new(infostate_path), 0);
     println!(
         "loaded {} info states from {}",
         loaded_states, infostate_path
@@ -292,7 +292,7 @@ pub fn analyze_istate(num_games: usize) {
     let istate = EuchreGameState::from("9sTsQsKsAs|9cTcKcAcTd|JdQdKdAd9h|JcQcJhAh9d|Js");
     let mut rng = get_rng();
     let mut agent = CFRES::new_euchre(Euchre::new_state, rng.clone(), 0);
-    let loaded = agent.load(Path::new("/var/lib/card_platypus/infostate.baseline"));
+    let loaded = agent.load(Path::new("/var/lib/card_platypus/infostate.baseline"), 0);
     info!("loaded {}", loaded);
 
     let mut pass_on_bower_games = Vec::new();
