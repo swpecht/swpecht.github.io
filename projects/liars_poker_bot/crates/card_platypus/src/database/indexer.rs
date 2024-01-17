@@ -44,21 +44,10 @@ impl Indexer {
         let istates = istate_iter.collect_vec();
         let phf = Mphf::new(GAMMA, &istates);
         let n = istates.len();
-        // use games::gamestates::euchre::actions::EAction::*;
-        // let istates = vec![
-        //     EuchreIsomorphicIStates::with_face_up(max_cards_played, &[NS]),
-        //     EuchreIsomorphicIStates::with_face_up(max_cards_played, &[TS]),
-        //     EuchreIsomorphicIStates::with_face_up(max_cards_played, &[JS]),
-        //     EuchreIsomorphicIStates::with_face_up(max_cards_played, &[QS]),
-        //     EuchreIsomorphicIStates::with_face_up(max_cards_played, &[KS]),
-        //     EuchreIsomorphicIStates::with_face_up(max_cards_played, &[AS]),
-        // ];
-        // let n = istates.iter().map(|x| x.into_iter().count() as u64).sum();
 
-        // let phf = Mphf::from_chunked_iterator(GAMMA, &istates, n);
         Self {
             phf,
-            len: n as usize,
+            len: n,
             normalizer: normalize_euchre_istate,
         }
     }
