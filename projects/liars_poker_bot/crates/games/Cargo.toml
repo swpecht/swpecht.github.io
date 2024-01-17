@@ -16,3 +16,4 @@ serde-big-array = "0.5"
 num-traits = "0.2"
 num-derive = "0.4"
 tinyvec = {version="1.6"}
+bytemuck = "1.14"

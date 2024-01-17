@@ -2,16 +2,15 @@ use boomphf::Mphf;
 use games::{
     gamestates::{
         bluff::Bluff,
-        euchre::{
-            ismorphic::normalize_euchre_istate,
-            iterator::{EuchreIsomorphicIStateIterator, EuchreIsomorphicIStates},
-        },
+        euchre::{ismorphic::normalize_euchre_istate, iterator::EuchreIsomorphicIStateIterator},
         kuhn_poker::KuhnPoker,
     },
     istate::IStateKey,
     iterator::IStateIterator,
 };
 use itertools::Itertools;
+
+use crate::collections::mmapvec::MMapVec;
 
 const GAMMA: f64 = 1.7;
 
@@ -41,7 +40,10 @@ impl Indexer {
         // TODO: in the future can use make it so the hashing happens in stages so that later istates are offset from others as a way to save space
         // Or can pass in the max num cards as a parameter
         let istate_iter = EuchreIsomorphicIStateIterator::new(max_cards_played);
-        let istates = istate_iter.collect_vec();
+        // Use an mmap vector as this collection may not fit into memory. This is also
+        // more performant than the chunked iterator approach as we do not have an efficient method to
+        // find the nth item for the iterator -- a common call in later rounds of the phf.
+        let istates = MMapVec::from_iter(istate_iter);
         let phf = Mphf::new(GAMMA, &istates);
         let n = istates.len();
 

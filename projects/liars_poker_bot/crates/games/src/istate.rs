@@ -18,6 +18,9 @@ pub struct IStateKey {
     actions: [Action; 64],
 }
 
+unsafe impl bytemuck::Pod for IStateKey {}
+unsafe impl bytemuck::Zeroable for IStateKey {}
+
 impl Default for IStateKey {
     fn default() -> Self {
         Self {

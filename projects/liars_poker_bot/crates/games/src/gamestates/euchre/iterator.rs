@@ -4,7 +4,7 @@ use crate::{istate::IStateKey, translate_istate};
 
 use super::{
     actions::{EAction, Suit},
-    ismorphic::{normalize_euchre_istate, EuchreNormalizer},
+    ismorphic::normalize_euchre_istate,
     EPhase,
 };
 
@@ -17,16 +17,11 @@ const SPADES: [EAction; 6] = [NS, TS, JS, QS, KS, AS];
 
 const MAX_ACTIONS: usize = 24;
 
-/// The pre-computer size of the iterator for a single face up cards per number of played cards allowed
-const ITERATOR_SIZE_BY_CARDS_PLAYED: [usize; 4] = [1_884_344, 0, 0, 0];
-
 #[derive(Clone)]
 pub struct EuchreIsomorphicIStateIterator {
     stack: Vec<EuchreIState>,
     max_cards_played: usize,
     face_up_cards: ArrayVec<[EAction; MAX_ACTIONS]>,
-    /// Number of items left in the iterator
-    len: usize,
 }
 
 impl EuchreIsomorphicIStateIterator {
@@ -62,7 +57,6 @@ impl EuchreIsomorphicIStateIterator {
             stack,
             max_cards_played,
             face_up_cards,
-            len: ITERATOR_SIZE_BY_CARDS_PLAYED[max_cards_played] * face_up_cards.len(),
         }
     }
 
@@ -111,51 +105,12 @@ impl Iterator for EuchreIsomorphicIStateIterator {
 
                 // skip returning anything not in isomorphic form
                 if key == norm_key {
-                    self.len -= 1;
                     return Some(state.key());
                 }
             }
         }
 
         None
-    }
-}
-
-impl ExactSizeIterator for EuchreIsomorphicIStateIterator {
-    fn len(&self) -> usize {
-        self.len
-    }
-}
-
-#[derive(Clone, Copy)]
-pub struct EuchreIsomorphicIStates<'a> {
-    max_cards_played: usize,
-    face_up_cards: &'a [EAction],
-}
-
-impl<'a> EuchreIsomorphicIStates<'a> {
-    pub fn new(max_cards_played: usize) -> Self {
-        Self {
-            max_cards_played,
-            face_up_cards: &SPADES,
-        }
-    }
-
-    pub fn with_face_up(max_cards_played: usize, face_up_cards: &'a [EAction]) -> Self {
-        Self {
-            max_cards_played,
-            face_up_cards,
-        }
-    }
-}
-
-impl<'a> IntoIterator for &EuchreIsomorphicIStates<'a> {
-    type Item = IStateKey;
-
-    type IntoIter = EuchreIsomorphicIStateIterator;
-
-    fn into_iter(self) -> Self::IntoIter {
-        EuchreIsomorphicIStateIterator::with_face_up(self.max_cards_played, self.face_up_cards)
     }
 }
 
@@ -326,10 +281,6 @@ impl EuchreIState {
 
 #[cfg(test)]
 mod tests {
-    use rand::{seq::IteratorRandom, thread_rng};
-    use tinyvec::array_vec;
-
-    use crate::translate_istate;
 
     use super::*;
 
@@ -353,9 +304,9 @@ mod tests {
         // todo: find the right number
 
         let iterator = EuchreIsomorphicIStateIterator::new(0);
-        assert_eq!(iterator.count(), ITERATOR_SIZE_BY_CARDS_PLAYED[0] * 6);
+        assert_eq!(iterator.count(), 1_884_344 * 6);
 
         let iterator = EuchreIsomorphicIStateIterator::with_face_up(0, &[EAction::NS]);
-        assert_eq!(iterator.count(), ITERATOR_SIZE_BY_CARDS_PLAYED[0]);
+        assert_eq!(iterator.count(), 1_884_344);
     }
 }

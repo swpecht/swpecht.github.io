@@ -4,7 +4,7 @@ use anyhow::bail;
 use bytemuck::Pod;
 use memmap2::MmapMut;
 
-const STARTING_SIZE: usize = 10_000_000;
+const STARTING_SIZE: usize = 100_000_000;
 
 /// A vector backed by a temporary memory map
 pub struct MMapVec<T> {
@@ -44,7 +44,10 @@ impl<T: Pod> MMapVec<T> {
         let start = self.len() * item_size;
 
         if start + data.len() > self.mmap.len() {
-            bail!("failed to push, expanding memory map is not yet supported");
+            bail!(
+                "failed to push, expanding memory map is not yet supported. num elements: {}. bytes: {}",
+                self.len, self.mmap.len()
+            );
         }
 
         self.mmap[start..start + data.len()].copy_from_slice(data);
@@ -82,7 +85,7 @@ mod tests {
 
     #[test]
     fn test_disk_backed_vector() {
-        let iterator = (0..100);
+        let iterator = 0..100;
         let data = MMapVec::from_iter(iterator);
 
         assert_eq!(&data[..], &(0..100).collect_vec());
