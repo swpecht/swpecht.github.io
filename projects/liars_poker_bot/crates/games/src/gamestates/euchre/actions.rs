@@ -237,7 +237,7 @@ impl Card {
     /// Changes the color of a card
     pub fn swap_color(&self) -> Card {
         let mut color_blocks: [u16; 2] = unsafe { std::mem::transmute(*self) };
-        color_blocks.rotate_left(1);
+        color_blocks.swap(0, 1);
         unsafe { std::mem::transmute(color_blocks) }
     }
 
