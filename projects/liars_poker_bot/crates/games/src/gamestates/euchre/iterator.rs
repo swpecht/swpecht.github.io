@@ -145,6 +145,16 @@ impl EuchreIState {
                 self.phase()
             )
         }
+
+        // Remove the discard marker
+        if self
+            .actions
+            .last()
+            .map_or(false, |x| matches!(x, EAction::DiscardMarker))
+        {
+            self.actions.pop();
+        }
+
         self.actions.push(a)
     }
 
@@ -250,27 +260,7 @@ impl EuchreIState {
     }
 
     fn key(&self) -> IStateKey {
-        // check if we can use the fast path
-        if !self.actions.contains(&EAction::DiscardMarker) {
-            return IStateKey::copy_from_slice(
-                &self.actions.iter().map(|x| x.into()).collect_vec(),
-            );
-        }
-
-        let mut key = IStateKey::default();
-        for a in self.actions {
-            // don't include the discard marker
-            if a != EAction::DiscardMarker {
-                key.push(a.into());
-            }
-        }
-
-        // add the discard marker back if it's the last action
-        if *self.actions.last().unwrap() == EAction::DiscardMarker {
-            key.push(EAction::DiscardMarker.into());
-        }
-
-        key
+        IStateKey::copy_from_slice(&self.actions.iter().map(|x| x.into()).collect_vec())
     }
 
     fn cards_played(&self) -> usize {

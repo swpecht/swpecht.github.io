@@ -1,29 +1,34 @@
-use std::{marker::PhantomData, ops::Deref};
+use std::{fs::File, marker::PhantomData, ops::Deref};
 
-use anyhow::bail;
+use anyhow::{bail, Context};
 use bytemuck::Pod;
 use memmap2::MmapMut;
 
 const STARTING_SIZE: usize = 100_000_000;
+const GROWTH_INCREMENT: usize = 100_000_000;
 
 /// A vector backed by a temporary memory map
 pub struct MMapVec<T> {
     len: usize,
     mmap: MmapMut,
+    file: File,
     _phantom: PhantomData<T>,
 }
 
 impl<T> MMapVec<T> {
     pub fn try_new() -> anyhow::Result<Self> {
+        let file = tempfile::tempfile()?;
+
         let item_size = std::mem::size_of::<T>();
 
-        let mmap = memmap2::MmapOptions::new()
-            .len(STARTING_SIZE * item_size)
-            .map_anon()?;
+        file.set_len((STARTING_SIZE * item_size) as u64)
+            .context("failed to set length")?;
+        let mmap = unsafe { MmapMut::map_mut(&file)? };
 
         Ok(Self {
             len: 0,
             mmap,
+            file,
             _phantom: PhantomData,
         })
     }
@@ -48,10 +53,10 @@ impl<T: Pod> MMapVec<T> {
         let start = self.len() * item_size;
 
         if start + data.len() > self.mmap.len() {
-            bail!(
-                "failed to push, expanding memory map is not yet supported. num elements: {}. bytes: {}",
-                self.len, self.mmap.len()
-            );
+            let cur_len = self.mmap.len();
+            self.file.set_len((cur_len + GROWTH_INCREMENT) as u64)?;
+            self.mmap = unsafe { MmapMut::map_mut(&self.file)? };
+            assert_eq!(self.mmap.len(), cur_len + GROWTH_INCREMENT);
         }
 
         self.mmap[start..start + data.len()].copy_from_slice(data);

@@ -6,8 +6,10 @@ use card_platypus::algorithms::cfres::{self, InfoState};
 use clap::{command, Parser, Subcommand, ValueEnum};
 
 use games::gamestates::bluff::BluffGameState;
+use games::gamestates::euchre::iterator::EuchreIsomorphicIStateIterator;
 use games::gamestates::euchre::EuchreGameState;
 use games::gamestates::kuhn_poker::KPGameState;
+use games::istate::IStateKey;
 use log::{set_max_level, LevelFilter};
 
 use scripts::agent_exploitability::calcualte_agent_exploitability;
@@ -143,7 +145,11 @@ fn run_scratch(_args: Args) {
     println!("euchre size: {}", mem::size_of::<EuchreGameState>());
 
     println!("cfres node {}", mem::size_of::<InfoState>());
-    card_platypus::database::indexer::Indexer::euchre(1);
+    println!("istate key {}", mem::size_of::<IStateKey>());
+    // let indexer = card_platypus::database::indexer::Indexer::euchre(0);
+    // println!("indexer size: {}", indexer.len());
+    let n = EuchreIsomorphicIStateIterator::new(2).count();
+    println!("istates: {}", n);
 }
 
 fn run_analyze(args: Args) {
