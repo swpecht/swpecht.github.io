@@ -234,6 +234,27 @@ impl Card {
         }
     }
 
+    /// Changes the color of a card
+    pub fn swap_color(&self) -> Card {
+        let mut color_blocks: [u16; 2] = unsafe { std::mem::transmute(*self) };
+        color_blocks.rotate_left(1);
+        unsafe { std::mem::transmute(color_blocks) }
+    }
+
+    /// Swaps hearts and diamonds
+    pub fn swap_red(&self) -> Card {
+        let mut suit_blocks: [u8; 4] = unsafe { std::mem::transmute(*self) };
+        suit_blocks.swap(2, 3);
+        unsafe { std::mem::transmute(suit_blocks) }
+    }
+
+    /// Swaps spades and clubs
+    pub fn swap_black(&self) -> Card {
+        let mut suit_blocks: [u8; 4] = unsafe { std::mem::transmute(*self) };
+        suit_blocks.swap(0, 1);
+        unsafe { std::mem::transmute(suit_blocks) }
+    }
+
     /// Returns a card of the same rank for the new suit
     pub fn to_suit(&self, suit: Suit) -> Card {
         use Card::*;
