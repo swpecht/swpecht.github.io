@@ -6,6 +6,7 @@ use card_platypus::algorithms::cfres::{self, InfoState};
 use clap::{command, Parser, Subcommand, ValueEnum};
 
 use games::gamestates::bluff::BluffGameState;
+use games::gamestates::euchre::actions::EAction;
 use games::gamestates::euchre::iterator::EuchreIsomorphicIStateIterator;
 use games::gamestates::euchre::EuchreGameState;
 use games::gamestates::kuhn_poker::KPGameState;
@@ -148,7 +149,7 @@ fn run_scratch(_args: Args) {
     println!("istate key {}", mem::size_of::<IStateKey>());
     // let indexer = card_platypus::database::indexer::Indexer::euchre(0);
     // println!("indexer size: {}", indexer.len());
-    let n = EuchreIsomorphicIStateIterator::new(2).count();
+    let n = EuchreIsomorphicIStateIterator::with_face_up(3, &[EAction::NS]).count();
     println!("istates: {}", n);
 }
 
