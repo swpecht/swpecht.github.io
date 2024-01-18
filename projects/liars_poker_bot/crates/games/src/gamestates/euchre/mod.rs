@@ -279,7 +279,10 @@ impl EuchreGameState {
 
                 self.phase = EPhase::Discard;
             }
-            _ => panic!("invalid action"),
+            _ => panic!(
+                "invalid action, attempted to play {} during pickup phase",
+                a
+            ),
         }
     }
 

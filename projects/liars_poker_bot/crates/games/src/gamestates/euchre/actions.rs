@@ -46,14 +46,16 @@ pub enum EAction {
     QD = Card::QD as u32,
     KD = Card::KD as u32,
     AD = Card::AD as u32,
-    Pickup = 0b1000000000000000000000000,
-    Pass = 0b10000000000000000000000000,
-    Clubs = 0b100000000000000000000000000,
-    Spades = 0b1000000000000000000000000000,
-    Hearts = 0b10000000000000000000000000000,
-    Diamonds = 0b100000000000000000000000000000,
+    // All actions need to be a single set bit, so we use the unused area where cards would normall be
+    // this enables transforming to actions by counting the leading zeros
+    Pickup = 0b1 << 6,
+    Pass = 0b1 << 7,
+    Clubs = 0b1 << (6 + 8),
+    Spades = 0b1 << (7 + 8),
+    Hearts = 0b1 << (6 + 16),
+    Diamonds = 0b1 << (7 + 16),
     /// Value to differentiate discard states from player 0 states
-    DiscardMarker = 0b1000000000000000000000000000000,
+    DiscardMarker = 0b1 << (7 + 24),
 }
 
 impl EAction {
@@ -125,12 +127,14 @@ fn eaction_fmt(v: &EAction, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
     }
 }
 
-pub const CLUBS_MASK: u32 = 0b00000000000000000000000000111111;
-pub const SPADES_MASK: u32 = 0b00000000000000000000111111000000;
-pub const HEART_MASK: u32 = 0b00000000000000111111000000000000;
-pub const DIAMONDS_MASK: u32 = 0b00000000111111000000000000000000;
+pub const CLUBS_MASK: u32 = 0b111111;
+pub const SPADES_MASK: u32 = 0b111111 << 8;
+pub const HEART_MASK: u32 = 0b111111 << 16;
+pub const DIAMONDS_MASK: u32 = 0b111111 << 24;
 
 /// Represent cards in a deck, represented as a bitmask
+///
+/// Each suit is in it's own 8 bit block, this is to make transforming suits easier
 #[derive(
     Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Debug, Hash, FromPrimitive, ToPrimitive,
 )]
@@ -142,24 +146,24 @@ pub enum Card {
     QC = 0b1000,
     KC = 0b10000,
     AC = 0b100000,
-    NS = 0b1000000,
-    TS = 0b10000000,
-    JS = 0b100000000,
-    QS = 0b1000000000,
-    KS = 0b10000000000,
-    AS = 0b100000000000,
-    NH = 0b1000000000000,
-    TH = 0b10000000000000,
-    JH = 0b100000000000000,
-    QH = 0b1000000000000000,
-    KH = 0b10000000000000000,
-    AH = 0b100000000000000000,
-    ND = 0b1000000000000000000,
-    TD = 0b10000000000000000000,
-    JD = 0b100000000000000000000,
-    QD = 0b1000000000000000000000,
-    KD = 0b10000000000000000000000,
-    AD = 0b100000000000000000000000,
+    NS = 0b1 << 8,
+    TS = 0b10 << 8,
+    JS = 0b100 << 8,
+    QS = 0b1000 << 8,
+    KS = 0b10000 << 8,
+    AS = 0b100000 << 8,
+    NH = 0b1 << 16,
+    TH = 0b10 << 16,
+    JH = 0b100 << 16,
+    QH = 0b1000 << 16,
+    KH = 0b10000 << 16,
+    AH = 0b100000 << 16,
+    ND = 0b1 << 24,
+    TD = 0b10 << 24,
+    JD = 0b100 << 24,
+    QD = 0b1000 << 24,
+    KD = 0b10000 << 24,
+    AD = 0b100000 << 24,
 }
 
 impl Card {
@@ -168,7 +172,7 @@ impl Card {
     }
 
     pub fn suit(&self) -> Suit {
-        let suit_id = (*self as u32).trailing_zeros() / 6;
+        let suit_id = (*self as u32).trailing_zeros() / 8;
         FromPrimitive::from_u32(suit_id).unwrap()
     }
 

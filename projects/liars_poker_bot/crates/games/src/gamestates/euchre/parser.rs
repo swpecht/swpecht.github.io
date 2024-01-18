@@ -3,7 +3,7 @@ use crate::{
         actions::{Card, EAction},
         EPhase, Euchre,
     },
-    GameState,
+    Action, GameState,
 };
 
 use super::EuchreGameState;
@@ -12,6 +12,7 @@ impl From<&str> for EuchreGameState {
     fn from(value: &str) -> Self {
         let mut gs = Euchre::new_state();
         let mut action_buffer = String::new();
+        let mut actions = Vec::new();
 
         for c in value.chars() {
             if c == '|' {
@@ -52,6 +53,15 @@ impl From<&str> for EuchreGameState {
                     gs.phase()
                 ),
             };
+            actions.clear();
+            gs.legal_actions(&mut actions);
+            assert!(
+                actions.contains(&Action::from(a)),
+                "Found an illegal action: str: {}, parsed action: {}, EAction: {}",
+                action_buffer,
+                Action::from(a),
+                a
+            );
 
             gs.apply_action(a.into());
             action_buffer.clear();
