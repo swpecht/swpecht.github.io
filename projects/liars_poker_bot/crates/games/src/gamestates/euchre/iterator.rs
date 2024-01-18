@@ -71,7 +71,7 @@ impl EuchreIsomorphicIStateIterator {
             self.stack.push(ns);
         }
 
-        if !(state.cards_played() > self.max_cards_played && matches!(state.phase(), EPhase::Play))
+        if !(state.cards_played() >= self.max_cards_played && matches!(state.phase(), EPhase::Play))
         {
             let mut actions = ArrayVec::new();
             state.legal_actions(&mut actions);
