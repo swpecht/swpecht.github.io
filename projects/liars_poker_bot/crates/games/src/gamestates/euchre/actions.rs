@@ -131,6 +131,7 @@ pub const CLUBS_MASK: u32 = 0b111111;
 pub const SPADES_MASK: u32 = 0b111111 << 8;
 pub const HEART_MASK: u32 = 0b111111 << 16;
 pub const DIAMONDS_MASK: u32 = 0b111111 << 24;
+pub const ALL_CARDS: u32 = CLUBS_MASK | SPADES_MASK | HEART_MASK | DIAMONDS_MASK;
 
 /// Represent cards in a deck, represented as a bitmask
 ///

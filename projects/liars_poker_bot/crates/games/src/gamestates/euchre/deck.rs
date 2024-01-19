@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::Player;
 
-use super::actions::Card;
+use super::actions::{Card, ALL_CARDS};
 
 pub const CARDS: &[Card] = &[
     Card::NC,
@@ -213,9 +213,7 @@ pub struct Hand {
 impl Hand {
     /// Return a hand containing all cards
     pub fn all_cards() -> Self {
-        Self {
-            mask: 0b00000000111111111111111111111111,
-        }
+        Self { mask: ALL_CARDS }
     }
 
     /// Adds a card to the hand
