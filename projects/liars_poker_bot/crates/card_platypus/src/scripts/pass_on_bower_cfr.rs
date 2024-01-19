@@ -17,7 +17,7 @@ use games::{
     resample::ResampleFromInfoState,
     GameState,
 };
-use indicatif::ProgressBar;
+use indicatif::{MultiProgress, ProgressBar};
 use itertools::Itertools;
 use log::info;
 use rand::{seq::SliceRandom, thread_rng, Rng, SeedableRng};
@@ -117,34 +117,45 @@ pub fn all_deal_cfr(args: PassOnBowerCFRArgs) {
     let baseline_score = score_vs_defender(&mut baseline, 1, worlds.clone());
     info!("found baseline performance of: {}", baseline_score);
 
-    for _ in 0..args.num_scoring_evaluations {
-        const NUM_FACE_UP: usize = 6;
-        let iterations_per_card =
-            args.training_iterations / args.num_scoring_evaluations / NUM_FACE_UP;
+    const NUM_FACE_UP: usize = 6;
+    let mp = MultiProgress::new();
+    let pb = mp.add(ProgressBar::new(
+        (args.num_scoring_evaluations * NUM_FACE_UP) as u64,
+    ));
 
-        alg.set_game_generator(|| generate_face_up_deals(Card::NS));
-        train_cfr_shot(args.clone(), &mut alg, iterations_per_card);
-        alg.set_game_generator(|| generate_face_up_deals(Card::TS));
-        train_cfr_shot(args.clone(), &mut alg, iterations_per_card);
-        alg.set_game_generator(|| generate_face_up_deals(Card::JS));
-        train_cfr_shot(args.clone(), &mut alg, iterations_per_card);
-        alg.set_game_generator(|| generate_face_up_deals(Card::QS));
-        train_cfr_shot(args.clone(), &mut alg, iterations_per_card);
-        alg.set_game_generator(|| generate_face_up_deals(Card::KS));
-        train_cfr_shot(args.clone(), &mut alg, iterations_per_card);
-        alg.set_game_generator(|| generate_face_up_deals(Card::AS));
-        train_cfr_shot(args.clone(), &mut alg, iterations_per_card);
+    let generators = [
+        || generate_face_up_deals(Card::NS),
+        || generate_face_up_deals(Card::TS),
+        || generate_face_up_deals(Card::JS),
+        || generate_face_up_deals(Card::QS),
+        || generate_face_up_deals(Card::KS),
+        || generate_face_up_deals(Card::AS),
+    ];
+    assert_eq!(generators.len(), NUM_FACE_UP);
+
+    for _ in 0..args.num_scoring_evaluations {
+        let iterations_per_card =
+            args.training_iterations / args.num_scoring_evaluations / generators.len();
+
+        generators.iter().for_each(|g| {
+            alg.set_game_generator(*g);
+            train_cfr_shot(args.clone(), &mut alg, iterations_per_card, &mp);
+            pb.inc(1);
+        });
 
         log_score(&mut alg, worlds.clone(), baseline_score);
     }
+
+    mp.clear().unwrap();
 }
 
 pub fn train_cfr_shot(
     _args: PassOnBowerCFRArgs,
     alg: &mut CFRES<EuchreGameState>,
     training_iterations: usize,
+    mp: &MultiProgress,
 ) {
-    let pb = ProgressBar::new(training_iterations as u64);
+    let pb = mp.add(ProgressBar::new(training_iterations as u64));
 
     // print_scored_istates(&mut alg);
 
