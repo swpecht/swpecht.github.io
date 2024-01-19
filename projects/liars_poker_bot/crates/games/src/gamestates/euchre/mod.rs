@@ -423,26 +423,26 @@ impl EuchreGameState {
     /// Can choose any trump except for the one from the faceup card
     /// For the dealer they aren't able to pass.
     fn legal_actions_choose_trump(&self, actions: &mut Vec<Action>) {
-        // Dealer can't pass
-        if self.cur_player != 3 {
-            actions.push(EAction::Pass.into())
-        }
-
         let face_up = self
             .face_up()
             .expect("can't call faceup before deal finished")
             .suit();
-        if face_up != Suit::Clubs {
-            actions.push(EAction::Clubs.into());
-        }
         if face_up != Suit::Spades {
             actions.push(EAction::Spades.into());
+        }
+        if face_up != Suit::Clubs {
+            actions.push(EAction::Clubs.into());
         }
         if face_up != Suit::Hearts {
             actions.push(EAction::Hearts.into());
         }
         if face_up != Suit::Diamonds {
             actions.push(EAction::Diamonds.into());
+        }
+
+        // Dealer can't pass
+        if self.cur_player != 3 {
+            actions.push(EAction::Pass.into())
         }
     }
 
@@ -1153,19 +1153,19 @@ mod tests {
                 .iter()
                 .map(|x| EAction::from(*x).to_string())
                 .collect_vec(),
-            vec!["9c", "Tc", "Jc", "Qc", "Kc"],
+            vec!["9s", "Ts", "Js", "Qs", "Ks"],
             "gs: {}",
             gs
         );
 
-        gs.apply_action(EAction::NC.into());
+        gs.apply_action(EAction::NS.into());
         // Player 1 must follow suit
         assert_eq!(
             actions!(gs)
                 .iter()
                 .map(|x| EAction::from(*x).to_string())
                 .collect_vec(),
-            vec!["Ac"],
+            vec!["As"],
             "gs: {}",
             gs
         );
@@ -1213,13 +1213,13 @@ mod tests {
         let mut gs = EuchreGameState::from("9cTcJcQcKc|Ac9sTsJdQs|KsAs9hThJh|QhKhAh9dTd");
 
         assert_eq!(gs.istate_string(0), "9cTcJcQcKc");
-        assert_eq!(gs.istate_string(1), "Ac9sTsQsJd");
+        assert_eq!(gs.istate_string(1), "9sTsQsAcJd");
         assert_eq!(gs.istate_string(2), "KsAs9hThJh");
         assert_eq!(gs.istate_string(3), "QhKhAh9dTd");
 
         gs.apply_action(EAction::from(Card::JS).into());
         assert_eq!(gs.istate_string(0), "9cTcJcQcKc|Js|");
-        assert_eq!(gs.istate_string(1), "Ac9sTsQsJd|Js|");
+        assert_eq!(gs.istate_string(1), "9sTsQsAcJd|Js|");
         assert_eq!(gs.istate_string(2), "KsAs9hThJh|Js|");
         assert_eq!(gs.istate_string(3), "QhKhAh9dTd|Js|");
 
@@ -1238,7 +1238,7 @@ mod tests {
             gs.apply_action(a);
         }
         assert_eq!(gs.istate_string(0), "9cTcJcQcKc|Js|T|0S|9cAcKsJs|");
-        assert_eq!(gs.istate_string(1), "Ac9sTsQsJd|Js|T|0S|9cAcKsJs|");
+        assert_eq!(gs.istate_string(1), "9sTsQsAcJd|Js|T|0S|9cAcKsJs|");
         assert_eq!(gs.istate_string(2), "KsAs9hThJh|Js|T|0S|9cAcKsJs|");
         assert_eq!(gs.istate_string(3), "QhKhAh9dTd|Js|T|0S|Qh|9cAcKsJs|");
         assert_eq!(gs.cur_player(), 3);

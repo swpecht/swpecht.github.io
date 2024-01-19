@@ -22,18 +22,18 @@ use crate::Action;
 #[repr(u32)]
 pub enum EAction {
     #[default]
-    NC = Card::NC as u32,
-    TC = Card::TC as u32,
-    JC = Card::JC as u32,
-    QC = Card::QC as u32,
-    KC = Card::KC as u32,
-    AC = Card::AC as u32,
     NS = Card::NS as u32,
     TS = Card::TS as u32,
     JS = Card::JS as u32,
     QS = Card::QS as u32,
     KS = Card::KS as u32,
     AS = Card::AS as u32,
+    NC = Card::NC as u32,
+    TC = Card::TC as u32,
+    JC = Card::JC as u32,
+    QC = Card::QC as u32,
+    KC = Card::KC as u32,
+    AC = Card::AC as u32,
     NH = Card::NH as u32,
     TH = Card::TH as u32,
     JH = Card::JH as u32,
@@ -48,19 +48,53 @@ pub enum EAction {
     AD = Card::AD as u32,
     // All actions need to be a single set bit, so we use the unused area where cards would normall be
     // this enables transforming to actions by counting the leading zeros
-    Pickup = 0b1 << 6,
-    Pass = 0b1 << 7,
-    Clubs = 0b1 << (6 + 8),
-    Spades = 0b1 << (7 + 8),
-    Hearts = 0b1 << (6 + 16),
-    Diamonds = 0b1 << (7 + 16),
+
+    // We store the suit calls in the bit above the aces for the given suit. This allows the suit transforms to work appropriately
+    Spades = (Card::AS as u32) << 1,
+    Clubs = (Card::AC as u32) << 1,
+    Hearts = (Card::AH as u32) << 1,
+    Diamonds = (Card::AD as u32) << 1,
+    // The suit agnostic actions are store in free space, these need to be excluded from suit swap logic
     /// Value to differentiate discard states from player 0 states
-    DiscardMarker = 0b1 << (7 + 24),
+    DiscardMarker = (Card::AH as u32) << 2,
+    Pickup = (Card::AS as u32) << 2,
+    Pass = (Card::AD as u32) << 2, // make this the largest for saner sorting with suit call actions
 }
+
+/// Bit mask for EActions that should now by impacted by suit translations
+const UNSUITED_ACTION_MASK: u32 =
+    EAction::DiscardMarker as u32 | EAction::Pickup as u32 | EAction::Pass as u32;
 
 impl EAction {
     pub fn card(&self) -> Card {
         unsafe { std::mem::transmute(*self) }
+    }
+
+    /// Changes the color of an action if applicable
+    pub fn swap_color(self) -> Self {
+        self.swap_suit(0, 2).swap_suit(1, 3)
+    }
+
+    /// Swaps hearts and diamonds if applicable
+    pub fn swap_red(self) -> Self {
+        self.swap_suit(2, 3)
+    }
+
+    /// Swaps spades and clubs if applicable
+    pub fn swap_black(self) -> Self {
+        self.swap_suit(0, 1)
+    }
+
+    /// Swaps the suit for any suit specific actions, suit agnostic actions are unchanged
+    fn swap_suit(self, a: usize, b: usize) -> Self {
+        // store the suit agnostic actions if there are any
+        let suit_agnostic_actions = self as u32 & UNSUITED_ACTION_MASK;
+        let suited_actions = self as u32 & !UNSUITED_ACTION_MASK;
+
+        let mut color_blocks: [u8; 4] = suited_actions.to_ne_bytes();
+        color_blocks.swap(a, b);
+        let suited_actions: u32 = unsafe { std::mem::transmute(color_blocks) };
+        unsafe { std::mem::transmute(suited_actions | suit_agnostic_actions) }
     }
 }
 
@@ -127,8 +161,8 @@ fn eaction_fmt(v: &EAction, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
     }
 }
 
-pub const CLUBS_MASK: u32 = 0b111111;
-pub const SPADES_MASK: u32 = 0b111111 << 8;
+pub const SPADES_MASK: u32 = 0b111111;
+pub const CLUBS_MASK: u32 = 0b111111 << 8;
 pub const HEART_MASK: u32 = 0b111111 << 16;
 pub const DIAMONDS_MASK: u32 = 0b111111 << 24;
 pub const ALL_CARDS: u32 = CLUBS_MASK | SPADES_MASK | HEART_MASK | DIAMONDS_MASK;
@@ -141,18 +175,18 @@ pub const ALL_CARDS: u32 = CLUBS_MASK | SPADES_MASK | HEART_MASK | DIAMONDS_MASK
 )]
 #[repr(u32)]
 pub enum Card {
-    NC = 0b1,
-    TC = 0b10,
-    JC = 0b100,
-    QC = 0b1000,
-    KC = 0b10000,
-    AC = 0b100000,
-    NS = 0b1 << 8,
-    TS = 0b10 << 8,
-    JS = 0b100 << 8,
-    QS = 0b1000 << 8,
-    KS = 0b10000 << 8,
-    AS = 0b100000 << 8,
+    NS = 0b1,
+    TS = 0b10,
+    JS = 0b100,
+    QS = 0b1000,
+    KS = 0b10000,
+    AS = 0b100000,
+    NC = 0b1 << 8,
+    TC = 0b10 << 8,
+    JC = 0b100 << 8,
+    QC = 0b1000 << 8,
+    KC = 0b10000 << 8,
+    AC = 0b100000 << 8,
     NH = 0b1 << 16,
     TH = 0b10 << 16,
     JH = 0b100 << 16,
@@ -179,18 +213,18 @@ impl Card {
 
     pub fn to_idx(&self) -> usize {
         match self {
-            Card::NC => 0,
-            Card::TC => 1,
-            Card::JC => 2,
-            Card::QC => 3,
-            Card::KC => 4,
-            Card::AC => 5,
-            Card::NS => 6,
-            Card::TS => 7,
-            Card::JS => 8,
-            Card::QS => 9,
-            Card::KS => 10,
-            Card::AS => 11,
+            Card::NS => 0,
+            Card::TS => 1,
+            Card::JS => 2,
+            Card::QS => 3,
+            Card::KS => 4,
+            Card::AS => 5,
+            Card::NC => 6,
+            Card::TC => 7,
+            Card::JC => 8,
+            Card::QC => 9,
+            Card::KC => 10,
+            Card::AC => 11,
             Card::NH => 12,
             Card::TH => 13,
             Card::JH => 14,
@@ -233,27 +267,6 @@ impl Card {
             Card::KD => "🃎",
             Card::AD => "🃁",
         }
-    }
-
-    /// Changes the color of a card
-    pub fn swap_color(&self) -> Card {
-        let mut color_blocks: [u16; 2] = unsafe { std::mem::transmute(*self) };
-        color_blocks.swap(0, 1);
-        unsafe { std::mem::transmute(color_blocks) }
-    }
-
-    /// Swaps hearts and diamonds
-    pub fn swap_red(&self) -> Card {
-        let mut suit_blocks: [u8; 4] = unsafe { std::mem::transmute(*self) };
-        suit_blocks.swap(2, 3);
-        unsafe { std::mem::transmute(suit_blocks) }
-    }
-
-    /// Swaps spades and clubs
-    pub fn swap_black(&self) -> Card {
-        let mut suit_blocks: [u8; 4] = unsafe { std::mem::transmute(*self) };
-        suit_blocks.swap(0, 1);
-        unsafe { std::mem::transmute(suit_blocks) }
     }
 
     /// Returns a card of the same rank for the new suit
@@ -460,8 +473,8 @@ impl Display for Card {
     Debug, Clone, PartialEq, Eq, Copy, Serialize, Deserialize, Hash, FromPrimitive, ToPrimitive,
 )]
 pub enum Suit {
-    Clubs = 0,
-    Spades,
+    Spades = 0,
+    Clubs,
     Hearts,
     Diamonds,
 }

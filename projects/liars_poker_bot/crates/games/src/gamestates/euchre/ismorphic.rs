@@ -144,7 +144,7 @@ impl IStateNormalizer<EuchreGameState> for EuchreNormalizer {
             return NormalizedAction::new(action);
         }
 
-        NormalizedAction::new(transform(action, face_up_suit.unwrap()))
+        NormalizedAction::new(slow_transform(action, face_up_suit.unwrap()))
     }
 
     fn denormalize_action(&self, action: NormalizedAction, gs: &EuchreGameState) -> Action {
@@ -153,7 +153,7 @@ impl IStateNormalizer<EuchreGameState> for EuchreNormalizer {
             return action.get();
         }
 
-        transform(action.get(), face_up_suit.unwrap())
+        slow_transform(action.get(), face_up_suit.unwrap())
     }
 
     fn normalize_istate(
@@ -179,8 +179,10 @@ pub fn normalize_euchre_istate(istate: &IStateKey) -> IStateKey {
     let mut new_istate = IStateKey::default();
     let face_up_suit = EAction::from(istate[5]).card().suit();
 
-    for a in *istate {
-        let norm_a = transform(a, face_up_suit);
+    let transform = get_transform(face_up_suit);
+
+    for a in istate.into_iter().map(EAction::from) {
+        let norm_a = transform(a).into();
         new_istate.push(norm_a);
     }
 
@@ -245,7 +247,16 @@ impl IStateNormalizer<EuchreGameState> for LossyEuchreNormalizer {
     }
 }
 
-fn transform(action: Action, face_up_suit: Suit) -> Action {
+fn get_transform(face_up_suit: Suit) -> fn(EAction) -> EAction {
+    match face_up_suit {
+        Suit::Spades => |x| x, // no translation needed for spades
+        Suit::Clubs => |x| x.swap_black(),
+        Suit::Hearts => |x| x.swap_color(),
+        Suit::Diamonds => |x| x.swap_color().swap_black().swap_red(),
+    }
+}
+
+fn slow_transform(action: Action, face_up_suit: Suit) -> Action {
     // We can apply the transform again to denormalize the action
     use EAction::*;
     let ea = EAction::from(action);
@@ -305,7 +316,49 @@ mod tests {
         GameState,
     };
 
-    use super::{transform, transform_card};
+    use super::*;
+
+    #[test]
+    fn test_fast_transform() {
+        let face_ups = [Suit::Spades, Suit::Clubs, Suit::Hearts, Suit::Diamonds];
+        use EAction::*;
+        let actions = [
+            Spades,
+            Clubs,
+            Hearts,
+            Diamonds,
+            DiscardMarker,
+            Pass,
+            Pickup,
+            AS,
+            AC,
+            AH,
+            AD,
+        ];
+
+        for face_up_suit in face_ups {
+            let fast_transform = get_transform(face_up_suit);
+            for a in actions {
+                let slow = slow_transform(a.into(), face_up_suit);
+                let fast = Action::from(fast_transform(a));
+                assert_eq!(
+                    fast,
+                    slow,
+                    "non equivalent transform
+                    faceup: {}
+                    action: {}
+                    slow: {}
+                    fast: {}",
+                    face_up_suit,
+                    a,
+                    EAction::from(slow),
+                    EAction::from(fast)
+                );
+                // ensure it's reversible
+                assert_eq!(a, fast_transform(fast_transform(a)));
+            }
+        }
+    }
 
     #[test]
     fn test_deck_iso_no_trump() {
@@ -414,8 +467,8 @@ mod tests {
             EAction::Diamonds,
         ] {
             for face_up in [Suit::Spades, Suit::Clubs, Suit::Hearts, Suit::Diamonds] {
-                let normalized = transform(suit.into(), face_up);
-                let denormalized = transform(normalized, face_up);
+                let normalized = slow_transform(suit.into(), face_up);
+                let denormalized = slow_transform(normalized, face_up);
                 assert_eq!(denormalized, suit.into())
             }
         }
@@ -439,7 +492,7 @@ mod tests {
 
         use EAction::*;
         let should = &[
-            JC, JS, NH, AH, JD, QS, Pickup, NH, NS, KS, AS, JS, JC, TS, NH, NC,
+            JS, JC, NH, AH, JD, QS, Pickup, NH, NS, KS, AS, JS, JC, TS, NH, NC,
         ];
         assert_eq!(
             normalizer.normalize_istate(&key, &gs).get(),

@@ -248,9 +248,9 @@ mod tests {
         assert_eq!(
             actions.into_iter().map(EAction::from).collect_vec(),
             vec![
-                EAction::KC,
                 EAction::JS, // a club since clubs is trump
                 EAction::QS,
+                EAction::KC,
                 EAction::AD
             ]
         );

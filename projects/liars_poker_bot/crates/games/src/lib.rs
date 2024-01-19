@@ -123,10 +123,15 @@ macro_rules! actions {
 
 #[cfg(test)]
 mod tests {
+    use itertools::Itertools;
     use rand::{seq::SliceRandom, thread_rng};
 
     use crate::{
-        gamestates::{bluff::Bluff, euchre::Euchre, kuhn_poker::KuhnPoker},
+        gamestates::{
+            bluff::Bluff,
+            euchre::{actions::EAction, Euchre},
+            kuhn_poker::KuhnPoker,
+        },
         Game, GameState,
     };
 
@@ -148,7 +153,17 @@ mod tests {
                 gs.legal_actions(&mut actions);
                 let mut sorted_actions = actions.clone();
                 sorted_actions.sort();
-                assert_eq!(actions, sorted_actions);
+                assert_eq!(
+                    actions,
+                    sorted_actions,
+                    "{:?} vs {:?}",
+                    actions.clone().into_iter().map(EAction::from).collect_vec(),
+                    sorted_actions
+                        .clone()
+                        .into_iter()
+                        .map(EAction::from)
+                        .collect_vec()
+                );
                 let a = actions.choose(&mut rng).unwrap();
                 gs.apply_action(*a);
             }
