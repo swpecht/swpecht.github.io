@@ -231,11 +231,17 @@ impl IStateNormalizer<EuchreGameState> for LossyEuchreNormalizer {
     }
 }
 
-fn get_transform(face_up_suit: Suit, suit_order: [u8; 4]) -> fn(EAction) -> EAction {
+enum TransformAction {
+    Normalize,
+    Denormalize,
+}
+
+fn get_transform(face_up_suit: Suit, _suit_order: [u8; 4]) -> fn(EAction) -> EAction {
     match (
         face_up_suit,
-        suit_order[3] > suit_order[2],
-        suit_order[1] > suit_order[0],
+        // todo fix below swap red as well
+        false, // suit_order[3] > suit_order[2],
+        false, // suit_order[1] > suit_order[0],
     ) {
         (Suit::Spades, false, _) => |x| x, // no translation needed for spades
         (Suit::Spades, true, _) => |x| x.swap_red(), // normalize red cards
@@ -243,8 +249,8 @@ fn get_transform(face_up_suit: Suit, suit_order: [u8; 4]) -> fn(EAction) -> EAct
         (Suit::Clubs, true, _) => |x| x.swap_black().swap_red(),
         (Suit::Hearts, _, false) => |x| x.swap_color(),
         (Suit::Hearts, _, true) => |x| x.swap_color().swap_red(),
-        (Suit::Diamonds, _, false) => |x| x.swap_color().swap_black(),
-        (Suit::Diamonds, _, true) => |x| x.swap_color().swap_black().swap_red(),
+        (Suit::Diamonds, _, false) => |x| x.swap_color().swap_black().swap_red(),
+        (Suit::Diamonds, _, true) => |x| x.swap_color().swap_black(), //.swap_red(),
     }
 }
 
@@ -264,6 +270,7 @@ fn get_transform_from_istate(istate: &IStateKey) -> fn(EAction) -> EAction {
     // remove the unsuited actions
     visible_cards &= !UNSUITED_ACTION_MASK;
 
+    // use le bytes since
     let suit_order = visible_cards.to_ne_bytes();
     get_transform(face_up_suit, suit_order)
 }
