@@ -395,7 +395,7 @@ mod tests {
     fn test_normalize_denormalize() {
         for suit in [Suit::Spades, Suit::Clubs, Suit::Hearts, Suit::Diamonds] {
             let transform = get_transform(suit);
-            for c in CARDS.into_iter().map(|x| EAction::from(*x)) {
+            for c in CARDS.iter().map(|x| EAction::from(*x)) {
                 let normalized = transform(c);
                 let denormalized = transform(normalized);
                 assert_eq!(denormalized, c, "{} with face up suit {}", c, suit)
