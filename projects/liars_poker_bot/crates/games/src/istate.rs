@@ -201,7 +201,7 @@ impl NormalizedIstate {
 }
 
 /// Helper type to keep track of if an action is normalized or not
-#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Copy, Debug)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Copy, Debug, PartialOrd, Ord)]
 pub struct NormalizedAction(Action);
 
 impl NormalizedAction {

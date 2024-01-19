@@ -232,16 +232,19 @@ impl IStateNormalizer<EuchreGameState> for LossyEuchreNormalizer {
 }
 
 fn get_transform(face_up_suit: Suit, suit_order: [u8; 4]) -> fn(EAction) -> EAction {
-    match (face_up_suit, suit_order[3] > suit_order[2]) {
-        (Suit::Spades, false) => |x| x, // no translation needed for spades
-        (Suit::Spades, true) => |x| x.swap_red(), // normalize red cards
-        (Suit::Clubs, false) => |x| x.swap_black(),
-        (Suit::Clubs, true) => |x| x.swap_black().swap_red(),
-        (Suit::Hearts, false) => |x| x.swap_color(),
-        (Suit::Hearts, true) => |x| x.swap_color().swap_red(),
-        // We do the opposite "red" swapping for diamonds to keep our transform reversible
-        (Suit::Diamonds, false) => |x| x.swap_color().swap_black().swap_red(),
-        (Suit::Diamonds, true) => |x| x.swap_color().swap_black(),
+    match (
+        face_up_suit,
+        suit_order[3] > suit_order[2],
+        suit_order[1] > suit_order[0],
+    ) {
+        (Suit::Spades, false, _) => |x| x, // no translation needed for spades
+        (Suit::Spades, true, _) => |x| x.swap_red(), // normalize red cards
+        (Suit::Clubs, false, _) => |x| x.swap_black(),
+        (Suit::Clubs, true, _) => |x| x.swap_black().swap_red(),
+        (Suit::Hearts, _, false) => |x| x.swap_color(),
+        (Suit::Hearts, _, true) => |x| x.swap_color().swap_red(),
+        (Suit::Diamonds, _, false) => |x| x.swap_color().swap_black(),
+        (Suit::Diamonds, _, true) => |x| x.swap_color().swap_black().swap_red(),
     }
 }
 
@@ -267,7 +270,10 @@ fn get_transform_from_istate(istate: &IStateKey) -> fn(EAction) -> EAction {
 
 #[cfg(test)]
 mod tests {
+    use itertools::Itertools;
+
     use crate::{
+        actions,
         gamestates::euchre::{
             actions::{Card, EAction, Suit},
             deck::{CardLocation, Deck, CARDS},
@@ -400,7 +406,8 @@ mod tests {
     #[test]
     fn test_normalize_denormalize() {
         for suit in [Suit::Spades, Suit::Clubs, Suit::Hearts, Suit::Diamonds] {
-            let transform = get_transform(suit, [0; 4]);
+            // provide an arbitrary suit order so suits aren't considered equvalent
+            let transform = get_transform(suit, [1, 2, 3, 4]);
             for c in CARDS.iter().map(|x| EAction::from(*x)) {
                 let normalized = transform(c);
                 let denormalized = transform(normalized);
@@ -415,12 +422,42 @@ mod tests {
             EAction::Diamonds,
         ] {
             for face_up in [Suit::Spades, Suit::Clubs, Suit::Hearts, Suit::Diamonds] {
-                let transform = get_transform(face_up, [0; 4]);
+                let transform = get_transform(face_up, [1, 2, 3, 4]);
                 let normalized = transform(suit);
                 let denormalized = transform(normalized);
                 assert_eq!(denormalized, suit)
             }
         }
+    }
+
+    #[test]
+    fn test_normalize_edge_cases() {
+        validate_norm_denorm("Qs9cJcAhKd|JsTdJdQdAd|KsAsAcJhQh|TsTcKc9h9d|Kh|PPPPP");
+        validate_norm_denorm("TsAsQc9hAh|9sTcQhQdAd|Qs9cKcKhJd|JsKsJcAc9d|Th|T|")
+    }
+
+    fn validate_norm_denorm(state_string: &str) {
+        let gs = EuchreGameState::from(state_string);
+        let normalizer = EuchreNormalizer::default();
+        let actions = actions!(gs)
+            .into_iter()
+            .map(EAction::from)
+            .sorted()
+            .collect_vec();
+        let normed_actions = actions
+            .iter()
+            .map(|x| normalizer.normalize_action(Action::from(*x), &gs))
+            .map(|x| EAction::from(x.get()))
+            .sorted()
+            .collect_vec();
+        let denormed_actions = normed_actions
+            .iter()
+            .map(|x| normalizer.denormalize_action(NormalizedAction::new(Action::from(*x)), &gs))
+            .map(EAction::from)
+            .sorted()
+            .collect_vec();
+
+        assert_eq!(denormed_actions, actions, "{}", state_string);
     }
 
     #[test]
