@@ -208,7 +208,7 @@ mod tests {
         assert_eq!(actions, old_actions);
 
         let gs =
-            EuchreGameState::from("KcTsJsQsQd|9cTcAcKsAs|ThKh9dJdKd|JcJhQhAhAd|Qc|PT|Ah|QdAsThAd");
+            EuchreGameState::from("KcTsJsQsQd|9cTcAcKsAs|ThKh9dJdKd|JcJhQhAhAd|Qc|PT|Ah|QdAs9dAd");
         let mut actions = Vec::new();
         gs.legal_actions(&mut actions);
         evaluate_highest_trump_first(&gs, &mut actions);

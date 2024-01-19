@@ -1,3 +1,5 @@
+use itertools::Itertools;
+
 use crate::{
     gamestates::euchre::{
         actions::{Card, EAction},
@@ -57,10 +59,21 @@ impl From<&str> for EuchreGameState {
             gs.legal_actions(&mut actions);
             assert!(
                 actions.contains(&Action::from(a)),
-                "Found an illegal action: str: {}, parsed action: {}, EAction: {}",
+                "Found an illegal action:
+                    value: {}
+                    str: {}
+                    parsed action: {}
+                    EAction: {}
+                    legal actions: {:?}
+                    gs: {}
+                    debug: {:?}",
+                value,
                 action_buffer,
                 Action::from(a),
-                a
+                a,
+                actions.iter().map(|x| EAction::from(*x)).collect_vec(),
+                gs,
+                gs
             );
 
             gs.apply_action(a.into());
