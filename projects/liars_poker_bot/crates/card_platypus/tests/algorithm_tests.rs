@@ -42,7 +42,7 @@ fn test_alg_open_hand_solver_euchre() {
 fn test_cfr_euchre() {
     cfres::feature::enable(cfres::feature::LinearCFR);
 
-    let mut alg = CFRES::new_euchre(|| (Euchre::game().new)(), SeedableRng::seed_from_u64(43), 0);
+    let mut alg = CFRES::new_euchre(SeedableRng::seed_from_u64(43), 0);
     alg.train(1);
 }
 

@@ -12,7 +12,9 @@ use dyn_clone::DynClone;
 use games::{
     gamestates::{
         bluff::{Bluff, BluffGameState},
-        euchre::{ismorphic::EuchreNormalizer, processors::post_cards_played, EuchreGameState},
+        euchre::{
+            ismorphic::EuchreNormalizer, processors::post_cards_played, Euchre, EuchreGameState,
+        },
         kuhn_poker::{KPGameState, KuhnPoker},
     },
     istate::{IStateKey, IStateNormalizer, NoOpNormalizer, NormalizedAction, NormalizedIstate},
@@ -153,19 +155,14 @@ impl<G> Seedable for CFRES<G> {
 }
 
 impl CFRES<EuchreGameState> {
-    pub fn new_euchre(
-        game_generator: fn() -> EuchreGameState,
-        rng: StdRng,
-        max_cards_played: usize,
-    ) -> Self {
+    pub fn new_euchre(rng: StdRng, max_cards_played: usize) -> Self {
         let normalizer: Box<dyn IStateNormalizer<EuchreGameState>> =
             Box::<EuchreNormalizer>::default();
 
-        CFRES::new_with_normalizer(game_generator, rng, max_cards_played, normalizer)
+        CFRES::new_with_normalizer(rng, max_cards_played, normalizer)
     }
 
     pub fn new_with_normalizer(
-        game_generator: fn() -> EuchreGameState,
         mut rng: StdRng,
         max_cards_played: usize,
         normalizer: Box<dyn IStateNormalizer<EuchreGameState>>,
@@ -174,7 +171,7 @@ impl CFRES<EuchreGameState> {
 
         Self {
             vector_pool: Pool::new(Vec::new),
-            game_generator,
+            game_generator: Euchre::new_state,
             average_type: AverageType::default(),
             infostates: Arc::new(Mutex::new(
                 NodeStore::new_euchre(None, max_cards_played).unwrap(),
@@ -208,6 +205,10 @@ impl CFRES<EuchreGameState> {
         }
 
         len
+    }
+
+    pub fn set_game_generator(&mut self, game_generator: fn() -> EuchreGameState) {
+        self.game_generator = game_generator;
     }
 }
 

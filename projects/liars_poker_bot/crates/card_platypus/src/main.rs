@@ -149,7 +149,7 @@ fn run_scratch(_args: Args) {
     println!("istate key {}", mem::size_of::<IStateKey>());
     // let indexer = card_platypus::database::indexer::Indexer::euchre(0);
     // println!("indexer size: {}", indexer.len());
-    let n = EuchreIsomorphicIStateIterator::with_face_up(4, &[EAction::NS]).count();
+    let n = EuchreIsomorphicIStateIterator::with_face_up(2, &[EAction::NS]).count();
     println!("istates: {}", n);
 }
 

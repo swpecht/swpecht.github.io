@@ -69,12 +69,12 @@ fn run_euchre_benchmark(args: BenchmarkArgs) {
     );
     agents.insert("pimcts, 50 worlds".to_string(), a);
 
-    let mut a = CFRES::new_euchre(Euchre::new_state, get_rng(), 0);
+    let mut a = CFRES::new_euchre(get_rng(), 0);
     let n = a.load(Path::new("/var/lib/card_platypus/infostate.baseline/"), 0);
     info!("loaded cfr baseline agent: {} istates", n);
     agents.insert("cfr, 0 cards played".to_string(), &mut a);
 
-    let mut a = CFRES::new_euchre(Euchre::new_state, get_rng(), 3);
+    let mut a = CFRES::new_euchre(get_rng(), 3);
     let n = a.load(
         Path::new("/var/lib/card_platypus/infostate.three_card_played/"),
         3,
@@ -228,7 +228,7 @@ fn run_jack_face_up_benchmark(args: BenchmarkArgs) {
     );
     agents.push(("pimcts, 50 worlds".to_string(), Rc::new(RefCell::new(a))));
 
-    let mut cfr = CFRES::new_euchre(|| generate_face_up_deals(Card::JS), get_rng(), 0);
+    let mut cfr = CFRES::new_euchre(get_rng(), 0);
     let loaded = cfr.load(
         &Path::new("/var/lib/card_platypus").join("infostate.baseline"),
         0,
