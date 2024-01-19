@@ -144,7 +144,9 @@ impl IStateNormalizer<EuchreGameState> for EuchreNormalizer {
             return NormalizedAction::new(action);
         }
 
-        NormalizedAction::new(slow_transform(action, face_up_suit.unwrap()))
+        let transform = get_transform(face_up_suit.unwrap());
+
+        NormalizedAction::new(transform(EAction::from(action)).into())
     }
 
     fn denormalize_action(&self, action: NormalizedAction, gs: &EuchreGameState) -> Action {
@@ -153,7 +155,8 @@ impl IStateNormalizer<EuchreGameState> for EuchreNormalizer {
             return action.get();
         }
 
-        slow_transform(action.get(), face_up_suit.unwrap())
+        let transform = get_transform(face_up_suit.unwrap());
+        transform(EAction::from(action.get())).into()
     }
 
     fn normalize_istate(
@@ -256,53 +259,6 @@ fn get_transform(face_up_suit: Suit) -> fn(EAction) -> EAction {
     }
 }
 
-fn slow_transform(action: Action, face_up_suit: Suit) -> Action {
-    // We can apply the transform again to denormalize the action
-    use EAction::*;
-    let ea = EAction::from(action);
-    let new_action = match ea {
-        NC | TC | JC | QC | KC | AC | NS | TS | JS | QS | KS | AS | NH | TH | JH | QH | KH | AH
-        | ND | TD | JD | QD | KD | AD => transform_card(ea.card(), face_up_suit).into(),
-
-        Spades => transform_suit(Suit::Spades, face_up_suit).into(),
-        Clubs => transform_suit(Suit::Clubs, face_up_suit).into(),
-        Hearts => transform_suit(Suit::Hearts, face_up_suit).into(),
-        Diamonds => transform_suit(Suit::Diamonds, face_up_suit).into(),
-        _ => ea,
-    };
-
-    new_action.into()
-}
-
-/// Function to normalize and denormalize cards. Calling this function
-/// on an already normalized card reverses the normaliztion
-fn transform_card(c: Card, face_up_suit: Suit) -> Card {
-    let new_suit = transform_suit(c.suit(), face_up_suit);
-    c.to_suit(new_suit)
-}
-
-fn transform_suit(s: Suit, face_up_suit: Suit) -> Suit {
-    use Suit::*;
-    match (face_up_suit, s) {
-        (Clubs, Clubs) => Spades,
-        (Clubs, Spades) => Clubs,
-        (Clubs, Hearts) => Hearts,
-        (Clubs, Diamonds) => Diamonds,
-        (Spades, Clubs) => Clubs,
-        (Spades, Spades) => Spades,
-        (Spades, Hearts) => Hearts,
-        (Spades, Diamonds) => Diamonds,
-        (Hearts, Clubs) => Diamonds,
-        (Hearts, Spades) => Hearts,
-        (Hearts, Hearts) => Spades,
-        (Hearts, Diamonds) => Clubs,
-        (Diamonds, Clubs) => Hearts,
-        (Diamonds, Spades) => Diamonds,
-        (Diamonds, Hearts) => Clubs,
-        (Diamonds, Diamonds) => Spades,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::{
@@ -339,21 +295,6 @@ mod tests {
         for face_up_suit in face_ups {
             let fast_transform = get_transform(face_up_suit);
             for a in actions {
-                let slow = slow_transform(a.into(), face_up_suit);
-                let fast = Action::from(fast_transform(a));
-                assert_eq!(
-                    fast,
-                    slow,
-                    "non equivalent transform
-                    faceup: {}
-                    action: {}
-                    slow: {}
-                    fast: {}",
-                    face_up_suit,
-                    a,
-                    EAction::from(slow),
-                    EAction::from(fast)
-                );
                 // ensure it's reversible
                 assert_eq!(a, fast_transform(fast_transform(a)));
             }
@@ -453,10 +394,11 @@ mod tests {
     #[test]
     fn test_normalize_denormalize() {
         for suit in [Suit::Spades, Suit::Clubs, Suit::Hearts, Suit::Diamonds] {
-            for c in CARDS {
-                let normalized = transform_card(*c, suit);
-                let denormalized = transform_card(normalized, suit);
-                assert_eq!(denormalized, *c, "{} with face up suit {}", *c, suit)
+            let transform = get_transform(suit);
+            for c in CARDS.into_iter().map(|x| EAction::from(*x)) {
+                let normalized = transform(c);
+                let denormalized = transform(normalized);
+                assert_eq!(denormalized, c, "{} with face up suit {}", c, suit)
             }
         }
 
@@ -467,9 +409,10 @@ mod tests {
             EAction::Diamonds,
         ] {
             for face_up in [Suit::Spades, Suit::Clubs, Suit::Hearts, Suit::Diamonds] {
-                let normalized = slow_transform(suit.into(), face_up);
-                let denormalized = slow_transform(normalized, face_up);
-                assert_eq!(denormalized, suit.into())
+                let transform = get_transform(face_up);
+                let normalized = transform(suit);
+                let denormalized = transform(normalized);
+                assert_eq!(denormalized, suit)
             }
         }
     }
