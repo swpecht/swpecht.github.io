@@ -62,7 +62,7 @@ pub enum EAction {
 }
 
 /// Bit mask for EActions that should now by impacted by suit translations
-const UNSUITED_ACTION_MASK: u32 =
+pub(super) const UNSUITED_ACTION_MASK: u32 =
     EAction::DiscardMarker as u32 | EAction::Pickup as u32 | EAction::Pass as u32;
 
 impl EAction {

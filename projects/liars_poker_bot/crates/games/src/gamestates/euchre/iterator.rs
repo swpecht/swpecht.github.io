@@ -298,9 +298,9 @@ mod tests {
         // todo: find the right number
 
         let iterator = EuchreIsomorphicIStateIterator::new(0);
-        assert_eq!(iterator.count(), 1_884_344 * 6);
+        assert_eq!(iterator.count(), 979_363 * 6);
 
         let iterator = EuchreIsomorphicIStateIterator::with_face_up(0, &[EAction::NS]);
-        assert_eq!(iterator.count(), 1_884_344);
+        assert_eq!(iterator.count(), 979_363);
     }
 }
