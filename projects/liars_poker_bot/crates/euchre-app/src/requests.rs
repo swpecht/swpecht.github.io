@@ -1,9 +1,8 @@
-use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 
 use async_std::stream::StreamExt;
 use async_std::task;
-use client_server_messages::{ActionRequest, GameAction, GameData};
+use client_server_messages::{GameAction, GameData};
 use dioxus::prelude::*;
 
 use log::{debug, error, info};

@@ -1,6 +1,6 @@
 use std::{fs::File, marker::PhantomData, ops::Deref};
 
-use anyhow::{bail, Context};
+use anyhow::Context;
 use bytemuck::Pod;
 use memmap2::MmapMut;
 

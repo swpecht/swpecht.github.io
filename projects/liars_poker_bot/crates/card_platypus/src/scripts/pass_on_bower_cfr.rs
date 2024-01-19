@@ -20,7 +20,7 @@ use games::{
 use indicatif::{MultiProgress, ProgressBar};
 use itertools::Itertools;
 use log::info;
-use rand::{seq::SliceRandom, thread_rng, Rng, SeedableRng};
+use rand::{seq::SliceRandom, thread_rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 
 use super::benchmark::get_rng;
@@ -224,7 +224,6 @@ struct JSONRow {
 }
 
 pub fn parse_weights(infostate_path: &str) {
-    let generator = || generate_face_up_deals(Card::JS);
     let mut alg = CFRES::new_euchre(get_rng(), 0);
 
     let loaded_states = alg.load(Path::new(infostate_path), 0);

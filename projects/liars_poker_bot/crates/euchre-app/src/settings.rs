@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use log::{debug, error};
+use log::debug;
 use rand::{thread_rng, Rng};
 
 const PLAYER_ID_KEY: &str = "PLAYER_ID";

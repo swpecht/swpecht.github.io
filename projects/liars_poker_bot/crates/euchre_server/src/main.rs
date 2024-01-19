@@ -430,9 +430,8 @@ async fn handle_euchre_ws(
 
 #[cfg(test)]
 mod tests {
-    use actix_web::{dev::ServiceResponse, test, web, App};
+    use actix_web::{dev::ServiceResponse, test};
 
-    use client_server_messages::GameAction;
     use serde::de::DeserializeOwned;
 
     use super::*;

@@ -159,7 +159,7 @@ impl IStateNormalizer<EuchreGameState> for EuchreNormalizer {
     fn normalize_istate(
         &self,
         istate: &crate::istate::IStateKey,
-        gs: &EuchreGameState,
+        _gs: &EuchreGameState,
     ) -> crate::istate::NormalizedIstate {
         let new_istate = normalize_euchre_istate(istate);
         NormalizedIstate::new(new_istate)
