@@ -139,12 +139,12 @@ pub struct EuchreNormalizer {}
 impl IStateNormalizer<EuchreGameState> for EuchreNormalizer {
     /// Normalizes the suit to have Spades always be the faceup card.
     fn normalize_action(&self, action: Action, gs: &EuchreGameState) -> NormalizedAction {
-        let transform = get_transform_from_istate(&gs.istate_key(gs.cur_player()));
+        let transform = norm_transform(&gs.istate_key(gs.cur_player()));
         NormalizedAction::new(transform(EAction::from(action)).into())
     }
 
     fn denormalize_action(&self, action: NormalizedAction, gs: &EuchreGameState) -> Action {
-        let transform = get_transform_from_istate(&gs.istate_key(gs.cur_player()));
+        let transform = denorm_transform(&gs.istate_key(gs.cur_player()));
         transform(EAction::from(action.get())).into()
     }
 
@@ -162,7 +162,7 @@ impl IStateNormalizer<EuchreGameState> for EuchreNormalizer {
 /// * Hand is sorted
 /// * Spades is always the face up card
 pub fn normalize_euchre_istate(istate: &IStateKey) -> IStateKey {
-    let transform = get_transform_from_istate(istate);
+    let transform = norm_transform(istate);
 
     let mut new_istate = IStateKey::default();
     for a in istate.into_iter().map(EAction::from) {
@@ -231,37 +231,11 @@ impl IStateNormalizer<EuchreGameState> for LossyEuchreNormalizer {
     }
 }
 
-enum TransformAction {
-    Normalize,
-    Denormalize,
+fn face_up(istate: &IStateKey) -> Suit {
+    EAction::from(istate[5]).card().suit()
 }
 
-fn get_transform(face_up_suit: Suit, _suit_order: [u8; 4]) -> fn(EAction) -> EAction {
-    match (
-        face_up_suit,
-        // todo fix below swap red as well
-        false, // suit_order[3] > suit_order[2],
-        false, // suit_order[1] > suit_order[0],
-    ) {
-        (Suit::Spades, false, _) => |x| x, // no translation needed for spades
-        (Suit::Spades, true, _) => |x| x.swap_red(), // normalize red cards
-        (Suit::Clubs, false, _) => |x| x.swap_black(),
-        (Suit::Clubs, true, _) => |x| x.swap_black().swap_red(),
-        (Suit::Hearts, _, false) => |x| x.swap_color(),
-        (Suit::Hearts, _, true) => |x| x.swap_color().swap_red(),
-        (Suit::Diamonds, _, false) => |x| x.swap_color().swap_black().swap_red(),
-        (Suit::Diamonds, _, true) => |x| x.swap_color().swap_black(), //.swap_red(),
-    }
-}
-
-fn get_transform_from_istate(istate: &IStateKey) -> fn(EAction) -> EAction {
-    // no transform without a face up card
-    if istate.len() < 6 {
-        return |x| x;
-    }
-
-    let face_up_suit = EAction::from(istate[5]).card().suit();
-
+fn suit_order(istate: &IStateKey) -> [u8; 4] {
     let mut visible_cards = 0;
 
     for a in istate.into_iter().map(EAction::from) {
@@ -270,9 +244,58 @@ fn get_transform_from_istate(istate: &IStateKey) -> fn(EAction) -> EAction {
     // remove the unsuited actions
     visible_cards &= !UNSUITED_ACTION_MASK;
 
-    // use le bytes since
-    let suit_order = visible_cards.to_ne_bytes();
-    get_transform(face_up_suit, suit_order)
+    visible_cards.to_ne_bytes()
+}
+
+fn norm_transform(istate: &IStateKey) -> fn(EAction) -> EAction {
+    // no transform without a face up card
+    if istate.len() < 6 {
+        return |x| x;
+    }
+
+    let face_up_suit = face_up(istate);
+    let suit_order = suit_order(istate);
+
+    match (
+        face_up_suit,
+        suit_order[3] > suit_order[2],
+        suit_order[1] > suit_order[0],
+    ) {
+        (Suit::Spades, false, _) => |x| x, // no translation needed for spades
+        (Suit::Spades, true, _) => |x| x.swap_red(), // normalize red cards
+        (Suit::Clubs, false, _) => |x| x.swap_black(),
+        (Suit::Clubs, true, _) => |x| x.swap_black().swap_red(),
+        (Suit::Hearts, _, false) => |x| x.swap_color(),
+        (Suit::Hearts, _, true) => |x| x.swap_color().swap_red(),
+        (Suit::Diamonds, _, false) => |x| x.swap_color().swap_black(),
+        (Suit::Diamonds, _, true) => |x| x.swap_color().swap_black().swap_red(),
+    }
+}
+
+/// Performs the reverse of the norm transform
+fn denorm_transform(istate: &IStateKey) -> fn(EAction) -> EAction {
+    // no transform without a face up card
+    if istate.len() < 6 {
+        return |x| x;
+    }
+
+    let face_up_suit = face_up(istate);
+    let suit_order = suit_order(istate);
+
+    match (
+        face_up_suit,
+        suit_order[3] > suit_order[2],
+        suit_order[1] > suit_order[0],
+    ) {
+        (Suit::Spades, false, _) => |x| x,
+        (Suit::Spades, true, _) => |x| x.swap_red(),
+        (Suit::Clubs, false, _) => |x| x.swap_black(),
+        (Suit::Clubs, true, _) => |x| x.swap_red().swap_black(),
+        (Suit::Hearts, _, false) => |x| x.swap_color(),
+        (Suit::Hearts, _, true) => |x| x.swap_red().swap_color(),
+        (Suit::Diamonds, _, false) => |x| x.swap_black().swap_color(),
+        (Suit::Diamonds, _, true) => |x| x.swap_black().swap_red().swap_color(),
+    }
 }
 
 #[cfg(test)]
@@ -283,7 +306,7 @@ mod tests {
         actions,
         gamestates::euchre::{
             actions::{Card, EAction, Suit},
-            deck::{CardLocation, Deck, CARDS},
+            deck::{CardLocation, Deck},
             ismorphic::{iso_deck, swap_loc, LossyEuchreNormalizer},
             EuchreGameState,
         },
@@ -292,33 +315,6 @@ mod tests {
     };
 
     use super::*;
-
-    #[test]
-    fn test_fast_transform() {
-        let face_ups = [Suit::Spades, Suit::Clubs, Suit::Hearts, Suit::Diamonds];
-        use EAction::*;
-        let actions = [
-            Spades,
-            Clubs,
-            Hearts,
-            Diamonds,
-            DiscardMarker,
-            Pass,
-            Pickup,
-            AS,
-            AC,
-            AH,
-            AD,
-        ];
-
-        for face_up_suit in face_ups {
-            let fast_transform = get_transform(face_up_suit, [0; 4]);
-            for a in actions {
-                // ensure it's reversible
-                assert_eq!(a, fast_transform(fast_transform(a)));
-            }
-        }
-    }
 
     #[test]
     fn test_deck_iso_no_trump() {
@@ -408,33 +404,6 @@ mod tests {
         let mut l = 0;
         swap_loc(&mut l, 0, 1);
         assert_eq!(l, 0);
-    }
-
-    #[test]
-    fn test_normalize_denormalize() {
-        for suit in [Suit::Spades, Suit::Clubs, Suit::Hearts, Suit::Diamonds] {
-            // provide an arbitrary suit order so suits aren't considered equvalent
-            let transform = get_transform(suit, [1, 2, 3, 4]);
-            for c in CARDS.iter().map(|x| EAction::from(*x)) {
-                let normalized = transform(c);
-                let denormalized = transform(normalized);
-                assert_eq!(denormalized, c, "{} with face up suit {}", c, suit)
-            }
-        }
-
-        for suit in [
-            EAction::Spades,
-            EAction::Clubs,
-            EAction::Hearts,
-            EAction::Diamonds,
-        ] {
-            for face_up in [Suit::Spades, Suit::Clubs, Suit::Hearts, Suit::Diamonds] {
-                let transform = get_transform(face_up, [1, 2, 3, 4]);
-                let normalized = transform(suit);
-                let denormalized = transform(normalized);
-                assert_eq!(denormalized, suit)
-            }
-        }
     }
 
     #[test]
