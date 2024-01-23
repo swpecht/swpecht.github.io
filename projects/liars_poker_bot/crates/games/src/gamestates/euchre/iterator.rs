@@ -320,7 +320,5 @@ mod tests {
 
         let iterator = EuchreIsomorphicIStateIterator::with_face_up(1, &[EAction::NS]);
         assert_eq!(iterator.count(), 556_171);
-
-        todo!()
     }
 }
