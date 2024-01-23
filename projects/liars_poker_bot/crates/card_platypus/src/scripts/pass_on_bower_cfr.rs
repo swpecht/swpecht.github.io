@@ -140,6 +140,7 @@ pub fn all_deal_cfr(args: PassOnBowerCFRArgs) {
         generators.iter().for_each(|g| {
             alg.set_game_generator(*g);
             train_cfr_shot(args.clone(), &mut alg, iterations_per_card, &mp);
+            alg.save().unwrap(); // flush changes to reduce memory usage
             pb.inc(1);
         });
 
