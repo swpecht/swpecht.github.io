@@ -242,29 +242,21 @@ impl EuchreIState {
 
     fn phase(&self) -> EPhase {
         if self.actions.len() < 5 {
-            return EPhase::DealHands;
+            EPhase::DealHands
         } else if self.actions.len() == 5 {
-            return EPhase::DealFaceUp;
-        } else if *self.actions.last().unwrap() == EAction::DiscardMarker {
-            return EPhase::Discard;
-        } else if self.actions.contains(&EAction::Pickup)
-            || self.actions.contains(&EAction::Clubs)
-            || self.actions.contains(&EAction::Spades)
-            || self.actions.contains(&EAction::Hearts)
-            || self.actions.contains(&EAction::Diamonds)
-                && self.actions.last().unwrap() != &EAction::DiscardMarker
+            EPhase::DealFaceUp
+        } else if matches!(self.actions.last().unwrap(), EAction::DiscardMarker) {
+            EPhase::Discard
+        } else if (matches!(self.actions.last().unwrap(), EAction::Pass) && self.actions.len() < 10)
+            || self.actions.len() == 6
         {
-            return EPhase::Play;
-        } else if self.actions.len() >= 6 && self.actions.len() < 10 {
-            return EPhase::Pickup;
-        } else if self.actions.len() >= 10 {
-            return EPhase::ChooseTrump;
+            EPhase::Pickup
+        } else if matches!(self.actions.last().unwrap(), EAction::Pass) && self.actions.len() >= 10
+        {
+            EPhase::ChooseTrump
+        } else {
+            EPhase::Play
         }
-
-        panic!(
-            "invalid state: {:?}",
-            translate_istate!(self.actions, EAction)
-        )
     }
 
     fn key(&self) -> IStateKey {
