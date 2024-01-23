@@ -161,6 +161,7 @@ impl IStateNormalizer<EuchreGameState> for EuchreNormalizer {
 /// Converts an istate into it's isomorphic form:
 /// * Hand is sorted
 /// * Spades is always the face up card
+/// * Hearts and Diamonds are swapped based on "suit mask"
 pub fn normalize_euchre_istate(istate: &IStateKey) -> IStateKey {
     let transform = norm_transform(istate);
 

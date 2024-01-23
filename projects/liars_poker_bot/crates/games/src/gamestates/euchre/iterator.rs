@@ -73,7 +73,7 @@ impl EuchreIsomorphicIStateIterator {
             }
 
             // todo: figure out how to handle the discard children
-            let skip = candidate.cards_played() >= self.max_cards_played
+            let skip = candidate.cards_played() > self.max_cards_played
                 && matches!(candidate.phase(), EPhase::Play);
 
             if !skip {
@@ -290,7 +290,7 @@ mod tests {
 
     #[test]
     fn test_euchre_istate_iterator() {
-        let iterator = EuchreIsomorphicIStateIterator::new(0);
+        let iterator = EuchreIsomorphicIStateIterator::with_face_up(0, &[EAction::NS]);
 
         for state in iterator.clone().choose_multiple(&mut thread_rng(), 100) {
             println!("{:?}", translate_istate!(state, EAction))
@@ -298,11 +298,28 @@ mod tests {
 
         // todo: find the right number
 
-        let iterator = EuchreIsomorphicIStateIterator::new(0);
-        assert_eq!(iterator.count(), 979_363 * 6);
+        use EAction::*;
 
+        // Validate the final actions for 0 cards played
+        let mut iterator = EuchreIsomorphicIStateIterator::with_face_up(0, &[EAction::NS]);
+        assert!(iterator
+            .all(|x| matches!(EAction::from(*x.last().unwrap()), NS | Pass | DiscardMarker)));
+
+        // do the same for one card played
+        let mut iterator = EuchreIsomorphicIStateIterator::with_face_up(1, &[EAction::NS]);
+        assert!(iterator.all(|x| matches!(
+            EAction::from(*x.last().unwrap()),
+            NS | Pass | DiscardMarker | Pickup | Spades | Clubs | Hearts | Diamonds
+        )));
+
+        // Validate overall counts
         let iterator = EuchreIsomorphicIStateIterator::with_face_up(0, &[EAction::NS]);
-        assert_eq!(iterator.count(), 979_363);
+        assert_eq!(iterator.count(), 229_229);
+        let iterator = EuchreIsomorphicIStateIterator::new(0);
+        assert_eq!(iterator.count(), 229_229 * 6);
+
+        let iterator = EuchreIsomorphicIStateIterator::with_face_up(1, &[EAction::NS]);
+        assert_eq!(iterator.count(), 556_171);
 
         todo!()
     }
