@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use tinyvec::ArrayVec;
 
-use crate::{istate::IStateKey, translate_istate};
+use crate::istate::IStateKey;
 
 use super::{
     actions::{EAction, Suit},
@@ -73,8 +73,8 @@ impl EuchreIsomorphicIStateIterator {
             }
 
             // todo: figure out how to handle the discard children
-            let skip = candidate.cards_played() > self.max_cards_played
-                && matches!(candidate.phase(), EPhase::Play);
+            let skip = matches!(candidate.phase(), EPhase::Play)
+                && candidate.cards_played() > self.max_cards_played;
 
             if !skip {
                 break candidate;
@@ -267,8 +267,8 @@ impl EuchreIState {
         use EAction::*;
         self.actions
             .iter()
+            .rev()
             .position(|x| matches!(x, Pickup | Spades | Clubs | Hearts | Diamonds))
-            .map(|x| self.actions.len() - x)
             .unwrap_or(0)
     }
 }
