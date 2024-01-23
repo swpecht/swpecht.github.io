@@ -62,24 +62,31 @@ impl EuchreIsomorphicIStateIterator {
     }
 
     fn next_unfiltered(&mut self) -> Option<EuchreIState> {
-        let state = self.stack.pop()?;
+        let state = loop {
+            let candidate = self.stack.pop()?;
 
-        // Special case to populate discard states, these are always present even if 0 cards played
-        if state.actions.last() == Some(&EAction::Pickup) {
-            let mut ns = state;
-            ns.apply_action(EAction::DiscardMarker);
-            self.stack.push(ns);
-        }
-
-        if !(state.cards_played() >= self.max_cards_played && matches!(state.phase(), EPhase::Play))
-        {
-            let mut actions = ArrayVec::new();
-            state.legal_actions(&mut actions);
-            for a in actions {
-                let mut ns = state;
-                ns.apply_action(a);
+            // Special case to populate discard states, these are always present even if 0 cards played
+            if candidate.actions.last() == Some(&EAction::Pickup) {
+                let mut ns = candidate;
+                ns.apply_action(EAction::DiscardMarker);
                 self.stack.push(ns);
             }
+
+            // todo: figure out how to handle the discard children
+            let skip = candidate.cards_played() >= self.max_cards_played
+                && matches!(candidate.phase(), EPhase::Play);
+
+            if !skip {
+                break candidate;
+            }
+        };
+
+        let mut actions = ArrayVec::new();
+        state.legal_actions(&mut actions);
+        for a in actions {
+            let mut ns = state;
+            ns.apply_action(a);
+            self.stack.push(ns);
         }
 
         Some(state)
@@ -224,7 +231,8 @@ impl EuchreIState {
 
     /// Returns the legal actions for playing
     fn legal_actions_play(&self, actions: &mut ArrayVec<[EAction; MAX_ACTIONS]>) {
-        // Can play any card that's not in our hand or the face up card
+        // Can play any card that's not in our hand or the face up card.
+        // Face up card isn't allowed since we never have player 3s played card in the istate
         for card in CARDS {
             if !self.actions[0..6].contains(&card) {
                 actions.push(card);
@@ -276,24 +284,17 @@ impl EuchreIState {
 #[cfg(test)]
 mod tests {
 
+    use rand::{seq::IteratorRandom, thread_rng};
+
     use super::*;
 
     #[test]
     fn test_euchre_istate_iterator() {
-        // let mut iterator = EuchreIsomorphicIStateIterator::new(0);
-        // assert!(iterator.any(|x| *x.last().unwrap() == EAction::DiscardMarker.into()));
+        let iterator = EuchreIsomorphicIStateIterator::new(0);
 
-        // use EAction::*;
-        // let istate = EuchreIState::new(&[NC, NS, KS, TD, JD, TS, Pickup, DiscardMarker]);
-        // assert_eq!(translate_istate!(istate.key(), EAction), vec![]);
-
-        // let mut actions = ArrayVec::new();
-        // istate.legal_actions(&mut actions);
-        // assert_eq!(actions, array_vec!());
-
-        // for state in iterator.clone().choose_multiple(&mut thread_rng(), 100) {
-        //     println!("{:?}", translate_istate!(state, EAction))
-        // }
+        for state in iterator.clone().choose_multiple(&mut thread_rng(), 100) {
+            println!("{:?}", translate_istate!(state, EAction))
+        }
 
         // todo: find the right number
 
@@ -302,5 +303,7 @@ mod tests {
 
         let iterator = EuchreIsomorphicIStateIterator::with_face_up(0, &[EAction::NS]);
         assert_eq!(iterator.count(), 979_363);
+
+        todo!()
     }
 }
