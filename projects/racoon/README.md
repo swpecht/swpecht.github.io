@@ -21,6 +21,12 @@
     [ ] ...
 
 
+Game mechanic ideas with Ian:
+* Look up diplomacy for ideas on rules
+* Could have something similar to the james bond game, shoot, defend, reload -- only can die on re-load
+* Support could be an action -- if attack into it, like attacking into both
+* Don't want to have too many actions -- need to keep the gameplay
+
 Game ideas
 * Move units around
 * Don't know where the enemy is attacking from

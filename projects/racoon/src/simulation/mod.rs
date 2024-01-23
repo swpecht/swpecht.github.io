@@ -59,7 +59,7 @@ struct SimulationState {
 
 impl Default for SimulationState {
     fn default() -> Self {
-        let mut gs = Self {
+        let gs = Self {
             entities: Vec::new(),
             action_queue: Vec::new(),
         };
