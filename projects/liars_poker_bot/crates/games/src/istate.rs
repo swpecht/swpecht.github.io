@@ -123,6 +123,19 @@ impl IStateKey {
             actions: action_buf,
         }
     }
+
+    /// Swaps all instances of action a and b
+    pub fn swap(&mut self, a: Action, b: Action) {
+        self.actions.iter_mut().take(self.len).for_each(|x| {
+            *x = if *x == a {
+                b
+            } else if *x == b {
+                a
+            } else {
+                *x
+            };
+        })
+    }
 }
 
 impl ToString for IStateKey {
