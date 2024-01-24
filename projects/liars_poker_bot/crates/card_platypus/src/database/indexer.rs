@@ -48,7 +48,8 @@ impl Indexer {
     pub fn euchre(max_cards_played: usize) -> Self {
         // TODO: in the future can use make it so the hashing happens in stages so that later istates are offset from others as a way to save space
         // Or can pass in the max num cards as a parameter
-        let istate_iter = EuchreIsomorphicIStateIterator::new(max_cards_played);
+        let istate_iter =
+            EuchreIsomorphicIStateIterator::with_face_up(max_cards_played, &[EAction::NS]);
         // Use an mmap vector as this collection may not fit into memory. This is also
         // more performant than the chunked iterator approach as we do not have an efficient method to
         // find the nth item for the iterator -- a common call in later rounds of the phf.
