@@ -74,19 +74,24 @@ impl EuchreIsomorphicIStateIterator {
 
             // todo: figure out how to handle the discard children
             let skip = matches!(candidate.phase(), EPhase::Play)
-                && candidate.cards_played() > self.max_cards_played;
+                && candidate.cards_played() >= self.max_cards_played;
 
             if !skip {
                 break candidate;
             }
         };
 
-        let mut actions = ArrayVec::new();
-        state.legal_actions(&mut actions);
-        for a in actions {
-            let mut ns = state;
-            ns.apply_action(a);
-            self.stack.push(ns);
+        let expand_istate = self.max_cards_played == 0 // Always expand if 0 cards played since we want to get the discard states
+            || state.cards_played() < self.max_cards_played; // otherwise we only expand if the child state won't be more than the max cards played
+
+        if expand_istate {
+            let mut actions = ArrayVec::new();
+            state.legal_actions(&mut actions);
+            for a in actions {
+                let mut ns = state;
+                ns.apply_action(a);
+                self.stack.push(ns);
+            }
         }
 
         Some(state)
@@ -278,6 +283,8 @@ mod tests {
 
     use rand::{seq::IteratorRandom, thread_rng};
 
+    use crate::translate_istate;
+
     use super::*;
 
     #[test]
@@ -287,8 +294,6 @@ mod tests {
         for state in iterator.clone().choose_multiple(&mut thread_rng(), 100) {
             println!("{:?}", translate_istate!(state, EAction))
         }
-
-        // todo: find the right number
 
         use EAction::*;
 
