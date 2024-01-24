@@ -264,10 +264,10 @@ impl EuchreIState {
 
     /// Returns the legal actions for playing
     fn legal_actions_play(&self, actions: &mut ArrayVec<[EAction; MAX_ACTIONS]>) {
-        // Can play any card that's not in our hand or the face up card.
+        // Can play any card that's not in our hand or the face up card, or played previously.
         // Face up card isn't allowed since we never have player 3s played card in the istate
         for card in CARDS {
-            if !self.actions[0..6].contains(&card) {
+            if !self.action_mask & card as u32 > 0 {
                 actions.push(card);
             }
         }
