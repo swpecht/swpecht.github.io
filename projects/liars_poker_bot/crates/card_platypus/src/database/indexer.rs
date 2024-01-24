@@ -87,6 +87,16 @@ impl Indexer {
             sharder: |x| Some((0, *x)),
         }
     }
+
+    // saves the perfect hash function
+    pub fn save_phf() {
+        todo!()
+    }
+
+    /// loads phf
+    pub fn load_phf() {
+        todo!()
+    }
 }
 
 fn euchre_sharder(istate: &IStateKey) -> Option<(usize, IStateKey)> {

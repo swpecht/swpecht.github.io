@@ -15,6 +15,13 @@ const CARDS: [EAction; 24] = [
 ];
 
 const SPADES: [EAction; 6] = [NS, TS, JS, QS, KS, AS];
+const NON_CARD_ACTIONS: u32 = Pass as u32
+    | Pickup as u32
+    | DiscardMarker as u32
+    | Spades as u32
+    | Clubs as u32
+    | Hearts as u32
+    | Diamonds as u32;
 
 const MAX_ACTIONS: usize = 24;
 
@@ -34,7 +41,7 @@ impl EuchreIsomorphicIStateIterator {
     /// deals with different face up cards are independent
     pub fn with_face_up(max_cards_played: usize, face_up_cards: &[EAction]) -> Self {
         if max_cards_played > 4 {
-            panic!("only support istates for the first trick");
+            panic!("only support istates for the first trick. see notes for assumptions that break if go to second trick");
         }
 
         assert!(
@@ -72,15 +79,30 @@ impl EuchreIsomorphicIStateIterator {
                 self.stack.push(ns);
             }
 
+            // special case to populate plays for dealer state if going to 4 players
+            // need this since the state would otherwise be skipped below
+            if candidate.has_discard_action && self.max_cards_played >= 4 {
+                let mut actions = ArrayVec::new();
+                candidate.legal_actions(&mut actions);
+                for a in actions {
+                    let mut ns = candidate;
+                    ns.apply_action(a);
+                    self.stack.push(ns);
+                }
+            }
+
             // todo: figure out how to handle the discard children
-            let skip = matches!(candidate.phase(), EPhase::Play)
-                && candidate.cards_played() >= self.max_cards_played;
+            let skip = (matches!(candidate.phase(), EPhase::Play)
+                && candidate.cards_played() >= self.max_cards_played)
+                // we don't need to expand discard action states unless going to 4 cards played
+                || (candidate.has_discard_action && self.max_cards_played < 4);
 
             if !skip {
                 break candidate;
             }
         };
 
+        // Don't expand all states, this help avoid some pressure on allocator
         let expand_istate = self.max_cards_played == 0 // Always expand if 0 cards played since we want to get the discard states
             || state.cards_played() < self.max_cards_played; // otherwise we only expand if the child state won't be more than the max cards played
 
@@ -131,6 +153,10 @@ impl Iterator for EuchreIsomorphicIStateIterator {
 #[derive(Default, Clone, Copy)]
 struct EuchreIState {
     actions: ArrayVec<[EAction; 20]>,
+    /// Mask of all the played actions
+    action_mask: u32,
+    // tracks if this is a dealer istate that has a discard action
+    has_discard_action: bool,
 }
 
 impl EuchreIState {
@@ -165,8 +191,10 @@ impl EuchreIState {
             .map_or(false, |x| matches!(x, EAction::DiscardMarker))
         {
             self.actions.pop();
+            self.has_discard_action = true;
         }
 
+        self.action_mask |= a as u32;
         self.actions.push(a)
     }
 
@@ -269,12 +297,9 @@ impl EuchreIState {
     }
 
     fn cards_played(&self) -> usize {
-        use EAction::*;
-        self.actions
-            .iter()
-            .rev()
-            .position(|x| matches!(x, Pickup | Spades | Clubs | Hearts | Diamonds))
-            .unwrap_or(0)
+        // counts all the cards that have been seen. Since each card can only be seen when dealt, played, or discarded (which is a dealt card), we
+        // can subtrace 6 to see how many played cards there are
+        (self.action_mask & !NON_CARD_ACTIONS).count_ones().max(6) as usize - 6
     }
 }
 
@@ -289,7 +314,7 @@ mod tests {
 
     #[test]
     fn test_euchre_istate_iterator() {
-        let iterator = EuchreIsomorphicIStateIterator::with_face_up(0, &[EAction::NS]);
+        let iterator = EuchreIsomorphicIStateIterator::with_face_up(1, &[EAction::NS]);
 
         for state in iterator.clone().choose_multiple(&mut thread_rng(), 100) {
             println!("{:?}", translate_istate!(state, EAction))
