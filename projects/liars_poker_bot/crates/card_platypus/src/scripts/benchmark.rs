@@ -1,3 +1,4 @@
+use core::num;
 use std::{cell::RefCell, collections::HashMap, path::Path, rc::Rc};
 
 use card_platypus::{
@@ -92,17 +93,35 @@ fn run_euchre_benchmark(args: BenchmarkArgs) {
     info!("loaded cfr one card agent");
     agents.insert("cfr, 1 cards played".to_string(), &mut a);
 
-    // let mut a = CFRES::new_euchre(Euchre::new_state, get_rng(), 1);
-    // a.load(&Path::new("/var/lib/card_platypus").join("infostate.three_cards_played"));
-    // info!("loaded cfr three card agent");
-    // agents.insert("cfr, 3 cards played".to_string(), &mut a);
-
     println!("Starting benchmark for agents: {:?}", agents.keys());
 
     // may need up to 19x the number fo full games to 10
-    let games = get_games(Euchre::game(), args.num_games * 19, &mut game_rng);
-    let wins = score_games(args, agents, games);
-    println!("{:?}", wins);
+    let eval_chunk = 100; // how many games to evaluate at onces;
+    let mut remaining_games = args.num_games;
+    let mut total_wins = HashMap::new();
+
+    while remaining_games > 0 {
+        let num_games = remaining_games.min(eval_chunk);
+        let games = get_games(Euchre::game(), num_games * 19, &mut game_rng);
+        let iter_wins = score_games(&mut agents, games);
+
+        iter_wins.into_iter().for_each(|(name, new_wins)| {
+            total_wins
+                .entry(name)
+                .and_modify(|w| *w += new_wins)
+                .or_insert(new_wins);
+        });
+
+        remaining_games -= num_games;
+        let played_games = args.num_games - remaining_games;
+        println!("played games: {}", played_games);
+        for (name, win_rate) in total_wins
+            .iter()
+            .map(|(name, wins)| (name, *wins as f64 / played_games as f64))
+        {
+            println!("{}\t{}\t{}", name.0, name.1, win_rate);
+        }
+    }
 }
 
 /// Calculate the win-rate of first to 10 for each agent
@@ -124,18 +143,18 @@ fn run_full_game_benchmark<G: GameState + ResampleFromInfoState + Send>(
 
     agents.insert("pimcts, 50 worlds, open hand".to_string(), a);
 
-    let wins = score_games(args, agents, games);
+    let wins = score_games(&mut agents, games);
     println!("{:?}", wins);
 }
 
 /// Calculate the win-rate of first to 10 for each agent
 fn score_games<G: GameState + ResampleFromInfoState + Send>(
-    args: BenchmarkArgs,
-    mut agents: HashMap<String, &mut dyn Agent<G>>,
+    mut agents: &mut HashMap<String, &mut dyn Agent<G>>,
     games: Vec<G>,
 ) -> HashMap<(String, String), usize> {
     let mut wins = HashMap::new();
     let agent_names = agents.keys().cloned().collect_vec();
+    let num_games = games.len() / 19;
 
     for a1_name in agent_names.clone() {
         for a2_name in agent_names.clone() {
@@ -155,8 +174,8 @@ fn score_games<G: GameState + ResampleFromInfoState + Send>(
                 chunked_games.push(g.collect_vec());
             }
 
-            let pb = ProgressBar::new(args.num_games as u64);
-            for i in 0..args.num_games {
+            let pb = ProgressBar::new(num_games as u64);
+            for i in 0..num_games {
                 let mut overall_games = chunked_games.pop().unwrap().into_iter();
                 let mut game_score = [0, 0];
                 // track the current game in the game of 10 for dealer tracking
