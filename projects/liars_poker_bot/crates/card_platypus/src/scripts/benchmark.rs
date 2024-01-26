@@ -55,8 +55,6 @@ pub fn run_benchmark(args: BenchmarkArgs) {
 fn run_euchre_benchmark(args: BenchmarkArgs) {
     // all agents play the same games
     let mut game_rng = get_rng();
-    // may need up to 19x the number fo full games to 10
-    let games = get_games(Euchre::game(), args.num_games * 19, &mut game_rng);
 
     let mut agents: HashMap<String, &mut dyn Agent<EuchreGameState>> = HashMap::new();
 
@@ -76,20 +74,23 @@ fn run_euchre_benchmark(args: BenchmarkArgs) {
 
     let mut a = CFRES::new_euchre(get_rng(), 3);
     let n = a.load(
-        Path::new("/var/lib/card_platypus/infostate.three_card_played/"),
+        Path::new("/var/lib/card_platypus/infostate.three_card_played_f32/"),
         3,
     );
     if n > 0 {
         info!("loaded cfr 3 card agent: {} istates", n);
-        agents.insert("cfr, 3 cards played".to_string(), &mut a);
+        agents.insert("cfr, 3 cards played f32".to_string(), &mut a);
     } else {
         warn!("failed to load istates for 3 card agent, skipping")
     }
 
-    // let mut a = CFRES::new_euchre_bidding(Euchre::new_state, get_rng(), 1);
-    // a.load("/var/lib/card_platypus/infostate.one_card_played");
-    // info!("loaded cfr one card agent");
-    // agents.insert("cfr, 1 cards played".to_string(), &mut a);
+    let mut a = CFRES::new_euchre(get_rng(), 1);
+    a.load(
+        Path::new("/var/lib/card_platypus/infostate.one_card_played/"),
+        1,
+    );
+    info!("loaded cfr one card agent");
+    agents.insert("cfr, 1 cards played".to_string(), &mut a);
 
     // let mut a = CFRES::new_euchre(Euchre::new_state, get_rng(), 1);
     // a.load(&Path::new("/var/lib/card_platypus").join("infostate.three_cards_played"));
@@ -98,7 +99,10 @@ fn run_euchre_benchmark(args: BenchmarkArgs) {
 
     println!("Starting benchmark for agents: {:?}", agents.keys());
 
-    score_games(args, agents, games);
+    // may need up to 19x the number fo full games to 10
+    let games = get_games(Euchre::game(), args.num_games * 19, &mut game_rng);
+    let wins = score_games(args, agents, games);
+    println!("{:?}", wins);
 }
 
 /// Calculate the win-rate of first to 10 for each agent
@@ -120,7 +124,8 @@ fn run_full_game_benchmark<G: GameState + ResampleFromInfoState + Send>(
 
     agents.insert("pimcts, 50 worlds, open hand".to_string(), a);
 
-    score_games(args, agents, games);
+    let wins = score_games(args, agents, games);
+    println!("{:?}", wins);
 }
 
 /// Calculate the win-rate of first to 10 for each agent
@@ -128,7 +133,8 @@ fn score_games<G: GameState + ResampleFromInfoState + Send>(
     args: BenchmarkArgs,
     mut agents: HashMap<String, &mut dyn Agent<G>>,
     games: Vec<G>,
-) {
+) -> HashMap<(String, String), usize> {
+    let mut wins = HashMap::new();
     let agent_names = agents.keys().cloned().collect_vec();
 
     for a1_name in agent_names.clone() {
@@ -196,13 +202,7 @@ fn score_games<G: GameState + ResampleFromInfoState + Send>(
             }
 
             pb.finish_and_clear();
-
-            println!(
-                "{:?}\t{:?}\t{}",
-                a1_name,
-                a2_name,
-                games_won[0] as f64 / args.num_games as f64
-            );
+            wins.insert((a1_name.clone(), a2_name.clone()), games_won[0]);
 
             agents.insert(a1_name.clone(), a1);
             if a1_name != a2_name {
@@ -210,6 +210,8 @@ fn score_games<G: GameState + ResampleFromInfoState + Send>(
             }
         }
     }
+
+    wins
 }
 
 fn run_jack_face_up_benchmark(args: BenchmarkArgs) {

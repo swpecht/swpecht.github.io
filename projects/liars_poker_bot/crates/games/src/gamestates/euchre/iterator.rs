@@ -81,7 +81,10 @@ impl EuchreIsomorphicIStateIterator {
 
             // special case to populate plays for dealer state if going to 4 players
             // need this since the state would otherwise be skipped below
-            if candidate.has_discard_action && self.max_cards_played >= 4 {
+            if candidate.has_discard_action
+                && self.max_cards_played >= 4
+                && candidate.cards_played() < self.max_cards_played
+            {
                 let mut actions = ArrayVec::new();
                 candidate.legal_actions(&mut actions);
                 for a in actions {
@@ -95,7 +98,8 @@ impl EuchreIsomorphicIStateIterator {
             let skip = (matches!(candidate.phase(), EPhase::Play)
                 && candidate.cards_played() >= self.max_cards_played)
                 // we don't need to expand discard action states unless going to 4 cards played
-                || (candidate.has_discard_action && self.max_cards_played < 4);
+                || (candidate.has_discard_action && self.max_cards_played < 4)
+                || (candidate.has_discard_action && candidate.cards_played() < 4);
 
             if !skip {
                 break candidate;
