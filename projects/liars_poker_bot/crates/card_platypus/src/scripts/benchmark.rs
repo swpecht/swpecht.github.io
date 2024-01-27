@@ -28,6 +28,7 @@ use crate::GameType;
 pub enum BenchmarkMode {
     FullGame,
     JackFaceUp,
+    Test,
 }
 
 #[derive(Args, Debug, Clone, Copy)]
@@ -49,6 +50,50 @@ pub fn run_benchmark(args: BenchmarkArgs) {
             GameType::Bluff22 => run_full_game_benchmark(args, Bluff::game(2, 2)),
         },
         BenchmarkMode::JackFaceUp => run_jack_face_up_benchmark(args),
+        BenchmarkMode::Test => run_euchre_test(args),
+    }
+}
+
+fn run_euchre_test(args: BenchmarkArgs) {
+    // all agents play the same games
+    let mut game_rng = get_rng();
+
+    let mut agents: HashMap<String, &mut dyn Agent<EuchreGameState>> = HashMap::new();
+
+    let a = &mut PolicyAgent::new(
+        PIMCTSBot::new(50, OpenHandSolver::new_euchre(), get_rng()),
+        get_rng(),
+    );
+    agents.insert("pimcts, 50 worlds".to_string(), a);
+
+    println!("Starting benchmark for agents: {:?}", agents.keys());
+
+    // may need up to 19x the number fo full games to 10
+    let eval_chunk = 100; // how many games to evaluate at onces;
+    let mut remaining_games = args.num_games;
+    let mut total_wins = HashMap::new();
+
+    while remaining_games > 0 {
+        let num_games = remaining_games.min(eval_chunk);
+        let games = get_games(Euchre::game(), num_games * 19, &mut game_rng);
+        let iter_wins = score_games(&mut agents, games);
+
+        iter_wins.into_iter().for_each(|(name, new_wins)| {
+            total_wins
+                .entry(name)
+                .and_modify(|w| *w += new_wins)
+                .or_insert(new_wins);
+        });
+
+        remaining_games -= num_games;
+        let played_games = args.num_games - remaining_games;
+        println!("played games: {}", played_games);
+        for (name, win_rate) in total_wins
+            .iter()
+            .map(|(name, wins)| (name, *wins as f64 / played_games as f64))
+        {
+            println!("{}\t{}\t{}", name.0, name.1, win_rate);
+        }
     }
 }
 
