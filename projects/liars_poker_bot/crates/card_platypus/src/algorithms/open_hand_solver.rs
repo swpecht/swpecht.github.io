@@ -13,7 +13,7 @@ use games::{
     },
     Action, GameState, Player, Team,
 };
-use log::trace;
+use log::{info, trace, warn};
 
 use crate::{alloc::Pool, collections::actionvec::ActionVec};
 
@@ -89,10 +89,6 @@ impl<G: Clone> OpenHandSolver<G> {
             optimizations,
         }
     }
-
-    pub fn reset(&mut self) {
-        self.cache.reset();
-    }
 }
 
 impl OpenHandSolver<EuchreGameState> {
@@ -165,6 +161,10 @@ impl<G: GameState> Evaluator<G> for OpenHandSolver<G> {
         probs[actions[index_of_max]] = 1.0;
 
         probs
+    }
+
+    fn reset(&mut self) {
+        self.cache.reset();
     }
 }
 

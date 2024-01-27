@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 
 use games::{actions, resample::ResampleFromInfoState, Action, GameState, Player};
 use itertools::Itertools;
+use log::warn;
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
 use crate::{
@@ -36,7 +37,7 @@ impl<G: GameState + ResampleFromInfoState + Send, E: Evaluator<G> + Clone + Sync
     fn evaluate_with_worlds(&mut self, maximizing_player: Player, worlds: Vec<G>) -> f64 {
         // reset to avoid memory growth
         self.eval_count += 1;
-        if self.eval_count % 100 == 0 {
+        if self.eval_count % 1_000 == 0 {
             self.reset();
         }
 
