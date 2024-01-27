@@ -4,17 +4,13 @@ use tinyvec::ArrayVec;
 use crate::istate::IStateKey;
 
 use super::{
-    actions::{EAction, Suit},
+    actions::{EAction, Suit, ALL_CARDS},
     ismorphic::normalize_euchre_istate,
     EPhase,
 };
 
 use EAction::*;
-const CARDS: [EAction; 24] = [
-    NC, TC, JC, QC, KC, AC, NS, TS, JS, QS, KS, AS, NH, TH, JH, QH, KH, AH, ND, TD, JD, QD, KD, AD,
-];
-
-const SPADES: [EAction; 6] = [NS, TS, JS, QS, KS, AS];
+const SPADES: u32 = NS as u32 | TS as u32 | JS as u32 | QS as u32 | KS as u32 | AS as u32;
 const NON_CARD_ACTIONS: u32 = Pass as u32
     | Pickup as u32
     | DiscardMarker as u32
@@ -23,18 +19,66 @@ const NON_CARD_ACTIONS: u32 = Pass as u32
     | Hearts as u32
     | Diamonds as u32;
 
-const MAX_ACTIONS: usize = 24;
+/// Mask of set of actions
+#[derive(Default, Clone, Copy)]
+struct ActionSet(u32);
+
+impl ActionSet {
+    pub fn from_mask(mask: u32) -> Self {
+        ActionSet(mask)
+    }
+
+    pub fn add(&mut self, a: EAction) {
+        self.0 |= a as u32;
+    }
+
+    pub fn remove(&mut self, a: EAction) {
+        self.0 &= !(a as u32);
+    }
+
+    pub fn contains(&self, a: EAction) -> bool {
+        self.0 & a as u32 > 0
+    }
+
+    pub fn pop(&mut self) -> Option<EAction> {
+        if self.0.count_ones() == 0 {
+            return None;
+        }
+
+        let a = EAction::from(1 << self.0.trailing_zeros());
+        self.remove(a);
+        Some(a)
+    }
+
+    pub fn and(self, other: Self) -> Self {
+        ActionSet(self.0 & other.0)
+    }
+
+    /// Removes all items lower than the highest set bit in other
+    pub fn remove_lower(&mut self, other: ActionSet) {
+        let max = 32 - other.0.leading_zeros();
+        self.0 &= !0 << max;
+    }
+}
+
+impl Iterator for ActionSet {
+    type Item = EAction;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.pop()
+    }
+}
 
 #[derive(Clone)]
 pub struct EuchreIsomorphicIStateIterator {
     stack: Vec<EuchreIState>,
     max_cards_played: usize,
-    face_up_cards: ArrayVec<[EAction; MAX_ACTIONS]>,
+    face_up_cards: ActionSet,
 }
 
 impl EuchreIsomorphicIStateIterator {
     pub fn new(max_cards_played: usize) -> Self {
-        EuchreIsomorphicIStateIterator::with_face_up(max_cards_played, &SPADES)
+        EuchreIsomorphicIStateIterator::with_face_up(max_cards_played, &[NS, TS, JS, QS, KS, AS])
     }
 
     /// Return an iterator that only includes the provided face up cards, useful for sharding as
@@ -45,7 +89,9 @@ impl EuchreIsomorphicIStateIterator {
         }
 
         assert!(
-            face_up_cards.iter().all(|x| SPADES.contains(x)),
+            face_up_cards
+                .iter()
+                .all(|x| x.card().suit() == Suit::Spades),
             "must provide only spades as face up cards"
         );
 
@@ -58,13 +104,14 @@ impl EuchreIsomorphicIStateIterator {
             "duplicate cards cannot be provided for face up cards"
         );
 
-        let face_up_cards = ArrayVec::from_iter(face_up_cards.iter().copied());
+        let mut face_up_set = ActionSet::default();
+        face_up_cards.iter().for_each(|c| face_up_set.add(*c));
 
         let stack = vec![EuchreIState::default()];
         Self {
             stack,
             max_cards_played,
-            face_up_cards,
+            face_up_cards: face_up_set,
         }
     }
 
@@ -85,8 +132,7 @@ impl EuchreIsomorphicIStateIterator {
                 && self.max_cards_played >= 4
                 && candidate.cards_played() < self.max_cards_played
             {
-                let mut actions = ArrayVec::new();
-                candidate.legal_actions(&mut actions);
+                let actions = candidate.legal_actions();
                 for a in actions {
                     let mut ns = candidate;
                     ns.apply_action(a);
@@ -111,8 +157,7 @@ impl EuchreIsomorphicIStateIterator {
             || state.cards_played() < self.max_cards_played; // otherwise we only expand if the child state won't be more than the max cards played
 
         if expand_istate {
-            let mut actions = ArrayVec::new();
-            state.legal_actions(&mut actions);
+            let actions = state.legal_actions();
             for a in actions {
                 let mut ns = state;
                 ns.apply_action(a);
@@ -131,7 +176,7 @@ impl Iterator for EuchreIsomorphicIStateIterator {
         while let Some(state) = self.next_unfiltered() {
             // skip istates no in the face up card set
             if let Some(face_up) = state.actions.get(5) {
-                if !self.face_up_cards.contains(face_up) {
+                if !self.face_up_cards.contains(*face_up) {
                     continue;
                 }
             }
@@ -154,13 +199,26 @@ impl Iterator for EuchreIsomorphicIStateIterator {
 }
 
 /// Helper struct for enumerating euchre istates
-#[derive(Default, Clone, Copy)]
+#[derive(Clone, Copy)]
 struct EuchreIState {
     actions: ArrayVec<[EAction; 20]>,
     /// Mask of all the played actions
-    action_mask: u32,
+    played_actions: ActionSet,
+    /// Mask of all unplayed cards
+    undealt_cards: ActionSet,
     // tracks if this is a dealer istate that has a discard action
     has_discard_action: bool,
+}
+
+impl Default for EuchreIState {
+    fn default() -> Self {
+        Self {
+            actions: Default::default(),
+            played_actions: Default::default(),
+            undealt_cards: ActionSet::from_mask(ALL_CARDS),
+            has_discard_action: Default::default(),
+        }
+    }
 }
 
 impl EuchreIState {
@@ -198,83 +256,78 @@ impl EuchreIState {
             self.has_discard_action = true;
         }
 
-        self.action_mask |= a as u32;
+        self.played_actions.add(a);
+        self.undealt_cards.remove(a); // ok if not a card actions since removing
         self.actions.push(a)
     }
 
-    fn legal_actions(&self, actions: &mut ArrayVec<[EAction; MAX_ACTIONS]>) {
-        actions.clear();
+    fn legal_actions(&self) -> ActionSet {
         match self.phase() {
-            EPhase::DealHands => self.legal_actions_deal_hand(actions),
+            EPhase::DealHands => self.legal_actions_deal_hand(),
             // only spades can be face up
-            EPhase::DealFaceUp => self.legal_actions_deal_face_up(actions),
-            EPhase::Pickup => self.legal_actions_pickup(actions),
-            EPhase::Discard => self.legal_actions_discard(actions),
-            EPhase::ChooseTrump => self.legal_actions_choose_trump(actions),
-            EPhase::Play => self.legal_actions_play(actions),
+            EPhase::DealFaceUp => self.legal_actions_deal_face_up(),
+            EPhase::Pickup => self.legal_actions_pickup(),
+            EPhase::Discard => self.legal_actions_discard(),
+            EPhase::ChooseTrump => self.legal_actions_choose_trump(),
+            EPhase::Play => self.legal_actions_play(),
         }
     }
 
     /// Only allow dealing cards > cards that were previously dealt
-    fn legal_actions_deal_hand(&self, actions: &mut ArrayVec<[EAction; MAX_ACTIONS]>) {
-        actions.set_len(CARDS.len());
-        actions.copy_from_slice(&CARDS);
-
-        if let Some(max_dealt) = self.actions.iter().max() {
-            actions.retain(|x| x > max_dealt);
-        }
+    fn legal_actions_deal_hand(&self) -> ActionSet {
+        let mut actions = self.undealt_cards;
+        let dealt_cards = self.played_actions.and(ActionSet::from_mask(ALL_CARDS));
+        actions.remove_lower(dealt_cards);
+        actions
     }
 
     /// Return all undealt spades
-    fn legal_actions_deal_face_up(&self, actions: &mut ArrayVec<[EAction; MAX_ACTIONS]>) {
-        actions.set_len(SPADES.len());
-        actions.copy_from_slice(&SPADES);
-        actions.retain(|x| !self.actions.contains(x));
+    fn legal_actions_deal_face_up(&self) -> ActionSet {
+        let spades = ActionSet::from_mask(SPADES);
+        spades.and(self.undealt_cards)
     }
 
-    fn legal_actions_pickup(&self, actions: &mut ArrayVec<[EAction; MAX_ACTIONS]>) {
-        actions.push(EAction::Pass);
-        actions.push(EAction::Pickup);
+    fn legal_actions_pickup(&self) -> ActionSet {
+        ActionSet::from_mask(EAction::Pass as u32 | EAction::Pickup as u32)
     }
 
-    fn legal_actions_discard(&self, actions: &mut ArrayVec<[EAction; MAX_ACTIONS]>) {
+    fn legal_actions_discard(&self) -> ActionSet {
+        let mut actions = ActionSet::default();
         // Can discard any of the cards in hand or the face up card
         for card in &self.actions[0..6] {
-            actions.push(*card);
+            actions.add(*card);
         }
+        actions
     }
 
-    fn legal_actions_choose_trump(&self, actions: &mut ArrayVec<[EAction; MAX_ACTIONS]>) {
+    fn legal_actions_choose_trump(&self) -> ActionSet {
+        let mut actions = ActionSet::default();
         // Can only pass if we're not the dealer on the last time around
         if self.actions.iter().filter(|&&x| x == EAction::Pass).count() <= 7 {
-            actions.push(EAction::Pass);
+            actions.add(EAction::Pass);
         }
 
         // Can't call the face up suit
         let face_up = self.actions[5].card().suit();
         if face_up != Suit::Spades {
-            actions.push(EAction::Spades);
+            actions.add(EAction::Spades);
         }
         if face_up != Suit::Clubs {
-            actions.push(EAction::Clubs);
+            actions.add(EAction::Clubs);
         }
         if face_up != Suit::Hearts {
-            actions.push(EAction::Hearts);
+            actions.add(EAction::Hearts);
         }
         if face_up != Suit::Diamonds {
-            actions.push(EAction::Diamonds);
+            actions.add(EAction::Diamonds);
         }
+
+        actions
     }
 
     /// Returns the legal actions for playing
-    fn legal_actions_play(&self, actions: &mut ArrayVec<[EAction; MAX_ACTIONS]>) {
-        // Can play any card that's not in our hand or the face up card, or played previously.
-        // Face up card isn't allowed since we never have player 3s played card in the istate
-        for card in CARDS {
-            if !self.action_mask & card as u32 > 0 {
-                actions.push(card);
-            }
-        }
+    fn legal_actions_play(&self) -> ActionSet {
+        self.undealt_cards
     }
 
     fn phase(&self) -> EPhase {
@@ -303,7 +356,10 @@ impl EuchreIState {
     fn cards_played(&self) -> usize {
         // counts all the cards that have been seen. Since each card can only be seen when dealt, played, or discarded (which is a dealt card), we
         // can subtrace 6 to see how many played cards there are
-        (self.action_mask & !NON_CARD_ACTIONS).count_ones().max(6) as usize - 6
+        (self.played_actions.0 & !NON_CARD_ACTIONS)
+            .count_ones()
+            .max(6) as usize
+            - 6
     }
 }
 

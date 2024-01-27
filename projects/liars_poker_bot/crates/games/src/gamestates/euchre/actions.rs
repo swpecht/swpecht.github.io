@@ -136,6 +136,12 @@ impl From<Suit> for EAction {
     }
 }
 
+impl From<u32> for EAction {
+    fn from(value: u32) -> Self {
+        unsafe { std::mem::transmute(value) }
+    }
+}
+
 impl Display for EAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         eaction_fmt(self, f)
