@@ -1,4 +1,3 @@
-use core::num;
 use std::{cell::RefCell, collections::HashMap, path::Path, rc::Rc};
 
 use card_platypus::{
@@ -194,7 +193,7 @@ fn run_full_game_benchmark<G: GameState + ResampleFromInfoState + Send>(
 
 /// Calculate the win-rate of first to 10 for each agent
 fn score_games<G: GameState + ResampleFromInfoState + Send>(
-    mut agents: &mut HashMap<String, &mut dyn Agent<G>>,
+    agents: &mut HashMap<String, &mut dyn Agent<G>>,
     games: Vec<G>,
 ) -> HashMap<(String, String), usize> {
     let mut wins = HashMap::new();
