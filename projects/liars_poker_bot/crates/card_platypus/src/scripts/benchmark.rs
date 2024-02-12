@@ -219,15 +219,19 @@ fn score_games<G: GameState + ResampleFromInfoState + Send>(
             }
 
             let pb = ProgressBar::new(num_games as u64);
-            for i in 0..num_games {
-                let mut overall_games = chunked_games.pop().unwrap().into_iter();
+
+            for games_deals in chunked_games {
+                // Play out the game
                 let mut game_score = [0, 0];
-                // track the current game in the game of 10 for dealer tracking
-                let mut cur_game = 0;
-                while game_score[0] < 10 && game_score[1] < 10 {
-                    let mut gs = overall_games.next().unwrap();
-                    let agent_1_team = (cur_game % 2 + i % 2) % 2;
+                for (deal_number, deal) in games_deals.into_iter().enumerate() {
+                    if game_score[0] >= 10 || game_score[1] >= 10 {
+                        break;
+                    }
+
+                    let mut gs = deal;
+                    let agent_1_team = deal_number % 2;
                     while !gs.is_terminal() {
+                        assert!(!gs.is_chance_node());
                         // We alternate who starts as the dealer each game
                         // todo: in future should have different player start deal for each game
                         let agent_1_turn = gs.cur_player() % 2 == agent_1_team;
@@ -247,9 +251,9 @@ fn score_games<G: GameState + ResampleFromInfoState + Send>(
 
                     game_score[0] += r[0].max(0.0) as u8;
                     game_score[1] += r[1].max(0.0) as u8;
-                    cur_game += 1;
                 }
 
+                // record the game results
                 info!(
                     "\t{}\t{}\t{}\t{}",
                     a1_name, a2_name, game_score[0], game_score[1]
