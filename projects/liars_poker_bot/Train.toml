@@ -27,7 +27,7 @@ max_cards_played = 2
 
 [train.three_card_played]
 weight_file = "/var/lib/card_platypus/infostate.three_card_played_f32"
-training_iterations = 300000000
+training_iterations = 600000000
 scoring_iterations = 1000
 max_cards_played = 3
 
