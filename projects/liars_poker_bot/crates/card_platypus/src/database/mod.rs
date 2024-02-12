@@ -73,6 +73,10 @@ impl NodeStore {
             .indexer
             .index(key)
             .unwrap_or_else(|| panic!("failed to index {:?}", key));
+        self.get_index(index)
+    }
+
+    fn get_index(&self, index: usize) -> Option<InfoState> {
         let start = index * BUCKET_SIZE;
 
         if start + BUCKET_SIZE > self.mmap.len() {
@@ -118,8 +122,17 @@ impl NodeStore {
         anyhow::Ok(())
     }
 
+    /// Returns the number of populated items in the database. Not the total number of items
     pub fn len(&self) -> usize {
-        self.indexer.len()
+        let mut items = 0;
+
+        for i in 0..self.indexer.len() {
+            if self.get_index(i).is_some() {
+                items += 1;
+            }
+        }
+
+        items
     }
 
     #[must_use]

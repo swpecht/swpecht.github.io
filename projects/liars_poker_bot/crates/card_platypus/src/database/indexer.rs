@@ -36,6 +36,7 @@ impl Indexer {
             .map(|x| x as usize + (shard * self.shard_len))
     }
 
+    /// Returns the total length of the indexer
     pub fn len(&self) -> usize {
         self.shard_len * self.num_shards
     }
