@@ -71,7 +71,7 @@ pub enum InGameState {
     Ok(GameData),
 }
 
-#[inline_props]
+#[component]
 pub fn InGame(cx: Scope, game_id: String) -> Element {
     hide_element("intro");
 
