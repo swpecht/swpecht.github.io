@@ -117,6 +117,14 @@ fn run_euchre_benchmark(args: BenchmarkArgs) {
     info!("loaded cfr baseline agent: {} istates", n);
     agents.insert("cfr, 0 cards played".to_string(), &mut a);
 
+    let mut a = CFRES::new_euchre(get_rng(), 1);
+    let n = a.load(
+        Path::new("/var/lib/card_platypus/infostate.one_card_played/"),
+        1,
+    );
+    info!("loaded cfr one card agent: {} istates", n);
+    agents.insert("cfr, 1 cards played".to_string(), &mut a);
+
     let mut a = CFRES::new_euchre(get_rng(), 3);
     let n = a.load(
         Path::new("/var/lib/card_platypus/infostate.three_card_played_f32/"),
@@ -128,14 +136,6 @@ fn run_euchre_benchmark(args: BenchmarkArgs) {
     } else {
         warn!("failed to load istates for 3 card agent, skipping")
     }
-
-    let mut a = CFRES::new_euchre(get_rng(), 1);
-    a.load(
-        Path::new("/var/lib/card_platypus/infostate.one_card_played/"),
-        1,
-    );
-    info!("loaded cfr one card agent");
-    agents.insert("cfr, 1 cards played".to_string(), &mut a);
 
     println!("Starting benchmark for agents: {:?}", agents.keys());
 
