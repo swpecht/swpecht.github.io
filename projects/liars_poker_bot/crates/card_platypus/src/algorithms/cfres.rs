@@ -193,7 +193,6 @@ impl CFRES<EuchreGameState> {
         self.infostates = Arc::new(Mutex::new(
             NodeStore::new_euchre(Some(path), max_cards_played).unwrap(),
         ));
-        debug!("counting loaded infostates not yet supported");
         let len = self.infostates.lock().unwrap().len();
         debug!(
             "loaded weights for {} infostates with {} iterations",

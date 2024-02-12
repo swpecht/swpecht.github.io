@@ -152,8 +152,12 @@ fn get_mmap(dir: Option<&Path>, len: usize) -> anyhow::Result<MmapMut> {
             .open(dir.join("mmap"))
             .context("failed to create mmap file")?;
 
-        file.set_len((len * BUCKET_SIZE) as u64)
-            .context("failed to set length")?;
+        // Don't change file size unless it is less than the target size
+        let target_size = (len * BUCKET_SIZE) as u64;
+        if file.metadata().unwrap().len() < target_size {
+            file.set_len(target_size).context("failed to set length")?;
+        }
+
         unsafe { MmapMut::map_mut(&file)? }
     } else {
         memmap2::MmapOptions::new()
