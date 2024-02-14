@@ -88,7 +88,6 @@ pub fn extract_samples(src: File) -> anyhow::Result<Vec<f32>> {
         // Decode the packet into audio samples.
         match decoder.decode(&packet) {
             Ok(AudioBufferRef::F32(buf)) => {
-                println!("new packet: {} {}", packet.ts(), buf.chan(CHANNEL).len());
                 for &sample in buf.chan(CHANNEL) {
                     samples.push(sample);
                 }
