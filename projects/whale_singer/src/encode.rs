@@ -1,6 +1,6 @@
 use anyhow::Context;
 
-pub fn save_wav(filename: &str, samples: Vec<f32>) -> anyhow::Result<()> {
+pub fn save_wav(filename: &str, samples: &[f32]) -> anyhow::Result<()> {
     let spec = hound::WavSpec {
         channels: 1,
         sample_rate: 44100,
@@ -8,7 +8,7 @@ pub fn save_wav(filename: &str, samples: Vec<f32>) -> anyhow::Result<()> {
         sample_format: hound::SampleFormat::Float,
     };
     let mut writer = hound::WavWriter::create(filename, spec).context("failed to create writer")?;
-    for sample in samples {
+    for &sample in samples {
         writer
             .write_sample(sample)
             .context("failed to write sample")?;
