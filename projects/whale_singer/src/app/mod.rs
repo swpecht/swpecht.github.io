@@ -2,6 +2,7 @@ use anyhow::Ok;
 use log::info;
 use sonogram::{ColourGradient, ColourTheme, FrequencyScale, SpecOptionsBuilder};
 use std::{
+    fs,
     io::stdout,
     panic,
     sync::mpsc::{self, Receiver, Sender},
@@ -36,8 +37,8 @@ pub fn run_app() -> color_eyre::Result<()> {
 
 use crate::{
     decode::extract_samples,
-    encode::SAMPLE_RATE,
-    optimization::{add_best_atom, find_best_match, AtomSearchResult},
+    encode::{save_wav, SAMPLE_RATE},
+    optimization::{add_best_atom, AtomSearchResult},
 };
 #[derive(Debug)]
 struct App {
@@ -96,61 +97,55 @@ impl App {
     ///
     /// This is the main event loop for the app.
     pub fn run(mut self, mut terminal: Terminal<impl Backend>) -> anyhow::Result<()> {
-        let src = std::fs::File::open("simple_target.wav").expect("failed to open media");
+        let src = std::fs::File::open("im_different_sample.wav").expect("failed to open media");
         // let src = std::fs::File::open("happy_birthday.mp3").expect("failed to open media");
-        let target_samples = extract_samples(src).unwrap();
+        let mut target_samples = extract_samples(src).unwrap();
+        target_samples.truncate(SAMPLE_RATE * 8);
         self.target_spectogram.set_samples(target_samples.clone());
 
         let thread_tx = self.tx.clone();
         let target = target_samples;
         thread::spawn(move || {
-            // Open the media source.
-            let src = std::fs::File::open("../../../piano-mp3/piano-mp3/B0.mp3")
-                .expect("failed to open media");
+            // let paths = fs::read_dir("../../../piano-mp3/piano-mp3/").unwrap();
 
-            let b0_samples = extract_samples(src).unwrap();
+            let atom_files = ["A4", "B4", "C4", "D4", "E4", "F4", "G4"];
+            let mut atoms = Vec::new();
+            for atom_id in atom_files {
+                let path_name = format!("../../../piano-mp3/piano-mp3/{}.mp3", atom_id);
+                // let src =
+                //     std::fs::File::open(atom_file.unwrap().path()).expect("failed to open media");
+                let src = std::fs::File::open(path_name).expect("failed to open media");
+                let mut key_samples = extract_samples(src).unwrap();
+                // only the the middle 1 second
+                key_samples = key_samples[SAMPLE_RATE * 3 / 4..SAMPLE_RATE * 5 / 4].to_vec();
+                atoms.push(key_samples);
+            }
 
-            let src = std::fs::File::open("../../../piano-mp3/piano-mp3/A0.mp3")
-                .expect("failed to open media");
+            info!("loaded {} atoms", atoms.len());
 
-            let a0_samples = extract_samples(src).unwrap();
-
-            let src = std::fs::File::open("../../../piano-mp3/piano-mp3/A1.mp3")
-                .expect("failed to open media");
-
-            let a1_samples = extract_samples(src).unwrap();
-
-            // let mut planner = FftPlanner::<f32>::new();
-
-            // let mut buffer = a1_samples
-            //     .clone()
-            //     .into_iter()
-            //     .map(|x| Complex::new(x, 0.0))
-            //     .collect_vec();
-            // let fft = planner.plan_fft_forward(a1_samples.len());
-            // fft.process(&mut buffer);
-            // println!("{:?}", buffer);
-
-            let atoms = vec![a0_samples, a1_samples, b0_samples];
             let mut output = vec![0.0; target.len()];
 
-            for _ in 0..10 {
+            for _ in 0..20 {
                 match add_best_atom(&mut output, &target, &atoms).unwrap() {
                     AtomSearchResult::NoImprovement => {
                         info!("failed to find improvement");
                         break;
                     }
-                    AtomSearchResult::Found { start, atom_index } => {
+                    AtomSearchResult::Found {
+                        start,
+                        atom_index,
+                        old_error,
+                        new_error,
+                    } => {
+                        save_wav("output.wav", &output).unwrap();
                         info!(
-                            "found improvement with atom: {} at start: {}",
-                            atom_index, start
+                            "found improvement with atom: {} at start: {}, old error: {}, new error: {}",
+                            atom_index, start, old_error, new_error
                         );
                         thread_tx.send(output.clone()).unwrap();
                     }
                 }
             }
-
-            // save_wav("output.wav", &output).unwrap();
         });
 
         while self.is_running() {
@@ -201,7 +196,7 @@ impl Widget for &mut App {
     fn render(self, area: Rect, buf: &mut Buffer) {
         use Constraint::*;
         let [top, spectograms, logs] = Layout::vertical([Length(1), Min(0), Max(20)]).areas(area);
-        Text::from("colors_rgb example. Press q to quit")
+        Text::from("whale singer. Press q to quit")
             .centered()
             .render(top, buf);
         let [target, current] =
@@ -219,7 +214,7 @@ impl Widget for &mut App {
         self.current_spectogram.render(cur_spec, buf);
 
         TuiLoggerWidget::default()
-            .block(Block::bordered().title("Unfiltered TuiLoggerWidget"))
+            .block(Block::bordered().title("Logs"))
             .output_separator('|')
             .output_timestamp(Some("%F %H:%M:%S%.3f".to_string()))
             .output_level(Some(TuiLoggerLevelOutput::Long))
