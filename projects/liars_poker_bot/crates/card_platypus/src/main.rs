@@ -147,12 +147,12 @@ fn run_scratch(_args: Args) {
 
     println!("cfres node {}", mem::size_of::<InfoState>());
     println!("istate key {}", mem::size_of::<IStateKey>());
-    // let indexer = card_platypus::database::indexer::Indexer::euchre(0);
-    // println!("indexer size: {}", indexer.len());
-    for i in 0..5 {
-        let n = EuchreIsomorphicIStateIterator::with_face_up(i, &[EAction::NS]).count();
-        println!("istates {}: {}", i, n);
-    }
+    let indexer = card_platypus::database::indexer::Indexer::euchre(4);
+    println!("indexer size: {}", indexer.len());
+    // for i in 0..5 {
+    //     let n = EuchreIsomorphicIStateIterator::with_face_up(i, &[EAction::NS]).count();
+    //     println!("istates {}: {}", i, n);
+    // }
 }
 
 fn run_analyze(args: Args) {
