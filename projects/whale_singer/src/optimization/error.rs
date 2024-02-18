@@ -30,8 +30,9 @@ pub(super) fn weighted_error(a: &[f32], b: &[f32]) -> anyhow::Result<f64> {
         .into_iter()
         .zip(inp_time)
         .map(|(a, b)| (a - b).abs())
-        .max_by(|x, y| x.total_cmp(y))
-        .unwrap() as f64;
+        .position_max_by(|x, y| x.total_cmp(y))
+        .unwrap() as f64
+        / a.len() as f64;
 
     let ref_power: f32 = a.iter().map(|x| x.powi(2)).sum();
     let inp_power: f32 = b.iter().map(|x| x.powi(2)).sum();
