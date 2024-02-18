@@ -100,7 +100,7 @@ impl App {
         let src = std::fs::File::open("im_different_sample.wav").expect("failed to open media");
         // let src = std::fs::File::open("happy_birthday.mp3").expect("failed to open media");
         let mut target_samples = extract_samples(src).unwrap();
-        target_samples.truncate(SAMPLE_RATE * 8);
+        target_samples.truncate(SAMPLE_RATE * 1);
         self.target_spectogram.set_samples(target_samples.clone());
 
         let thread_tx = self.tx.clone();

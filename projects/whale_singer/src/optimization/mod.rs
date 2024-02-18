@@ -53,10 +53,10 @@ impl AtomOptimizer {
         if self.atoms.is_empty() {
             bail!("tried to call optimizer with no atoms");
         }
-        let old_error = (self.error_fn)(output, target)?;
+        let old_error = (self.error_fn)(target, output)?;
 
         let mut best_start = None;
-        let mut best_error = f64::INFINITY; // old_error;
+        let mut best_error = old_error;
 
         let mut best_atom_index = 0;
 

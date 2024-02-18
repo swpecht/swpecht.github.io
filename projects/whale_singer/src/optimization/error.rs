@@ -31,9 +31,16 @@ pub(super) fn weighted_error(a: &[f32], b: &[f32]) -> anyhow::Result<f64> {
         .zip(inp_time)
         .map(|(a, b)| (a - b).abs())
         .max_by(|x, y| x.total_cmp(y))
-        .unwrap();
+        .unwrap() as f64;
 
-    Ok(diff_time as f64)
+    let ref_power: f32 = a.iter().map(|x| x.powi(2)).sum();
+    let inp_power: f32 = b.iter().map(|x| x.powi(2)).sum();
+    let diff_power = (ref_power - inp_power).abs() as f64;
+
+    const TIME_WEIGHT: f64 = 1.0 / 3.0;
+    const POWER_WEIGHT: f64 = 1.0 / 3.0;
+
+    Ok(diff_time * TIME_WEIGHT + diff_power * POWER_WEIGHT)
 }
 
 /// Compute the cross correlation of a and b
