@@ -1,24 +1,26 @@
 use anyhow::{bail, Context};
-use itertools::Itertools;
-use sonogram::{ColourGradient, ColourTheme, SpecOptionsBuilder};
 
 use crate::encode::SAMPLE_RATE;
 
-use self::error::{dssim_error, rms_error};
+use self::error::{rms_error, weighted_error};
 
 pub mod error;
 
 const MAX_ITERATIONS: usize = 20;
 
-#[derive(Clone, Debug, Default)]
-struct Samples(Vec<f32>);
+type ErrorFn = fn(&[f32], &[f32]) -> anyhow::Result<f64>;
+
+/// Find the next best atom
+pub struct AtomOptimizer {
+    /// Number of samples in a chunk
+    chunk_len: usize,
+    sample_rate: usize,
+    atoms: Vec<Vec<f32>>,
+    error_fn: ErrorFn,
+}
 
 #[derive(Clone, Debug, Default)]
-pub(super) struct RBGA {
-    width: usize,
-    height: usize,
-    data: Vec<u8>,
-}
+struct Samples(Vec<f32>);
 
 pub enum AtomSearchResult {
     NoImprovement,
@@ -30,54 +32,64 @@ pub enum AtomSearchResult {
     },
 }
 
-/// Adds a single atom that results in the lowest error
-pub fn add_best_atom(
-    output: &mut [f32],
-    target: &[f32],
-    atoms: &[Vec<f32>],
-) -> anyhow::Result<AtomSearchResult> {
-    let target_spec = calculate_spectogram(Samples(target.to_vec()));
-    let output_spec = calculate_spectogram(Samples(output.to_vec()));
-
-    let old_error = dssim_error(&target_spec, &output_spec)?;
-
-    let mut best_start = None;
-    let mut best_error = old_error;
-
-    let mut best_atom_index = 0;
-
-    // let atom_spectograms = atoms
-    //     .iter()
-    //     .map(|x| calculate_spectogram(Samples(x.clone())))
-    //     .collect_vec();
-
-    for (atom_index, atom) in atoms.iter().enumerate() {
-        for start in (0..target.len()).step_by(SAMPLE_RATE / 10) {
-            add_atom(output, atom, start);
-            let output_spec = calculate_spectogram(Samples(output.to_vec()));
-            let error =
-                dssim_error(&target_spec, &output_spec).context("failed to calculate error")?;
-            if error < best_error {
-                best_error = error;
-                best_start = Some(start);
-                best_atom_index = atom_index;
-            }
-            subtract_atom(output, atom, start);
+impl Default for AtomOptimizer {
+    fn default() -> Self {
+        Self {
+            chunk_len: SAMPLE_RATE / 10,
+            sample_rate: SAMPLE_RATE,
+            atoms: Vec::new(),
+            error_fn: weighted_error,
         }
     }
+}
 
-    Ok(match best_start {
-        None => AtomSearchResult::NoImprovement,
-        Some(start) => {
-            add_atom(output, &atoms[best_atom_index], start);
-            AtomSearchResult::Found {
-                start: start as f64 / SAMPLE_RATE as f64,
-                atom_index: best_atom_index,
-                old_error,
-                new_error: best_error,
+impl AtomOptimizer {
+    /// Adds a chunk from the atoms that most reduces the error between output and target
+    pub fn add_best_chunk(
+        &mut self,
+        output: &mut [f32],
+        target: &[f32],
+    ) -> anyhow::Result<AtomSearchResult> {
+        if self.atoms.is_empty() {
+            bail!("tried to call optimizer with no atoms");
+        }
+        let old_error = (self.error_fn)(output, target)?;
+
+        let mut best_start = None;
+        let mut best_error = f64::INFINITY; // old_error;
+
+        let mut best_atom_index = 0;
+
+        for (atom_index, atom) in self.atoms.iter().enumerate() {
+            for start in (0..target.len()).step_by(self.chunk_len) {
+                add_atom(output, atom, start);
+                let error = (self.error_fn)(target, output).context("failed to calculate error")?;
+                if error < best_error {
+                    best_error = error;
+                    best_start = Some(start);
+                    best_atom_index = atom_index;
+                }
+                subtract_atom(output, atom, start);
             }
         }
-    })
+
+        Ok(match best_start {
+            None => AtomSearchResult::NoImprovement,
+            Some(start) => {
+                add_atom(output, &self.atoms[best_atom_index], start);
+                AtomSearchResult::Found {
+                    start: start as f64 / self.sample_rate as f64,
+                    atom_index: best_atom_index,
+                    old_error,
+                    new_error: best_error,
+                }
+            }
+        })
+    }
+
+    pub fn set_atoms(&mut self, atoms: Vec<Vec<f32>>) {
+        self.atoms = atoms;
+    }
 }
 
 fn add_atom(output: &mut [f32], atom: &[f32], start: usize) {
@@ -94,21 +106,4 @@ fn subtract_atom(output: &mut [f32], atom: &[f32], start: usize) {
         .skip(start)
         .zip(atom.iter())
         .for_each(|(o, a)| *o -= a);
-}
-
-fn calculate_spectogram(samples: Samples) -> RBGA {
-    let mut spectrograph = SpecOptionsBuilder::new(1024)
-        .load_data_from_memory_f32(samples.0.clone(), SAMPLE_RATE as u32)
-        .build()
-        .unwrap();
-    // Compute the spectrogram giving the number of bins and the window overlap.
-    let mut gradient = ColourGradient::create(ColourTheme::Default);
-    let mut spectrograph = spectrograph.compute();
-    let buf =
-        spectrograph.to_rgba_in_memory(sonogram::FrequencyScale::Linear, &mut gradient, 512, 512);
-    RBGA {
-        width: 512,
-        height: 512,
-        data: buf,
-    }
 }

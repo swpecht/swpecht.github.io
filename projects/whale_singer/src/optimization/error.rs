@@ -1,7 +1,11 @@
 use anyhow::bail;
-use dssim::Dssim;
-
-use super::RBGA;
+use itertools::Itertools;
+use realfft::RealFftPlanner;
+use rustfft::{
+    num_complex::{Complex, ComplexFloat},
+    num_traits::Zero,
+    FftPlanner,
+};
 
 /// Returns the root mean squared error between two sample combinations
 pub(super) fn rms_error(a: &[f32], b: &[f32]) -> anyhow::Result<f64> {
@@ -18,17 +22,52 @@ pub(super) fn rms_error(a: &[f32], b: &[f32]) -> anyhow::Result<f64> {
     Ok(error)
 }
 
-pub(super) fn dssim_error(a: &RBGA, b: &RBGA) -> anyhow::Result<f64> {
-    use rgb::FromSlice;
-    let dssim = Dssim::new();
-    let a_image = dssim
-        .create_image_rgba(a.data[..].as_rgba(), a.width, a.height)
+/// https://stackoverflow.com/questions/20644599/similarity-between-two-signals-looking-for-simple-measure
+pub(super) fn weighted_error(a: &[f32], b: &[f32]) -> anyhow::Result<f64> {
+    let ref_time = cross_correlation(a, a);
+    let inp_time = cross_correlation(a, b);
+    let diff_time = ref_time
+        .into_iter()
+        .zip(inp_time)
+        .map(|(a, b)| (a - b).abs())
+        .max_by(|x, y| x.total_cmp(y))
         .unwrap();
 
-    let b_image = dssim
-        .create_image_rgba(b.data[..].as_rgba(), b.width, b.height)
-        .unwrap();
-    let (diff, _) = dssim.compare(&a_image, &b_image);
+    Ok(diff_time as f64)
+}
 
-    Ok(diff.into())
+/// Compute the cross correlation of a and b
+///
+/// adapted from https://dsp.stackexchange.com/questions/736/how-do-i-implement-cross-correlation-to-prove-two-audio-files-are-similar
+///
+/// todo: could be sped up by using a realfft only library
+fn cross_correlation(a: &[f32], b: &[f32]) -> Vec<f32> {
+    let mut planner = RealFftPlanner::<f32>::new();
+
+    // pad the vectors so they seem to go to 0 in the long term
+    let len = a.len() + b.len() - 1;
+
+    let fft = planner.plan_fft_forward(len);
+    let mut input_buf = fft.make_input_vec();
+    let mut a_buf = fft.make_output_vec();
+
+    input_buf[..a.len()].copy_from_slice(a);
+    fft.process(&mut input_buf, &mut a_buf).unwrap();
+
+    let mut input_buf = fft.make_input_vec();
+    input_buf[..b.len()].copy_from_slice(b);
+    input_buf.reverse();
+    let mut b_buf = fft.make_output_vec();
+    fft.process(&mut input_buf, &mut b_buf).unwrap();
+
+    a_buf
+        .iter_mut()
+        .zip(b_buf.iter())
+        .for_each(|(a, b)| *a *= *b);
+
+    let ffti = planner.plan_fft_inverse(len);
+    let mut output = ffti.make_output_vec();
+    ffti.process(&mut a_buf, &mut output).unwrap();
+
+    output
 }

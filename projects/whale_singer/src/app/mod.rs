@@ -38,7 +38,7 @@ pub fn run_app() -> color_eyre::Result<()> {
 use crate::{
     decode::extract_samples,
     encode::{save_wav, SAMPLE_RATE},
-    optimization::{add_best_atom, AtomSearchResult},
+    optimization::{AtomOptimizer, AtomSearchResult},
 };
 #[derive(Debug)]
 struct App {
@@ -124,9 +124,11 @@ impl App {
             info!("loaded {} atoms", atoms.len());
 
             let mut output = vec![0.0; target.len()];
+            let mut atom_finder = AtomOptimizer::default();
+            atom_finder.set_atoms(atoms);
 
             for _ in 0..20 {
-                match add_best_atom(&mut output, &target, &atoms).unwrap() {
+                match atom_finder.add_best_chunk(&mut output, &target).unwrap() {
                     AtomSearchResult::NoImprovement => {
                         info!("failed to find improvement");
                         break;
