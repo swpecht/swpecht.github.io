@@ -24,8 +24,8 @@ pub(super) fn rms_error(a: &[f32], b: &[f32]) -> anyhow::Result<f64> {
 
 /// https://stackoverflow.com/questions/20644599/similarity-between-two-signals-looking-for-simple-measure
 pub(super) fn weighted_error(a: &[f32], b: &[f32]) -> anyhow::Result<f64> {
-    let ref_time = cross_correlation(a, a);
-    let inp_time = cross_correlation(a, b);
+    let ref_time = cross_correlation_full(a, a);
+    let inp_time = cross_correlation_full(a, b);
     let diff_time = ref_time
         .into_iter()
         .zip(inp_time)
@@ -33,6 +33,8 @@ pub(super) fn weighted_error(a: &[f32], b: &[f32]) -> anyhow::Result<f64> {
         .position_max_by(|x, y| x.total_cmp(y))
         .unwrap() as f64
         / a.len() as f64;
+
+    // todo: implement frequency similarity
 
     let ref_power: f32 = a.iter().map(|x| x.powi(2)).sum();
     let inp_power: f32 = b.iter().map(|x| x.powi(2)).sum();
@@ -49,7 +51,7 @@ pub(super) fn weighted_error(a: &[f32], b: &[f32]) -> anyhow::Result<f64> {
 /// adapted from https://dsp.stackexchange.com/questions/736/how-do-i-implement-cross-correlation-to-prove-two-audio-files-are-similar
 ///
 /// todo: could be sped up by using a realfft only library
-fn cross_correlation(a: &[f32], b: &[f32]) -> Vec<f32> {
+fn cross_correlation_full(a: &[f32], b: &[f32]) -> Vec<f32> {
     let mut planner = RealFftPlanner::<f32>::new();
 
     // pad the vectors so they seem to go to 0 in the long term
@@ -63,19 +65,48 @@ fn cross_correlation(a: &[f32], b: &[f32]) -> Vec<f32> {
     fft.process(&mut input_buf, &mut a_buf).unwrap();
 
     let mut input_buf = fft.make_input_vec();
-    input_buf[..b.len()].copy_from_slice(b);
-    input_buf.reverse();
+    input_buf[len - b.len()..].copy_from_slice(b);
+    input_buf.reverse(); // reverse the input rather than using the complex conjugate
     let mut b_buf = fft.make_output_vec();
     fft.process(&mut input_buf, &mut b_buf).unwrap();
 
     a_buf
         .iter_mut()
         .zip(b_buf.iter())
-        .for_each(|(a, b)| *a *= *b);
+        .for_each(|(a, b)| *a *= b);
 
     let ffti = planner.plan_fft_inverse(len);
     let mut output = ffti.make_output_vec();
     ffti.process(&mut a_buf, &mut output).unwrap();
+    output.iter_mut().for_each(|x| *x /= len as f32);
 
     output
+}
+
+// cross correlation similar to numpy valid mode when both arrays are equal length
+fn cross_correlation(a: &[f32], b: &[f32]) -> f32 {
+    assert_eq!(a.len(), b.len()); // need to figure out how this works for unqueal samples
+    cross_correlation_full(a, b)[a.len() - 1]
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    #[test]
+    fn test_cross_correlation() {
+        let res = cross_correlation_full(&[1.0, 2.0, 3.0, 4.0], &[2.0, 4.0, 6.0]);
+        assert!(res
+            .into_iter()
+            .zip(vec![6., 16., 28., 40., 22., 8.])
+            .all(|(a, b)| (a - b).abs() < 0.01));
+
+        // tests from: https://numpy.org/doc/stable/reference/generated/numpy.correlate.html
+        let res = cross_correlation_full(&[1.0, 2.0, 3.0], &[0.0, 1.0, 0.5]);
+        assert!(res
+            .into_iter()
+            .zip(vec![0.5, 2., 3.5, 3., 0.])
+            .all(|(a, b)| (a - b).abs() < 0.01));
+        assert_eq!(cross_correlation(&[1.0, 2.0, 3.0], &[0.0, 1.0, 0.5]), 3.5);
+    }
 }
