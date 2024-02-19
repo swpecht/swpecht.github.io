@@ -24,12 +24,21 @@ pub(super) fn rms_error(a: &[f32], b: &[f32]) -> anyhow::Result<f64> {
 
 /// https://stackoverflow.com/questions/20644599/similarity-between-two-signals-looking-for-simple-measure
 pub(super) fn weighted_error(a: &[f32], b: &[f32]) -> anyhow::Result<f64> {
+    // time error
     let ref_time = cross_correlation(a, a);
     let inp_time = cross_correlation(a, b);
     let diff_time = (ref_time - inp_time).abs() as f64;
 
+    // freq error
     // todo: implement frequency similarity
+    // ref_freq = np.correlate(np.fft.fft(ref_rec),np.fft.fft(ref_rec))
+    // inp_freq = np.correlate(np.fft.fft(ref_rec),np.fft.fft(input_rec))
+    // diff_freq = abs(ref_freq-inp_freq)
+    // let mut planner = FftPlanner::new();
+    // let fft = planner.plan_fft_forward(a.len());
+    // fft.pr
 
+    // power error
     let ref_power: f32 = a.iter().map(|x| x.powi(2)).sum();
     let inp_power: f32 = b.iter().map(|x| x.powi(2)).sum();
     let diff_power = (ref_power - inp_power).abs() as f64;
@@ -56,13 +65,16 @@ fn cross_correlation_full(a: &[f32], b: &[f32]) -> Vec<f32> {
     let mut a_buf = fft.make_output_vec();
 
     input_buf[..a.len()].copy_from_slice(a);
-    fft.process(&mut input_buf, &mut a_buf).unwrap();
+    let mut scratch = vec![Complex::zero(); len];
+    fft.process_with_scratch(&mut input_buf, &mut a_buf, &mut scratch)
+        .unwrap();
 
     let mut input_buf = fft.make_input_vec();
     input_buf[len - b.len()..].copy_from_slice(b);
     input_buf.reverse(); // reverse the input rather than using the complex conjugate
     let mut b_buf = fft.make_output_vec();
-    fft.process(&mut input_buf, &mut b_buf).unwrap();
+    fft.process_with_scratch(&mut input_buf, &mut b_buf, &mut scratch)
+        .unwrap();
 
     a_buf
         .iter_mut()
@@ -71,7 +83,8 @@ fn cross_correlation_full(a: &[f32], b: &[f32]) -> Vec<f32> {
 
     let ffti = planner.plan_fft_inverse(len);
     let mut output = ffti.make_output_vec();
-    ffti.process(&mut a_buf, &mut output).unwrap();
+    ffti.process_with_scratch(&mut a_buf, &mut output, &mut scratch)
+        .unwrap();
     output.iter_mut().for_each(|x| *x /= len as f32);
 
     output
