@@ -24,15 +24,9 @@ pub(super) fn rms_error(a: &[f32], b: &[f32]) -> anyhow::Result<f64> {
 
 /// https://stackoverflow.com/questions/20644599/similarity-between-two-signals-looking-for-simple-measure
 pub(super) fn weighted_error(a: &[f32], b: &[f32]) -> anyhow::Result<f64> {
-    let ref_time = cross_correlation_full(a, a);
-    let inp_time = cross_correlation_full(a, b);
-    let diff_time = ref_time
-        .into_iter()
-        .zip(inp_time)
-        .map(|(a, b)| (a - b).abs())
-        .position_max_by(|x, y| x.total_cmp(y))
-        .unwrap() as f64
-        / a.len() as f64;
+    let ref_time = cross_correlation(a, a);
+    let inp_time = cross_correlation(a, b);
+    let diff_time = (ref_time - inp_time).abs() as f64;
 
     // todo: implement frequency similarity
 
@@ -40,8 +34,8 @@ pub(super) fn weighted_error(a: &[f32], b: &[f32]) -> anyhow::Result<f64> {
     let inp_power: f32 = b.iter().map(|x| x.powi(2)).sum();
     let diff_power = (ref_power - inp_power).abs() as f64;
 
-    const TIME_WEIGHT: f64 = 1.0 / 3.0;
-    const POWER_WEIGHT: f64 = 1.0 / 3.0;
+    const TIME_WEIGHT: f64 = 1.0;
+    const POWER_WEIGHT: f64 = 1.0;
 
     Ok(diff_time * TIME_WEIGHT + diff_power * POWER_WEIGHT)
 }
