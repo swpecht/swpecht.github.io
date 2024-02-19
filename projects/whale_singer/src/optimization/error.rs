@@ -34,9 +34,18 @@ pub(super) fn weighted_error(a: &[f32], b: &[f32]) -> anyhow::Result<f64> {
     // ref_freq = np.correlate(np.fft.fft(ref_rec),np.fft.fft(ref_rec))
     // inp_freq = np.correlate(np.fft.fft(ref_rec),np.fft.fft(input_rec))
     // diff_freq = abs(ref_freq-inp_freq)
-    // let mut planner = FftPlanner::new();
-    // let fft = planner.plan_fft_forward(a.len());
-    // fft.pr
+
+    let mut planner = FftPlanner::new();
+    let fft = planner.plan_fft_forward(a.len());
+    let mut fft_a = a.iter().map(|&x| Complex::new(x, 0.0)).collect_vec();
+    let mut fft_b = b.iter().map(|&x| Complex::new(x, 0.0)).collect_vec();
+
+    fft.process(&mut fft_a);
+    fft.process(&mut fft_b);
+
+    let ref_freq = cross_correlation_complex(&fft_a, &fft_a);
+    let inp_freq = cross_correlation_complex(&fft_a, &fft_b);
+    let diff_freq = (ref_freq - inp_freq).abs() as f64;
 
     // power error
     let ref_power: f32 = a.iter().map(|x| x.powi(2)).sum();
@@ -44,9 +53,20 @@ pub(super) fn weighted_error(a: &[f32], b: &[f32]) -> anyhow::Result<f64> {
     let diff_power = (ref_power - inp_power).abs() as f64;
 
     const TIME_WEIGHT: f64 = 1.0;
+    const FREQ_WEIGHT: f64 = 1.0;
     const POWER_WEIGHT: f64 = 1.0;
 
-    Ok(diff_time * TIME_WEIGHT + diff_power * POWER_WEIGHT)
+    Ok(diff_time * TIME_WEIGHT + diff_freq * FREQ_WEIGHT + diff_power * POWER_WEIGHT)
+}
+
+fn cross_correlation_full(a: &[f32], b: &[f32]) -> Vec<f32> {
+    cross_correlation_full_complex(
+        &a.iter().map(|&x| Complex::new(x, 0.0)).collect_vec(),
+        &b.iter().map(|&x| Complex::new(x, 0.0)).collect_vec(),
+    )
+    .into_iter()
+    .map(|x| x.re())
+    .collect_vec()
 }
 
 /// Compute the cross correlation of a and b
@@ -54,27 +74,22 @@ pub(super) fn weighted_error(a: &[f32], b: &[f32]) -> anyhow::Result<f64> {
 /// adapted from https://dsp.stackexchange.com/questions/736/how-do-i-implement-cross-correlation-to-prove-two-audio-files-are-similar
 ///
 /// todo: could be sped up by using a realfft only library
-fn cross_correlation_full(a: &[f32], b: &[f32]) -> Vec<f32> {
-    let mut planner = RealFftPlanner::<f32>::new();
+fn cross_correlation_full_complex(a: &[Complex<f32>], b: &[Complex<f32>]) -> Vec<Complex<f32>> {
+    let mut planner = FftPlanner::<f32>::new();
 
     // pad the vectors so they seem to go to 0 in the long term
     let len = a.len() + b.len() - 1;
 
     let fft = planner.plan_fft_forward(len);
-    let mut input_buf = fft.make_input_vec();
-    let mut a_buf = fft.make_output_vec();
 
-    input_buf[..a.len()].copy_from_slice(a);
-    let mut scratch = vec![Complex::zero(); len];
-    fft.process_with_scratch(&mut input_buf, &mut a_buf, &mut scratch)
-        .unwrap();
+    let mut a_buf = vec![Complex::zero(); len];
+    a_buf[..a.len()].copy_from_slice(a);
+    fft.process(&mut a_buf);
 
-    let mut input_buf = fft.make_input_vec();
-    input_buf[len - b.len()..].copy_from_slice(b);
-    input_buf.reverse(); // reverse the input rather than using the complex conjugate
-    let mut b_buf = fft.make_output_vec();
-    fft.process_with_scratch(&mut input_buf, &mut b_buf, &mut scratch)
-        .unwrap();
+    let mut b_buf = vec![Complex::zero(); len];
+    b_buf[len - b.len()..].copy_from_slice(b);
+    b_buf.reverse(); // reverse the input rather than using the complex conjugate
+    fft.process(&mut b_buf);
 
     a_buf
         .iter_mut()
@@ -82,12 +97,10 @@ fn cross_correlation_full(a: &[f32], b: &[f32]) -> Vec<f32> {
         .for_each(|(a, b)| *a *= b);
 
     let ffti = planner.plan_fft_inverse(len);
-    let mut output = ffti.make_output_vec();
-    ffti.process_with_scratch(&mut a_buf, &mut output, &mut scratch)
-        .unwrap();
-    output.iter_mut().for_each(|x| *x /= len as f32);
+    ffti.process(&mut a_buf);
+    a_buf.iter_mut().for_each(|x| *x /= len as f32);
 
-    output
+    a_buf
 }
 
 // cross correlation similar to numpy valid mode when both arrays are equal length
@@ -96,6 +109,11 @@ fn cross_correlation(a: &[f32], b: &[f32]) -> f32 {
     cross_correlation_full(a, b)[a.len() - 1]
 }
 
+// cross correlation similar to numpy valid mode when both arrays are equal length
+fn cross_correlation_complex(a: &[Complex<f32>], b: &[Complex<f32>]) -> Complex<f32> {
+    assert_eq!(a.len(), b.len()); // need to figure out how this works for unqueal samples
+    cross_correlation_full_complex(a, b)[a.len() - 1]
+}
 #[cfg(test)]
 mod tests {
 
