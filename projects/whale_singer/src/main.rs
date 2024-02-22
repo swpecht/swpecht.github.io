@@ -1,8 +1,5 @@
-use std::env::{self, args};
+use std::env::{self};
 
-use anyhow::Ok;
-use itertools::Itertools;
-use rustfft::{num_complex::Complex, FftPlanner};
 use whale_singer::{
     app::run_app,
     decode::extract_samples,

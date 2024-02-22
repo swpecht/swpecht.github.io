@@ -2,7 +2,6 @@ use anyhow::Ok;
 use log::info;
 use sonogram::{ColourGradient, ColourTheme, FrequencyScale, SpecOptionsBuilder};
 use std::{
-    fs,
     io::stdout,
     panic,
     sync::mpsc::{self, Receiver, Sender},
@@ -19,6 +18,8 @@ use crossterm::{
 };
 
 use ratatui::{prelude::*, widgets::Block};
+
+guage!(populate_progress);
 
 pub fn run_app() -> color_eyre::Result<()> {
     install_error_hooks()?;
@@ -38,6 +39,7 @@ pub fn run_app() -> color_eyre::Result<()> {
 use crate::{
     decode::extract_samples,
     encode::{save_wav, SAMPLE_RATE},
+    guage,
     optimization::{AtomOptimizer, AtomSearchResult},
 };
 #[derive(Debug)]
@@ -100,7 +102,7 @@ impl App {
         let src = std::fs::File::open("im_different_sample.wav").expect("failed to open media");
         // let src = std::fs::File::open("happy_birthday.mp3").expect("failed to open media");
         let mut target_samples = extract_samples(src).unwrap();
-        target_samples.truncate(SAMPLE_RATE * 1);
+        target_samples.truncate(SAMPLE_RATE * 4);
         self.target_spectogram.set_samples(target_samples.clone());
 
         let thread_tx = self.tx.clone();
@@ -115,39 +117,35 @@ impl App {
                 // let src =
                 //     std::fs::File::open(atom_file.unwrap().path()).expect("failed to open media");
                 let src = std::fs::File::open(path_name).expect("failed to open media");
-                let mut key_samples = extract_samples(src).unwrap();
+                let key_samples = extract_samples(src).unwrap();
                 // only the the middle 1 second
-                key_samples = key_samples[SAMPLE_RATE * 3 / 4..SAMPLE_RATE * 5 / 4].to_vec();
+                // key_samples = key_samples[SAMPLE_RATE * 3 / 4..SAMPLE_RATE * 5 / 4].to_vec();
                 atoms.push(key_samples);
             }
 
             info!("loaded {} atoms", atoms.len());
 
-            let mut output = vec![0.0; target.len()];
-            let mut atom_finder = AtomOptimizer::default();
-            atom_finder.set_atoms(atoms);
+            let mut atom_finder = AtomOptimizer::new(&target, &atoms);
 
-            for _ in 0..20 {
-                match atom_finder.add_best_chunk(&mut output, &target).unwrap() {
+            loop {
+                match atom_finder.add_best_chunk().unwrap() {
                     AtomSearchResult::NoImprovement => {
                         info!("failed to find improvement");
                         break;
                     }
-                    AtomSearchResult::Found {
-                        start,
-                        atom_index,
-                        old_error,
-                        new_error,
-                    } => {
-                        save_wav("output.wav", &output).unwrap();
+                    AtomSearchResult::Found { details } => {
+                        let samples: Vec<f32> = atom_finder.cur_samples().into();
+                        save_wav("output.wav", &samples).unwrap();
                         info!(
                             "found improvement with atom: {} at start: {}, old error: {}, new error: {}",
-                            atom_index, start, old_error, new_error
+                            details.atom_index, details.chunk, details.chunk_old_error, details.chunk_new_error
                         );
-                        thread_tx.send(output.clone()).unwrap();
+                        thread_tx.send(samples).unwrap();
                     }
                 }
             }
+
+            info!("finished searching");
         });
 
         while self.is_running() {
@@ -197,7 +195,8 @@ impl App {
 impl Widget for &mut App {
     fn render(self, area: Rect, buf: &mut Buffer) {
         use Constraint::*;
-        let [top, spectograms, logs] = Layout::vertical([Length(1), Min(0), Max(20)]).areas(area);
+        let [top, spectograms, prog, logs] =
+            Layout::vertical([Length(1), Min(0), Length(1), Max(20)]).areas(area);
         Text::from("whale singer. Press q to quit")
             .centered()
             .render(top, buf);
@@ -214,6 +213,10 @@ impl Widget for &mut App {
             Layout::horizontal([Constraint::Max(10), Constraint::Min(0)]).areas(current);
         Text::from("current").centered().render(cur_label, buf);
         self.current_spectogram.render(cur_spec, buf);
+
+        ratatui::widgets::Gauge::default()
+            .percent(populate_progress::read() as u16)
+            .render(prog, buf);
 
         TuiLoggerWidget::default()
             .block(Block::bordered().title("Logs"))

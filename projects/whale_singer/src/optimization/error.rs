@@ -1,11 +1,12 @@
 use anyhow::bail;
 use itertools::Itertools;
-use realfft::RealFftPlanner;
 use rustfft::{
     num_complex::{Complex, ComplexFloat},
     num_traits::Zero,
     FftPlanner,
 };
+
+use crate::samples::Samples;
 
 /// Returns the root mean squared error between two sample combinations
 pub(super) fn rms_error(a: &[f32], b: &[f32]) -> anyhow::Result<f64> {
@@ -23,7 +24,10 @@ pub(super) fn rms_error(a: &[f32], b: &[f32]) -> anyhow::Result<f64> {
 }
 
 /// https://stackoverflow.com/questions/20644599/similarity-between-two-signals-looking-for-simple-measure
-pub(super) fn weighted_error(a: &[f32], b: &[f32]) -> anyhow::Result<f64> {
+pub(super) fn weighted_error(reference: &Samples, input: &Samples) -> anyhow::Result<f64> {
+    let a = &reference.clone().to_vec();
+    let b = &input.clone().to_vec();
+
     // time error
     let ref_time = cross_correlation(a, a);
     let inp_time = cross_correlation(a, b);
