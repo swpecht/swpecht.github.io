@@ -1,9 +1,11 @@
 use std::env::{self};
 
+use log::info;
 use whale_singer::{
     app::run_app,
     decode::extract_samples,
     encode::{save_wav, SAMPLE_RATE},
+    optimization::{AtomOptimizer, AtomSearchResult},
 };
 
 use color_eyre::Result;
@@ -23,50 +25,51 @@ fn main() -> Result<()> {
 }
 
 fn run_scratch() {
-    // let src =
-    //     std::fs::File::open("../../../piano-mp3/piano-mp3/B2.mp3").expect("failed to open media");
+    let src = std::fs::File::open("im_different_sample.wav").expect("failed to open media");
+    // let src = std::fs::File::open("happy_birthday.mp3").expect("failed to open media");
+    let mut target_samples = extract_samples(src).unwrap();
+    target_samples.truncate(SAMPLE_RATE * 4);
 
-    // let a1_samples = extract_samples(src).unwrap();
-    // let mut buffer = a1_samples
-    //     .clone()
-    //     .into_iter()
-    //     .map(|x| Complex::new(x, 0.0))
-    //     .collect_vec();
-    // buffer.truncate(SAMPLE_RATE);
+    let target = target_samples;
 
-    // let mut planner = FftPlanner::<f32>::new();
+    // let paths = fs::read_dir("../../../piano-mp3/piano-mp3/").unwrap();
 
-    // let fft = planner.plan_fft_forward(buffer.len() / 2);
-    // fft.process(&mut buffer);
+    let atom_files = ["A4", "B4", "C4", "D4", "E4", "F4", "G4"];
+    let mut atoms = Vec::new();
+    for atom_id in atom_files {
+        let path_name = format!("../../../piano-mp3/piano-mp3/{}.mp3", atom_id);
+        // let src =
+        //     std::fs::File::open(atom_file.unwrap().path()).expect("failed to open media");
+        let src = std::fs::File::open(path_name).expect("failed to open media");
+        let key_samples = extract_samples(src).unwrap();
+        // only the the middle 1 second
+        // key_samples = key_samples[SAMPLE_RATE * 3 / 4..SAMPLE_RATE * 5 / 4].to_vec();
+        atoms.push(key_samples);
+    }
 
-    // println!("{}", buffer.len());
-    // for result in &buffer {
-    //     println!("{}", result.norm());
-    // }
+    info!("loaded {} atoms", atoms.len());
 
-    let src = std::fs::File::open("./im_different.mp3").expect("failed to open media");
+    let mut atom_finder = AtomOptimizer::new(&target, &atoms);
 
-    let mut samples = extract_samples(src).unwrap();
-    samples = samples[SAMPLE_RATE * 4..SAMPLE_RATE * 15].to_vec();
-    save_wav("./im_different_sample.wav", &samples).unwrap();
+    loop {
+        match atom_finder.add_best_chunk().unwrap() {
+            AtomSearchResult::NoImprovement => {
+                info!("failed to find improvement");
+                break;
+            }
+            AtomSearchResult::Found { details } => {
+                let samples: Vec<f32> = atom_finder.cur_samples().into();
+                save_wav("output.wav", &samples).unwrap();
+                info!(
+                    "found improvement with atom: {} at start: {}, old error: {}, new error: {}",
+                    details.atom_index,
+                    details.chunk,
+                    details.chunk_old_error,
+                    details.chunk_new_error
+                );
+            }
+        }
+    }
+
+    info!("finished searching");
 }
-
-// fn main() {
-//     // Open the media source.
-//     let src =
-//         std::fs::File::open("../../../piano-mp3/piano-mp3/B0.mp3").expect("failed to open media");
-
-//     let b0_samples = extract_samples(src).unwrap();
-
-//     let src =
-//         std::fs::File::open("../../../piano-mp3/piano-mp3/A0.mp3").expect("failed to open media");
-
-//     let a0_samples = extract_samples(src).unwrap();
-
-//
-
-//     // let atoms = vec![a0_samples, a1_samples, b0_samples];
-//     // let output = find_best_match(&target, atoms).unwrap();
-
-//     // save_wav("output.wav", &output).unwrap();
-// }

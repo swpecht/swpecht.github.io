@@ -6,20 +6,18 @@ use crate::{app::populate_progress, encode::SAMPLE_RATE, samples::Samples};
 
 use self::{
     chunks::{to_chunks, Chunk, ConstructedSample},
-    error::weighted_error,
+    error::ErrorCalculator,
 };
 
 mod chunks;
 pub mod error;
-
-type ErrorFn = fn(&Samples, &Samples) -> anyhow::Result<f64>;
 
 /// Find the next best atom
 pub struct AtomOptimizer {
     /// Number of samples in a chunk
     chunk_len: usize,
     sample_rate: usize,
-    error_fn: ErrorFn,
+    error_calc: ErrorCalculator,
     target_chunks: Vec<Chunk>,
     atom_chunks: Vec<Chunk>,
     candidates: Vec<Option<AtomSearchResult>>,
@@ -58,7 +56,7 @@ impl AtomOptimizer {
         Self {
             chunk_len,
             sample_rate: SAMPLE_RATE,
-            error_fn: weighted_error,
+            error_calc: ErrorCalculator::default(),
             candidates: vec![None; sample_chunks.len()],
             constructed_sample: ConstructedSample::new(chunk_len, sample_chunks.len()),
             target_chunks: sample_chunks,
@@ -111,18 +109,19 @@ impl AtomOptimizer {
                 continue;
             }
             populate_progress::set(t_id * 100 / self.target_chunks.len());
+            debug!("calculating candidte chunk {}", t_id);
 
             let mut buffer = self.constructed_sample.chunk_samples(t_id);
-            let sample_len = t_chunk.samples.len();
-            buffer.truncate(sample_len);
 
-            let old_error = (self.error_fn)(&t_chunk.samples, &buffer)?;
+            let old_error = self.error_calc.weighted_error(&t_chunk.samples, &buffer)?;
             let mut best_error = old_error;
             let mut best_atom_chunk_index = None;
 
             for atom in self.atom_chunks.iter() {
                 buffer.add(&atom.samples);
-                let error = (self.error_fn)(&t_chunk.samples, &buffer)
+                let error = self
+                    .error_calc
+                    .weighted_error(&t_chunk.samples, &buffer)
                     .context("failed to calculate error")?;
                 if error < best_error {
                     best_error = error;

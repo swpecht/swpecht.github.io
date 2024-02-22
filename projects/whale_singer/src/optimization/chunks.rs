@@ -56,16 +56,19 @@ impl ConstructedSample {
     }
 }
 
+/// Converts into chunks, padding chunks with 0s to the chunk length if necessary
 pub fn to_chunks(atoms: &[Vec<f32>], chunk_len: usize) -> Vec<Chunk> {
     let mut chunks = Vec::new();
 
     for (atom_id, atom) in atoms.iter().cloned().enumerate() {
         for (chunk_id, chunk_samples) in atom.into_iter().chunks(chunk_len).into_iter().enumerate()
         {
+            let mut samples = chunk_samples.collect_vec();
+            samples.extend((samples.len()..chunk_len).map(|_| 0.0));
             chunks.push(Chunk {
                 atom_id,
                 chunk_id,
-                samples: Samples::new(chunk_samples.collect_vec()),
+                samples: samples.into(),
             })
         }
     }
