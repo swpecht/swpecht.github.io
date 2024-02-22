@@ -14,6 +14,8 @@ pub(crate) struct ErrorCalculator {
     planner: FftPlanner<f32>,
     forward: HashMap<usize, Arc<dyn Fft<f32>>>,
     inverse: HashMap<usize, Arc<dyn Fft<f32>>>,
+    autocor_time_cache: HashMap<Samples, f32>,
+    autocor_freq_cache: HashMap<Samples, f32>,
 }
 
 impl Default for ErrorCalculator {
@@ -22,6 +24,8 @@ impl Default for ErrorCalculator {
             planner: FftPlanner::<f32>::new(),
             forward: Default::default(),
             inverse: Default::default(),
+            autocor_time_cache: Default::default(),
+            autocor_freq_cache: Default::default(),
         }
     }
 }
@@ -54,9 +58,12 @@ impl ErrorCalculator {
         let a = &reference.clone().to_vec();
         let b = &input.clone().to_vec();
 
+        // todo: the auto correlation for the reference could be cached between calls, need to find the right key
+        // since f32 doesn't implement hash
+
         // time error
-        let ref_time = reference.auto_correlate();
-        let inp_time = reference.cross_correlation(input);
+        let ref_time = self.cross_correlation(a, a); // todo: benchmark to see if sample approach is faster
+        let inp_time = self.cross_correlation(a, b); // todo: benchmark to see if sample approach is faster
         let diff_time = (ref_time - inp_time).abs() as f64;
 
         // freq error
@@ -103,12 +110,13 @@ impl ErrorCalculator {
 
         let mut a_buf = vec![Complex::zero(); len];
         a_buf[..a.len()].copy_from_slice(a);
-        fft.process(&mut a_buf);
+        let mut scratch = vec![Complex::default(); fft.get_inplace_scratch_len()];
+        fft.process_with_scratch(&mut a_buf, &mut scratch);
 
         let mut b_buf = vec![Complex::zero(); len];
         b_buf[len - b.len()..].copy_from_slice(b);
         b_buf.reverse(); // reverse the input rather than using the complex conjugate
-        fft.process(&mut b_buf);
+        fft.process_with_scratch(&mut b_buf, &mut scratch);
 
         a_buf
             .iter_mut()
@@ -116,7 +124,7 @@ impl ErrorCalculator {
             .for_each(|(a, b)| *a *= b);
 
         let ffti = self.get_inverse(len);
-        ffti.process(&mut a_buf);
+        ffti.process_with_scratch(&mut a_buf, &mut scratch);
         a_buf.iter_mut().for_each(|x| *x /= len as f32);
 
         a_buf

@@ -109,7 +109,6 @@ impl AtomOptimizer {
                 continue;
             }
             populate_progress::set(t_id * 100 / self.target_chunks.len());
-            debug!("calculating candidte chunk {}", t_id);
 
             let mut buffer = self.constructed_sample.chunk_samples(t_id);
 
@@ -159,21 +158,3 @@ impl AtomOptimizer {
         Ok(())
     }
 }
-
-// fn add_atom(output: &mut Samples, atom: &Samples, start: usize) {
-//     output
-//         .to_vec()
-//         .iter_mut()
-//         .skip(start)
-//         .zip(atom.to_vec().iter())
-//         .for_each(|(o, a)| *o += a);
-// }
-
-// fn subtract_atom(output: &mut Samples, atom: &Samples, start: usize) {
-//     output
-//         .to_vec()
-//         .iter_mut()
-//         .skip(start)
-//         .zip(atom.to_vec().iter())
-//         .for_each(|(o, a)| *o -= a);
-// }
