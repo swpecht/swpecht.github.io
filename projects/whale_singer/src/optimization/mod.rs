@@ -103,18 +103,19 @@ impl AtomOptimizer {
         debug!("updating candidates");
         let mut new_candidates_found = 0;
 
+        let num_chunks = self.target_chunks.len();
         for (t_id, t_chunk) in self.target_chunks.iter().enumerate() {
             if self.candidates[t_id].is_some() {
                 // don't re-calculate if we already know the best option
                 continue;
             }
-            populate_progress::set(t_id * 100 / self.target_chunks.len());
+            populate_progress::set(t_id * 100 / num_chunks);
 
             let mut buffer = self.constructed_sample.chunk_samples(t_id);
 
             let old_error = self.error_calc.weighted_error(&t_chunk.samples, &buffer)?;
             let mut best_error = old_error;
-            let mut best_atom_chunk_index = None;
+            let mut best_atom_chunk = None;
 
             for atom in self.atom_chunks.iter() {
                 buffer.add(&atom.samples);
@@ -124,12 +125,12 @@ impl AtomOptimizer {
                     .context("failed to calculate error")?;
                 if error < best_error {
                     best_error = error;
-                    best_atom_chunk_index = Some(atom);
+                    best_atom_chunk = Some(atom);
                 }
                 buffer.subtract(&atom.samples);
             }
 
-            if let Some(chunk) = best_atom_chunk_index {
+            if let Some(chunk) = best_atom_chunk {
                 self.candidates[t_id] = Some(AtomSearchResult::Found {
                     details: ImprovementDetails {
                         chunk: t_id,

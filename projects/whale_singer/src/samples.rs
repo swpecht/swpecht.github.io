@@ -9,6 +9,7 @@ use rustfft::{
 pub struct Samples {
     data: Vec<f32>,
     fft: Vec<Complex<f32>>,
+    autocor: Option<f32>,
 }
 
 impl Samples {
@@ -16,6 +17,7 @@ impl Samples {
         Samples {
             fft: calculate_fft(&data),
             data,
+            autocor: None,
         }
     }
 
@@ -30,6 +32,7 @@ impl Samples {
                 .iter_mut()
                 .zip(other.fft.iter())
                 .for_each(|(a, b)| *a += b);
+            self.autocor = None;
         } else {
             let items_to_add =
                 self.data.len().max(other.data.len()) - self.data.len().min(other.data.len());
@@ -54,6 +57,7 @@ impl Samples {
                 .iter_mut()
                 .zip(other.fft.iter())
                 .for_each(|(a, b)| *a -= b);
+            self.autocor = None;
         } else {
             let items_to_add =
                 self.data.len().max(other.data.len()) - self.data.len().min(other.data.len());
@@ -90,8 +94,13 @@ impl Samples {
         self.data
     }
 
-    pub fn auto_correlate(&self) -> f32 {
-        calculate_autocorrelation(self.fft.clone())
+    pub fn auto_correlate(&mut self) -> f32 {
+        if let Some(auto_cor) = self.autocor {
+            return auto_cor;
+        }
+
+        self.autocor = Some(calculate_autocorrelation(self.fft.clone()));
+        self.autocor.unwrap()
     }
 
     pub fn fft(&self) -> &Vec<Complex<f32>> {
@@ -105,6 +114,7 @@ impl Samples {
     /// Resets all the caches since the underlying data has changed
     fn update_cache(&mut self) {
         self.fft = calculate_fft(&self.data);
+        self.autocor = None;
     }
 }
 

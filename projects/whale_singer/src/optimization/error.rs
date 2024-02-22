@@ -14,8 +14,8 @@ pub(crate) struct ErrorCalculator {
     planner: FftPlanner<f32>,
     forward: HashMap<usize, Arc<dyn Fft<f32>>>,
     inverse: HashMap<usize, Arc<dyn Fft<f32>>>,
-    autocor_time_cache: HashMap<Samples, f32>,
-    autocor_freq_cache: HashMap<Samples, f32>,
+    autocor_time_cache: HashMap<usize, f32>,
+    autocor_freq_cache: HashMap<usize, f32>,
 }
 
 impl Default for ErrorCalculator {
@@ -59,7 +59,7 @@ impl ErrorCalculator {
         let b = &input.clone().to_vec();
 
         // todo: the auto correlation for the reference could be cached between calls, need to find the right key
-        // since f32 doesn't implement hash
+        // since f32 doesn't implement hash. This is solved by the sample based caching
 
         // time error
         let ref_time = self.cross_correlation(a, a); // todo: benchmark to see if sample approach is faster
@@ -78,7 +78,7 @@ impl ErrorCalculator {
 
         const TIME_WEIGHT: f64 = 1.0;
         const FREQ_WEIGHT: f64 = 1.0;
-        const POWER_WEIGHT: f64 = 1.0;
+        const POWER_WEIGHT: f64 = 1.0; // todo add back in or normalize
 
         Ok(diff_time * TIME_WEIGHT + diff_freq * FREQ_WEIGHT + diff_power * POWER_WEIGHT)
     }
@@ -146,6 +146,10 @@ impl ErrorCalculator {
         self.cross_correlation_full_complex(a, b)[a.len() - 1]
     }
 }
+
+// fn get_or_insert<K, V>(k: K, or_else: Fn()->V) -> V {
+//     todo!()
+// }
 
 /// Returns the root mean squared error between two sample combinations
 pub(super) fn rms_error(a: &[f32], b: &[f32]) -> anyhow::Result<f64> {
