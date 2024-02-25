@@ -113,7 +113,7 @@ impl AtomOptimizer {
 
             let mut buffer = self.constructed_sample.chunk_samples(t_id);
 
-            let old_error = self.error_calc.weighted_error(&t_chunk.samples, &buffer)?;
+            let old_error = self.error_calc.weighted_error(t_chunk, &buffer)?;
             let mut best_error = old_error;
             let mut best_atom_chunk = None;
 
@@ -121,7 +121,7 @@ impl AtomOptimizer {
                 buffer.add(&atom.samples);
                 let error = self
                     .error_calc
-                    .weighted_error(&t_chunk.samples, &buffer)
+                    .weighted_error(t_chunk, &buffer)
                     .context("failed to calculate error")?;
                 if error < best_error {
                     best_error = error;

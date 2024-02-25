@@ -10,12 +10,14 @@ use rustfft::{
 
 use crate::samples::Samples;
 
+use super::chunks::Chunk;
+
 pub(crate) struct ErrorCalculator {
     planner: FftPlanner<f32>,
     forward: HashMap<usize, Arc<dyn Fft<f32>>>,
     inverse: HashMap<usize, Arc<dyn Fft<f32>>>,
     autocor_time_cache: HashMap<usize, f32>,
-    autocor_freq_cache: HashMap<usize, f32>,
+    autocor_freq_cache: HashMap<usize, Complex<f32>>,
 }
 
 impl Default for ErrorCalculator {
@@ -32,43 +34,60 @@ impl Default for ErrorCalculator {
 
 impl ErrorCalculator {
     fn get_forward(&mut self, len: usize) -> Arc<dyn Fft<f32>> {
-        match self.forward.entry(len) {
-            std::collections::hash_map::Entry::Occupied(x) => x.get().clone(),
-            std::collections::hash_map::Entry::Vacant(x) => {
-                x.insert(self.planner.plan_fft_forward(len)).clone()
-            }
-        }
+        get_or_insert(len, &mut self.forward, || {
+            self.planner.plan_fft_forward(len)
+        })
     }
 
     fn get_inverse(&mut self, len: usize) -> Arc<dyn Fft<f32>> {
-        match self.inverse.entry(len) {
-            std::collections::hash_map::Entry::Occupied(x) => x.get().clone(),
-            std::collections::hash_map::Entry::Vacant(x) => {
-                x.insert(self.planner.plan_fft_inverse(len)).clone()
-            }
+        get_or_insert(len, &mut self.inverse, || {
+            self.planner.plan_fft_inverse(len)
+        })
+    }
+
+    fn get_autocor_time(&mut self, ref_chunk: &Chunk) -> f32 {
+        if let Some(&cor) = self.autocor_time_cache.get(&ref_chunk.chunk_id) {
+            return cor;
         }
+
+        let a = &ref_chunk.samples.clone().to_vec();
+        let cor = self.cross_correlation(a, a);
+
+        self.autocor_time_cache.insert(ref_chunk.chunk_id, cor);
+        cor
+    }
+
+    fn get_autocor_freq(&mut self, reference: &Chunk) -> Complex<f32> {
+        if let Some(&cor) = self.autocor_freq_cache.get(&reference.chunk_id) {
+            return cor;
+        }
+
+        let cor = self.cross_correlation_complex(reference.samples.fft(), reference.samples.fft());
+
+        self.autocor_freq_cache.insert(reference.chunk_id, cor);
+        cor
     }
 
     /// https://stackoverflow.com/questions/20644599/similarity-between-two-signals-looking-for-simple-measure
     pub(super) fn weighted_error(
         &mut self,
-        reference: &Samples,
+        reference: &Chunk,
         input: &Samples,
     ) -> anyhow::Result<f64> {
-        let a = &reference.clone().to_vec();
+        let a = &reference.samples.clone().to_vec();
         let b = &input.clone().to_vec();
 
         // todo: the auto correlation for the reference could be cached between calls, need to find the right key
         // since f32 doesn't implement hash. This is solved by the sample based caching
 
         // time error
-        let ref_time = self.cross_correlation(a, a); // todo: benchmark to see if sample approach is faster
-        let inp_time = self.cross_correlation(a, b); // todo: benchmark to see if sample approach is faster
+        let ref_time = self.get_autocor_time(reference); // todo: benchmark to see if sample approach is faster
+        let inp_time = self.cross_correlation_time(&reference.samples, input); // todo: benchmark to see if sample approach is faster
         let diff_time = (ref_time - inp_time).abs() as f64;
 
         // freq error
-        let ref_freq = self.cross_correlation_complex(reference.fft(), reference.fft());
-        let inp_freq = self.cross_correlation_complex(reference.fft(), input.fft());
+        let ref_freq = self.get_autocor_freq(reference);
+        let inp_freq = self.cross_correlation_complex(reference.samples.fft(), input.fft());
         let diff_freq = (ref_freq - inp_freq).abs() as f64;
 
         // power error
@@ -145,11 +164,37 @@ impl ErrorCalculator {
         assert_eq!(a.len(), b.len()); // need to figure out how this works for unqueal samples
         self.cross_correlation_full_complex(a, b)[a.len() - 1]
     }
+
+    pub fn cross_correlation_time(&mut self, a: &Samples, b: &Samples) -> f32 {
+        assert_eq!(a.fft().len(), b.fft().len());
+
+        let len = a.fft().len();
+        let mut buf = vec![Complex::zero(); len];
+        buf.iter_mut()
+            .zip(a.fft().iter().zip(b.fft().iter()))
+            // corr(a, b) = ifft(fft(a_and_zeros) * conj(fft(b_and_zeros)))
+            .for_each(|(buf, (a, b))| *buf = a * b.conj());
+
+        let ffti = self.get_inverse(len);
+        ffti.process(&mut buf);
+        buf.iter_mut().for_each(|x| *x /= len as f32);
+
+        // todo: why is the fft offset to zero here rather than a.len() - 1?
+        buf[0].re()
+    }
 }
 
-// fn get_or_insert<K, V>(k: K, or_else: Fn()->V) -> V {
-//     todo!()
-// }
+fn get_or_insert<K, V, F>(key: K, cache: &mut HashMap<K, V>, or_else: F) -> V
+where
+    K: std::hash::Hash + std::cmp::Eq + std::cmp::PartialEq,
+    V: Clone,
+    F: FnOnce() -> V,
+{
+    match cache.entry(key) {
+        std::collections::hash_map::Entry::Occupied(x) => x.get().clone(),
+        std::collections::hash_map::Entry::Vacant(x) => x.insert(or_else()).clone(),
+    }
+}
 
 /// Returns the root mean squared error between two sample combinations
 pub(super) fn rms_error(a: &[f32], b: &[f32]) -> anyhow::Result<f64> {
@@ -191,7 +236,18 @@ mod tests {
         );
 
         assert_eq!(
-            error.cross_correlation(&[1.0, 2.0, 3.0, 4.0], &[1.0, 2.0, 3.0, 4.0]),
+            error.cross_correlation_time(
+                &Samples::new(vec![1.0, 2.0, 3.0]),
+                &Samples::new(vec![0.0, 1.0, 0.5])
+            ),
+            3.5
+        );
+
+        assert_eq!(
+            error.cross_correlation_time(
+                &Samples::new(vec![1.0, 2.0, 3.0, 4.0]),
+                &Samples::new(vec![1.0, 2.0, 3.0, 4.0])
+            ),
             30.0
         );
     }
