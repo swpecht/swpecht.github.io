@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use rustfft::{
     num_complex::{Complex, ComplexFloat},
-    num_traits::Zero,
+    num_traits::{PrimInt, Zero},
     FftPlanner,
 };
 
@@ -144,7 +144,10 @@ impl From<Vec<f32>> for Samples {
 fn calculate_ffts(data: &[f32]) -> (Vec<Complex<f32>>, Vec<Complex<f32>>) {
     let mut planner = FftPlanner::<f32>::new();
 
-    let len = 2 * data.len() - 1;
+    // let len = 2 * data.len() - 1;
+    // We use a lenght of the form 2^n as this is the fastest for the fft library
+    // https://docs.rs/rustfft/latest/rustfft/
+    let len = 2.pow(usize::BITS - (2 * data.len() - 1).leading_zeros());
     let mut fft_buf = data.iter().map(|&x| Complex::new(x, 0.0)).collect_vec();
     fft_buf.extend((fft_buf.len()..len).map(|_| Complex::zero()));
 

@@ -13,7 +13,6 @@ use super::chunks::Chunk;
 
 pub(crate) struct ErrorCalculator {
     planner: FftPlanner<f32>,
-    forward: HashMap<usize, Arc<dyn Fft<f32>>>,
     inverse: HashMap<usize, Arc<dyn Fft<f32>>>,
     autocor_time_cache: HashMap<usize, f32>,
     autocor_freq_cache: HashMap<usize, Complex<f32>>,
@@ -23,7 +22,6 @@ impl Default for ErrorCalculator {
     fn default() -> Self {
         Self {
             planner: FftPlanner::<f32>::new(),
-            forward: Default::default(),
             inverse: Default::default(),
             autocor_time_cache: Default::default(),
             autocor_freq_cache: Default::default(),
@@ -32,12 +30,6 @@ impl Default for ErrorCalculator {
 }
 
 impl ErrorCalculator {
-    fn get_forward(&mut self, len: usize) -> Arc<dyn Fft<f32>> {
-        get_or_insert(len, &mut self.forward, || {
-            self.planner.plan_fft_forward(len)
-        })
-    }
-
     fn get_inverse(&mut self, len: usize) -> Arc<dyn Fft<f32>> {
         get_or_insert(len, &mut self.inverse, || {
             self.planner.plan_fft_inverse(len)
@@ -95,7 +87,7 @@ impl ErrorCalculator {
 
         const TIME_WEIGHT: f64 = 1.0;
         const FREQ_WEIGHT: f64 = 1.0;
-        const POWER_WEIGHT: f64 = 1.0; // todo add back in or normalize
+        const POWER_WEIGHT: f64 = 0.0; // todo add back in or normalize
 
         Ok(diff_time * TIME_WEIGHT + diff_freq * FREQ_WEIGHT + diff_power * POWER_WEIGHT)
     }
