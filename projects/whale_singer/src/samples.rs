@@ -112,6 +112,10 @@ impl Samples {
         &self.fft
     }
 
+    pub fn data(&self) -> &Vec<f32> {
+        &self.data
+    }
+
     /// Fast fourier transform of the fast forier transform. Useful for calculating the cross corelation of frequency
     pub fn fft_fft(&self) -> &Vec<Complex<f32>> {
         &self.fft_fft

@@ -47,7 +47,7 @@ impl ImprovementDetails {
 
 impl AtomOptimizer {
     pub fn new(target: &[f32], atoms: &[Vec<f32>]) -> Self {
-        let chunk_len = SAMPLE_RATE / 1000;
+        let chunk_len = SAMPLE_RATE / 10;
 
         let sample_chunks = to_chunks(&[target.to_vec()], chunk_len);
         let atom_chunks = to_chunks(atoms, chunk_len);
@@ -109,6 +109,7 @@ impl AtomOptimizer {
                 // don't re-calculate if we already know the best option
                 continue;
             }
+
             populate_progress::set(t_id * 100 / num_chunks);
 
             let mut buffer = self.constructed_sample.chunk_samples(t_id);
@@ -118,6 +119,17 @@ impl AtomOptimizer {
             let mut best_atom_chunk = None;
 
             for atom in self.atom_chunks.iter() {
+                // only allow a single part of an atom in each target chunk
+                // if !self.constructed_sample.atoms(t_id).is_empty()
+                if self
+                    .constructed_sample
+                    .atoms(t_id)
+                    .iter()
+                    .any(|c| c.atom_id == atom.atom_id)
+                {
+                    continue;
+                }
+
                 buffer.add(&atom.samples);
                 let error = self
                     .error_calc

@@ -27,6 +27,10 @@ impl ConstructedSample {
         }
     }
 
+    pub fn atoms(&self, chunk_id: usize) -> &Vec<Chunk> {
+        &self.atom_chunks[chunk_id]
+    }
+
     /// Returns the chunk sample made up of all atoms assigned to that chunk
     pub fn chunk_samples(&self, chunk_id: usize) -> Samples {
         let mut samples = Samples::new(vec![0.0; self.chunk_len]);

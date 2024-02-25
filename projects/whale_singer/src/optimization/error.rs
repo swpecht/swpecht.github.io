@@ -64,12 +64,6 @@ impl ErrorCalculator {
         reference: &Chunk,
         input: &Samples,
     ) -> anyhow::Result<f64> {
-        let a = &reference.samples.clone().to_vec();
-        let b = &input.clone().to_vec();
-
-        // todo: the auto correlation for the reference could be cached between calls, need to find the right key
-        // since f32 doesn't implement hash. This is solved by the sample based caching
-
         // time error
         let ref_time = self.get_autocor_time(reference); // todo: benchmark to see if sample approach is faster
         let inp_time = self.cross_correlation(reference.samples.fft(), input.fft()); // todo: benchmark to see if sample approach is faster
@@ -81,13 +75,13 @@ impl ErrorCalculator {
         let diff_freq = (ref_freq - inp_freq).abs() as f64;
 
         // power error
-        let ref_power: f32 = a.iter().map(|x| x.powi(2)).sum();
-        let inp_power: f32 = b.iter().map(|x| x.powi(2)).sum();
+        let ref_power: f32 = reference.samples.data().iter().map(|x| x.powi(2)).sum();
+        let inp_power: f32 = input.data().iter().map(|x| x.powi(2)).sum();
         let diff_power = (ref_power - inp_power).abs() as f64;
 
         const TIME_WEIGHT: f64 = 1.0;
         const FREQ_WEIGHT: f64 = 1.0;
-        const POWER_WEIGHT: f64 = 0.0; // todo add back in or normalize
+        const POWER_WEIGHT: f64 = 1.0; // todo add back in or normalize
 
         Ok(diff_time * TIME_WEIGHT + diff_freq * FREQ_WEIGHT + diff_power * POWER_WEIGHT)
     }
