@@ -8,14 +8,20 @@ use rustfft::{
 #[derive(Clone, Debug, Default)]
 pub struct Samples {
     data: Vec<f32>,
+    /// the fft of the data
     fft: Vec<Complex<f32>>,
+    /// the fft of the fft of the data
+    fft_fft: Vec<Complex<f32>>,
     autocor: Option<f32>,
 }
 
 impl Samples {
     pub fn new(data: Vec<f32>) -> Self {
+        let (fft, fft_fft) = calculate_ffts(&data);
+
         Samples {
-            fft: calculate_fft(&data),
+            fft,
+            fft_fft,
             data,
             autocor: None,
         }
@@ -31,6 +37,10 @@ impl Samples {
             self.fft
                 .iter_mut()
                 .zip(other.fft.iter())
+                .for_each(|(a, b)| *a += b);
+            self.fft_fft
+                .iter_mut()
+                .zip(other.fft_fft.iter())
                 .for_each(|(a, b)| *a += b);
             self.autocor = None;
         } else {
@@ -56,6 +66,10 @@ impl Samples {
             self.fft
                 .iter_mut()
                 .zip(other.fft.iter())
+                .for_each(|(a, b)| *a -= b);
+            self.fft_fft
+                .iter_mut()
+                .zip(other.fft_fft.iter())
                 .for_each(|(a, b)| *a -= b);
             self.autocor = None;
         } else {
@@ -94,17 +108,13 @@ impl Samples {
         self.data
     }
 
-    pub fn auto_correlate(&mut self) -> f32 {
-        if let Some(auto_cor) = self.autocor {
-            return auto_cor;
-        }
-
-        self.autocor = Some(calculate_autocorrelation(self.fft.clone()));
-        self.autocor.unwrap()
-    }
-
     pub fn fft(&self) -> &Vec<Complex<f32>> {
         &self.fft
+    }
+
+    /// Fast fourier transform of the fast forier transform. Useful for calculating the cross corelation of frequency
+    pub fn fft_fft(&self) -> &Vec<Complex<f32>> {
+        &self.fft_fft
     }
 
     pub fn cross_correlation(&self, other: &Self) -> f32 {
@@ -113,7 +123,7 @@ impl Samples {
 
     /// Resets all the caches since the underlying data has changed
     fn update_cache(&mut self) {
-        self.fft = calculate_fft(&self.data);
+        (self.fft, self.fft_fft) = calculate_ffts(&self.data);
         self.autocor = None;
     }
 }
@@ -130,28 +140,22 @@ impl From<Vec<f32>> for Samples {
     }
 }
 
-fn calculate_fft(data: &[f32]) -> Vec<Complex<f32>> {
+/// Returns the (fft, fft_fft)
+fn calculate_ffts(data: &[f32]) -> (Vec<Complex<f32>>, Vec<Complex<f32>>) {
     let mut planner = FftPlanner::<f32>::new();
+
     let len = 2 * data.len() - 1;
+    let mut fft_buf = data.iter().map(|&x| Complex::new(x, 0.0)).collect_vec();
+    fft_buf.extend((fft_buf.len()..len).map(|_| Complex::zero()));
+
     let fft = planner.plan_fft_forward(len);
 
-    let mut buf = vec![Complex::zero(); len];
-    buf[..data.len()].copy_from_slice(&data.iter().map(|&x| Complex::new(x, 0.0)).collect_vec());
-    fft.process(&mut buf);
-    buf
-}
+    fft.process(&mut fft_buf);
 
-fn calculate_autocorrelation(mut fft: Vec<Complex<f32>>) -> f32 {
-    // multiply the fft by it's conjugate for cross correlation
-    fft.iter_mut().for_each(|x| *x *= x.conj());
+    let mut fft2_buf = fft_buf.clone();
+    fft.process(&mut fft2_buf);
 
-    let mut planner = FftPlanner::<f32>::new();
-    let len = fft.len();
-    let ffti = planner.plan_fft_inverse(len);
-    ffti.process(&mut fft);
-    fft.iter_mut().for_each(|x| *x /= len as f32);
-    // fft[(fft.len() + 1) / 2 - 1].re()
-    fft[0].re()
+    (fft_buf, fft2_buf)
 }
 
 fn calculate_cross_correlation(
@@ -178,33 +182,18 @@ fn calculate_cross_correlation(
 #[cfg(test)]
 mod tests {
 
-    use crate::optimization::error::ErrorCalculator;
-
     use super::*;
 
     #[test]
     fn test_cross_correlation() {
-        let mut error_calc = ErrorCalculator::default();
-        let data = vec![1.0, 2.0, 3.0, 4.0];
-        let fft = calculate_fft(&data);
-        assert_eq!(
-            calculate_autocorrelation(fft),
-            error_calc.cross_correlation(&data, &data)
-        );
-
         let mut a = Samples::new(vec![1.0, 2.0, 3.0, 4.0]);
-        assert_eq!(a.auto_correlate(), 30.0);
-        let should_fft = calculate_fft(&a.data.to_vec());
+        let (should_fft, _) = calculate_ffts(&a.data.to_vec());
         assert_eq!(a.fft(), &should_fft);
         a.add(&a.clone());
         // since we added the signal to itself, the signal is 2x the old one. The fft should also be 2x the old one
         assert_eq!(a.fft(), &should_fft.iter().map(|x| 2.0 * x).collect_vec());
         // we check explicitly that the fft is the same as the fft of the doubled signal
         assert_eq!(a.fft(), Samples::new(vec![2.0, 4.0, 6.0, 8.0]).fft());
-        assert_eq!(
-            a.auto_correlate(),
-            Samples::new(vec![2.0, 4.0, 6.0, 8.0]).auto_correlate()
-        );
 
         // tests from: https://numpy.org/doc/stable/reference/generated/numpy.correlate.html
         assert_eq!(

@@ -1,7 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
 use anyhow::bail;
-use itertools::Itertools;
 use rustfft::{
     num_complex::{Complex, ComplexFloat},
     num_traits::Zero,
@@ -50,11 +49,10 @@ impl ErrorCalculator {
             return cor;
         }
 
-        let a = &ref_chunk.samples.clone().to_vec();
-        let cor = self.cross_correlation(a, a);
+        let cor = self.cross_correlation(ref_chunk.samples.fft(), ref_chunk.samples.fft());
 
-        self.autocor_time_cache.insert(ref_chunk.chunk_id, cor);
-        cor
+        self.autocor_time_cache.insert(ref_chunk.chunk_id, cor.re());
+        cor.re()
     }
 
     fn get_autocor_freq(&mut self, reference: &Chunk) -> Complex<f32> {
@@ -62,7 +60,7 @@ impl ErrorCalculator {
             return cor;
         }
 
-        let cor = self.cross_correlation_complex(reference.samples.fft(), reference.samples.fft());
+        let cor = self.cross_correlation(reference.samples.fft_fft(), reference.samples.fft_fft());
 
         self.autocor_freq_cache.insert(reference.chunk_id, cor);
         cor
@@ -82,12 +80,12 @@ impl ErrorCalculator {
 
         // time error
         let ref_time = self.get_autocor_time(reference); // todo: benchmark to see if sample approach is faster
-        let inp_time = self.cross_correlation_time(&reference.samples, input); // todo: benchmark to see if sample approach is faster
+        let inp_time = self.cross_correlation(reference.samples.fft(), input.fft()); // todo: benchmark to see if sample approach is faster
         let diff_time = (ref_time - inp_time).abs() as f64;
 
         // freq error
         let ref_freq = self.get_autocor_freq(reference);
-        let inp_freq = self.cross_correlation_complex(reference.samples.fft(), input.fft());
+        let inp_freq = self.cross_correlation(reference.samples.fft_fft(), input.fft_fft());
         let diff_freq = (ref_freq - inp_freq).abs() as f64;
 
         // power error
@@ -102,76 +100,17 @@ impl ErrorCalculator {
         Ok(diff_time * TIME_WEIGHT + diff_freq * FREQ_WEIGHT + diff_power * POWER_WEIGHT)
     }
 
-    fn cross_correlation_full(&mut self, a: &[f32], b: &[f32]) -> Vec<f32> {
-        self.cross_correlation_full_complex(
-            &a.iter().map(|&x| Complex::new(x, 0.0)).collect_vec(),
-            &b.iter().map(|&x| Complex::new(x, 0.0)).collect_vec(),
-        )
-        .into_iter()
-        .map(|x| x.re())
-        .collect_vec()
-    }
-
-    /// Compute the cross correlation of a and b
-    ///
-    /// adapted from https://dsp.stackexchange.com/questions/736/how-do-i-implement-cross-correlation-to-prove-two-audio-files-are-similar
-    ///
-    /// todo: could be sped up by using a realfft only library
-    fn cross_correlation_full_complex(
+    fn cross_correlation(
         &mut self,
-        a: &[Complex<f32>],
-        b: &[Complex<f32>],
-    ) -> Vec<Complex<f32>> {
-        // pad the vectors so they seem to go to 0 in the long term
-        let len = a.len() + b.len() - 1;
-
-        let fft = self.get_forward(len);
-
-        let mut a_buf = vec![Complex::zero(); len];
-        a_buf[..a.len()].copy_from_slice(a);
-        let mut scratch = vec![Complex::default(); fft.get_inplace_scratch_len()];
-        fft.process_with_scratch(&mut a_buf, &mut scratch);
-
-        let mut b_buf = vec![Complex::zero(); len];
-        b_buf[len - b.len()..].copy_from_slice(b);
-        b_buf.reverse(); // reverse the input rather than using the complex conjugate
-        fft.process_with_scratch(&mut b_buf, &mut scratch);
-
-        a_buf
-            .iter_mut()
-            .zip(b_buf.iter())
-            .for_each(|(a, b)| *a *= b);
-
-        let ffti = self.get_inverse(len);
-        ffti.process_with_scratch(&mut a_buf, &mut scratch);
-        a_buf.iter_mut().for_each(|x| *x /= len as f32);
-
-        a_buf
-    }
-
-    // cross correlation similar to numpy valid mode when both arrays are equal length
-    pub fn cross_correlation(&mut self, a: &[f32], b: &[f32]) -> f32 {
-        assert_eq!(a.len(), b.len()); // need to figure out how this works for unqueal samples
-        self.cross_correlation_full(a, b)[a.len() - 1]
-    }
-
-    // cross correlation similar to numpy valid mode when both arrays are equal length
-    fn cross_correlation_complex(
-        &mut self,
-        a: &[Complex<f32>],
-        b: &[Complex<f32>],
+        a_fft: &[Complex<f32>],
+        b_fft: &[Complex<f32>],
     ) -> Complex<f32> {
-        assert_eq!(a.len(), b.len()); // need to figure out how this works for unqueal samples
-        self.cross_correlation_full_complex(a, b)[a.len() - 1]
-    }
+        assert_eq!(a_fft.len(), b_fft.len());
 
-    pub fn cross_correlation_time(&mut self, a: &Samples, b: &Samples) -> f32 {
-        assert_eq!(a.fft().len(), b.fft().len());
-
-        let len = a.fft().len();
+        let len = a_fft.len();
         let mut buf = vec![Complex::zero(); len];
         buf.iter_mut()
-            .zip(a.fft().iter().zip(b.fft().iter()))
+            .zip(a_fft.iter().zip(b_fft.iter()))
             // corr(a, b) = ifft(fft(a_and_zeros) * conj(fft(b_and_zeros)))
             .for_each(|(buf, (a, b))| *buf = a * b.conj());
 
@@ -180,7 +119,7 @@ impl ErrorCalculator {
         buf.iter_mut().for_each(|x| *x /= len as f32);
 
         // todo: why is the fft offset to zero here rather than a.len() - 1?
-        buf[0].re()
+        buf[0]
     }
 }
 
@@ -197,7 +136,7 @@ where
 }
 
 /// Returns the root mean squared error between two sample combinations
-pub(super) fn rms_error(a: &[f32], b: &[f32]) -> anyhow::Result<f64> {
+pub(super) fn _rms_error(a: &[f32], b: &[f32]) -> anyhow::Result<f64> {
     if a.len() != b.len() {
         bail!("cannot calculate rms error on vectors of different length");
     }
@@ -218,36 +157,25 @@ mod tests {
     #[test]
     fn test_cross_correlation() {
         let mut error = ErrorCalculator::default();
-        let res = error.cross_correlation_full(&[1.0, 2.0, 3.0, 4.0], &[2.0, 4.0, 6.0]);
-        assert!(res
-            .into_iter()
-            .zip(vec![6., 16., 28., 40., 22., 8.])
-            .all(|(a, b)| (a - b).abs() < 0.01));
 
         // tests from: https://numpy.org/doc/stable/reference/generated/numpy.correlate.html
-        let res = error.cross_correlation_full(&[1.0, 2.0, 3.0], &[0.0, 1.0, 0.5]);
-        assert!(res
-            .into_iter()
-            .zip(vec![0.5, 2., 3.5, 3., 0.])
-            .all(|(a, b)| (a - b).abs() < 0.01));
         assert_eq!(
-            error.cross_correlation(&[1.0, 2.0, 3.0], &[0.0, 1.0, 0.5]),
+            error
+                .cross_correlation(
+                    Samples::new(vec![1.0, 2.0, 3.0]).fft(),
+                    Samples::new(vec![0.0, 1.0, 0.5]).fft()
+                )
+                .re(),
             3.5
         );
 
         assert_eq!(
-            error.cross_correlation_time(
-                &Samples::new(vec![1.0, 2.0, 3.0]),
-                &Samples::new(vec![0.0, 1.0, 0.5])
-            ),
-            3.5
-        );
-
-        assert_eq!(
-            error.cross_correlation_time(
-                &Samples::new(vec![1.0, 2.0, 3.0, 4.0]),
-                &Samples::new(vec![1.0, 2.0, 3.0, 4.0])
-            ),
+            error
+                .cross_correlation(
+                    Samples::new(vec![1.0, 2.0, 3.0, 4.0]).fft(),
+                    Samples::new(vec![1.0, 2.0, 3.0, 4.0]).fft()
+                )
+                .re(),
             30.0
         );
     }
