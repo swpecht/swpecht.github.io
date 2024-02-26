@@ -79,9 +79,9 @@ impl ErrorCalculator {
         let inp_power: f32 = input.data().iter().map(|x| x.powi(2)).sum();
         let diff_power = (ref_power - inp_power).abs() as f64;
 
-        const TIME_WEIGHT: f64 = 1.0;
+        const TIME_WEIGHT: f64 = 0.0;
         const FREQ_WEIGHT: f64 = 1.0;
-        const POWER_WEIGHT: f64 = 1.0; // todo add back in or normalize
+        const POWER_WEIGHT: f64 = 0.0; // todo add back in or normalize
 
         Ok(diff_time * TIME_WEIGHT + diff_freq * FREQ_WEIGHT + diff_power * POWER_WEIGHT)
     }

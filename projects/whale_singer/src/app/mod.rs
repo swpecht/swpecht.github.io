@@ -19,6 +19,8 @@ use crossterm::{
 
 use ratatui::{prelude::*, widgets::Block};
 
+mod waveform;
+
 guage!(populate_progress);
 
 pub fn run_app() -> color_eyre::Result<()> {
@@ -37,10 +39,12 @@ pub fn run_app() -> color_eyre::Result<()> {
 }
 
 use crate::{
+    app::waveform::WaveformWidget,
     decode::extract_samples,
     encode::{save_wav, SAMPLE_RATE},
     guage,
     optimization::{AtomOptimizer, AtomSearchResult},
+    samples::Samples,
 };
 #[derive(Debug)]
 struct App {
@@ -49,6 +53,9 @@ struct App {
 
     target_spectogram: SpectogramWidget,
     current_spectogram: SpectogramWidget,
+
+    target_wav: WaveformWidget,
+    current_wav: WaveformWidget,
 
     /// Channles for managing work
     tx: Sender<Vec<f32>>,
@@ -62,6 +69,8 @@ impl Default for App {
             state: Default::default(),
             target_spectogram: Default::default(),
             current_spectogram: Default::default(),
+            target_wav: Default::default(),
+            current_wav: Default::default(),
             tx,
             rx,
         }
@@ -104,6 +113,7 @@ impl App {
         let mut target_samples = extract_samples(src).unwrap();
         target_samples.truncate(SAMPLE_RATE * 4);
         self.target_spectogram.set_samples(target_samples.clone());
+        self.target_wav.set_samples(target_samples.clone());
 
         let thread_tx = self.tx.clone();
         let target = target_samples;
@@ -180,7 +190,8 @@ impl App {
 
     fn handle_samples(&mut self) -> anyhow::Result<()> {
         if let std::result::Result::Ok(samples) = self.rx.try_recv() {
-            self.current_spectogram.set_samples(samples);
+            self.current_spectogram.set_samples(samples.clone());
+            self.current_wav.set_samples(samples);
         }
 
         Ok(())
@@ -204,15 +215,20 @@ impl Widget for &mut App {
             Layout::vertical([Constraint::Percentage(50), Constraint::Percentage(50)])
                 .areas(spectograms);
 
-        let [target_label, target_spec] =
-            Layout::horizontal([Constraint::Max(10), Constraint::Min(0)]).areas(target);
+        let [target_label, target_spec, target_wav] =
+            Layout::horizontal([Constraint::Max(10), Constraint::Min(0), Constraint::Min(0)])
+                .areas(target);
         Text::from("target").centered().render(target_label, buf);
-        self.target_spectogram.render(target_spec, buf);
 
-        let [cur_label, cur_spec] =
-            Layout::horizontal([Constraint::Max(10), Constraint::Min(0)]).areas(current);
+        self.target_spectogram.render(target_spec, buf);
+        self.target_wav.render(target_wav, buf);
+
+        let [cur_label, cur_spec, cur_wav] =
+            Layout::horizontal([Constraint::Max(10), Constraint::Min(0), Constraint::Min(0)])
+                .areas(current);
         Text::from("current").centered().render(cur_label, buf);
         self.current_spectogram.render(cur_spec, buf);
+        self.current_wav.render(cur_wav, buf);
 
         ratatui::widgets::Gauge::default()
             .percent(populate_progress::read() as u16)
