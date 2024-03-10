@@ -4,6 +4,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
+pub mod cards;
 pub mod gamestates;
 pub mod istate;
 pub mod iterator;
