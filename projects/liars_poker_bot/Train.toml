@@ -45,6 +45,13 @@ scoring_iterations = 1000
 max_cards_played = 4
 normalizer = "Lossy"
 
+[train.one_card_lossy]
+weight_file = "/var/lib/card_platypus/infostate.one_card_lossy"
+training_iterations = 200000000
+scoring_iterations = 1000
+max_cards_played = 1
+normalizer = "Lossy"
+
 [train.first_trick]
 weight_file = "/var/lib/card_platypus/infostate.first_trick"
 training_iterations = 200000000
