@@ -174,11 +174,21 @@ fn run_scratch(_args: Args) {
     )
     .unwrap();
 
+    println!(
+        "infostates: {}, indexsize: {}",
+        database.len(),
+        database.indexer_len()
+    );
     println!("finding missing istates");
+    let mut count = 0;
     let iterator = EuchreIsomorphicIStateIterator::with_face_up(3, &[EAction::NS]);
     for istate in iterator {
         if database.get(&istate).is_none() {
-            println!("{:?}", translate_istate!(istate, EAction))
+            println!("{:?}", translate_istate!(istate, EAction));
+            count += 1;
+        }
+        if count >= 20 {
+            break;
         }
     }
 
