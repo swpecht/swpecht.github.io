@@ -6,6 +6,7 @@ use std::path::Path;
 use card_platypus::algorithms::cfres::{self, InfoState};
 
 use card_platypus::database::indexer::Indexer;
+use card_platypus::database::NodeStore;
 use clap::{command, Parser, Subcommand, ValueEnum};
 
 use dashmap::iter;
@@ -152,27 +153,31 @@ fn run_scratch(_args: Args) {
     println!("cfres node {}", mem::size_of::<InfoState>());
     println!("istate key {}", mem::size_of::<IStateKey>());
 
-    let a = cfres::CFRES::new_euchre(
-        scripts::benchmark::get_rng(),
-        3,
+    // let a = cfres::CFRES::new_euchre(
+    //     scripts::benchmark::get_rng(),
+    //     3,
+    //     Some(Path::new(
+    //         "/var/lib/card_platypus/infostate.three_card_played_f32/",
+    //     )),
+    // );
+    // a.save().unwrap();
+    // println!(
+    //     "index size: {}, infostates: {}",
+    //     a.indexer_size(),
+    //     a.num_info_states()
+    // );
+    let database = NodeStore::new_euchre(
         Some(Path::new(
             "/var/lib/card_platypus/infostate.three_card_played_f32/",
         )),
-    );
-    a.save().unwrap();
-    println!(
-        "index size: {}, infostates: {}",
-        a.indexer_size(),
-        a.num_info_states()
-    );
-
-    println!("gathering istates");
-    let istates = a.get_infostates();
+        3,
+    )
+    .unwrap();
 
     println!("finding missing istates");
     let iterator = EuchreIsomorphicIStateIterator::with_face_up(3, &[EAction::NS]);
     for istate in iterator {
-        if !istates.contains_key(&istate) {
+        if database.get(&istate).is_none() {
             println!("{:?}", translate_istate!(istate, EAction))
         }
     }
