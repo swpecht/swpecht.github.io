@@ -137,6 +137,18 @@ fn run_euchre_benchmark(args: BenchmarkArgs) {
         warn!("failed to load istates for 3 card agent, skipping")
     }
 
+    let mut a = CFRES::new_euchre(get_rng(), 1);
+    let n = a.load(
+        Path::new("/var/lib/card_platypus/infostate.one_card_lossy/"),
+        1,
+    );
+    if n > 0 {
+        info!("loaded cfr 1 card lossy agent: {} istates", n);
+        agents.insert("cfr, 1 cards lossy".to_string(), &mut a);
+    } else {
+        warn!("failed to load istates for 1 card lossy agent, skipping")
+    }
+
     println!("Starting benchmark for agents: {:?}", agents.keys());
 
     // may need up to 19x the number fo full games to 10
