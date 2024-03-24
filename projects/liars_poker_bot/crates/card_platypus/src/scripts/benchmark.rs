@@ -322,7 +322,7 @@ fn run_jack_face_up_benchmark(args: BenchmarkArgs) {
     );
     agents.push(("pimcts, 50 worlds".to_string(), Rc::new(RefCell::new(a))));
 
-    let mut cfr = CFRES::new_euchre(
+    let cfr = CFRES::new_euchre(
         get_rng(),
         0,
         Some(&Path::new("/var/lib/card_platypus").join("infostate.baseline")),

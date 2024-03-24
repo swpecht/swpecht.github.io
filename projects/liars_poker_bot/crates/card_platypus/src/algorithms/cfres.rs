@@ -22,7 +22,6 @@ use games::{
     Action, GameState, Player,
 };
 use itertools::Itertools;
-use log::{debug, warn};
 use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, Rng, SeedableRng};
 use rayon::prelude::*;
 

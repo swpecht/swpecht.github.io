@@ -2,7 +2,6 @@ use std::marker::PhantomData;
 
 use games::{actions, resample::ResampleFromInfoState, Action, GameState, Player};
 use itertools::Itertools;
-use log::warn;
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
 use crate::{

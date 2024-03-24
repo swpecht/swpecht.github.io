@@ -376,13 +376,13 @@ impl<G: GameState + ResampleFromInfoState, E: Evaluator<G>> ISMCTSBot<G, E> {
         returns
     }
 
-    fn check_expand(&mut self, node_key: &IStateKey, actions: &Vec<Action>) -> Option<Action> {
+    fn check_expand(&mut self, node_key: &IStateKey, actions: &[Action]) -> Option<Action> {
         let node = self.nodes.entry(*node_key).or_default();
         if actions.len() == node.child_info.len() {
             return None;
         }
 
-        let mut shuffled_actions = actions.clone();
+        let mut shuffled_actions = actions.to_vec();
         shuffled_actions.shuffle(&mut self.rng);
 
         shuffled_actions

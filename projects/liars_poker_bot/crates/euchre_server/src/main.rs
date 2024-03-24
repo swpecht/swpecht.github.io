@@ -39,7 +39,7 @@ struct AppState {
 
 impl Default for AppState {
     fn default() -> Self {
-        let mut bot = CFRES::new_euchre(
+        let bot = CFRES::new_euchre(
             StdRng::from_rng(thread_rng()).unwrap(),
             3,
             Some(Path::new(
@@ -360,7 +360,6 @@ async fn main() -> std::io::Result<()> {
             config,
             OpenOptions::new()
                 .append(true)
-                .write(true)
                 .create(true)
                 .open("euchre_server.log")
                 .unwrap(),

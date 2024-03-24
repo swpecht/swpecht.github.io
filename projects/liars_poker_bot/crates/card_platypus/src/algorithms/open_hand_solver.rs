@@ -13,7 +13,7 @@ use games::{
     },
     Action, GameState, Player, Team,
 };
-use log::{info, trace, warn};
+use log::trace;
 
 use crate::{alloc::Pool, collections::actionvec::ActionVec};
 

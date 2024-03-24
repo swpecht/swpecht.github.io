@@ -230,7 +230,7 @@ struct JSONRow {
 }
 
 pub fn parse_weights(infostate_path: &str) {
-    let mut alg = CFRES::new_euchre(get_rng(), 0, Some(Path::new(infostate_path)));
+    let alg = CFRES::new_euchre(get_rng(), 0, Some(Path::new(infostate_path)));
 
     let loaded_states = alg.num_info_states();
     println!(

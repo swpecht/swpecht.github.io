@@ -7,8 +7,6 @@ use card_platypus::algorithms::cfres::{self, InfoState};
 use clap::{command, Parser, Subcommand, ValueEnum};
 
 use games::gamestates::bluff::BluffGameState;
-use games::gamestates::euchre::actions::EAction;
-use games::gamestates::euchre::iterator::EuchreIsomorphicIStateIterator;
 use games::gamestates::euchre::EuchreGameState;
 use games::gamestates::kuhn_poker::KPGameState;
 use games::istate::IStateKey;
@@ -114,7 +112,6 @@ fn main() {
             config,
             OpenOptions::new()
                 .append(true)
-                .write(true)
                 .create(true)
                 .open("liars_poker.log")
                 .unwrap(),
@@ -149,7 +146,7 @@ fn run_scratch(_args: Args) {
     println!("cfres node {}", mem::size_of::<InfoState>());
     println!("istate key {}", mem::size_of::<IStateKey>());
 
-    let mut a = cfres::CFRES::new_euchre(
+    let a = cfres::CFRES::new_euchre(
         scripts::benchmark::get_rng(),
         3,
         Some(Path::new(
@@ -159,7 +156,7 @@ fn run_scratch(_args: Args) {
     a.save().unwrap();
     println!("{}", a.indexer_size());
 
-    let mut a = cfres::CFRES::new_euchre(
+    let a = cfres::CFRES::new_euchre(
         scripts::benchmark::get_rng(),
         4,
         Some(Path::new("/var/lib/card_platypus/infostate.first_trick")),
