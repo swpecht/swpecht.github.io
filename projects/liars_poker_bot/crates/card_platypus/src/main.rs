@@ -154,7 +154,11 @@ fn run_scratch(_args: Args) {
         )),
     );
     a.save().unwrap();
-    println!("{}", a.indexer_size());
+    println!(
+        "index size: {}, infostates: {}",
+        a.indexer_size(),
+        a.num_info_states()
+    );
 
     let a = cfres::CFRES::new_euchre(
         scripts::benchmark::get_rng(),
@@ -162,7 +166,11 @@ fn run_scratch(_args: Args) {
         Some(Path::new("/var/lib/card_platypus/infostate.first_trick")),
     );
     a.save().unwrap();
-    println!("{}", a.indexer_size());
+    println!(
+        "index size: {}, infostates: {}",
+        a.indexer_size(),
+        a.num_info_states()
+    );
     // for i in 0..5 {
     //     let n = EuchreIsomorphicIStateIterator::with_face_up(i, &[EAction::NS]).count();
     //     println!("istates {}: {}", i, n);
