@@ -18,6 +18,7 @@ pub mod indexer;
 
 const BUCKET_SIZE: usize = std::mem::size_of::<InfoState>();
 const REMAP_INCREMENT: usize = 10_000_000;
+
 const INDEXER_NAME: &str = "indexer";
 
 // A performant, optionally diskback node storage system

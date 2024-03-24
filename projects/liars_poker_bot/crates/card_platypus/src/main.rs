@@ -1,15 +1,21 @@
 use std::fs::OpenOptions;
+use std::io::Read;
 use std::mem;
 use std::path::Path;
 
 use card_platypus::algorithms::cfres::{self, InfoState};
 
+use card_platypus::database::indexer::Indexer;
 use clap::{command, Parser, Subcommand, ValueEnum};
 
+use dashmap::iter;
 use games::gamestates::bluff::BluffGameState;
+use games::gamestates::euchre::actions::EAction;
+use games::gamestates::euchre::iterator::EuchreIsomorphicIStateIterator;
 use games::gamestates::euchre::EuchreGameState;
 use games::gamestates::kuhn_poker::KPGameState;
 use games::istate::IStateKey;
+use games::translate_istate;
 use log::{set_max_level, LevelFilter};
 
 use scripts::agent_exploitability::calcualte_agent_exploitability;
@@ -160,17 +166,15 @@ fn run_scratch(_args: Args) {
         a.num_info_states()
     );
 
-    let a = cfres::CFRES::new_euchre(
-        scripts::benchmark::get_rng(),
-        4,
-        Some(Path::new("/var/lib/card_platypus/infostate.first_trick")),
-    );
-    a.save().unwrap();
-    println!(
-        "index size: {}, infostates: {}",
-        a.indexer_size(),
-        a.num_info_states()
-    );
+    let istates = a.get_infostates();
+
+    let iterator = EuchreIsomorphicIStateIterator::with_face_up(3, &[EAction::NS]);
+    for istate in iterator {
+        if !istates.contains_key(&istate) {
+            println!("{:?}", translate_istate!(istate, EAction))
+        }
+    }
+
     // for i in 0..5 {
     //     let n = EuchreIsomorphicIStateIterator::with_face_up(i, &[EAction::NS]).count();
     //     println!("istates {}: {}", i, n);
