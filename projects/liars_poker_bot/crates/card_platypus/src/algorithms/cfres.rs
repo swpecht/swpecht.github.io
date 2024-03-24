@@ -155,17 +155,18 @@ impl<G> Seedable for CFRES<G> {
 }
 
 impl CFRES<EuchreGameState> {
-    pub fn new_euchre(rng: StdRng, max_cards_played: usize) -> Self {
+    pub fn new_euchre(rng: StdRng, max_cards_played: usize, path: Option<&Path>) -> Self {
         let normalizer: Box<dyn IStateNormalizer<EuchreGameState>> =
             Box::<EuchreNormalizer>::default();
 
-        CFRES::new_with_normalizer(rng, max_cards_played, normalizer)
+        CFRES::new_with_normalizer(rng, max_cards_played, normalizer, path)
     }
 
     pub fn new_with_normalizer(
         mut rng: StdRng,
         max_cards_played: usize,
         normalizer: Box<dyn IStateNormalizer<EuchreGameState>>,
+        path: Option<&Path>,
     ) -> Self {
         let pimcts_seed = rng.gen();
 
@@ -174,7 +175,7 @@ impl CFRES<EuchreGameState> {
             game_generator: Euchre::new_state,
             average_type: AverageType::default(),
             infostates: Arc::new(Mutex::new(
-                NodeStore::new_euchre(None, max_cards_played).unwrap(),
+                NodeStore::new_euchre(path, max_cards_played).unwrap(),
             )),
             // is_max_depth: post_discard_phase,
             depth_checker: Box::new(EuchreDepthChecker { max_cards_played }),
@@ -187,23 +188,6 @@ impl CFRES<EuchreGameState> {
             evaluator: OpenHandSolver::new_euchre(),
             normalizer,
         }
-    }
-
-    pub fn load(&mut self, path: &Path, max_cards_played: usize) -> usize {
-        self.infostates = Arc::new(Mutex::new(
-            NodeStore::new_euchre(Some(path), max_cards_played).unwrap(),
-        ));
-        let len = self.infostates.lock().unwrap().len();
-        debug!(
-            "loaded weights for {} infostates with {} iterations",
-            len, 0
-        );
-
-        if len == 0 {
-            warn!("no infostates loaded");
-        }
-
-        len
     }
 
     pub fn set_game_generator(&mut self, game_generator: fn() -> EuchreGameState) {

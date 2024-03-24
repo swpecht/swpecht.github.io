@@ -112,24 +112,34 @@ fn run_euchre_benchmark(args: BenchmarkArgs) {
     );
     agents.insert("pimcts, 50 worlds".to_string(), a);
 
-    let mut a = CFRES::new_euchre(get_rng(), 0);
-    let n = a.load(Path::new("/var/lib/card_platypus/infostate.baseline/"), 0);
+    let mut a = CFRES::new_euchre(
+        get_rng(),
+        0,
+        Some(Path::new("/var/lib/card_platypus/infostate.baseline/")),
+    );
+    let n = a.num_info_states();
     info!("loaded cfr baseline agent: {} istates", n);
     agents.insert("cfr, 0 cards played".to_string(), &mut a);
 
-    let mut a = CFRES::new_euchre(get_rng(), 1);
-    let n = a.load(
-        Path::new("/var/lib/card_platypus/infostate.one_card_played/"),
+    let mut a = CFRES::new_euchre(
+        get_rng(),
         1,
+        Some(Path::new(
+            "/var/lib/card_platypus/infostate.one_card_played/",
+        )),
     );
+    let n = a.num_info_states();
     info!("loaded cfr one card agent: {} istates", n);
     agents.insert("cfr, 1 cards played".to_string(), &mut a);
 
-    let mut a = CFRES::new_euchre(get_rng(), 3);
-    let n = a.load(
-        Path::new("/var/lib/card_platypus/infostate.three_card_played_f32/"),
+    let mut a = CFRES::new_euchre(
+        get_rng(),
         3,
+        Some(Path::new(
+            "/var/lib/card_platypus/infostate.three_card_played_f32/",
+        )),
     );
+    let n = a.num_info_states();
     if n > 0 {
         info!("loaded cfr 3 card agent: {} istates", n);
         agents.insert("cfr, 3 cards played f32".to_string(), &mut a);
@@ -137,11 +147,14 @@ fn run_euchre_benchmark(args: BenchmarkArgs) {
         warn!("failed to load istates for 3 card agent, skipping")
     }
 
-    let mut a = CFRES::new_euchre(get_rng(), 1);
-    let n = a.load(
-        Path::new("/var/lib/card_platypus/infostate.one_card_lossy/"),
+    let mut a = CFRES::new_euchre(
+        get_rng(),
         1,
+        Some(Path::new(
+            "/var/lib/card_platypus/infostate.one_card_lossy/",
+        )),
     );
+    let n = a.num_info_states();
     if n > 0 {
         info!("loaded cfr 1 card lossy agent: {} istates", n);
         agents.insert("cfr, 1 cards lossy".to_string(), &mut a);
@@ -309,11 +322,12 @@ fn run_jack_face_up_benchmark(args: BenchmarkArgs) {
     );
     agents.push(("pimcts, 50 worlds".to_string(), Rc::new(RefCell::new(a))));
 
-    let mut cfr = CFRES::new_euchre(get_rng(), 0);
-    let loaded = cfr.load(
-        &Path::new("/var/lib/card_platypus").join("infostate.baseline"),
+    let mut cfr = CFRES::new_euchre(
+        get_rng(),
         0,
+        Some(&Path::new("/var/lib/card_platypus").join("infostate.baseline")),
     );
+    let loaded = cfr.num_info_states();
     println!("loaded {loaded} infostates");
     agents.push(("pre-play cfr, 20m".to_string(), Rc::new(RefCell::new(cfr))));
 

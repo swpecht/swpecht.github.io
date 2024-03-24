@@ -39,12 +39,15 @@ struct AppState {
 
 impl Default for AppState {
     fn default() -> Self {
-        let mut bot = CFRES::new_euchre(StdRng::from_rng(thread_rng()).unwrap(), 3);
-
-        let n = bot.load(
-            Path::new("/var/lib/card_platypus/infostate.three_card_played"),
+        let mut bot = CFRES::new_euchre(
+            StdRng::from_rng(thread_rng()).unwrap(),
             3,
+            Some(Path::new(
+                "/var/lib/card_platypus/infostate.three_card_played",
+            )),
         );
+
+        let n = bot.num_info_states();
         info!("loaded bot with {n} infostates and 3 max cards played");
 
         let games: Mutex<HashMap<Uuid, GameData>> = Default::default();

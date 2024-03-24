@@ -149,16 +149,21 @@ fn run_scratch(_args: Args) {
     println!("cfres node {}", mem::size_of::<InfoState>());
     println!("istate key {}", mem::size_of::<IStateKey>());
 
-    let mut a = cfres::CFRES::new_euchre(scripts::benchmark::get_rng(), 3);
-    a.load(
-        Path::new("/var/lib/card_platypus/infostate.three_card_played_f32/"),
+    let mut a = cfres::CFRES::new_euchre(
+        scripts::benchmark::get_rng(),
         3,
+        Some(Path::new(
+            "/var/lib/card_platypus/infostate.three_card_played_f32/",
+        )),
     );
     a.save().unwrap();
     println!("{}", a.indexer_size());
 
-    let mut a = cfres::CFRES::new_euchre(scripts::benchmark::get_rng(), 4);
-    a.load(Path::new("/var/lib/card_platypus/infostate.first_trick"), 4);
+    let mut a = cfres::CFRES::new_euchre(
+        scripts::benchmark::get_rng(),
+        4,
+        Some(Path::new("/var/lib/card_platypus/infostate.first_trick")),
+    );
     a.save().unwrap();
     println!("{}", a.indexer_size());
     // for i in 0..5 {

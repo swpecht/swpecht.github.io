@@ -79,17 +79,22 @@ pub fn all_deal_cfr(args: PassOnBowerCFRArgs) {
     info!("starting new run of cfr. args {:?}", args);
 
     info!("starting creation of CFRES, including hash function");
+    let infostate_path = args.weight_file.as_str();
     let mut alg = match args.normalizer {
-        Normalizer::Lossless => CFRES::new_euchre(get_rng(), args.max_cards_played),
+        Normalizer::Lossless => CFRES::new_euchre(
+            get_rng(),
+            args.max_cards_played,
+            Some(Path::new(infostate_path)),
+        ),
         Normalizer::Lossy => CFRES::new_with_normalizer(
             get_rng(),
             args.max_cards_played,
             Box::<LossyEuchreNormalizer>::default(),
+            Some(Path::new(infostate_path)),
         ),
     };
 
-    let infostate_path = args.weight_file.as_str();
-    let loaded_states = alg.load(Path::new(infostate_path), args.max_cards_played);
+    let loaded_states = alg.num_info_states();
     info!(
         "loaded {} info states from {}",
         loaded_states, infostate_path
@@ -225,9 +230,9 @@ struct JSONRow {
 }
 
 pub fn parse_weights(infostate_path: &str) {
-    let mut alg = CFRES::new_euchre(get_rng(), 0);
+    let mut alg = CFRES::new_euchre(get_rng(), 0, Some(Path::new(infostate_path)));
 
-    let loaded_states = alg.load(Path::new(infostate_path), 0);
+    let loaded_states = alg.num_info_states();
     println!(
         "loaded {} info states from {}",
         loaded_states, infostate_path
@@ -282,9 +287,12 @@ pub fn parse_weights(infostate_path: &str) {
 pub fn analyze_istate(num_games: usize) {
     let istate = EuchreGameState::from("9sTsQsKsAs|9cTcKcAcTd|JdQdKdAd9h|JcQcJhAh9d|Js");
     let mut rng = get_rng();
-    let mut agent = CFRES::new_euchre(rng.clone(), 0);
-    let loaded = agent.load(Path::new("/var/lib/card_platypus/infostate.baseline"), 0);
-    info!("loaded {}", loaded);
+    let mut agent = CFRES::new_euchre(
+        rng.clone(),
+        0,
+        Some(Path::new("/var/lib/card_platypus/infostate.baseline")),
+    );
+    info!("loaded {}", agent.num_info_states());
 
     let mut pass_on_bower_games = Vec::new();
     for _ in 0..num_games {

@@ -7,7 +7,7 @@ use std::{
 use anyhow::{bail, Context};
 
 use games::istate::IStateKey;
-use log::debug;
+use log::{debug, warn};
 use memmap2::MmapMut;
 
 use crate::algorithms::cfres::InfoState;
@@ -34,8 +34,10 @@ impl NodeStore {
 
         let path = path.map(|x| x.to_path_buf());
         Ok(Self {
-            indexer: load_indexer(path.as_deref())
-                .unwrap_or_else(|_| Indexer::euchre(max_cards_played)),
+            indexer: load_indexer(path.as_deref()).unwrap_or_else(|x| {
+                warn!("failed to load indexer {}", x);
+                Indexer::euchre(max_cards_played)
+            }),
             mmap,
             path,
         })
