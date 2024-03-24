@@ -166,8 +166,10 @@ fn run_scratch(_args: Args) {
         a.num_info_states()
     );
 
+    println!("gathering istates");
     let istates = a.get_infostates();
 
+    println!("finding missing istates");
     let iterator = EuchreIsomorphicIStateIterator::with_face_up(3, &[EAction::NS]);
     for istate in iterator {
         if !istates.contains_key(&istate) {
