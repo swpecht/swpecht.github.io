@@ -449,6 +449,10 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
     pub fn num_info_states(&self) -> usize {
         self.infostates.lock().unwrap().len()
     }
+
+    pub fn indexer_size(&self) -> usize {
+        self.infostates.lock().unwrap().indexer_len()
+    }
 }
 
 impl<G> CFRES<G> {

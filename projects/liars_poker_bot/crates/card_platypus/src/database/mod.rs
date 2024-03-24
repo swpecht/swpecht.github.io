@@ -1,9 +1,10 @@
 use std::{
     fs::OpenOptions,
+    io::{Read, Write},
     path::{Path, PathBuf},
 };
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 
 use games::istate::IStateKey;
 use log::debug;
@@ -17,6 +18,7 @@ pub mod indexer;
 
 const BUCKET_SIZE: usize = std::mem::size_of::<InfoState>();
 const REMAP_INCREMENT: usize = 10_000_000;
+const INDEXER_NAME: &str = "indexer";
 
 // A performant, optionally diskback node storage system
 pub struct NodeStore {
@@ -32,7 +34,8 @@ impl NodeStore {
 
         let path = path.map(|x| x.to_path_buf());
         Ok(Self {
-            indexer: Indexer::euchre(max_cards_played),
+            indexer: load_indexer(path.as_deref())
+                .unwrap_or_else(|_| Indexer::euchre(max_cards_played)),
             mmap,
             path,
         })
@@ -119,6 +122,18 @@ impl NodeStore {
     pub fn commit(&mut self) -> anyhow::Result<()> {
         self.mmap.flush().context("failed to flush mmap")?;
 
+        let Some(dir) = self.path.clone() else {
+            return anyhow::Ok(());
+        };
+
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(dir.join(INDEXER_NAME))?;
+
+        let buf = serde_json::to_string(&self.indexer)?;
+        file.write_all(buf.as_bytes())?;
+
         anyhow::Ok(())
     }
 
@@ -138,6 +153,11 @@ impl NodeStore {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    /// Returns the full size of the index, regardless of how many entries are populated
+    pub fn indexer_len(&self) -> usize {
+        self.indexer.len()
     }
 }
 
@@ -168,4 +188,17 @@ fn get_mmap(dir: Option<&Path>, len: usize) -> anyhow::Result<MmapMut> {
     // Inform that re-ahead may not be useful
     mmap.advise(memmap2::Advice::Random)?;
     Ok(mmap)
+}
+
+fn load_indexer(path: Option<&Path>) -> anyhow::Result<Indexer> {
+    let Some(dir) = path else {
+        bail!("no path");
+    };
+
+    let mut file = OpenOptions::new().read(true).open(dir.join(INDEXER_NAME))?;
+    let mut buf = String::new();
+    file.read_to_string(&mut buf)?;
+
+    let indexer: Indexer = serde_json::from_str(&buf)?;
+    anyhow::Ok(indexer)
 }

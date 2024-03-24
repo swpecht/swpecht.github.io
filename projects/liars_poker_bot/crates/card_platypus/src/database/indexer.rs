@@ -13,24 +13,41 @@ use games::{
     Action,
 };
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 
 use crate::collections::mmapvec::MMapVec;
 
 const GAMMA: f64 = 1.7;
 
+#[derive(Clone, Copy, Serialize, Deserialize)]
+enum Sharder {
+    Euchre,
+    NoOp,
+}
+
+impl Sharder {
+    fn shard(&self, istate: &IStateKey) -> Option<(usize, IStateKey)> {
+        match self {
+            Sharder::Euchre => euchre_sharder(istate),
+            Sharder::NoOp => Some((0, *istate)),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct Indexer {
     phf: Mphf<IStateKey>,
     shard_len: usize,
     num_shards: usize,
     /// Returns the normalized istatekey and the associated shard
     /// Shards can be used to keep similar istates near each other in the database
-    sharder: fn(&IStateKey) -> Option<(usize, IStateKey)>,
+    sharder: Sharder,
 }
 
 impl Indexer {
     /// May return None if the key isn't in the original function, but this isn't guaranteed
     pub fn index(&self, key: &IStateKey) -> Option<usize> {
-        let (shard, normed) = (self.sharder)(key)?;
+        let (shard, normed) = self.sharder.shard(key)?;
         self.phf
             .try_hash(&normed)
             .map(|x| x as usize + (shard * self.shard_len))
@@ -61,7 +78,7 @@ impl Indexer {
             phf,
             shard_len: istates.len(),
             num_shards: 6, // one for each possible face up card
-            sharder: euchre_sharder,
+            sharder: Sharder::Euchre,
         }
     }
 
@@ -73,7 +90,7 @@ impl Indexer {
             phf,
             shard_len: istates.len(),
             num_shards: 1,
-            sharder: |x| Some((0, *x)),
+            sharder: Sharder::NoOp,
         }
     }
 
@@ -85,18 +102,8 @@ impl Indexer {
             phf,
             shard_len: istates.len(),
             num_shards: 1,
-            sharder: |x| Some((0, *x)),
+            sharder: Sharder::NoOp,
         }
-    }
-
-    // saves the perfect hash function
-    pub fn save_phf() {
-        todo!()
-    }
-
-    /// loads phf
-    pub fn load_phf() {
-        todo!()
     }
 }
 
