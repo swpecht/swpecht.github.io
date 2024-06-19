@@ -8,8 +8,8 @@ use bevy::{
 };
 
 use crate::{
-    gamestate::{SimId, SimState},
-    ui::ActionEvent,
+    gamestate::{Action, SimId, SimState},
+    ui::{ActionEvent, CurrentCharacter},
 };
 
 pub const TILE_SIZE: usize = 32;
@@ -113,6 +113,7 @@ fn sync_sim(
         .into_iter()
         .map(|(id, l, c)| (id, l.to_world(), c))
     {
+        // TODO: add support for changing location of things if they're already spawned
         let texture = asset_server.load(character.idle());
         let layout = TextureAtlasLayout::from_grid(Vec2::new(32.0, 32.0), 4, 1, None, None);
         let texture_atlas_layout = texture_atlas_layouts.add(layout);
@@ -169,26 +170,52 @@ fn action_system(
     mut ev_action: EventReader<ActionEvent>,
     query: Query<(Entity, &SimId, &Transform)>,
     mut sim: ResMut<SimState>,
+    mut cur: ResMut<CurrentCharacter>,
 ) {
     for ev in ev_action.read() {
-        sim.apply(ev.id, ev.action);
-
         debug!("action event received: {:?}", ev);
-        query
-            .iter()
-            .filter(|(_, id, _)| **id == ev.id)
-            .for_each(|(e, _, t)| {
-                let start = vec2(t.translation.x, t.translation.y);
-                let offset = vec2(TILE_SIZE as f32, 0.0);
-                let curve = Curve {
-                    start,
-                    end: start + offset,
-                    time: Stopwatch::new(),
-                    duration: Duration::from_secs(1),
-                };
-                commands.entity(e).insert(curve.clone());
-            });
+        sim.apply(ev.action);
+        use Action::*;
+        match ev.action {
+            EndTurn => {} // todo
+            Attack { dmg, range, aoe } => todo!(),
+            MoveUp | MoveDown | MoveLeft | MoveRight => {
+                handle_move(&mut commands, ev.action, &query, cur.0)
+            }
+        }
+        cur.0 = sim.cur_char();
+        debug!("{:?}", sim.cur_char());
     }
+}
+
+fn handle_move(
+    commands: &mut Commands,
+    action: Action,
+    query: &Query<(Entity, &SimId, &Transform)>,
+    cur: SimId,
+) {
+    query
+        .iter()
+        .filter(|(_, id, _)| **id == cur)
+        .for_each(|(e, _, t)| {
+            use Action::*;
+            let offset = match action {
+                MoveUp => vec2(0.0, TILE_SIZE as f32),
+                MoveDown => vec2(0.0, -1.0 * TILE_SIZE as f32),
+                MoveLeft => vec2(-1.0 * TILE_SIZE as f32, 0.0),
+                MoveRight => vec2(TILE_SIZE as f32, 0.0),
+                _ => panic!("invalid action passed to move handler"),
+            };
+
+            let start = vec2(t.translation.x, t.translation.y);
+            let curve = Curve {
+                start,
+                end: start + offset,
+                time: Stopwatch::new(),
+                duration: Duration::from_secs(1),
+            };
+            commands.entity(e).insert(curve.clone());
+        });
 }
 
 fn process_curves(

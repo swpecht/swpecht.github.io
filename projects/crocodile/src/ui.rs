@@ -20,6 +20,10 @@ impl Plugin for UIPlugin {
             .add_systems(
                 Update,
                 selection.run_if(input_just_pressed(MouseButton::Left)),
+            )
+            .add_systems(
+                Update,
+                handle_right_click.run_if(input_just_pressed(MouseButton::Right)),
             );
     }
 }
@@ -27,9 +31,12 @@ impl Plugin for UIPlugin {
 #[derive(Resource, Default)]
 struct SelectedCharacter(SimId);
 
+/// Track which character is currently up to go
+#[derive(Resource, Default)]
+pub struct CurrentCharacter(pub SimId);
+
 #[derive(Event, Debug)]
 pub struct ActionEvent {
-    pub id: SimId,
     pub action: Action,
 }
 
@@ -51,8 +58,7 @@ fn button_system(
 
                 if let Some(selected) = &selected {
                     ev_action.send(ActionEvent {
-                        id: selected.0,
-                        action: Action::Move { x: 1, y: 0 },
+                        action: Action::EndTurn,
                     });
                 }
             }
@@ -71,6 +77,7 @@ fn button_system(
 fn setup_ui(mut commands: Commands) {
     commands.init_resource::<MouseWorldCoords>();
     commands.init_resource::<SelectedCharacter>();
+    commands.init_resource::<CurrentCharacter>();
 
     // root node
     commands
@@ -162,7 +169,7 @@ fn setup_ui(mut commands: Commands) {
                         })
                         .with_children(|parent| {
                             parent.spawn(TextBundle::from_section(
-                                "Button",
+                                "End turn",
                                 TextStyle {
                                     font: Default::default(),
                                     font_size: 25.0,
@@ -251,4 +258,34 @@ fn selection(
 
     selected.0 = new_selection;
     debug!("new character selected: {:?}", new_selection);
+}
+
+fn handle_right_click(
+    mut ev_action: EventWriter<ActionEvent>,
+    mouse_coords: Res<MouseWorldCoords>,
+    sim: Res<SimState>,
+    current: ResMut<CurrentCharacter>,
+) {
+    debug!("handling right click");
+    let Some(loc) = sim.loc(current.0) else {
+        warn!("error handling right click, selected id isn't valid");
+        return;
+    };
+    let target = mouse_coords.to_sim();
+    let x_move = target.x as i8 - loc.x as i8;
+    let y_move = target.y as i8 - loc.y as i8;
+
+    let action = if x_move > 0 {
+        Action::MoveRight
+    } else if x_move < 0 {
+        Action::MoveLeft
+    } else if y_move > 0 {
+        Action::MoveUp
+    } else if y_move < 0 {
+        Action::MoveDown
+    } else {
+        return;
+    };
+
+    ev_action.send(ActionEvent { action });
 }
