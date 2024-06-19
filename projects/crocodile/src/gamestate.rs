@@ -1,6 +1,6 @@
 use bevy::{
     math::{vec2, Vec2},
-    prelude::Resource,
+    prelude::{Component, Resource},
 };
 use itertools::Itertools;
 
@@ -39,7 +39,7 @@ struct SimEntity {
     actions: Vec<Action>,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, Component, PartialEq, Eq)]
 pub struct SimId(usize);
 
 #[derive(Debug, Clone, Copy)]
@@ -79,7 +79,7 @@ impl SimState {
             .map(|x| x.as_ref().map(|x| x.id))?
     }
 
-    pub fn characters(&self) -> Vec<(SimCoords, Character)> {
+    pub fn characters(&self) -> Vec<(SimId, SimCoords, Character)> {
         self.grid
             .iter()
             .flatten()
@@ -87,6 +87,7 @@ impl SimState {
             .filter_map(|(i, x)| {
                 x.as_ref().map(|x| {
                     (
+                        x.id,
                         SimCoords {
                             x: i / WORLD_SIZE,
                             y: i % WORLD_SIZE,

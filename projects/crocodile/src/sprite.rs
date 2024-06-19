@@ -1,6 +1,16 @@
-use bevy::{math::vec3, prelude::*, render::camera::ScalingMode};
+use std::time::{Duration, Instant};
 
-use crate::{gamestate::SimState, ui::ActionEvent};
+use bevy::{
+    math::{vec2, vec3},
+    prelude::*,
+    render::camera::ScalingMode,
+    time::Stopwatch,
+};
+
+use crate::{
+    gamestate::{SimId, SimState},
+    ui::ActionEvent,
+};
 
 pub const TILE_SIZE: usize = 32;
 const GRID_WIDTH: usize = 20;
@@ -14,23 +24,26 @@ pub struct SpritePlugin;
 impl Plugin for SpritePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, (setup_camera, sync_sim, setup_tiles))
-            .add_systems(Update, (animate_sprite, movement_system, action_system));
+            .add_systems(Update, (animate_sprite, process_curves, action_system));
     }
 }
 
-/// This will be used to identify the main player entity
-#[derive(Component)]
-struct Player;
-
-#[derive(Component)]
+#[derive(Component, Clone)]
 struct Curve {
     start: Vec2,
     end: Vec2,
+    time: Stopwatch,
+    duration: Duration,
 }
 
 impl Curve {
-    fn lerp(&self, t: f32) -> Vec2 {
+    fn cur_pos(&self) -> Vec2 {
+        let t = (self.time.elapsed_secs() / self.duration.as_secs() as f32).min(1.0);
         self.start.lerp(self.end, t)
+    }
+
+    fn is_finished(&self) -> bool {
+        self.time.elapsed() >= self.duration
     }
 }
 
@@ -52,22 +65,6 @@ fn setup_camera(mut commands: Commands) {
         ScalingMode::FixedVertical((GRID_HEIGHT * TILE_SIZE + TILE_SIZE) as f32);
 
     commands.spawn((camera_bundle, MainCamera));
-}
-
-fn movement_system(
-    time: Res<Time>,
-    mut query: Query<(&mut Transform, &Curve)>,
-    mut gizmos: Gizmos,
-) {
-    for (mut transform, cubic_curve) in &mut query {
-        // Draw the curve
-        gizmos.linestrip_2d([cubic_curve.start, cubic_curve.end], Color::WHITE);
-        // position takes a point from the curve where 0 is the initial point
-        // and 1 is the last point
-        let t = (time.elapsed_seconds().sin() + 1.) / 2.;
-        let pos = cubic_curve.lerp(t);
-        transform.translation = vec3(pos.x, pos.y, transform.translation.z);
-    }
 }
 
 #[derive(Component)]
@@ -111,7 +108,11 @@ fn sync_sim(
     asset_server: Res<AssetServer>,
     mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
 ) {
-    for (loc, character) in sim.characters().into_iter().map(|(l, c)| (l.to_world(), c)) {
+    for (id, loc, character) in sim
+        .characters()
+        .into_iter()
+        .map(|(id, l, c)| (id, l.to_world(), c))
+    {
         let texture = asset_server.load(character.idle());
         let layout = TextureAtlasLayout::from_grid(Vec2::new(32.0, 32.0), 4, 1, None, None);
         let texture_atlas_layout = texture_atlas_layouts.add(layout);
@@ -129,7 +130,7 @@ fn sync_sim(
             },
             animation_indices,
             AnimationTimer(Timer::from_seconds(0.1, TimerMode::Repeating)),
-            Player,
+            id,
         ));
     }
 }
@@ -163,15 +164,42 @@ fn setup_tiles(
 }
 
 /// Translate action events into the proper display within the game visualization
-fn action_system(mut ev_levelup: EventReader<ActionEvent>) {
+fn action_system(
+    mut commands: Commands,
+    mut ev_levelup: EventReader<ActionEvent>,
+    query: Query<(Entity, &SimId), With<Transform>>,
+) {
     for ev in ev_levelup.read() {
-        debug!("action event received: {:?}", ev)
+        let curve = Curve {
+            start: vec2(0.0, 0.0),
+            end: vec2(TILE_SIZE as f32, 0.0),
+            time: Stopwatch::new(),
+            duration: Duration::from_secs(1),
+        };
+        debug!("action event received: {:?}", ev);
+        query
+            .iter()
+            .filter(|(_, id)| **id == ev.id)
+            .for_each(|(e, _)| {
+                commands.entity(e).insert(curve.clone());
+            });
     }
+}
 
-    // let curve = Curve {
-    //     start: vec2(0.0, 0.0),
-    //     end: vec2(10.0, 0.0),
-    // };
-    // let entity_id = query_player.single();
-    // commands.entity(entity_id).insert(curve);
+fn process_curves(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut gizmos: Gizmos,
+    mut query: Query<(Entity, &mut Transform, &mut Curve)>,
+) {
+    for (entity, mut transform, mut curve) in &mut query {
+        gizmos.linestrip_2d([curve.start, curve.end], Color::WHITE);
+        curve.time.tick(time.delta());
+        let pos = curve.cur_pos();
+        transform.translation = vec3(pos.x, pos.y, transform.translation.z);
+
+        if curve.is_finished() {
+            commands.entity(entity).remove::<Curve>();
+        }
+    }
 }

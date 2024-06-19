@@ -29,7 +29,7 @@ struct SelectedCharacter(SimId);
 
 #[derive(Event, Debug)]
 pub struct ActionEvent {
-    pub entity: SimId,
+    pub id: SimId,
     pub action: Action,
 }
 
@@ -51,7 +51,7 @@ fn button_system(
 
                 if let Some(selected) = &selected {
                     ev_action.send(ActionEvent {
-                        entity: selected.0,
+                        id: selected.0,
                         action: Action::MoveRight,
                     });
                 }
