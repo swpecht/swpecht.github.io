@@ -1,10 +1,5 @@
-use bevy::{
-    math::{vec2, Vec2},
-    prelude::{Component, Resource},
-};
+use bevy::prelude::{Component, Resource};
 use itertools::Itertools;
-
-use crate::sprite::TILE_SIZE;
 
 const WORLD_SIZE: usize = 100;
 
@@ -116,7 +111,7 @@ impl SimState {
     fn apply_end_turn(&mut self) {
         // reset movement
         let cur_char = self.cur_char();
-        if let Some((c, entity)) = self.grid.iter_mut().find(|(_, e)| e.id == cur_char) {
+        if let Some((_, entity)) = self.grid.iter_mut().find(|(_, e)| e.id == cur_char) {
             entity.movement = entity.turn_movement;
         }
 

@@ -42,7 +42,6 @@ pub struct ActionEvent {
 
 fn button_system(
     mut ev_action: EventWriter<ActionEvent>,
-    selected: Option<Res<SelectedCharacter>>,
     mut interaction_query: Query<
         (&Interaction, &mut BackgroundColor, &mut BorderColor),
         (Changed<Interaction>, With<Button>),
@@ -56,11 +55,9 @@ fn button_system(
                 border_color.0 = Color::RED;
                 warn!("button clicked");
 
-                if let Some(selected) = &selected {
-                    ev_action.send(ActionEvent {
-                        action: Action::EndTurn,
-                    });
-                }
+                ev_action.send(ActionEvent {
+                    action: Action::EndTurn,
+                });
             }
             Interaction::Hovered => {
                 *color = HOVERED_BUTTON.into();
