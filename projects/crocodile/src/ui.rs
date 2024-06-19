@@ -180,10 +180,17 @@ struct MouseWorldCoords(Vec2);
 
 impl MouseWorldCoords {
     fn to_sim(&self) -> SimCoords {
+        let offset = (TILE_SIZE / 2) as f32;
         SimCoords {
-            x: self.0.x as usize / TILE_SIZE,
-            y: self.0.y as usize / TILE_SIZE,
+            x: (self.0.x + offset) as usize / TILE_SIZE,
+            y: (self.0.y + offset) as usize / TILE_SIZE,
         }
+    }
+}
+
+impl SimCoords {
+    pub fn to_world(&self) -> Vec2 {
+        vec2((self.x * TILE_SIZE) as f32, (self.y * TILE_SIZE) as f32)
     }
 }
 
@@ -233,8 +240,9 @@ fn selection(
     // separate system to draw the selection highlight box whenever that is populated
 
     debug!(
-        "attempting to select character at: {:?}",
-        mouse_coords.to_sim()
+        "attempting to select character at: {:?} for raw coords: {:?}",
+        mouse_coords.to_sim(),
+        mouse_coords.0
     );
 
     let Some(new_selection) = sim.get_entity(mouse_coords.to_sim()) else {

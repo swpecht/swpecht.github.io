@@ -1,6 +1,6 @@
 use bevy::{math::vec3, prelude::*, render::camera::ScalingMode};
 
-use crate::ui::ActionEvent;
+use crate::{gamestate::SimState, ui::ActionEvent};
 
 pub const TILE_SIZE: usize = 32;
 const GRID_WIDTH: usize = 20;
@@ -13,7 +13,7 @@ pub struct SpritePlugin;
 
 impl Plugin for SpritePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, (setup_camera, setup, setup_tiles))
+        app.add_systems(Startup, (setup_camera, sync_sim, setup_tiles))
             .add_systems(Update, (animate_sprite, movement_system, action_system));
     }
 }
@@ -95,30 +95,43 @@ fn animate_sprite(
     }
 }
 
-fn setup(
+impl crate::gamestate::Character {
+    fn idle(&self) -> String {
+        use crate::gamestate::Character::*;
+        match self {
+            Knight => "pixel-crawler/Heroes/Knight/Idle/Idle-Sheet.png".to_string(),
+            Orc => "pixel-crawler/Enemy/Orc Crew/Orc/Idle/Idle-Sheet.png".to_string(),
+        }
+    }
+}
+
+fn sync_sim(
     mut commands: Commands,
+    sim: Res<SimState>,
     asset_server: Res<AssetServer>,
     mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
 ) {
-    let texture = asset_server.load("pixel-crawler/Heroes/Knight/Idle/Idle-Sheet.png");
-    let layout = TextureAtlasLayout::from_grid(Vec2::new(32.0, 32.0), 4, 1, None, None);
-    let texture_atlas_layout = texture_atlas_layouts.add(layout);
-    // Use only the subset of sprites in the sheet that make up the run animation
-    let animation_indices = AnimationIndices { first: 0, last: 3 };
-    commands.spawn((
-        SpriteSheetBundle {
-            texture,
-            atlas: TextureAtlas {
-                layout: texture_atlas_layout,
-                index: animation_indices.first,
+    for (loc, character) in sim.characters().into_iter().map(|(l, c)| (l.to_world(), c)) {
+        let texture = asset_server.load(character.idle());
+        let layout = TextureAtlasLayout::from_grid(Vec2::new(32.0, 32.0), 4, 1, None, None);
+        let texture_atlas_layout = texture_atlas_layouts.add(layout);
+        // Use only the subset of sprites in the sheet that make up the run animation
+        let animation_indices = AnimationIndices { first: 0, last: 3 };
+        commands.spawn((
+            SpriteSheetBundle {
+                texture,
+                atlas: TextureAtlas {
+                    layout: texture_atlas_layout,
+                    index: animation_indices.first,
+                },
+                transform: Transform::from_translation(vec3(loc.x, loc.y, CHAR_LAYER)),
+                ..default()
             },
-            transform: Transform::from_translation(vec3(0.0, 0.0, CHAR_LAYER)),
-            ..default()
-        },
-        animation_indices,
-        AnimationTimer(Timer::from_seconds(0.1, TimerMode::Repeating)),
-        Player,
-    ));
+            animation_indices,
+            AnimationTimer(Timer::from_seconds(0.1, TimerMode::Repeating)),
+            Player,
+        ));
+    }
 }
 
 fn setup_tiles(
