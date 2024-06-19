@@ -2,7 +2,7 @@ pub struct SimState {
     grid: Vec<Vec<Option<Entity>>>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum Action {
     EndTurn,
     Attack {
