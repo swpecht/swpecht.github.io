@@ -37,6 +37,8 @@ pub enum Action {
 #[derive(Clone)]
 struct SimEntity {
     id: SimId,
+    turn_movement: usize,
+    movement: usize,
     character: Character,
     actions: Vec<Action>,
 }
@@ -75,6 +77,8 @@ impl SimState {
             id: SimId(self.next_id),
             character,
             actions,
+            turn_movement: character.default_movement(),
+            movement: character.default_movement(),
         };
 
         self.initiative.push(SimId(self.next_id));
@@ -98,22 +102,28 @@ impl SimState {
     }
 
     fn apply_move_entity(&mut self, x: i8, y: i8) {
-        if let Some((c, _)) = self
+        if let Some((c, entity)) = self
             .grid
             .iter_mut()
             .find(|(_, e)| e.id == self.initiative[0])
         {
             c.x = (c.x as i8 + x) as usize;
             c.y = (c.y as i8 + y) as usize;
+            entity.movement -= 1;
         };
     }
 
     fn apply_end_turn(&mut self) {
+        // reset movement
+        let cur_char = self.cur_char();
+        if let Some((c, entity)) = self.grid.iter_mut().find(|(_, e)| e.id == cur_char) {
+            entity.movement = entity.turn_movement;
+        }
+
         self.initiative.rotate_left(1);
-        // TODO: reset movement
     }
 
-    pub fn get_entity(&self, coords: SimCoords) -> Option<SimId> {
+    pub fn get_id(&self, coords: SimCoords) -> Option<SimId> {
         self.grid
             .iter()
             .filter(|(c, _)| *c == coords)
@@ -130,5 +140,14 @@ impl SimState {
 
     pub fn loc(&self, id: SimId) -> Option<SimCoords> {
         self.grid.iter().find(|(_, e)| e.id == id).map(|(c, _)| *c)
+    }
+}
+
+impl Character {
+    fn default_movement(&self) -> usize {
+        match self {
+            Character::Knight => 8,
+            Character::Orc => 8,
+        }
     }
 }

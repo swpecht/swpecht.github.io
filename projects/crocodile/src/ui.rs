@@ -252,7 +252,7 @@ fn selection(
         mouse_coords.0
     );
 
-    let Some(new_selection) = sim.get_entity(mouse_coords.to_sim()) else {
+    let Some(new_selection) = sim.get_id(mouse_coords.to_sim()) else {
         return;
     };
 
