@@ -18,15 +18,17 @@ pub struct SimState {
 #[derive(Clone, Copy, Debug)]
 pub enum Action {
     EndTurn,
-    Attack {
-        dmg: usize,
-        range: usize,
-        aoe: usize,
-    },
+    UseAbility { target: SimCoords, ability: Ability },
     MoveUp,
     MoveDown,
     MoveLeft,
     MoveRight,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Ability {
+    MeleeAttack,
+    BowAttack { range: usize },
 }
 
 #[derive(Clone)]
@@ -35,7 +37,7 @@ struct SimEntity {
     turn_movement: usize,
     movement: usize,
     character: Character,
-    actions: Vec<Action>,
+    abilities: Vec<Ability>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Component, PartialEq, Eq)]
@@ -59,19 +61,23 @@ impl Default for SimState {
             grid: Vec::new(),
         };
 
-        state.insert_entity(Character::Knight, vec![Action::EndTurn], simcoords(0, 0));
-        state.insert_entity(Character::Orc, vec![Action::EndTurn], simcoords(5, 10));
+        state.insert_entity(
+            Character::Knight,
+            vec![Ability::MeleeAttack, Ability::BowAttack { range: 20 }],
+            simcoords(0, 0),
+        );
+        state.insert_entity(Character::Orc, vec![Ability::MeleeAttack], simcoords(5, 10));
 
         state
     }
 }
 
 impl SimState {
-    fn insert_entity(&mut self, character: Character, actions: Vec<Action>, loc: SimCoords) {
+    fn insert_entity(&mut self, character: Character, abilities: Vec<Ability>, loc: SimCoords) {
         let entity = SimEntity {
             id: SimId(self.next_id),
             character,
-            actions,
+            abilities,
             turn_movement: character.default_movement(),
             movement: character.default_movement(),
         };
@@ -84,11 +90,11 @@ impl SimState {
     pub fn apply(&mut self, action: Action) {
         match action {
             Action::EndTurn => self.apply_end_turn(),
-            Action::Attack { dmg, range, aoe } => todo!(),
             Action::MoveUp => self.apply_move_entity(0, 1),
             Action::MoveDown => self.apply_move_entity(0, -1),
             Action::MoveLeft => self.apply_move_entity(-1, 0),
             Action::MoveRight => self.apply_move_entity(1, 0),
+            Action::UseAbility { target, ability } => todo!(),
         }
     }
 
@@ -111,8 +117,8 @@ impl SimState {
     fn apply_end_turn(&mut self) {
         // reset movement
         let cur_char = self.cur_char();
-        if let Some((_, entity)) = self.grid.iter_mut().find(|(_, e)| e.id == cur_char) {
-            entity.movement = entity.turn_movement;
+        if let Some(entity) = self.get_entity_mut(cur_char) {
+            entity.movement = entity.turn_movement
         }
 
         self.initiative.rotate_left(1);
@@ -126,6 +132,21 @@ impl SimState {
             .next()
     }
 
+    fn get_entity_mut(&mut self, id: SimId) -> Option<&mut SimEntity> {
+        self.grid
+            .iter_mut()
+            .find(|(_, e)| e.id == id)
+            .map(|(_, e)| e)
+    }
+
+    fn get_entity(&self, id: SimId) -> &SimEntity {
+        self.grid
+            .iter()
+            .find(|(_, e)| e.id == id)
+            .map(|(_, e)| e)
+            .unwrap()
+    }
+
     pub fn characters(&self) -> Vec<(SimId, SimCoords, Character)> {
         self.grid
             .iter()
@@ -135,6 +156,10 @@ impl SimState {
 
     pub fn loc(&self, id: SimId) -> Option<SimCoords> {
         self.grid.iter().find(|(_, e)| e.id == id).map(|(c, _)| *c)
+    }
+
+    pub fn abilities(&self) -> Vec<Ability> {
+        self.get_entity(self.cur_char()).abilities.clone()
     }
 }
 

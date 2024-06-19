@@ -34,7 +34,6 @@ struct SelectedCharacter(SimId);
 /// Track which character is currently up to go
 #[derive(Resource, Default)]
 pub struct CurrentCharacter(pub SimId);
-
 #[derive(Event, Debug)]
 pub struct ActionEvent {
     pub action: Action,
@@ -53,8 +52,6 @@ fn button_system(
             Interaction::Pressed => {
                 *color = PRESSED_BUTTON.into();
                 border_color.0 = Color::RED;
-                warn!("button clicked");
-
                 ev_action.send(ActionEvent {
                     action: Action::EndTurn,
                 });
@@ -148,33 +145,39 @@ fn setup_ui(mut commands: Commands) {
                     ));
                 })
                 .with_children(|parent| {
-                    parent
-                        .spawn(ButtonBundle {
-                            style: Style {
-                                width: Val::Px(150.0),
-                                height: Val::Px(30.0),
-                                border: UiRect::all(Val::Px(5.0)),
-                                // horizontally center child text
-                                justify_content: JustifyContent::Center,
-                                // vertically center child text
-                                align_items: AlignItems::Center,
-                                ..default()
-                            },
-                            border_color: BorderColor(Color::BLACK),
-                            background_color: NORMAL_BUTTON.into(),
-                            ..default()
-                        })
-                        .with_children(|parent| {
-                            parent.spawn(TextBundle::from_section(
-                                "End turn",
-                                TextStyle {
-                                    font: Default::default(),
-                                    font_size: 25.0,
-                                    color: Color::rgb(0.9, 0.9, 0.9),
-                                },
-                            ));
-                        });
+                    spawn_button(parent, "Action 1");
+                    spawn_button(parent, "Action 2");
+                    spawn_button(parent, "End turn");
                 });
+        });
+}
+
+fn spawn_button(parent: &mut ChildBuilder, text: &str) {
+    parent
+        .spawn(ButtonBundle {
+            style: Style {
+                width: Val::Px(150.0),
+                height: Val::Px(30.0),
+                border: UiRect::all(Val::Px(5.0)),
+                // horizontally center child text
+                justify_content: JustifyContent::Center,
+                // vertically center child text
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            border_color: BorderColor(Color::BLACK),
+            background_color: NORMAL_BUTTON.into(),
+            ..default()
+        })
+        .with_children(|parent| {
+            parent.spawn(TextBundle::from_section(
+                text,
+                TextStyle {
+                    font: Default::default(),
+                    font_size: 25.0,
+                    color: Color::rgb(0.9, 0.9, 0.9),
+                },
+            ));
         });
 }
 

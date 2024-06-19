@@ -4,7 +4,7 @@ use bevy::{
     render::color::Color,
     DefaultPlugins,
 };
-use crocodile::{gamestate::SimState, sprite::SpritePlugin, ui::UIPlugin};
+use crocodile::{gamestate::SimState, sprite::SpritePlugin, ui::UIPlugin, PlayState, StatePlugin};
 
 const BACKGROUND_COLOR: Color = Color::rgb(0.9, 0.9, 0.9);
 
@@ -24,7 +24,7 @@ fn main() {
                     update_subscriber: None,
                 }),
         ) // prevents blurry sprites
-        .add_plugins((UIPlugin, SpritePlugin))
+        .add_plugins((StatePlugin, UIPlugin, SpritePlugin))
         // .insert_resource(Scoreboard { score: 0 })
         // .insert_resource(ClearColor(BACKGROUND_COLOR))
         // .add_event::<CollisionEvent>()

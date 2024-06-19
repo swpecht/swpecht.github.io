@@ -10,6 +10,7 @@ use bevy::{
 use crate::{
     gamestate::{Action, SimId, SimState},
     ui::{ActionEvent, CurrentCharacter},
+    PlayState,
 };
 
 pub const TILE_SIZE: usize = 32;
@@ -24,12 +25,14 @@ pub struct SpritePlugin;
 impl Plugin for SpritePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, (setup_camera, sync_sim, setup_tiles))
-            .add_systems(Update, (animate_sprite, process_curves, action_system));
+            .add_systems(Update, (animate_sprite, process_curves))
+            // Only process actions if we're actually waiting for action input
+            .add_systems(Update, action_system.run_if(in_state(PlayState::Waiting)));
     }
 }
 
 #[derive(Component, Clone)]
-struct Curve {
+pub struct Curve {
     start: Vec2,
     end: Vec2,
     time: Stopwatch,
@@ -178,10 +181,10 @@ fn action_system(
         use Action::*;
         match ev.action {
             EndTurn => {} // todo
-            Attack { dmg, range, aoe } => todo!(),
             MoveUp | MoveDown | MoveLeft | MoveRight => {
                 handle_move(&mut commands, ev.action, &query, cur.0)
             }
+            UseAbility { target, ability } => todo!(),
         }
         cur.0 = sim.cur_char();
         debug!("{:?}", sim.cur_char());
