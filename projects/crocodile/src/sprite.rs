@@ -1,4 +1,4 @@
-use bevy::{math::vec3, prelude::*};
+use bevy::{math::vec3, prelude::*, render::camera::ScalingMode};
 
 use crate::ui::ActionEvent;
 
@@ -36,14 +36,18 @@ impl Curve {
 
 fn setup_camera(mut commands: Commands) {
     // Camera
-    commands.spawn(Camera2dBundle {
+    let mut camera_bundle = Camera2dBundle {
         transform: Transform::from_xyz(
             (GRID_WIDTH * TILE_SIZE / 2) as f32,
             (GRID_HEIGHT * TILE_SIZE / 2) as f32,
             0.0,
         ),
         ..default()
-    });
+    };
+    camera_bundle.projection.scaling_mode =
+        ScalingMode::FixedVertical((GRID_HEIGHT * TILE_SIZE + TILE_SIZE) as f32);
+
+    commands.spawn(camera_bundle);
 }
 
 fn movement_system(
@@ -131,8 +135,8 @@ fn setup_tiles(
                     index: 5,
                 },
                 transform: Transform::from_translation(vec3(
-                    (r * GRID_WIDTH) as f32,
-                    (c * GRID_HEIGHT) as f32,
+                    (r * TILE_SIZE) as f32,
+                    (c * TILE_SIZE) as f32,
                     TILE_LAYER,
                 )),
                 ..default()
