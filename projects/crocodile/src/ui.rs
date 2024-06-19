@@ -52,7 +52,7 @@ fn button_system(
                 if let Some(selected) = &selected {
                     ev_action.send(ActionEvent {
                         id: selected.0,
-                        action: Action::MoveRight,
+                        action: Action::Move { x: 1, y: 0 },
                     });
                 }
             }

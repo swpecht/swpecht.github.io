@@ -166,21 +166,26 @@ fn setup_tiles(
 /// Translate action events into the proper display within the game visualization
 fn action_system(
     mut commands: Commands,
-    mut ev_levelup: EventReader<ActionEvent>,
-    query: Query<(Entity, &SimId), With<Transform>>,
+    mut ev_action: EventReader<ActionEvent>,
+    query: Query<(Entity, &SimId, &Transform)>,
+    mut sim: ResMut<SimState>,
 ) {
-    for ev in ev_levelup.read() {
-        let curve = Curve {
-            start: vec2(0.0, 0.0),
-            end: vec2(TILE_SIZE as f32, 0.0),
-            time: Stopwatch::new(),
-            duration: Duration::from_secs(1),
-        };
+    for ev in ev_action.read() {
+        sim.apply(ev.id, ev.action);
+
         debug!("action event received: {:?}", ev);
         query
             .iter()
-            .filter(|(_, id)| **id == ev.id)
-            .for_each(|(e, _)| {
+            .filter(|(_, id, _)| **id == ev.id)
+            .for_each(|(e, _, t)| {
+                let start = vec2(t.translation.x, t.translation.y);
+                let offset = vec2(TILE_SIZE as f32, 0.0);
+                let curve = Curve {
+                    start,
+                    end: start + offset,
+                    time: Stopwatch::new(),
+                    duration: Duration::from_secs(1),
+                };
                 commands.entity(e).insert(curve.clone());
             });
     }

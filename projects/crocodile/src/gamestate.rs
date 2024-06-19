@@ -15,7 +15,7 @@ pub enum Character {
 }
 #[derive(Resource)]
 pub struct SimState {
-    grid: Vec<Vec<Option<SimEntity>>>,
+    grid: Vec<(SimCoords, SimEntity)>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -26,10 +26,10 @@ pub enum Action {
         range: usize,
         aoe: usize,
     },
-    MoveUp,
-    MoveDown,
-    MoveLeft,
-    MoveRight,
+    Move {
+        x: usize,
+        y: usize,
+    },
 }
 
 #[derive(Clone)]
@@ -42,10 +42,14 @@ struct SimEntity {
 #[derive(Clone, Copy, Debug, Default, Component, PartialEq, Eq)]
 pub struct SimId(usize);
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SimCoords {
     pub x: usize,
     pub y: usize,
+}
+
+fn simcoords(x: usize, y: usize) -> SimCoords {
+    SimCoords { x, y }
 }
 
 impl Default for SimState {
@@ -53,49 +57,51 @@ impl Default for SimState {
         let player = SimEntity {
             character: Character::Knight,
             id: SimId(0),
-            actions: vec![Action::MoveUp, Action::EndTurn],
+            actions: vec![Action::EndTurn],
         };
-        let mut grid = vec![vec![None; WORLD_SIZE]; WORLD_SIZE];
-        grid[0][0] = Some(player);
-        grid[10][5] = Some(SimEntity {
+        let orc = SimEntity {
             character: Character::Orc,
             id: SimId(1),
-            actions: vec![Action::MoveUp, Action::EndTurn],
-        });
+            actions: vec![Action::EndTurn],
+        };
+
+        let grid = vec![(simcoords(0, 0), player), (simcoords(10, 5), orc)];
 
         Self { grid }
     }
 }
 
 impl SimState {
-    pub fn apply(&mut self, action: &Action) {
-        todo!()
+    pub fn apply(&mut self, id: SimId, action: Action) {
+        match action {
+            Action::EndTurn => todo!(),
+            Action::Attack { dmg, range, aoe } => todo!(),
+            Action::Move { x, y } => self.move_entity(id, x, y),
+        }
+    }
+
+    fn move_entity(&mut self, id: SimId, x: usize, y: usize) {
+        self.grid
+            .iter_mut()
+            .filter(|(_, e)| e.id == id)
+            .for_each(|(c, _)| {
+                c.x += x;
+                c.y += y
+            });
     }
 
     pub fn get_entity(&self, coords: SimCoords) -> Option<SimId> {
         self.grid
-            .get(coords.x)
-            .and_then(|x| x.get(coords.y))
-            .map(|x| x.as_ref().map(|x| x.id))?
+            .iter()
+            .filter(|(c, _)| *c == coords)
+            .map(|(_, e)| e.id)
+            .next()
     }
 
     pub fn characters(&self) -> Vec<(SimId, SimCoords, Character)> {
         self.grid
             .iter()
-            .flatten()
-            .enumerate()
-            .filter_map(|(i, x)| {
-                x.as_ref().map(|x| {
-                    (
-                        x.id,
-                        SimCoords {
-                            x: i / WORLD_SIZE,
-                            y: i % WORLD_SIZE,
-                        },
-                        x.character,
-                    )
-                })
-            })
+            .map(|(c, x)| (x.id, *c, x.character))
             .collect_vec()
     }
 }
