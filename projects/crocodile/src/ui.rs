@@ -1,7 +1,7 @@
-use bevy::{math::vec2, prelude::*, window::PrimaryWindow};
+use bevy::{input::common_conditions::*, math::vec2, prelude::*, window::PrimaryWindow};
 
 use crate::{
-    gamestate::Action,
+    gamestate::{Action, SimCoords, SimId, SimState},
     sprite::{MainCamera, TILE_SIZE},
 };
 
@@ -16,16 +16,20 @@ impl Plugin for UIPlugin {
         app.add_event::<ActionEvent>();
 
         app.add_systems(Startup, setup_ui)
-            .add_systems(Update, (button_system, cursor_locator, tile_highlight));
+            .add_systems(Update, (button_system, cursor_locator, tile_highlight))
+            .add_systems(
+                Update,
+                selection.run_if(input_just_pressed(MouseButton::Left)),
+            );
     }
 }
 
-#[derive(Resource)]
-struct SelectedCharacter(Entity);
+#[derive(Resource, Default)]
+struct SelectedCharacter(SimId);
 
 #[derive(Event, Debug)]
 pub struct ActionEvent {
-    pub entity: Entity,
+    pub entity: SimId,
     pub action: Action,
 }
 
@@ -66,6 +70,7 @@ fn button_system(
 
 fn setup_ui(mut commands: Commands) {
     commands.init_resource::<MouseWorldCoords>();
+    commands.init_resource::<SelectedCharacter>();
 
     // root node
     commands
@@ -173,6 +178,15 @@ fn setup_ui(mut commands: Commands) {
 #[derive(Resource, Default)]
 struct MouseWorldCoords(Vec2);
 
+impl MouseWorldCoords {
+    fn to_sim(&self) -> SimCoords {
+        SimCoords {
+            x: self.0.x as usize / TILE_SIZE,
+            y: self.0.y as usize / TILE_SIZE,
+        }
+    }
+}
+
 /// Stores the position of the mouse in terms of world coords
 /// https://bevy-cheatbook.github.io/cookbook/cursor2world.html
 fn cursor_locator(
@@ -201,10 +215,32 @@ fn cursor_locator(
 }
 
 /// Highlight the tile the mouse is hovering over
-fn tile_highlight(mycoords: Res<MouseWorldCoords>, mut gizmos: Gizmos) {
+fn tile_highlight(mouse_coords: Res<MouseWorldCoords>, mut gizmos: Gizmos) {
     let offset = (TILE_SIZE / 2) as f32;
-    let x = mycoords.0.x - (mycoords.0.x + offset) % TILE_SIZE as f32 + offset;
-    let y = mycoords.0.y - (mycoords.0.y + offset) % TILE_SIZE as f32 + offset;
-    // TODO: fix the alignment
+    let x = mouse_coords.0.x - (mouse_coords.0.x + offset) % TILE_SIZE as f32 + offset;
+    let y = mouse_coords.0.y - (mouse_coords.0.y + offset) % TILE_SIZE as f32 + offset;
     gizmos.rect_2d(vec2(x, y), 0.0, Vec2::splat(TILE_SIZE as f32), Color::BLACK);
+}
+
+fn selection(
+    mouse_coords: Res<MouseWorldCoords>,
+    sim: Res<SimState>,
+    mut selected: ResMut<SelectedCharacter>,
+) {
+    // convert mouse coords to sim coords
+    // get entity at the relevant sim position
+    // set the resrouce to that entity, probably a different ID than the bevy entity, this is the Sim specific id
+    // separate system to draw the selection highlight box whenever that is populated
+
+    debug!(
+        "attempting to select character at: {:?}",
+        mouse_coords.to_sim()
+    );
+
+    let Some(new_selection) = sim.get_entity(mouse_coords.to_sim()) else {
+        return;
+    };
+
+    selected.0 = new_selection;
+    debug!("new character selected: {:?}", new_selection);
 }

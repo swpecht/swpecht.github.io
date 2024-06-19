@@ -14,9 +14,6 @@ pub enum TransitionState {
 }
 
 fn main() {
-    println!("hello world3");
-    let state = SimState::default();
-
     bevy::app::App::new()
         .add_plugins(
             DefaultPlugins
@@ -47,5 +44,6 @@ fn main() {
         //         .chain(),
         // )
         .add_systems(Update, bevy::window::close_on_esc)
+        .init_resource::<SimState>()
         .run();
 }
