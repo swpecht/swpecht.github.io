@@ -2,7 +2,7 @@ use bevy::{math::vec3, prelude::*, render::camera::ScalingMode};
 
 use crate::ui::ActionEvent;
 
-const TILE_SIZE: usize = 32;
+pub const TILE_SIZE: usize = 32;
 const GRID_WIDTH: usize = 20;
 const GRID_HEIGHT: usize = 20;
 
@@ -34,6 +34,10 @@ impl Curve {
     }
 }
 
+/// Used to help identify our main camera
+#[derive(Component)]
+pub struct MainCamera;
+
 fn setup_camera(mut commands: Commands) {
     // Camera
     let mut camera_bundle = Camera2dBundle {
@@ -47,7 +51,7 @@ fn setup_camera(mut commands: Commands) {
     camera_bundle.projection.scaling_mode =
         ScalingMode::FixedVertical((GRID_HEIGHT * TILE_SIZE + TILE_SIZE) as f32);
 
-    commands.spawn(camera_bundle);
+    commands.spawn((camera_bundle, MainCamera));
 }
 
 fn movement_system(
