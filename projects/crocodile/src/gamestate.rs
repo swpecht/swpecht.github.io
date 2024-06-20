@@ -31,7 +31,9 @@ impl Display for Action {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Action::EndTurn => f.write_str("End turn"),
-            Action::UseAbility { target, ability } => todo!(),
+            Action::UseAbility { target, ability } => {
+                f.write_fmt(format_args!("{}: {}, {}", ability, target.x, target.y))
+            }
             Action::Move { target } => {
                 f.write_fmt(format_args!("Move: {}, {}", target.x, target.y))
             }
@@ -52,6 +54,7 @@ struct SimEntity {
     movement: usize,
     character: Character,
     abilities: Vec<Ability>,
+    remaining_actions: usize,
 }
 
 #[derive(Clone, Copy, Debug, Default, Component, PartialEq, Eq)]
@@ -106,7 +109,7 @@ impl Default for SimState {
         state.insert_entity(
             Character::Knight,
             vec![Ability::MeleeAttack, Ability::BowAttack { range: 20 }],
-            sc(0, 0),
+            sc(4, 10),
         );
         state.insert_entity(Character::Orc, vec![Ability::MeleeAttack], sc(5, 10));
 
@@ -122,6 +125,7 @@ impl SimState {
             abilities,
             turn_movement: character.default_movement(),
             movement: character.default_movement(),
+            remaining_actions: 1,
         };
 
         self.initiative.push(SimId(self.next_id));
@@ -156,7 +160,8 @@ impl SimState {
         // reset movement
         let cur_char = self.cur_char();
         if let Some(entity) = self.get_entity_mut(cur_char) {
-            entity.movement = entity.turn_movement
+            entity.movement = entity.turn_movement;
+            entity.remaining_actions = 1;
         }
 
         self.initiative.rotate_left(1);
@@ -206,8 +211,9 @@ impl SimState {
 
         let loc = self.loc(self.cur_char()).unwrap();
         let mut candidate_locs = Vec::new();
+        let cur_entity = self.get_entity(self.cur_char());
 
-        if self.get_entity(self.cur_char()).movement > 0 {
+        if cur_entity.movement > 0 {
             candidate_locs.push(loc + sc(0, 1));
 
             if loc.y > 0 {
@@ -218,14 +224,28 @@ impl SimState {
             if loc.x > 0 {
                 candidate_locs.push(loc - sc(1, 0));
             }
+
+            let populdated_locs = self.populated_cells(loc, 1);
+            candidate_locs
+                .iter()
+                .filter(|x| !populdated_locs.contains(x))
+                .map(|&target| Move { target })
+                .for_each(|x| actions.push(x));
         }
 
-        let populdated_locs = self.populated_cells(loc, 1);
-        candidate_locs
-            .iter()
-            .filter(|x| !populdated_locs.contains(x))
-            .map(|&target| Move { target })
-            .for_each(|x| actions.push(x));
+        if cur_entity.remaining_actions > 0 {
+            for ability in cur_entity.abilities.iter() {
+                let populated_cells = self.populated_cells(loc, ability.range());
+                // filter out the characters own cell
+                for cell in populated_cells.iter().filter(|x| **x != loc) {
+                    actions.push(Action::UseAbility {
+                        target: *cell,
+                        ability: *ability,
+                    });
+                }
+            }
+        }
+
         actions
     }
 
@@ -245,6 +265,24 @@ impl Character {
         match self {
             Character::Knight => 4,
             Character::Orc => 4,
+        }
+    }
+}
+
+impl Ability {
+    pub fn range(&self) -> usize {
+        match self {
+            Ability::MeleeAttack => 1,
+            Ability::BowAttack { range } => *range,
+        }
+    }
+}
+
+impl Display for Ability {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Ability::MeleeAttack => f.write_str("Melee"),
+            Ability::BowAttack { range: _ } => f.write_str("Bow"),
         }
     }
 }
