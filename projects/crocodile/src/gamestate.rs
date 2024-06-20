@@ -85,6 +85,12 @@ impl Sub for SimCoords {
     }
 }
 
+impl SimCoords {
+    fn dist(&self, other: &SimCoords) -> usize {
+        self.x.abs_diff(other.x) + self.y.abs_diff(other.y)
+    }
+}
+
 fn sc(x: usize, y: usize) -> SimCoords {
     SimCoords { x, y }
 }
@@ -199,35 +205,46 @@ impl SimState {
         let mut actions = vec![EndTurn];
 
         let loc = self.loc(self.cur_char()).unwrap();
+        let mut candidate_locs = Vec::new();
+
         if self.get_entity(self.cur_char()).movement > 0 {
-            actions.push(Move {
-                target: loc + sc(0, 1),
-            });
+            candidate_locs.push(loc + sc(0, 1));
 
             if loc.y > 0 {
-                actions.push(Move {
-                    target: loc - sc(0, 1),
-                });
+                candidate_locs.push(loc - sc(0, 1));
             }
-            actions.push(Move {
-                target: loc + sc(1, 0),
-            });
+            candidate_locs.push(loc + sc(1, 0));
 
             if loc.x > 0 {
-                actions.push(Move {
-                    target: loc - sc(1, 0),
-                });
+                candidate_locs.push(loc - sc(1, 0));
             }
         }
+
+        let populdated_locs = self.populated_cells(loc, 1);
+        candidate_locs
+            .iter()
+            .filter(|x| !populdated_locs.contains(x))
+            .map(|&target| Move { target })
+            .for_each(|x| actions.push(x));
         actions
+    }
+
+    /// Get all empty cells within range of loc
+    /// includes loc if it is empty
+    fn populated_cells(&self, target: SimCoords, radius: usize) -> Vec<SimCoords> {
+        self.grid
+            .iter()
+            .map(|x| x.0)
+            .filter(|loc| loc.dist(&target) <= radius)
+            .collect_vec()
     }
 }
 
 impl Character {
     fn default_movement(&self) -> usize {
         match self {
-            Character::Knight => 2,
-            Character::Orc => 2,
+            Character::Knight => 4,
+            Character::Orc => 4,
         }
     }
 }
