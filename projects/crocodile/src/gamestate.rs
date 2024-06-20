@@ -32,7 +32,9 @@ impl Display for Action {
         match self {
             Action::EndTurn => f.write_str("End turn"),
             Action::UseAbility { target, ability } => todo!(),
-            Action::Move { target } => f.write_fmt(format_args!("Move: {:?}", target)),
+            Action::Move { target } => {
+                f.write_fmt(format_args!("Move: {}, {}", target.x, target.y))
+            }
         }
     }
 }

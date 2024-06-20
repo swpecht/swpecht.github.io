@@ -174,13 +174,14 @@ fn action_system(
     query: Query<(Entity, &SimId, &Transform)>,
     mut sim: ResMut<SimState>,
     mut cur: ResMut<CurrentCharacter>,
+    mut next_state: ResMut<NextState<PlayState>>,
 ) {
     for ev in ev_action.read() {
         debug!("action event received: {:?}", ev);
         sim.apply(ev.action);
         use Action::*;
         match ev.action {
-            EndTurn => {} // todo
+            EndTurn => next_state.set(PlayState::Processing), // todo
             Move { target } => handle_move(&mut commands, target, &query, cur.0),
             UseAbility { target, ability } => todo!(),
         }
