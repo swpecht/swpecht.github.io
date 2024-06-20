@@ -3,6 +3,7 @@ use bevy::{input::common_conditions::*, math::vec2, prelude::*, window::PrimaryW
 use crate::{
     gamestate::{Action, SimCoords, SimId, SimState},
     sprite::{MainCamera, TILE_SIZE},
+    PlayState,
 };
 
 const NORMAL_BUTTON: Color = Color::rgb(0.15, 0.15, 0.15);
@@ -24,7 +25,8 @@ impl Plugin for UIPlugin {
             .add_systems(
                 Update,
                 handle_right_click.run_if(input_just_pressed(MouseButton::Right)),
-            );
+            )
+            .add_systems(OnEnter(PlayState::Waiting), populate_action_buttons);
     }
 }
 
@@ -38,6 +40,9 @@ pub struct CurrentCharacter(pub SimId);
 pub struct ActionEvent {
     pub action: Action,
 }
+
+#[derive(Component)]
+struct ActionButtonParent;
 
 fn button_system(
     mut ev_action: EventWriter<ActionEvent>,
@@ -118,19 +123,22 @@ fn setup_ui(mut commands: Commands) {
 
             // right vertical fill
             parent
-                .spawn(NodeBundle {
-                    style: Style {
-                        flex_direction: FlexDirection::Column,
-                        justify_content: JustifyContent::Start,
-                        align_items: AlignItems::Start,
-                        width: Val::Px(200.),
-                        border: UiRect::all(Val::Px(2.)),
+                .spawn((
+                    NodeBundle {
+                        style: Style {
+                            flex_direction: FlexDirection::Column,
+                            justify_content: JustifyContent::Start,
+                            align_items: AlignItems::Start,
+                            width: Val::Px(200.),
+                            border: UiRect::all(Val::Px(2.)),
+                            ..default()
+                        },
+                        border_color: Color::GREEN.into(),
+                        background_color: Color::rgb(0.15, 0.15, 0.15).into(),
                         ..default()
                     },
-                    border_color: Color::GREEN.into(),
-                    background_color: Color::rgb(0.15, 0.15, 0.15).into(),
-                    ..default()
-                })
+                    ActionButtonParent,
+                ))
                 .with_children(|parent| {
                     // Title
                     parent.spawn((
@@ -143,13 +151,25 @@ fn setup_ui(mut commands: Commands) {
                         ),
                         Label,
                     ));
-                })
-                .with_children(|parent| {
-                    spawn_button(parent, "Action 1");
-                    spawn_button(parent, "Action 2");
-                    spawn_button(parent, "End turn");
                 });
         });
+}
+
+fn populate_action_buttons(
+    mut commands: Commands,
+    sim: Res<SimState>,
+    mut query: Query<Entity, With<ActionButtonParent>>,
+) {
+    let mut parent = commands.entity(query.single_mut());
+
+    parent.clear_children();
+
+    parent.with_children(|parent| {
+        debug!("{:?}", sim.legal_actions());
+        for action in sim.legal_actions() {
+            spawn_button(parent, &action.to_string());
+        }
+    });
 }
 
 fn spawn_button(parent: &mut ChildBuilder, text: &str) {
@@ -275,13 +295,15 @@ fn handle_right_click(
     let x_move = target.x as i8 - loc.x as i8;
     let y_move = target.y as i8 - loc.y as i8;
 
-    let action = if x_move > 0 {
+    let legal_actions = sim.legal_actions();
+
+    let action = if x_move > 0 && legal_actions.contains(&Action::MoveRight) {
         Action::MoveRight
-    } else if x_move < 0 {
+    } else if x_move < 0 && legal_actions.contains(&Action::MoveLeft) {
         Action::MoveLeft
-    } else if y_move > 0 {
+    } else if y_move > 0 && legal_actions.contains(&Action::MoveUp) {
         Action::MoveUp
-    } else if y_move < 0 {
+    } else if y_move < 0 && legal_actions.contains(&Action::MoveDown) {
         Action::MoveDown
     } else {
         return;

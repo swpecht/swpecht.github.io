@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use bevy::prelude::{Component, Resource};
 use itertools::Itertools;
 
@@ -15,7 +17,7 @@ pub struct SimState {
     grid: Vec<(SimCoords, SimEntity)>,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {
     EndTurn,
     UseAbility { target: SimCoords, ability: Ability },
@@ -25,7 +27,20 @@ pub enum Action {
     MoveRight,
 }
 
-#[derive(Clone, Copy, Debug)]
+impl Display for Action {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Action::EndTurn => f.write_str("End turn"),
+            Action::UseAbility { target, ability } => todo!(),
+            Action::MoveUp => f.write_str("Move up"),
+            Action::MoveDown => f.write_str("Move down"),
+            Action::MoveLeft => f.write_str("Move left"),
+            Action::MoveRight => f.write_str("Move right"),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Ability {
     MeleeAttack,
     BowAttack { range: usize },
@@ -161,13 +176,25 @@ impl SimState {
     pub fn abilities(&self) -> Vec<Ability> {
         self.get_entity(self.cur_char()).abilities.clone()
     }
+
+    pub fn legal_actions(&self) -> Vec<Action> {
+        use Action::*;
+        let mut actions = vec![EndTurn];
+        if self.get_entity(self.cur_char()).movement > 0 {
+            actions.push(MoveUp);
+            actions.push(MoveDown);
+            actions.push(MoveLeft);
+            actions.push(MoveRight);
+        }
+        actions
+    }
 }
 
 impl Character {
     fn default_movement(&self) -> usize {
         match self {
-            Character::Knight => 8,
-            Character::Orc => 8,
+            Character::Knight => 2,
+            Character::Orc => 2,
         }
     }
 }
