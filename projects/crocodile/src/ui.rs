@@ -161,7 +161,8 @@ fn populate_action_buttons(
     mut query: Query<Entity, With<ActionButtonParent>>,
 ) {
     let mut parent = commands.entity(query.single_mut());
-
+    // need to both despawna and clear the children
+    parent.despawn_descendants();
     parent.clear_children();
 
     parent.with_children(|parent| {
