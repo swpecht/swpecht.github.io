@@ -129,7 +129,7 @@ fn setup_ui(mut commands: Commands) {
                             flex_direction: FlexDirection::Column,
                             justify_content: JustifyContent::Start,
                             align_items: AlignItems::Start,
-                            width: Val::Px(200.),
+                            width: Val::Px(400.),
                             border: UiRect::all(Val::Px(2.)),
                             ..default()
                         },
@@ -177,7 +177,7 @@ fn spawn_button(parent: &mut ChildBuilder, text: &str) {
     parent
         .spawn(ButtonBundle {
             style: Style {
-                width: Val::Px(150.0),
+                width: Val::Px(300.0),
                 height: Val::Px(30.0),
                 border: UiRect::all(Val::Px(5.0)),
                 // horizontally center child text
@@ -285,30 +285,16 @@ fn handle_right_click(
     mut ev_action: EventWriter<ActionEvent>,
     mouse_coords: Res<MouseWorldCoords>,
     sim: Res<SimState>,
-    current: ResMut<CurrentCharacter>,
 ) {
     debug!("handling right click");
-    let Some(loc) = sim.loc(current.0) else {
-        warn!("error handling right click, selected id isn't valid");
-        return;
-    };
+
     let target = mouse_coords.to_sim();
-    let x_move = target.x as i8 - loc.x as i8;
-    let y_move = target.y as i8 - loc.y as i8;
 
     let legal_actions = sim.legal_actions();
-
-    let action = if x_move > 0 && legal_actions.contains(&Action::MoveRight) {
-        Action::MoveRight
-    } else if x_move < 0 && legal_actions.contains(&Action::MoveLeft) {
-        Action::MoveLeft
-    } else if y_move > 0 && legal_actions.contains(&Action::MoveUp) {
-        Action::MoveUp
-    } else if y_move < 0 && legal_actions.contains(&Action::MoveDown) {
-        Action::MoveDown
+    let action = Action::Move { target };
+    if legal_actions.contains(&action) {
+        ev_action.send(ActionEvent { action });
     } else {
-        return;
-    };
-
-    ev_action.send(ActionEvent { action });
+        warn!("trying to move to location that's not a legal action")
+    }
 }

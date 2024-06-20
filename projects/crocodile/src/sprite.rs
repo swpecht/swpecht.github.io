@@ -8,7 +8,7 @@ use bevy::{
 };
 
 use crate::{
-    gamestate::{Action, SimId, SimState},
+    gamestate::{Action, SimCoords, SimId, SimState},
     ui::{ActionEvent, CurrentCharacter},
     PlayState,
 };
@@ -181,9 +181,7 @@ fn action_system(
         use Action::*;
         match ev.action {
             EndTurn => {} // todo
-            MoveUp | MoveDown | MoveLeft | MoveRight => {
-                handle_move(&mut commands, ev.action, &query, cur.0)
-            }
+            Move { target } => handle_move(&mut commands, target, &query, cur.0),
             UseAbility { target, ability } => todo!(),
         }
         cur.0 = sim.cur_char();
@@ -193,7 +191,7 @@ fn action_system(
 
 fn handle_move(
     commands: &mut Commands,
-    action: Action,
+    target: SimCoords,
     query: &Query<(Entity, &SimId, &Transform)>,
     cur: SimId,
 ) {
@@ -201,19 +199,10 @@ fn handle_move(
         .iter()
         .filter(|(_, id, _)| **id == cur)
         .for_each(|(e, _, t)| {
-            use Action::*;
-            let offset = match action {
-                MoveUp => vec2(0.0, TILE_SIZE as f32),
-                MoveDown => vec2(0.0, -1.0 * TILE_SIZE as f32),
-                MoveLeft => vec2(-1.0 * TILE_SIZE as f32, 0.0),
-                MoveRight => vec2(TILE_SIZE as f32, 0.0),
-                _ => panic!("invalid action passed to move handler"),
-            };
-
             let start = vec2(t.translation.x, t.translation.y);
             let curve = Curve {
                 start,
-                end: start + offset,
+                end: target.to_world(),
                 time: Stopwatch::new(),
                 duration: Duration::from_secs(1),
             };

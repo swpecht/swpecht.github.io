@@ -1,4 +1,7 @@
-use std::fmt::Display;
+use std::{
+    fmt::Display,
+    ops::{Add, Sub},
+};
 
 use bevy::prelude::{Component, Resource};
 use itertools::Itertools;
@@ -21,10 +24,7 @@ pub struct SimState {
 pub enum Action {
     EndTurn,
     UseAbility { target: SimCoords, ability: Ability },
-    MoveUp,
-    MoveDown,
-    MoveLeft,
-    MoveRight,
+    Move { target: SimCoords },
 }
 
 impl Display for Action {
@@ -32,10 +32,7 @@ impl Display for Action {
         match self {
             Action::EndTurn => f.write_str("End turn"),
             Action::UseAbility { target, ability } => todo!(),
-            Action::MoveUp => f.write_str("Move up"),
-            Action::MoveDown => f.write_str("Move down"),
-            Action::MoveLeft => f.write_str("Move left"),
-            Action::MoveRight => f.write_str("Move right"),
+            Action::Move { target } => f.write_fmt(format_args!("Move: {:?}", target)),
         }
     }
 }
@@ -64,7 +61,29 @@ pub struct SimCoords {
     pub y: usize,
 }
 
-fn simcoords(x: usize, y: usize) -> SimCoords {
+impl Add for SimCoords {
+    type Output = SimCoords;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        let mut out = self;
+        out.x += rhs.x;
+        out.y += rhs.y;
+        out
+    }
+}
+
+impl Sub for SimCoords {
+    type Output = SimCoords;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        let mut out = self;
+        out.x -= rhs.x;
+        out.y -= rhs.y;
+        out
+    }
+}
+
+fn sc(x: usize, y: usize) -> SimCoords {
     SimCoords { x, y }
 }
 
@@ -79,9 +98,9 @@ impl Default for SimState {
         state.insert_entity(
             Character::Knight,
             vec![Ability::MeleeAttack, Ability::BowAttack { range: 20 }],
-            simcoords(0, 0),
+            sc(0, 0),
         );
-        state.insert_entity(Character::Orc, vec![Ability::MeleeAttack], simcoords(5, 10));
+        state.insert_entity(Character::Orc, vec![Ability::MeleeAttack], sc(5, 10));
 
         state
     }
@@ -105,10 +124,7 @@ impl SimState {
     pub fn apply(&mut self, action: Action) {
         match action {
             Action::EndTurn => self.apply_end_turn(),
-            Action::MoveUp => self.apply_move_entity(0, 1),
-            Action::MoveDown => self.apply_move_entity(0, -1),
-            Action::MoveLeft => self.apply_move_entity(-1, 0),
-            Action::MoveRight => self.apply_move_entity(1, 0),
+            Action::Move { target } => self.apply_move_entity(target),
             Action::UseAbility { target, ability } => todo!(),
         }
     }
@@ -117,14 +133,13 @@ impl SimState {
         self.initiative[0]
     }
 
-    fn apply_move_entity(&mut self, x: i8, y: i8) {
+    fn apply_move_entity(&mut self, target: SimCoords) {
         if let Some((c, entity)) = self
             .grid
             .iter_mut()
             .find(|(_, e)| e.id == self.initiative[0])
         {
-            c.x = (c.x as i8 + x) as usize;
-            c.y = (c.y as i8 + y) as usize;
+            *c = target;
             entity.movement -= 1;
         };
     }
@@ -180,11 +195,27 @@ impl SimState {
     pub fn legal_actions(&self) -> Vec<Action> {
         use Action::*;
         let mut actions = vec![EndTurn];
+
+        let loc = self.loc(self.cur_char()).unwrap();
         if self.get_entity(self.cur_char()).movement > 0 {
-            actions.push(MoveUp);
-            actions.push(MoveDown);
-            actions.push(MoveLeft);
-            actions.push(MoveRight);
+            actions.push(Move {
+                target: loc + sc(0, 1),
+            });
+
+            if loc.y > 0 {
+                actions.push(Move {
+                    target: loc - sc(0, 1),
+                });
+            }
+            actions.push(Move {
+                target: loc + sc(1, 0),
+            });
+
+            if loc.x > 0 {
+                actions.push(Move {
+                    target: loc - sc(1, 0),
+                });
+            }
         }
         actions
     }

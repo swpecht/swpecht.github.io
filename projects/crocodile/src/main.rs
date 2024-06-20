@@ -20,7 +20,7 @@ fn main() {
                 .set(ImagePlugin::default_nearest())
                 .set(LogPlugin {
                     level: Level::DEBUG,
-                    filter: "wgpu=error,bevy_render=info,bevy_ecs=trace".to_string(),
+                    filter: "wgpu=error,bevy_render=info,bevy_ecs=info".to_string(),
                     update_subscriber: None,
                 }),
         ) // prevents blurry sprites
