@@ -49,6 +49,7 @@ pub enum Ability {
 
 #[derive(Clone)]
 struct SimEntity {
+    health: usize,
     id: SimId,
     turn_movement: usize,
     movement: usize,
@@ -123,6 +124,7 @@ impl SimState {
             id: SimId(self.next_id),
             character,
             abilities,
+            health: character.default_health(),
             turn_movement: character.default_movement(),
             movement: character.default_movement(),
             remaining_actions: 1,
@@ -137,12 +139,22 @@ impl SimState {
         match action {
             Action::EndTurn => self.apply_end_turn(),
             Action::Move { target } => self.apply_move_entity(target),
-            Action::UseAbility { target, ability } => todo!(),
+            Action::UseAbility { target, ability } => self.apply_use_ability(target, ability),
         }
     }
 
     pub fn cur_char(&self) -> SimId {
         self.initiative[0]
+    }
+
+    fn apply_use_ability(&mut self, target: SimCoords, ability: Ability) {
+        let target_id = self.get_id(target).unwrap();
+        let target_entity = self.get_entity_mut(target_id);
+        target_entity.health = target_entity.health.saturating_sub(ability.dmg());
+
+        if target_entity.health == 0 {
+            self.remove_entity(target_id);
+        }
     }
 
     fn apply_move_entity(&mut self, target: SimCoords) {
@@ -159,10 +171,9 @@ impl SimState {
     fn apply_end_turn(&mut self) {
         // reset movement
         let cur_char = self.cur_char();
-        if let Some(entity) = self.get_entity_mut(cur_char) {
-            entity.movement = entity.turn_movement;
-            entity.remaining_actions = 1;
-        }
+        let entity = self.get_entity_mut(cur_char);
+        entity.movement = entity.turn_movement;
+        entity.remaining_actions = 1;
 
         self.initiative.rotate_left(1);
     }
@@ -175,11 +186,12 @@ impl SimState {
             .next()
     }
 
-    fn get_entity_mut(&mut self, id: SimId) -> Option<&mut SimEntity> {
+    fn get_entity_mut(&mut self, id: SimId) -> &mut SimEntity {
         self.grid
             .iter_mut()
             .find(|(_, e)| e.id == id)
             .map(|(_, e)| e)
+            .unwrap()
     }
 
     fn get_entity(&self, id: SimId) -> &SimEntity {
@@ -188,6 +200,11 @@ impl SimState {
             .find(|(_, e)| e.id == id)
             .map(|(_, e)| e)
             .unwrap()
+    }
+
+    fn remove_entity(&mut self, id: SimId) {
+        self.grid.retain(|(_, x)| x.id != id);
+        self.initiative.retain(|x| *x != id);
     }
 
     pub fn characters(&self) -> Vec<(SimId, SimCoords, Character)> {
@@ -267,6 +284,13 @@ impl Character {
             Character::Orc => 4,
         }
     }
+
+    fn default_health(&self) -> usize {
+        match self {
+            Character::Knight => 10,
+            Character::Orc => 10,
+        }
+    }
 }
 
 impl Ability {
@@ -274,6 +298,13 @@ impl Ability {
         match self {
             Ability::MeleeAttack => 1,
             Ability::BowAttack { range } => *range,
+        }
+    }
+
+    pub fn dmg(&self) -> usize {
+        match self {
+            Ability::MeleeAttack => 5,
+            Ability::BowAttack { range: _ } => 2,
         }
     }
 }

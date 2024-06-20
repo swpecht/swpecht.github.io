@@ -181,9 +181,9 @@ fn action_system(
         sim.apply(ev.action);
         use Action::*;
         match ev.action {
-            EndTurn => next_state.set(PlayState::Processing), // todo
+            EndTurn => next_state.set(PlayState::Processing),
             Move { target } => handle_move(&mut commands, target, &query, cur.0),
-            UseAbility { target, ability } => todo!(),
+            UseAbility { target, ability } => {} // todo
         }
         cur.0 = sim.cur_char();
         debug!("{:?}", sim.cur_char());

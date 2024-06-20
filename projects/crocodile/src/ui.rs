@@ -1,3 +1,5 @@
+use std::iter;
+
 use bevy::{input::common_conditions::*, math::vec2, prelude::*, window::PrimaryWindow};
 
 use crate::{
@@ -17,7 +19,15 @@ impl Plugin for UIPlugin {
         app.add_event::<ActionEvent>();
 
         app.add_systems(Startup, setup_ui)
-            .add_systems(Update, (button_system, cursor_locator, tile_highlight))
+            .add_systems(
+                Update,
+                (
+                    button_system,
+                    action_button_action,
+                    cursor_locator,
+                    tile_highlight,
+                ),
+            )
             .add_systems(
                 Update,
                 selection.run_if(input_just_pressed(MouseButton::Left)),
@@ -44,8 +54,10 @@ pub struct ActionEvent {
 #[derive(Component)]
 struct ActionButtonParent;
 
+#[derive(Component)]
+struct ActionButton(usize);
+
 fn button_system(
-    mut ev_action: EventWriter<ActionEvent>,
     mut interaction_query: Query<
         (&Interaction, &mut BackgroundColor, &mut BorderColor),
         (Changed<Interaction>, With<Button>),
@@ -57,9 +69,6 @@ fn button_system(
             Interaction::Pressed => {
                 *color = PRESSED_BUTTON.into();
                 border_color.0 = Color::RED;
-                ev_action.send(ActionEvent {
-                    action: Action::EndTurn,
-                });
             }
             Interaction::Hovered => {
                 *color = HOVERED_BUTTON.into();
@@ -167,29 +176,32 @@ fn populate_action_buttons(
 
     parent.with_children(|parent| {
         debug!("{:?}", sim.legal_actions());
-        for action in sim.legal_actions() {
-            spawn_button(parent, &action.to_string());
+        for (idx, action) in sim.legal_actions().iter().enumerate() {
+            spawn_action_button(parent, &action.to_string(), idx);
         }
     });
 }
 
-fn spawn_button(parent: &mut ChildBuilder, text: &str) {
+fn spawn_action_button(parent: &mut ChildBuilder, text: &str, idx: usize) {
     parent
-        .spawn(ButtonBundle {
-            style: Style {
-                width: Val::Px(300.0),
-                height: Val::Px(30.0),
-                border: UiRect::all(Val::Px(5.0)),
-                // horizontally center child text
-                justify_content: JustifyContent::Center,
-                // vertically center child text
-                align_items: AlignItems::Center,
+        .spawn((
+            ButtonBundle {
+                style: Style {
+                    width: Val::Px(300.0),
+                    height: Val::Px(30.0),
+                    border: UiRect::all(Val::Px(5.0)),
+                    // horizontally center child text
+                    justify_content: JustifyContent::Center,
+                    // vertically center child text
+                    align_items: AlignItems::Center,
+                    ..default()
+                },
+                border_color: BorderColor(Color::BLACK),
+                background_color: NORMAL_BUTTON.into(),
                 ..default()
             },
-            border_color: BorderColor(Color::BLACK),
-            background_color: NORMAL_BUTTON.into(),
-            ..default()
-        })
+            ActionButton(idx),
+        ))
         .with_children(|parent| {
             parent.spawn(TextBundle::from_section(
                 text,
@@ -296,5 +308,20 @@ fn handle_right_click(
         ev_action.send(ActionEvent { action });
     } else {
         warn!("trying to move to location that's not a legal action")
+    }
+}
+
+fn action_button_action(
+    interaction_query: Query<(&Interaction, &ActionButton), (Changed<Interaction>, With<Button>)>,
+    mut ev_action: EventWriter<ActionEvent>,
+    sim: Res<SimState>,
+) {
+    let legal_actions = sim.legal_actions();
+    for (interaction, action_id) in &interaction_query {
+        if *interaction == Interaction::Pressed {
+            ev_action.send(ActionEvent {
+                action: legal_actions[action_id.0],
+            });
+        }
     }
 }
