@@ -5,6 +5,7 @@ use bevy::{
     prelude::*,
     render::camera::ScalingMode,
     time::Stopwatch,
+    transform::commands,
 };
 
 use crate::{
@@ -27,7 +28,8 @@ impl Plugin for SpritePlugin {
         app.add_systems(Startup, (setup_camera, sync_sim, setup_tiles))
             .add_systems(Update, (animate_sprite, process_curves))
             // Only process actions if we're actually waiting for action input
-            .add_systems(Update, action_system.run_if(in_state(PlayState::Waiting)));
+            .add_systems(Update, action_system.run_if(in_state(PlayState::Waiting)))
+            .add_systems(OnExit(PlayState::Processing), sync_sim);
     }
 }
 
@@ -110,7 +112,14 @@ fn sync_sim(
     sim: Res<SimState>,
     asset_server: Res<AssetServer>,
     mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
+    spawned_entities: Query<Entity, With<SimId>>,
 ) {
+    // delete everything that's already spawned
+    for entity in &spawned_entities {
+        commands.entity(entity).despawn_recursive();
+    }
+
+    // respawn everything
     for (id, loc, character) in sim
         .characters()
         .into_iter()
