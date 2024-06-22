@@ -35,20 +35,49 @@ impl Plugin for SpritePlugin {
 
 #[derive(Component, Clone)]
 pub struct Curve {
-    start: Vec2,
-    end: Vec2,
+    path: Vec<Vec2>,
     time: Stopwatch,
-    duration: Duration,
+    speed: f32,
 }
+
+#[derive(Component)]
+struct AnimationIndices {
+    first: usize,
+    last: usize,
+}
+
+#[derive(Component, Deref, DerefMut)]
+struct AnimationTimer(Timer);
 
 impl Curve {
     fn cur_pos(&self) -> Vec2 {
-        let t = (self.time.elapsed_secs() / self.duration.as_secs() as f32).min(1.0);
-        self.start.lerp(self.end, t)
+        // let t = (self.time.elapsed_secs() / self.duration.as_secs() as f32).min(1.0);
+
+        let mut accumulated_time: f32 = 0.0;
+        for i in 0..self.path.len() - 1 {
+            let segment_distance = self.path[i].distance(self.path[i + 1]);
+            let full_segment_time = segment_distance / self.speed;
+            if accumulated_time + full_segment_time <= self.time.elapsed_secs() {
+                accumulated_time += full_segment_time; // we're in the next segment
+            } else {
+                // we're in this segment
+                let traveled_segment_time = self.time.elapsed_secs() - accumulated_time;
+                let t = traveled_segment_time / full_segment_time;
+                return self.path[i].lerp(self.path[i + 1], t);
+            }
+        }
+
+        // if no other matches, we're at the end of the path
+        return *self.path.last().unwrap();
     }
 
     fn is_finished(&self) -> bool {
-        self.time.elapsed() >= self.duration
+        let mut total_distance = 0.0;
+        for i in 0..self.path.len() - 1 {
+            total_distance += self.path[i].distance(self.path[i + 1]);
+        }
+        let total_time = total_distance / self.speed;
+        self.time.elapsed_secs() >= total_time
     }
 }
 
@@ -71,15 +100,6 @@ fn setup_camera(mut commands: Commands) {
 
     commands.spawn((camera_bundle, MainCamera));
 }
-
-#[derive(Component)]
-struct AnimationIndices {
-    first: usize,
-    last: usize,
-}
-
-#[derive(Component, Deref, DerefMut)]
-struct AnimationTimer(Timer);
 
 fn animate_sprite(
     time: Res<Time>,
@@ -211,10 +231,9 @@ fn handle_move(
         .for_each(|(e, _, t)| {
             let start = vec2(t.translation.x, t.translation.y);
             let curve = Curve {
-                start,
-                end: target.to_world(),
+                path: vec![start, target.to_world()],
                 time: Stopwatch::new(),
-                duration: Duration::from_secs(1),
+                speed: 64.0,
             };
             commands.entity(e).insert(curve.clone());
         });
@@ -227,7 +246,7 @@ fn process_curves(
     mut query: Query<(Entity, &mut Transform, &mut Curve)>,
 ) {
     for (entity, mut transform, mut curve) in &mut query {
-        gizmos.linestrip_2d([curve.start, curve.end], Color::WHITE);
+        gizmos.linestrip_2d(curve.path.clone(), Color::WHITE);
         curve.time.tick(time.delta());
         let pos = curve.cur_pos();
         transform.translation = vec3(pos.x, pos.y, transform.translation.z);
