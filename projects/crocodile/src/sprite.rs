@@ -9,7 +9,7 @@ use bevy::{
 };
 
 use crate::{
-    gamestate::{Action, SimCoords, SimId, SimState},
+    gamestate::{Ability, Action, SimCoords, SimId, SimState},
     ui::{ActionEvent, CurrentCharacter},
     PlayState,
 };
@@ -212,7 +212,9 @@ fn action_system(
         match ev.action {
             EndTurn => next_state.set(PlayState::Processing),
             Move { target } => handle_move(&mut commands, target, &query, cur.0),
-            UseAbility { target, ability } => {} // todo
+            UseAbility { target, ability } => {
+                handle_ability(&mut commands, target, ability, &query, cur.0)
+            } // todo
         }
         cur.0 = sim.cur_char();
         debug!("{:?}", sim.cur_char());
@@ -234,6 +236,31 @@ fn handle_move(
                 path: vec![start, target.to_world()],
                 time: Stopwatch::new(),
                 speed: 64.0,
+            };
+            commands.entity(e).insert(curve.clone());
+        });
+}
+
+fn handle_ability(
+    commands: &mut Commands,
+    target: SimCoords,
+    ability: Ability,
+    query: &Query<(Entity, &SimId, &Transform)>,
+    cur: SimId,
+) {
+    query
+        .iter()
+        .filter(|(_, id, _)| **id == cur)
+        .for_each(|(e, _, t)| {
+            if !matches!(ability, Ability::MeleeAttack) {
+                panic!("ability not yet implemented")
+            }
+
+            let start = vec2(t.translation.x, t.translation.y);
+            let curve = Curve {
+                path: vec![start, target.to_world().lerp(start, 0.5), start],
+                time: Stopwatch::new(),
+                speed: 128.0,
             };
             commands.entity(e).insert(curve.clone());
         });
