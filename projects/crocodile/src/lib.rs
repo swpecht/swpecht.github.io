@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use sprite::Curve;
 
+pub mod ai;
 pub mod gamestate;
 pub mod sprite;
 pub mod ui;

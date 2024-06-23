@@ -31,6 +31,11 @@ pub enum Action {
     Move { target: SimCoords },
 }
 
+pub struct Score {
+    player: f32,
+    npc: f32,
+}
+
 impl Display for Action {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -189,6 +194,22 @@ impl SimState {
         }
         count_players == 0 || count_npcs == 0
     }
+
+    pub fn evaluate(&self) -> Score {
+        let mut player_health = 0;
+        let mut npc_health = 0;
+        for (_, entity) in &self.grid {
+            match entity.team {
+                Team::Players(_) => player_health += entity.health,
+                Team::NPCs(_) => npc_health += entity.health,
+            };
+        }
+
+        Score {
+            player: player_health as f32,
+            npc: npc_health as f32,
+        }
+    }
 }
 
 impl SimState {
@@ -341,6 +362,15 @@ impl Display for Ability {
         match self {
             Ability::MeleeAttack => f.write_str("Melee"),
             Ability::BowAttack { range: _ } => f.write_str("Bow"),
+        }
+    }
+}
+
+impl Score {
+    pub fn get(&self, team: Team) -> f32 {
+        match team {
+            Team::Players(_) => self.player,
+            Team::NPCs(_) => self.npc,
         }
     }
 }
