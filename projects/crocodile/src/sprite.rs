@@ -1,5 +1,4 @@
 use bevy::{
-    core::Zeroable,
     math::{vec2, vec3},
     prelude::*,
     render::camera::ScalingMode,
@@ -309,10 +308,14 @@ fn spawn_projectile(
         let mut layout = TextureAtlasLayout::new_empty(vec2(192.0, 112.0));
         layout.add_texture(Rect::from_corners(vec2(32.0, 0.0), vec2(48.0, 16.0)));
         let texture_atlas_layout = texture_atlas_layouts.add(layout);
+        let angle = (ev.target - ev.start).angle_between(ev.target);
+        let mut transform = Transform::from_xyz(ev.start.x, ev.start.y, PROJECTILE_LAYER);
+        transform.rotation = Quat::from_rotation_z(angle);
+
         commands.spawn((
             SpriteSheetBundle {
                 texture,
-                transform: Transform::from_xyz(0.0, 0.0, PROJECTILE_LAYER),
+                transform,
                 atlas: TextureAtlas {
                     layout: texture_atlas_layout,
                     index: 0,
@@ -349,7 +352,7 @@ fn process_curves(
         gizmos.linestrip_2d(curve.path.clone(), Color::WHITE);
         curve.time.tick(time.delta());
         let pos = curve.cur_pos();
-        transform.translation = vec3(pos.x, pos.y, transform.translation.z);
+        transform.translation = pos.extend(transform.translation.z);
 
         if curve.is_finished() {
             commands.entity(entity).remove::<Curve>();

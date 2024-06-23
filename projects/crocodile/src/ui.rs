@@ -1,5 +1,3 @@
-use std::iter;
-
 use bevy::{input::common_conditions::*, math::vec2, prelude::*, window::PrimaryWindow};
 
 use crate::{
