@@ -37,7 +37,7 @@ impl Plugin for SpritePlugin {
             )
             // Only process actions if we're actually waiting for action input
             .add_systems(Update, action_system.run_if(in_state(PlayState::Waiting)))
-            .add_systems(OnExit(PlayState::Processing), sync_sim);
+            .add_systems(OnExit(PlayState::Processing), (sync_sim, game_over));
     }
 }
 
@@ -357,5 +357,12 @@ fn process_curves(
         if curve.is_finished() {
             commands.entity(entity).remove::<Curve>();
         }
+    }
+}
+
+fn game_over(mut next_state: ResMut<NextState<PlayState>>, sim: Res<SimState>) {
+    if sim.is_terminal() {
+        warn!("game over");
+        next_state.set(PlayState::Terminal);
     }
 }

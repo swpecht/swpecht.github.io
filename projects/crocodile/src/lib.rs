@@ -19,6 +19,7 @@ pub enum PlayState {
     #[default]
     Waiting,
     Processing,
+    Terminal,
 }
 
 /// Moves back into the Waiting state once all processing has finished
@@ -39,5 +40,6 @@ fn monitor_processing(
             debug!("changing to processing state");
             next_state.set(Processing)
         }
+        (Terminal, _) => {}
     }
 }

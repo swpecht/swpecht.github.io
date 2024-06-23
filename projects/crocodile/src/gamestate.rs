@@ -6,6 +6,12 @@ use std::{
 use bevy::prelude::{Component, Resource};
 use itertools::Itertools;
 
+#[derive(Clone, Copy, Debug)]
+pub enum Team {
+    Players(usize),
+    NPCs(usize),
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum Character {
     Knight,
@@ -54,6 +60,7 @@ struct SimEntity {
     character: Character,
     abilities: Vec<Ability>,
     remaining_actions: usize,
+    team: Team,
 }
 
 #[derive(Clone, Copy, Debug, Default, Component, PartialEq, Eq)]
@@ -117,7 +124,80 @@ impl Default for SimState {
 }
 
 impl SimState {
+    pub fn apply(&mut self, action: Action) {
+        match action {
+            Action::EndTurn => self.apply_end_turn(),
+            Action::Move { target } => self.apply_move_entity(target),
+            Action::UseAbility { target, ability } => self.apply_use_ability(target, ability),
+        }
+    }
+
+    pub fn legal_actions(&self) -> Vec<Action> {
+        use Action::*;
+        let mut actions = vec![EndTurn];
+
+        let loc = self.loc(self.cur_char()).unwrap();
+        let mut candidate_locs = Vec::new();
+        let cur_entity = self.get_entity(self.cur_char());
+
+        if cur_entity.movement > 0 {
+            candidate_locs.push(loc + sc(0, 1));
+
+            if loc.y > 0 {
+                candidate_locs.push(loc - sc(0, 1));
+            }
+            candidate_locs.push(loc + sc(1, 0));
+
+            if loc.x > 0 {
+                candidate_locs.push(loc - sc(1, 0));
+            }
+
+            let populdated_locs = self.populated_cells(loc, 1);
+            candidate_locs
+                .iter()
+                .filter(|x| !populdated_locs.contains(x))
+                .map(|&target| Move { target })
+                .for_each(|x| actions.push(x));
+        }
+
+        if cur_entity.remaining_actions > 0 {
+            for ability in cur_entity.abilities.iter() {
+                let populated_cells = self.populated_cells(loc, ability.range());
+                // filter out the characters own cell
+                for cell in populated_cells.iter().filter(|x| **x != loc) {
+                    actions.push(Action::UseAbility {
+                        target: *cell,
+                        ability: *ability,
+                    });
+                }
+            }
+        }
+
+        actions
+    }
+
+    /// Determine if the sim is in a terminal gamestate where all player characters or
+    /// all npcs are dead
+    pub fn is_terminal(&self) -> bool {
+        let mut count_players = 0;
+        let mut count_npcs = 0;
+        for (_, entity) in &self.grid {
+            match entity.team {
+                Team::Players(_) => count_players += 1,
+                Team::NPCs(_) => count_npcs += 1,
+            };
+        }
+        count_players == 0 || count_npcs == 0
+    }
+}
+
+impl SimState {
     fn insert_entity(&mut self, character: Character, abilities: Vec<Ability>, loc: SimCoords) {
+        let team = match character {
+            Character::Knight => Team::Players(0),
+            Character::Orc => Team::NPCs(0),
+        };
+
         let entity = SimEntity {
             id: SimId(self.next_id),
             character,
@@ -126,19 +206,12 @@ impl SimState {
             turn_movement: character.default_movement(),
             movement: character.default_movement(),
             remaining_actions: 1,
+            team,
         };
 
         self.initiative.push(SimId(self.next_id));
         self.next_id += 1;
         self.grid.push((loc, entity));
-    }
-
-    pub fn apply(&mut self, action: Action) {
-        match action {
-            Action::EndTurn => self.apply_end_turn(),
-            Action::Move { target } => self.apply_move_entity(target),
-            Action::UseAbility { target, ability } => self.apply_use_ability(target, ability),
-        }
     }
 
     pub fn cur_char(&self) -> SimId {
@@ -218,50 +291,6 @@ impl SimState {
 
     pub fn abilities(&self) -> Vec<Ability> {
         self.get_entity(self.cur_char()).abilities.clone()
-    }
-
-    pub fn legal_actions(&self) -> Vec<Action> {
-        use Action::*;
-        let mut actions = vec![EndTurn];
-
-        let loc = self.loc(self.cur_char()).unwrap();
-        let mut candidate_locs = Vec::new();
-        let cur_entity = self.get_entity(self.cur_char());
-
-        if cur_entity.movement > 0 {
-            candidate_locs.push(loc + sc(0, 1));
-
-            if loc.y > 0 {
-                candidate_locs.push(loc - sc(0, 1));
-            }
-            candidate_locs.push(loc + sc(1, 0));
-
-            if loc.x > 0 {
-                candidate_locs.push(loc - sc(1, 0));
-            }
-
-            let populdated_locs = self.populated_cells(loc, 1);
-            candidate_locs
-                .iter()
-                .filter(|x| !populdated_locs.contains(x))
-                .map(|&target| Move { target })
-                .for_each(|x| actions.push(x));
-        }
-
-        if cur_entity.remaining_actions > 0 {
-            for ability in cur_entity.abilities.iter() {
-                let populated_cells = self.populated_cells(loc, ability.range());
-                // filter out the characters own cell
-                for cell in populated_cells.iter().filter(|x| **x != loc) {
-                    actions.push(Action::UseAbility {
-                        target: *cell,
-                        ability: *ability,
-                    });
-                }
-            }
-        }
-
-        actions
     }
 
     /// Get all empty cells within range of loc
