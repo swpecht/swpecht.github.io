@@ -1,11 +1,9 @@
-use std::time::Duration;
-
 use bevy::{
+    core::Zeroable,
     math::{vec2, vec3},
     prelude::*,
     render::camera::ScalingMode,
     time::Stopwatch,
-    transform::commands,
 };
 
 use crate::{
@@ -20,13 +18,24 @@ const GRID_HEIGHT: usize = 20;
 
 const TILE_LAYER: f32 = 0.0;
 const CHAR_LAYER: f32 = 1.0;
+const PROJECTILE_LAYER: f32 = 2.0;
 
 pub struct SpritePlugin;
 
 impl Plugin for SpritePlugin {
     fn build(&self, app: &mut App) {
+        app.add_event::<SpawnProjectileEvent>();
+
         app.add_systems(Startup, (setup_camera, sync_sim, setup_tiles))
-            .add_systems(Update, (animate_sprite, process_curves))
+            .add_systems(
+                Update,
+                (
+                    animate_sprite,
+                    process_curves,
+                    spawn_projectile,
+                    cleanup_projectiles,
+                ),
+            )
             // Only process actions if we're actually waiting for action input
             .add_systems(Update, action_system.run_if(in_state(PlayState::Waiting)))
             .add_systems(OnExit(PlayState::Processing), sync_sim);
@@ -48,6 +57,15 @@ struct AnimationIndices {
 
 #[derive(Component, Deref, DerefMut)]
 struct AnimationTimer(Timer);
+
+#[derive(Event, Debug)]
+struct SpawnProjectileEvent {
+    start: Vec2,
+    target: Vec2,
+}
+
+#[derive(Component)]
+struct Projectile;
 
 impl Curve {
     fn cur_pos(&self) -> Vec2 {
@@ -200,11 +218,19 @@ fn setup_tiles(
 fn action_system(
     mut commands: Commands,
     mut ev_action: EventReader<ActionEvent>,
+    mut ev_projectile: EventWriter<SpawnProjectileEvent>,
     query: Query<(Entity, &SimId, &Transform)>,
     mut sim: ResMut<SimState>,
     mut cur: ResMut<CurrentCharacter>,
     mut next_state: ResMut<NextState<PlayState>>,
 ) {
+    let cur_char_pos = query
+        .iter()
+        .filter(|(_, id, _)| **id == cur.0)
+        .map(|(_, _, t)| vec2(t.translation.x, t.translation.y))
+        .next()
+        .unwrap();
+
     for ev in ev_action.read() {
         debug!("action event received: {:?}", ev);
         sim.apply(ev.action);
@@ -212,9 +238,19 @@ fn action_system(
         match ev.action {
             EndTurn => next_state.set(PlayState::Processing),
             Move { target } => handle_move(&mut commands, target, &query, cur.0),
-            UseAbility { target, ability } => {
-                handle_ability(&mut commands, target, ability, &query, cur.0)
-            } // todo
+            UseAbility {
+                target,
+                ability: Ability::BowAttack { range: _ },
+            } => {
+                ev_projectile.send(SpawnProjectileEvent {
+                    start: cur_char_pos,
+                    target: target.to_world(),
+                });
+            }
+            UseAbility {
+                target,
+                ability: Ability::MeleeAttack,
+            } => handle_melee(&mut commands, target, &query, cur.0),
         }
         cur.0 = sim.cur_char();
         debug!("{:?}", sim.cur_char());
@@ -241,10 +277,9 @@ fn handle_move(
         });
 }
 
-fn handle_ability(
+fn handle_melee(
     commands: &mut Commands,
     target: SimCoords,
-    ability: Ability,
     query: &Query<(Entity, &SimId, &Transform)>,
     cur: SimId,
 ) {
@@ -252,10 +287,6 @@ fn handle_ability(
         .iter()
         .filter(|(_, id, _)| **id == cur)
         .for_each(|(e, _, t)| {
-            if !matches!(ability, Ability::MeleeAttack) {
-                panic!("ability not yet implemented")
-            }
-
             let start = vec2(t.translation.x, t.translation.y);
             let curve = Curve {
                 path: vec![start, target.to_world().lerp(start, 0.5), start],
@@ -264,6 +295,48 @@ fn handle_ability(
             };
             commands.entity(e).insert(curve.clone());
         });
+}
+
+fn spawn_projectile(
+    mut commands: Commands,
+    mut ev_action: EventReader<SpawnProjectileEvent>,
+    asset_server: Res<AssetServer>,
+    mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
+) {
+    for ev in ev_action.read() {
+        debug!("spawning projectile: {:?}", ev);
+        let texture = asset_server.load("pixel-crawler/Weapons/Wood/Wood.png");
+        let mut layout = TextureAtlasLayout::new_empty(vec2(192.0, 112.0));
+        layout.add_texture(Rect::from_corners(vec2(32.0, 0.0), vec2(48.0, 16.0)));
+        let texture_atlas_layout = texture_atlas_layouts.add(layout);
+        commands.spawn((
+            SpriteSheetBundle {
+                texture,
+                transform: Transform::from_xyz(0.0, 0.0, PROJECTILE_LAYER),
+                atlas: TextureAtlas {
+                    layout: texture_atlas_layout,
+                    index: 0,
+                },
+                ..default()
+            },
+            Curve {
+                path: vec![ev.start, ev.target],
+                time: Stopwatch::new(),
+                speed: 256.0,
+            },
+            Projectile,
+        ));
+    }
+}
+
+/// Despan projectiles that are no longer moving
+fn cleanup_projectiles(
+    mut commands: Commands,
+    query: Query<Entity, (With<Projectile>, Without<Curve>)>,
+) {
+    for entity in &query {
+        commands.entity(entity).despawn_recursive();
+    }
 }
 
 fn process_curves(

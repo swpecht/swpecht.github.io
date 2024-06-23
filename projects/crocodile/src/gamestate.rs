@@ -6,8 +6,6 @@ use std::{
 use bevy::prelude::{Component, Resource};
 use itertools::Itertools;
 
-const WORLD_SIZE: usize = 100;
-
 #[derive(Debug, Clone, Copy)]
 pub enum Character {
     Knight,
@@ -110,7 +108,7 @@ impl Default for SimState {
         state.insert_entity(
             Character::Knight,
             vec![Ability::MeleeAttack, Ability::BowAttack { range: 20 }],
-            sc(4, 10),
+            sc(2, 4),
         );
         state.insert_entity(Character::Orc, vec![Ability::MeleeAttack], sc(5, 10));
 

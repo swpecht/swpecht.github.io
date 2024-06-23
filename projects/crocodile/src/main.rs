@@ -1,12 +1,9 @@
 use bevy::{
     log::{Level, LogPlugin},
     prelude::*,
-    render::color::Color,
     DefaultPlugins,
 };
-use crocodile::{gamestate::SimState, sprite::SpritePlugin, ui::UIPlugin, PlayState, StatePlugin};
-
-const BACKGROUND_COLOR: Color = Color::rgb(0.9, 0.9, 0.9);
+use crocodile::{gamestate::SimState, sprite::SpritePlugin, ui::UIPlugin, StatePlugin};
 
 pub enum TransitionState {
     Waiting,    // waiting on an action

@@ -1,4 +1,4 @@
-use bevy::{ecs::query, prelude::*};
+use bevy::prelude::*;
 use sprite::Curve;
 
 pub mod gamestate;
