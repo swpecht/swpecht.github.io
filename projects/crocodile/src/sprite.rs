@@ -370,6 +370,7 @@ fn game_over(mut next_state: ResMut<NextState<PlayState>>, sim: Res<SimState>) {
 
 fn ai(sim: Res<SimState>, mut ev_action: EventWriter<ActionEvent>) {
     if matches!(sim.cur_team(), Team::NPCs(_)) {
+        debug!("finding best move for: {:?}", sim.cur_char());
         let action = find_best_move(sim.clone()).unwrap();
         ev_action.send(ActionEvent { action });
     }

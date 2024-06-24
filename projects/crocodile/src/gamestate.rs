@@ -120,6 +120,8 @@ impl Default for SimState {
             sc(2, 4),
         );
         state.insert_entity(Character::Orc, vec![Ability::MeleeAttack], sc(5, 10));
+        state.insert_entity(Character::Orc, vec![Ability::MeleeAttack], sc(6, 10));
+        state.insert_entity(Character::Orc, vec![Ability::MeleeAttack], sc(4, 10));
 
         state
     }
