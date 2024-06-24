@@ -6,6 +6,8 @@ use std::{
 use bevy::prelude::{Component, Resource};
 use itertools::Itertools;
 
+const WORLD_SIZE: usize = 20;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Team {
     Players(usize),
@@ -29,11 +31,6 @@ pub enum Action {
     EndTurn,
     UseAbility { target: SimCoords, ability: Ability },
     Move { target: SimCoords },
-}
-
-pub struct Score {
-    player: f32,
-    npc: f32,
 }
 
 impl Display for Action {
@@ -147,12 +144,17 @@ impl SimState {
         let cur_entity = self.get_entity(self.cur_char());
 
         if cur_entity.movement > 0 {
-            candidate_locs.push(loc + sc(0, 1));
+            if loc.y < WORLD_SIZE {
+                candidate_locs.push(loc + sc(0, 1));
+            }
 
             if loc.y > 0 {
                 candidate_locs.push(loc - sc(0, 1));
             }
-            candidate_locs.push(loc + sc(1, 0));
+
+            if loc.x < WORLD_SIZE {
+                candidate_locs.push(loc + sc(1, 0));
+            }
 
             if loc.x > 0 {
                 candidate_locs.push(loc - sc(1, 0));
@@ -369,15 +371,6 @@ impl Display for Ability {
         match self {
             Ability::MeleeAttack => f.write_str("Melee"),
             Ability::BowAttack { range: _ } => f.write_str("Bow"),
-        }
-    }
-}
-
-impl Score {
-    pub fn get(&self, team: Team) -> f32 {
-        match team {
-            Team::Players(_) => self.player,
-            Team::NPCs(_) => self.npc,
         }
     }
 }
