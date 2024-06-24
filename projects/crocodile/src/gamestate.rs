@@ -6,18 +6,18 @@ use std::{
 use bevy::prelude::{Component, Resource};
 use itertools::Itertools;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Team {
     Players(usize),
     NPCs(usize),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Hash)]
 pub enum Character {
     Knight,
     Orc,
 }
-#[derive(Resource)]
+#[derive(Resource, Hash, Clone)]
 pub struct SimState {
     next_id: usize,
     initiative: Vec<SimId>, // order of players
@@ -50,13 +50,13 @@ impl Display for Action {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Ability {
     MeleeAttack,
     BowAttack { range: usize },
 }
 
-#[derive(Clone)]
+#[derive(Clone, Hash)]
 struct SimEntity {
     health: usize,
     id: SimId,
@@ -68,10 +68,10 @@ struct SimEntity {
     team: Team,
 }
 
-#[derive(Clone, Copy, Debug, Default, Component, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, Component, PartialEq, Eq, Hash)]
 pub struct SimId(usize);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SimCoords {
     pub x: usize,
     pub y: usize,
@@ -137,9 +137,10 @@ impl SimState {
         }
     }
 
-    pub fn legal_actions(&self) -> Vec<Action> {
+    pub fn legal_actions(&self, actions: &mut Vec<Action>) {
+        actions.clear();
         use Action::*;
-        let mut actions = vec![EndTurn];
+        actions.push(EndTurn);
 
         let loc = self.loc(self.cur_char()).unwrap();
         let mut candidate_locs = Vec::new();
@@ -177,8 +178,6 @@ impl SimState {
                 }
             }
         }
-
-        actions
     }
 
     /// Determine if the sim is in a terminal gamestate where all player characters or
@@ -195,20 +194,28 @@ impl SimState {
         count_players == 0 || count_npcs == 0
     }
 
-    pub fn evaluate(&self) -> Score {
+    pub fn evaluate(&self, team: Team) -> f32 {
         let mut player_health = 0;
         let mut npc_health = 0;
         for (_, entity) in &self.grid {
             match entity.team {
                 Team::Players(_) => player_health += entity.health,
                 Team::NPCs(_) => npc_health += entity.health,
-            };
+            }
         }
 
-        Score {
-            player: player_health as f32,
-            npc: npc_health as f32,
+        match team {
+            Team::Players(_) => player_health as f32 - npc_health as f32,
+            Team::NPCs(_) => npc_health as f32 - player_health as f32,
         }
+    }
+
+    pub fn is_chance_node(&self) -> bool {
+        false
+    }
+
+    pub fn cur_team(&self) -> Team {
+        self.get_entity(self.cur_char()).team
     }
 }
 

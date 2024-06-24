@@ -6,7 +6,8 @@ use bevy::{
 };
 
 use crate::{
-    gamestate::{Ability, Action, SimCoords, SimId, SimState},
+    ai::find_best_move,
+    gamestate::{Ability, Action, SimCoords, SimId, SimState, Team},
     ui::{ActionEvent, CurrentCharacter},
     PlayState,
 };
@@ -37,7 +38,7 @@ impl Plugin for SpritePlugin {
             )
             // Only process actions if we're actually waiting for action input
             .add_systems(Update, action_system.run_if(in_state(PlayState::Waiting)))
-            .add_systems(OnExit(PlayState::Processing), (sync_sim, game_over));
+            .add_systems(OnExit(PlayState::Processing), (sync_sim, game_over, ai));
     }
 }
 
@@ -364,5 +365,12 @@ fn game_over(mut next_state: ResMut<NextState<PlayState>>, sim: Res<SimState>) {
     if sim.is_terminal() {
         warn!("game over");
         next_state.set(PlayState::Terminal);
+    }
+}
+
+fn ai(sim: Res<SimState>, mut ev_action: EventWriter<ActionEvent>) {
+    if matches!(sim.cur_team(), Team::NPCs(_)) {
+        let action = find_best_move(sim.clone()).unwrap();
+        ev_action.send(ActionEvent { action });
     }
 }

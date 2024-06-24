@@ -173,8 +173,9 @@ fn populate_action_buttons(
     parent.clear_children();
 
     parent.with_children(|parent| {
-        debug!("{:?}", sim.legal_actions());
-        for (idx, action) in sim.legal_actions().iter().enumerate() {
+        let mut actions = Vec::new();
+        debug!("{:?}", sim.legal_actions(&mut actions));
+        for (idx, action) in actions.into_iter().enumerate() {
             spawn_action_button(parent, &action.to_string(), idx);
         }
     });
@@ -300,7 +301,8 @@ fn handle_right_click(
 
     let target = mouse_coords.to_sim();
 
-    let legal_actions = sim.legal_actions();
+    let mut legal_actions = Vec::new();
+    sim.legal_actions(&mut legal_actions);
     let action = Action::Move { target };
     if legal_actions.contains(&action) {
         ev_action.send(ActionEvent { action });
@@ -314,7 +316,8 @@ fn action_button_action(
     mut ev_action: EventWriter<ActionEvent>,
     sim: Res<SimState>,
 ) {
-    let legal_actions = sim.legal_actions();
+    let mut legal_actions = Vec::new();
+    sim.legal_actions(&mut legal_actions);
     for (interaction, action_id) in &interaction_query {
         if *interaction == Interaction::Pressed {
             ev_action.send(ActionEvent {
