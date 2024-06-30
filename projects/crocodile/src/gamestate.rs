@@ -145,6 +145,8 @@ impl SimState {
         let mut candidate_locs = Vec::new();
         let cur_entity = self.get_entity(self.cur_char());
 
+        // We check push the ability actions first so that these are preferentially explored
+        // by the ai tree search. This avoids the units moving around without purpose to end in the same spot to attack
         if cur_entity.remaining_actions > 0 {
             for ability in cur_entity.abilities.iter() {
                 let populated_cells = self.populated_cells(loc, ability.range());
