@@ -4,7 +4,9 @@ use std::{
 };
 
 use bevy::prelude::{Component, Resource};
+use clone_from::CloneFrom;
 use itertools::Itertools;
+use tinyvec::ArrayVec;
 
 const WORLD_SIZE: usize = 20;
 
@@ -14,23 +16,32 @@ pub enum Team {
     NPCs(usize),
 }
 
-#[derive(Debug, Clone, Copy, Hash)]
+#[derive(Debug, Clone, Copy, Hash, Default)]
 pub enum Character {
     Knight,
+    #[default]
     Orc,
 }
-#[derive(Resource, Hash, Clone)]
+#[derive(Resource, Hash, CloneFrom)]
 pub struct SimState {
     next_id: usize,
-    initiative: Vec<SimId>, // order of players
-    grid: Vec<(SimCoords, SimEntity)>,
+    initiative: ArrayVec<[SimId; 10]>, // order of players
+    grid: ArrayVec<[(SimCoords, SimEntity); 20]>,
+    /// Track if start of an entities turn, used to optimize AI search caching
+    is_start_of_turn: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Action {
+    #[default]
     EndTurn,
-    UseAbility { target: SimCoords, ability: Ability },
-    Move { target: SimCoords },
+    UseAbility {
+        target: SimCoords,
+        ability: Ability,
+    },
+    Move {
+        target: SimCoords,
+    },
 }
 
 impl Display for Action {
@@ -47,20 +58,23 @@ impl Display for Action {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub enum Ability {
+    #[default]
     MeleeAttack,
-    BowAttack { range: usize },
+    BowAttack {
+        range: usize,
+    },
 }
 
-#[derive(Clone, Hash)]
+#[derive(CloneFrom, Hash, Default)]
 struct SimEntity {
     health: usize,
     id: SimId,
     turn_movement: usize,
     movement: usize,
     character: Character,
-    abilities: Vec<Ability>,
+    abilities: ArrayVec<[Ability; 5]>,
     remaining_actions: usize,
     team: Team,
 }
@@ -68,7 +82,7 @@ struct SimEntity {
 #[derive(Clone, Copy, Debug, Default, Component, PartialEq, Eq, Hash)]
 pub struct SimId(usize);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct SimCoords {
     pub x: usize,
     pub y: usize,
@@ -110,14 +124,15 @@ impl Default for SimState {
     fn default() -> Self {
         let mut state = Self {
             next_id: 0,
-            initiative: Vec::new(),
-            grid: Vec::new(),
+            initiative: ArrayVec::new(),
+            grid: ArrayVec::new(),
+            is_start_of_turn: true,
         };
 
         state.insert_entity(
             Character::Knight,
             vec![Ability::MeleeAttack, Ability::BowAttack { range: 20 }],
-            sc(3, 10),
+            sc(0, 9),
         );
         state.insert_entity(Character::Orc, vec![Ability::MeleeAttack], sc(5, 10));
         state.insert_entity(Character::Orc, vec![Ability::MeleeAttack], sc(6, 10));
@@ -129,6 +144,8 @@ impl Default for SimState {
 
 impl SimState {
     pub fn apply(&mut self, action: Action) {
+        self.is_start_of_turn = false;
+
         match action {
             Action::EndTurn => self.apply_end_turn(),
             Action::Move { target } => self.apply_move_entity(target),
@@ -139,7 +156,7 @@ impl SimState {
     pub fn legal_actions(&self, actions: &mut Vec<Action>) {
         actions.clear();
         use Action::*;
-        actions.push(EndTurn);
+        actions.push(Action::EndTurn);
 
         let loc = self.loc(self.cur_char()).unwrap();
         let mut candidate_locs = Vec::new();
@@ -201,6 +218,9 @@ impl SimState {
     }
 
     pub fn evaluate(&self, team: Team) -> f32 {
+        const WIN_VALUE: f32 = 1000.0;
+        // todo: add score component for entity count
+
         let mut player_health = 0;
         let mut npc_health = 0;
         for (_, entity) in &self.grid {
@@ -210,10 +230,20 @@ impl SimState {
             }
         }
 
-        match team {
+        let health_score = match team {
             Team::Players(_) => player_health as f32 - npc_health as f32,
             Team::NPCs(_) => npc_health as f32 - player_health as f32,
-        }
+        };
+
+        let win_score = match (team, player_health, npc_health) {
+            (Team::Players(_), 0, _) => -WIN_VALUE,
+            (Team::Players(_), _, 0) => WIN_VALUE,
+            (Team::NPCs(_), 0, _) => WIN_VALUE,
+            (Team::NPCs(_), _, 0) => -WIN_VALUE,
+            (_, _, _) => 0.0,
+        };
+
+        health_score + win_score
     }
 
     pub fn is_chance_node(&self) -> bool {
@@ -222,6 +252,10 @@ impl SimState {
 
     pub fn cur_team(&self) -> Team {
         self.get_entity(self.cur_char()).team
+    }
+
+    pub fn is_start_of_turn(&self) -> bool {
+        self.is_start_of_turn
     }
 }
 
@@ -232,10 +266,15 @@ impl SimState {
             Character::Orc => Team::NPCs(0),
         };
 
+        let mut ability_vec = ArrayVec::new();
+        for a in abilities {
+            ability_vec.push(a);
+        }
+
         let entity = SimEntity {
             id: SimId(self.next_id),
             character,
-            abilities,
+            abilities: ability_vec,
             health: character.default_health(),
             turn_movement: character.default_movement(),
             movement: character.default_movement(),
@@ -283,6 +322,7 @@ impl SimState {
         entity.remaining_actions = 1;
 
         self.initiative.rotate_left(1);
+        self.is_start_of_turn = true;
     }
 
     pub fn get_id(&self, coords: SimCoords) -> Option<SimId> {
@@ -326,7 +366,7 @@ impl SimState {
     }
 
     pub fn abilities(&self) -> Vec<Ability> {
-        self.get_entity(self.cur_char()).abilities.clone()
+        self.get_entity(self.cur_char()).abilities.to_vec()
     }
 
     /// Get all empty cells within range of loc
@@ -378,5 +418,11 @@ impl Display for Ability {
             Ability::MeleeAttack => f.write_str("Melee"),
             Ability::BowAttack { range: _ } => f.write_str("Bow"),
         }
+    }
+}
+
+impl Default for Team {
+    fn default() -> Self {
+        Team::NPCs(0)
     }
 }

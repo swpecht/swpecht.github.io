@@ -7,7 +7,7 @@ use dashmap::DashMap;
 
 use crate::gamestate::{Action, SimState, Team};
 
-const MAX_DEPTH: u8 = 50;
+const MAX_DEPTH: u8 = 25;
 
 pub fn find_best_move(root: SimState) -> Option<Action> {
     let cur_team = root.cur_team();
@@ -65,6 +65,7 @@ type TranspositionKey = (Team, u64);
 #[derive(Clone)]
 struct AlphaBetaCache {
     vec_pool: Pool<Vec<Action>>,
+    sim_pool: Pool<SimState>,
     transposition_table: Arc<DashMap<TranspositionKey, AlphaBetaResult>>,
 }
 
@@ -72,6 +73,7 @@ impl AlphaBetaCache {
     fn new() -> Self {
         Self {
             vec_pool: Pool::new(|| Vec::with_capacity(5)),
+            sim_pool: Pool::new(SimState::default),
             transposition_table: Arc::new(DashMap::new()),
         }
     }
@@ -90,7 +92,7 @@ impl AlphaBetaCache {
         }
     }
 
-    pub fn insert(&self, gs: &SimState, v: AlphaBetaResult, maximizing_team: Team, depth: u8) {
+    pub fn insert(&self, gs: &SimState, v: AlphaBetaResult, maximizing_team: Team, _depth: u8) {
         // Check if the game wants to store this state
         let k = self.get_game_key(gs);
         if let Some(k) = k {
@@ -99,6 +101,10 @@ impl AlphaBetaCache {
     }
 
     fn get_game_key(&self, gs: &SimState) -> Option<u64> {
+        if !gs.is_start_of_turn() {
+            return None;
+        }
+
         let mut hasher = DefaultHasher::default();
         gs.hash(&mut hasher);
         Some(hasher.finish())
@@ -106,7 +112,7 @@ impl AlphaBetaCache {
 }
 
 impl AlphaBetaCache {
-    pub fn reset(&mut self) {
+    pub fn _reset(&mut self) {
         self.transposition_table.clear();
     }
 }
@@ -158,10 +164,12 @@ fn alpha_beta(
         let mut value = f64::NEG_INFINITY;
         for a in &actions {
             // gs.apply(*a);
-            let mut ngs = gs.clone();
+            let mut ngs = cache.sim_pool.detach();
+            ngs.clone_from(gs);
             ngs.apply(*a);
             let (child_value, _) =
                 alpha_beta(&mut ngs, maximizing_team, alpha, beta, depth + 1, cache);
+            cache.sim_pool.attach(ngs);
             // gs.undo();
             if child_value > value {
                 value = child_value;
@@ -177,10 +185,12 @@ fn alpha_beta(
         let mut value = f64::INFINITY;
         for a in &actions {
             // gs.apply(*a);
-            let mut ngs = gs.clone();
+            let mut ngs = cache.sim_pool.detach();
+            ngs.clone_from(gs);
             ngs.apply(*a);
             let (child_value, _) =
                 alpha_beta(&mut ngs, maximizing_team, alpha, beta, depth + 1, cache);
+            cache.sim_pool.attach(ngs);
             // gs.undo();
             if child_value < value {
                 value = child_value;
