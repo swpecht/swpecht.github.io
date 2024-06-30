@@ -174,7 +174,8 @@ fn populate_action_buttons(
 
     parent.with_children(|parent| {
         let mut actions = Vec::new();
-        debug!("{:?}", sim.legal_actions(&mut actions));
+        sim.legal_actions(&mut actions);
+        debug!("{:?}", actions);
         for (idx, action) in actions.into_iter().enumerate() {
             spawn_action_button(parent, &action.to_string(), idx);
         }

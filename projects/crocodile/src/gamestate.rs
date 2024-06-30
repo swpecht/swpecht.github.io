@@ -117,10 +117,10 @@ impl Default for SimState {
         state.insert_entity(
             Character::Knight,
             vec![Ability::MeleeAttack, Ability::BowAttack { range: 20 }],
-            sc(2, 4),
+            sc(3, 10),
         );
         state.insert_entity(Character::Orc, vec![Ability::MeleeAttack], sc(5, 10));
-        state.insert_entity(Character::Orc, vec![Ability::MeleeAttack], sc(6, 10));
+        // state.insert_entity(Character::Orc, vec![Ability::MeleeAttack], sc(6, 10));
         state.insert_entity(Character::Orc, vec![Ability::MeleeAttack], sc(4, 10));
 
         state
@@ -242,8 +242,8 @@ impl SimState {
         };
 
         self.initiative.push(SimId(self.next_id));
-        self.next_id += 1;
         self.grid.push((loc, entity));
+        self.next_id += 1;
     }
 
     pub fn cur_char(&self) -> SimId {
@@ -258,6 +258,8 @@ impl SimState {
         if target_entity.health == 0 {
             self.remove_entity(target_id);
         }
+
+        self.get_entity_mut(self.cur_char()).remaining_actions -= 1;
     }
 
     fn apply_move_entity(&mut self, target: SimCoords) {
