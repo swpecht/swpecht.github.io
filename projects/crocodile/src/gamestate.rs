@@ -145,6 +145,19 @@ impl SimState {
         let mut candidate_locs = Vec::new();
         let cur_entity = self.get_entity(self.cur_char());
 
+        if cur_entity.remaining_actions > 0 {
+            for ability in cur_entity.abilities.iter() {
+                let populated_cells = self.populated_cells(loc, ability.range());
+                // filter out the characters own cell
+                for cell in populated_cells.iter().filter(|x| **x != loc) {
+                    actions.push(Action::UseAbility {
+                        target: *cell,
+                        ability: *ability,
+                    });
+                }
+            }
+        }
+
         if cur_entity.movement > 0 {
             if loc.y < WORLD_SIZE {
                 candidate_locs.push(loc + sc(0, 1));
@@ -168,19 +181,6 @@ impl SimState {
                 .filter(|x| !populdated_locs.contains(x))
                 .map(|&target| Move { target })
                 .for_each(|x| actions.push(x));
-        }
-
-        if cur_entity.remaining_actions > 0 {
-            for ability in cur_entity.abilities.iter() {
-                let populated_cells = self.populated_cells(loc, ability.range());
-                // filter out the characters own cell
-                for cell in populated_cells.iter().filter(|x| **x != loc) {
-                    actions.push(Action::UseAbility {
-                        target: *cell,
-                        ability: *ability,
-                    });
-                }
-            }
         }
     }
 
