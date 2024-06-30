@@ -348,7 +348,7 @@ impl Character {
 
     fn default_health(&self) -> usize {
         match self {
-            Character::Knight => 10,
+            Character::Knight => 15,
             Character::Orc => 10,
         }
     }
