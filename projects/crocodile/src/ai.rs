@@ -4,10 +4,11 @@ use std::{
 };
 
 use dashmap::DashMap;
+use itertools::Itertools;
 
 use crate::gamestate::{Action, SimState, Team};
 
-const MAX_DEPTH: u8 = 25;
+const MAX_DEPTH: u8 = 2;
 
 pub fn find_best_move(root: SimState) -> Option<Action> {
     let cur_team = root.cur_team();
@@ -72,7 +73,7 @@ struct AlphaBetaCache {
 impl AlphaBetaCache {
     fn new() -> Self {
         Self {
-            vec_pool: Pool::new(|| Vec::with_capacity(5)),
+            vec_pool: Pool::new(|| Vec::with_capacity(8)),
             sim_pool: Pool::new(SimState::default),
             transposition_table: Arc::new(DashMap::new()),
         }
@@ -150,8 +151,6 @@ fn alpha_beta(
         beta = beta.min(v.upper_bound);
     }
 
-    let mut actions = cache.vec_pool.detach();
-    gs.legal_actions(&mut actions);
     if gs.is_chance_node() {
         todo!("add support for chance nodes")
     }
@@ -160,17 +159,17 @@ fn alpha_beta(
     let team = gs.cur_team();
     let result;
 
+    let mut children = child_nodes(gs, maximizing_team, cache);
+
     if team == maximizing_team {
         let mut value = f64::NEG_INFINITY;
-        for a in &actions {
-            // gs.apply(*a);
-            let mut ngs = cache.sim_pool.detach();
-            ngs.clone_from(gs);
-            ngs.apply(*a);
-            let (child_value, _) =
-                alpha_beta(&mut ngs, maximizing_team, alpha, beta, depth + 1, cache);
-            cache.sim_pool.attach(ngs);
-            // gs.undo();
+        for (ngs, a) in children.iter_mut() {
+            let new_depth = if *a == Action::EndTurn {
+                depth + 1
+            } else {
+                depth
+            };
+            let (child_value, _) = alpha_beta(ngs, maximizing_team, alpha, beta, new_depth, cache);
             if child_value > value {
                 value = child_value;
                 best_action = Some(*a);
@@ -183,15 +182,15 @@ fn alpha_beta(
         result = (value, best_action);
     } else {
         let mut value = f64::INFINITY;
-        for a in &actions {
-            // gs.apply(*a);
-            let mut ngs = cache.sim_pool.detach();
-            ngs.clone_from(gs);
-            ngs.apply(*a);
-            let (child_value, _) =
-                alpha_beta(&mut ngs, maximizing_team, alpha, beta, depth + 1, cache);
-            cache.sim_pool.attach(ngs);
-            // gs.undo();
+        children.reverse();
+
+        for (ngs, a) in children.iter_mut() {
+            let new_depth = if *a == Action::EndTurn {
+                depth + 1
+            } else {
+                depth
+            };
+            let (child_value, _) = alpha_beta(ngs, maximizing_team, alpha, beta, new_depth, cache);
             if child_value < value {
                 value = child_value;
                 best_action = Some(*a);
@@ -222,7 +221,39 @@ fn alpha_beta(
         cache_value.lower_bound = result.0;
     }
 
+    children
+        .into_iter()
+        .for_each(|(s, _)| cache.sim_pool.attach(s));
     cache.insert(gs, cache_value, maximizing_team, depth);
+    result
+}
+
+/// Return all chilren nodes, sorted by value
+fn child_nodes(
+    gs: &SimState,
+    maximizing_team: Team,
+    cache: &mut AlphaBetaCache,
+) -> Vec<(SimState, Action)> {
+    let mut actions = cache.vec_pool.detach();
+    gs.legal_actions(&mut actions);
+
+    let mut result = actions
+        .iter()
+        .map(|a| {
+            let mut ngs = cache.sim_pool.detach();
+            ngs.clone_from(gs);
+            ngs.apply(*a);
+            (ngs, *a)
+        })
+        .collect_vec();
+
+    result.sort_by(|(s1, _), (s2, _)| {
+        // we're doing a reverse sort so s2.cmp(s1)
+        s2.evaluate(maximizing_team)
+            .partial_cmp(&s1.evaluate(maximizing_team))
+            .unwrap()
+    });
+
     actions.clear();
     cache.vec_pool.attach(actions);
     result
@@ -252,5 +283,36 @@ impl<T> Pool<T> {
 
     pub fn attach(&mut self, obj: T) {
         self.pool.push(obj);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    extern crate test;
+
+    use test::Bencher;
+
+    use crate::gamestate::{sc, Ability, Character, SimState};
+
+    use super::find_best_move;
+
+    #[bench]
+    fn find_best_move_bench(b: &mut Bencher) {
+        b.iter(|| {
+            let mut state = SimState::new();
+
+            state.insert_entity(Character::Orc, vec![Ability::MeleeAttack], sc(5, 10));
+            // state.insert_entity(Character::Orc, vec![Ability::MeleeAttack], sc(6, 10));
+            state.insert_entity(Character::Orc, vec![Ability::MeleeAttack], sc(4, 10));
+
+            state.insert_entity(
+                Character::Knight,
+                vec![Ability::MeleeAttack, Ability::BowAttack { range: 20 }],
+                sc(0, 9),
+            );
+
+            find_best_move(state);
+        });
     }
 }

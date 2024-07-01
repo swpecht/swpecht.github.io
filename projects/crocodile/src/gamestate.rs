@@ -29,6 +29,8 @@ pub struct SimState {
     grid: ArrayVec<[(SimCoords, SimEntity); 20]>,
     /// Track if start of an entities turn, used to optimize AI search caching
     is_start_of_turn: bool,
+    /// Don't allow move action after another move action
+    can_move: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -116,18 +118,25 @@ impl SimCoords {
     }
 }
 
-fn sc(x: usize, y: usize) -> SimCoords {
+pub fn sc(x: usize, y: usize) -> SimCoords {
     SimCoords { x, y }
 }
 
-impl Default for SimState {
-    fn default() -> Self {
-        let mut state = Self {
+impl SimState {
+    pub fn new() -> Self {
+        Self {
             next_id: 0,
             initiative: ArrayVec::new(),
             grid: ArrayVec::new(),
             is_start_of_turn: true,
-        };
+            can_move: true,
+        }
+    }
+}
+
+impl Default for SimState {
+    fn default() -> Self {
+        let mut state = SimState::new();
 
         state.insert_entity(
             Character::Knight,
@@ -159,7 +168,6 @@ impl SimState {
         actions.push(Action::EndTurn);
 
         let loc = self.loc(self.cur_char()).unwrap();
-        let mut candidate_locs = Vec::new();
         let cur_entity = self.get_entity(self.cur_char());
 
         // We check push the ability actions first so that these are preferentially explored
@@ -177,24 +185,18 @@ impl SimState {
             }
         }
 
-        if cur_entity.movement > 0 {
-            if loc.y < WORLD_SIZE {
-                candidate_locs.push(loc + sc(0, 1));
+        if cur_entity.movement > 0 && self.can_move {
+            let mut candidate_locs = Vec::new();
+            for x in 0..WORLD_SIZE {
+                for y in 0..WORLD_SIZE {
+                    let l = sc(x, y);
+                    if l.dist(&loc) <= cur_entity.movement {
+                        candidate_locs.push(l);
+                    }
+                }
             }
 
-            if loc.y > 0 {
-                candidate_locs.push(loc - sc(0, 1));
-            }
-
-            if loc.x < WORLD_SIZE {
-                candidate_locs.push(loc + sc(1, 0));
-            }
-
-            if loc.x > 0 {
-                candidate_locs.push(loc - sc(1, 0));
-            }
-
-            let populdated_locs = self.populated_cells(loc, 1);
+            let populdated_locs = self.populated_cells(loc, cur_entity.movement);
             candidate_locs
                 .iter()
                 .filter(|x| !populdated_locs.contains(x))
@@ -260,7 +262,7 @@ impl SimState {
 }
 
 impl SimState {
-    fn insert_entity(&mut self, character: Character, abilities: Vec<Ability>, loc: SimCoords) {
+    pub fn insert_entity(&mut self, character: Character, abilities: Vec<Ability>, loc: SimCoords) {
         let team = match character {
             Character::Knight => Team::Players(0),
             Character::Orc => Team::NPCs(0),
@@ -301,6 +303,7 @@ impl SimState {
         }
 
         self.get_entity_mut(self.cur_char()).remaining_actions -= 1;
+        self.can_move = true;
     }
 
     fn apply_move_entity(&mut self, target: SimCoords) {
@@ -312,6 +315,8 @@ impl SimState {
             *c = target;
             entity.movement -= 1;
         };
+
+        self.can_move = false;
     }
 
     fn apply_end_turn(&mut self) {
@@ -323,6 +328,7 @@ impl SimState {
 
         self.initiative.rotate_left(1);
         self.is_start_of_turn = true;
+        self.can_move = true;
     }
 
     pub fn get_id(&self, coords: SimCoords) -> Option<SimId> {

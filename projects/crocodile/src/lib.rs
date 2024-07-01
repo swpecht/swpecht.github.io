@@ -1,3 +1,5 @@
+#![feature(test)]
+
 use bevy::prelude::*;
 use sprite::Curve;
 
