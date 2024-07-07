@@ -11,6 +11,7 @@ use crate::gamestate::{Action, SimState, Team};
 const MAX_DEPTH: u8 = 2;
 
 pub fn find_best_move(root: SimState) -> Option<Action> {
+    // todo: switch to iterative deepending: https://www.chessprogramming.org/MTD(f)
     let cur_team = root.cur_team();
     mtd_search(root, cur_team, 0, AlphaBetaCache::new()).1
 }

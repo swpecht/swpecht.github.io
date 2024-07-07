@@ -12,14 +12,19 @@ pub struct StatePlugin;
 
 impl Plugin for StatePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, monitor_processing)
-            .init_state::<PlayState>();
+        app.add_systems(
+            Update,
+            transition_to_waiting.run_if(in_state(PlayState::Setup)),
+        )
+        .add_systems(Update, monitor_processing)
+        .init_state::<PlayState>();
     }
 }
 
 #[derive(States, Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum PlayState {
     #[default]
+    Setup,
     Waiting,
     Processing,
     Terminal,
@@ -43,6 +48,10 @@ fn monitor_processing(
             debug!("changing to processing state");
             next_state.set(Processing)
         }
-        (Terminal, _) => {}
+        (_, _) => {}
     }
+}
+
+fn transition_to_waiting(mut app_state: ResMut<NextState<PlayState>>) {
+    app_state.set(PlayState::Waiting);
 }

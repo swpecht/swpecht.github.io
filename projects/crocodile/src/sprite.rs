@@ -165,19 +165,19 @@ fn sync_sim(
     {
         // TODO: add support for changing location of things if they're already spawned
         let texture = asset_server.load(character.idle());
-        let layout = TextureAtlasLayout::from_grid(Vec2::new(32.0, 32.0), 4, 1, None, None);
+        let layout = TextureAtlasLayout::from_grid(UVec2::new(32, 32), 4, 1, None, None);
         let texture_atlas_layout = texture_atlas_layouts.add(layout);
         // Use only the subset of sprites in the sheet that make up the run animation
         let animation_indices = AnimationIndices { first: 0, last: 3 };
         commands.spawn((
-            SpriteSheetBundle {
+            SpriteBundle {
                 texture,
-                atlas: TextureAtlas {
-                    layout: texture_atlas_layout,
-                    index: animation_indices.first,
-                },
                 transform: Transform::from_translation(vec3(loc.x, loc.y, CHAR_LAYER)),
                 ..default()
+            },
+            TextureAtlas {
+                layout: texture_atlas_layout,
+                index: animation_indices.first,
             },
             animation_indices,
             AnimationTimer(Timer::from_seconds(0.1, TimerMode::Repeating)),
@@ -192,24 +192,26 @@ fn setup_tiles(
     mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
 ) {
     let texture = asset_server.load("pixel-crawler/Environment/Green Woods/Assets/Tiles.png");
-    let layout = TextureAtlasLayout::from_grid(Vec2::new(32.0, 32.0), 4, 4, None, None);
+    let layout = TextureAtlasLayout::from_grid(UVec2::new(32, 32), 4, 4, None, None);
     let texture_atlas_layout = texture_atlas_layouts.add(layout);
 
     for r in 0..GRID_WIDTH {
         for c in 0..GRID_HEIGHT {
-            commands.spawn(SpriteSheetBundle {
-                texture: texture.clone(),
-                atlas: TextureAtlas {
+            commands.spawn((
+                SpriteBundle {
+                    texture: texture.clone(),
+                    transform: Transform::from_translation(vec3(
+                        (r * TILE_SIZE) as f32,
+                        (c * TILE_SIZE) as f32,
+                        TILE_LAYER,
+                    )),
+                    ..default()
+                },
+                TextureAtlas {
                     layout: texture_atlas_layout.clone(),
                     index: 5,
                 },
-                transform: Transform::from_translation(vec3(
-                    (r * TILE_SIZE) as f32,
-                    (c * TILE_SIZE) as f32,
-                    TILE_LAYER,
-                )),
-                ..default()
-            });
+            ));
         }
     }
 }
@@ -306,22 +308,22 @@ fn spawn_projectile(
     for ev in ev_action.read() {
         debug!("spawning projectile: {:?}", ev);
         let texture = asset_server.load("pixel-crawler/Weapons/Wood/Wood.png");
-        let mut layout = TextureAtlasLayout::new_empty(vec2(192.0, 112.0));
-        layout.add_texture(Rect::from_corners(vec2(32.0, 0.0), vec2(48.0, 16.0)));
+        let mut layout = TextureAtlasLayout::new_empty(UVec2::new(192, 112));
+        layout.add_texture(URect::from_corners(UVec2::new(32, 0), UVec2::new(48, 16)));
         let texture_atlas_layout = texture_atlas_layouts.add(layout);
         let angle = (ev.target - ev.start).angle_between(ev.target);
         let mut transform = Transform::from_xyz(ev.start.x, ev.start.y, PROJECTILE_LAYER);
         transform.rotation = Quat::from_rotation_z(angle);
 
         commands.spawn((
-            SpriteSheetBundle {
+            SpriteBundle {
                 texture,
                 transform,
-                atlas: TextureAtlas {
-                    layout: texture_atlas_layout,
-                    index: 0,
-                },
                 ..default()
+            },
+            TextureAtlas {
+                layout: texture_atlas_layout,
+                index: 0,
             },
             Curve {
                 path: vec![ev.start, ev.target],

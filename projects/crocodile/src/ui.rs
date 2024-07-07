@@ -6,9 +6,9 @@ use crate::{
     PlayState,
 };
 
-const NORMAL_BUTTON: Color = Color::rgb(0.15, 0.15, 0.15);
-const HOVERED_BUTTON: Color = Color::rgb(0.25, 0.25, 0.25);
-const PRESSED_BUTTON: Color = Color::rgb(0.35, 0.75, 0.35);
+const NORMAL_BUTTON: Color = Color::srgb(0.15, 0.15, 0.15);
+const HOVERED_BUTTON: Color = Color::srgb(0.25, 0.25, 0.25);
+const PRESSED_BUTTON: Color = Color::srgb(0.35, 0.75, 0.35);
 
 pub struct UIPlugin;
 
@@ -66,7 +66,7 @@ fn button_system(
         match *interaction {
             Interaction::Pressed => {
                 *color = PRESSED_BUTTON.into();
-                border_color.0 = Color::RED;
+                border_color.0 = Color::BLACK;
             }
             Interaction::Hovered => {
                 *color = HOVERED_BUTTON.into();
@@ -104,7 +104,7 @@ fn setup_ui(mut commands: Commands) {
                         width: Val::Percent(100.),
                         ..default()
                     },
-                    background_color: Color::rgba(1.0, 1.0, 1.0, 0.0).into(),
+                    background_color: Color::srgba(1.0, 1.0, 1.0, 0.0).into(),
                     ..default()
                 })
                 .with_children(|parent| {
@@ -129,6 +129,7 @@ fn setup_ui(mut commands: Commands) {
                 });
 
             // right vertical fill
+            use bevy::color::palettes::css::*;
             parent
                 .spawn((
                     NodeBundle {
@@ -140,8 +141,8 @@ fn setup_ui(mut commands: Commands) {
                             border: UiRect::all(Val::Px(2.)),
                             ..default()
                         },
-                        border_color: Color::GREEN.into(),
-                        background_color: Color::rgb(0.15, 0.15, 0.15).into(),
+                        border_color: GREEN.into(),
+                        background_color: Color::srgb(0.15, 0.15, 0.15).into(),
                         ..default()
                     },
                     ActionButtonParent,
@@ -208,7 +209,7 @@ fn spawn_action_button(parent: &mut ChildBuilder, text: &str, idx: usize) {
                 TextStyle {
                     font: Default::default(),
                     font_size: 25.0,
-                    color: Color::rgb(0.9, 0.9, 0.9),
+                    color: Color::srgb(0.9, 0.9, 0.9),
                 },
             ));
         });

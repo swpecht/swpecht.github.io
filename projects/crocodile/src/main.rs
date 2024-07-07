@@ -18,11 +18,10 @@ fn main() {
                 .set(LogPlugin {
                     level: Level::DEBUG,
                     filter: "wgpu=error,bevy_render=info,bevy_ecs=info".to_string(),
-                    update_subscriber: None,
+                    ..default()
                 }),
         ) // prevents blurry sprites
         .add_plugins((StatePlugin, UIPlugin, SpritePlugin))
-        .add_systems(Update, bevy::window::close_on_esc)
         .init_resource::<SimState>()
         .run();
 }
