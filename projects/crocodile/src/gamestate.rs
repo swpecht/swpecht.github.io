@@ -25,12 +25,19 @@ pub enum Character {
 #[derive(Resource, Hash, CloneFrom)]
 pub struct SimState {
     next_id: usize,
-    initiative: ArrayVec<[SimId; 10]>, // order of players
-    grid: ArrayVec<[(SimCoords, SimEntity); 20]>,
+    initiative: Vec<SimId>, // order of players
+    locations: Vec<Option<SimCoords>>,
+    entities: Vec<Option<SimEntity>>,
     /// Track if start of an entities turn, used to optimize AI search caching
     is_start_of_turn: bool,
     /// Don't allow move action after another move action
     can_move: bool,
+}
+
+struct ActionEffect {
+    action_use: (SimId, usize),
+    movement: (SimId, SimCoords),
+    damage: (SimId, usize),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -126,10 +133,11 @@ impl SimState {
     pub fn new() -> Self {
         Self {
             next_id: 0,
-            initiative: ArrayVec::new(),
-            grid: ArrayVec::new(),
+            initiative: Vec::new(),
             is_start_of_turn: true,
             can_move: true,
+            locations: Vec::new(),
+            entities: Vec::new(),
         }
     }
 }
@@ -210,7 +218,7 @@ impl SimState {
     pub fn is_terminal(&self) -> bool {
         let mut count_players = 0;
         let mut count_npcs = 0;
-        for (_, entity) in &self.grid {
+        for entity in self.entities.iter().flatten() {
             match entity.team {
                 Team::Players(_) => count_players += 1,
                 Team::NPCs(_) => count_npcs += 1,
@@ -220,12 +228,12 @@ impl SimState {
     }
 
     pub fn evaluate(&self, team: Team) -> f32 {
-        const WIN_VALUE: f32 = 1000.0;
-        // todo: add score component for entity count
+        const WIN_VALUE: f32 = 0.0; //  1000.0;
+                                    // todo: add score component for entity count
 
         let mut player_health = 0;
         let mut npc_health = 0;
-        for (_, entity) in &self.grid {
+        for entity in self.entities.iter().flatten() {
             match entity.team {
                 Team::Players(_) => player_health += entity.health,
                 Team::NPCs(_) => npc_health += entity.health,
@@ -285,7 +293,8 @@ impl SimState {
         };
 
         self.initiative.push(SimId(self.next_id));
-        self.grid.push((loc, entity));
+        self.entities.push(Some(entity));
+        self.locations.push(Some(loc));
         self.next_id += 1;
     }
 
@@ -307,14 +316,15 @@ impl SimState {
     }
 
     fn apply_move_entity(&mut self, target: SimCoords) {
-        if let Some((c, entity)) = self
-            .grid
-            .iter_mut()
-            .find(|(_, e)| e.id == self.initiative[0])
-        {
-            *c = target;
-            entity.movement -= 1;
-        };
+        let id = self.initiative[0].0;
+        let start = self.locations[id].expect("trying to move deleted entity");
+        let distance = target.dist(&start);
+
+        let entity = self.entities[id]
+            .as_mut()
+            .expect("trying to move deleted entity");
+        entity.movement -= distance;
+        self.locations[id] = Some(target);
 
         self.can_move = false;
     }
@@ -332,43 +342,49 @@ impl SimState {
     }
 
     pub fn get_id(&self, coords: SimCoords) -> Option<SimId> {
-        self.grid
+        self.locations
             .iter()
-            .filter(|(c, _)| *c == coords)
-            .map(|(_, e)| e.id)
+            .enumerate()
+            .filter(|(_, &c)| c == Some(coords))
+            .map(|(id, _)| SimId(id))
             .next()
     }
 
     fn get_entity_mut(&mut self, id: SimId) -> &mut SimEntity {
-        self.grid
-            .iter_mut()
-            .find(|(_, e)| e.id == id)
-            .map(|(_, e)| e)
-            .unwrap()
+        self.entities[id.0]
+            .as_mut()
+            .expect("accessing deleted entity")
     }
 
     fn get_entity(&self, id: SimId) -> &SimEntity {
-        self.grid
-            .iter()
-            .find(|(_, e)| e.id == id)
-            .map(|(_, e)| e)
-            .unwrap()
+        self.entities[id.0]
+            .as_ref()
+            .expect("accessing deleted entity")
     }
 
     fn remove_entity(&mut self, id: SimId) {
-        self.grid.retain(|(_, x)| x.id != id);
+        self.locations[id.0] = None;
+        self.entities[id.0] = None;
         self.initiative.retain(|x| *x != id);
     }
 
     pub fn characters(&self) -> Vec<(SimId, SimCoords, Character)> {
-        self.grid
+        self.entities
             .iter()
-            .map(|(c, x)| (x.id, *c, x.character))
+            .zip(self.locations.iter())
+            .filter(|(e, l)| e.is_some() && l.is_some())
+            .map(|(e, l)| {
+                (
+                    e.as_ref().unwrap().id,
+                    l.unwrap(),
+                    e.as_ref().unwrap().character,
+                )
+            })
             .collect_vec()
     }
 
     pub fn loc(&self, id: SimId) -> Option<SimCoords> {
-        self.grid.iter().find(|(_, e)| e.id == id).map(|(c, _)| *c)
+        self.locations[id.0]
     }
 
     pub fn abilities(&self) -> Vec<Ability> {
@@ -378,9 +394,10 @@ impl SimState {
     /// Get all empty cells within range of loc
     /// includes loc if it is empty
     fn populated_cells(&self, target: SimCoords, radius: usize) -> Vec<SimCoords> {
-        self.grid
-            .iter()
-            .map(|x| x.0)
+        self.locations
+            .clone()
+            .into_iter()
+            .flatten()
             .filter(|loc| loc.dist(&target) <= radius)
             .collect_vec()
     }

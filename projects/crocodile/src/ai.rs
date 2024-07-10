@@ -8,12 +8,26 @@ use itertools::Itertools;
 
 use crate::gamestate::{Action, SimState, Team};
 
-const MAX_DEPTH: u8 = 2;
+const MAX_DEPTH: u8 = 4;
 
 pub fn find_best_move(root: SimState) -> Option<Action> {
     // todo: switch to iterative deepending: https://www.chessprogramming.org/MTD(f)
     let cur_team = root.cur_team();
-    mtd_search(root, cur_team, 0, AlphaBetaCache::new()).1
+
+    let mut first_guess = 0;
+    let mut action = None;
+
+    for d in 1..MAX_DEPTH {
+        (first_guess, action) = mtd_search(
+            root.clone(),
+            cur_team,
+            first_guess,
+            d,
+            AlphaBetaCache::new(),
+        );
+    }
+
+    action
 }
 
 /// Returns the value of a given state and optionally the best move
@@ -23,8 +37,9 @@ fn mtd_search(
     mut root: SimState,
     maximizing_player: Team,
     first_guess: i8,
+    max_depth: u8,
     mut cache: AlphaBetaCache,
-) -> (f64, Option<Action>) {
+) -> (i8, Option<Action>) {
     let mut g = first_guess;
     let mut best_action;
     let mut upperbound = i8::MAX;
@@ -37,7 +52,7 @@ fn mtd_search(
             maximizing_player,
             (beta - 1) as f64,
             beta as f64,
-            0,
+            max_depth,
             &mut cache,
         );
         g = result.0 as i8;
@@ -53,7 +68,7 @@ fn mtd_search(
         }
     }
 
-    (g as f64, best_action)
+    (g, best_action)
 }
 
 #[derive(Clone, Copy)]
@@ -133,7 +148,7 @@ fn alpha_beta(
     depth: u8,
     cache: &mut AlphaBetaCache,
 ) -> (f64, Option<Action>) {
-    if gs.is_terminal() || depth > MAX_DEPTH {
+    if gs.is_terminal() || depth == 0 {
         let v = gs.evaluate(maximizing_team) as f64;
         return (v, None);
     }
@@ -166,7 +181,7 @@ fn alpha_beta(
         let mut value = f64::NEG_INFINITY;
         for (ngs, a) in children.iter_mut() {
             let new_depth = if *a == Action::EndTurn {
-                depth + 1
+                depth - 1
             } else {
                 depth
             };
@@ -187,7 +202,7 @@ fn alpha_beta(
 
         for (ngs, a) in children.iter_mut() {
             let new_depth = if *a == Action::EndTurn {
-                depth + 1
+                depth - 1
             } else {
                 depth
             };
