@@ -498,7 +498,6 @@ mod tests {
     #[test]
     fn test_melee_move() {
         let mut gs = create_test_world();
-        let starting_health = Character::Orc.default_health();
 
         // have the knight attack the orc
         gs.apply(Action::UseAbility {
@@ -506,9 +505,12 @@ mod tests {
             ability: Ability::MeleeAttack,
         });
 
-        let cur_health = gs.get_entity(ORC_ID).health;
-        assert_eq!(cur_health, starting_health - Ability::MeleeAttack.dmg());
+        assert_eq!(
+            gs.get_entity(ORC_ID).health,
+            Character::Orc.default_health() - Ability::MeleeAttack.dmg()
+        );
 
+        // have the knight move
         gs.apply(Action::Move {
             target: KNIGHT_START + sc(0, 1),
         });
