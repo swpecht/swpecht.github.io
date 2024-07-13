@@ -448,7 +448,7 @@ impl CoordIterator {
         let max_x = (middle.x + distance).min(WORLD_SIZE);
         let max_y = (middle.y + distance).min(WORLD_SIZE);
 
-        let raw_iterator = (min_x..max_x).cartesian_product(min_y..max_y);
+        let raw_iterator = (min_x..max_x + 1).cartesian_product(min_y..max_y + 1);
 
         Self {
             distance,
