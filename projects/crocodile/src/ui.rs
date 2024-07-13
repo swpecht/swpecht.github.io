@@ -35,7 +35,11 @@ impl Plugin for UIPlugin {
             )
             .add_systems(
                 Update,
-                selection.run_if(input_just_pressed(MouseButton::Left)),
+                (
+                    selection.before(populate_action_buttons),
+                    populate_action_buttons,
+                )
+                    .run_if(input_just_pressed(MouseButton::Left)),
             )
             .add_systems(
                 Update,
@@ -176,23 +180,34 @@ fn setup_ui(mut commands: Commands) {
 
 fn populate_action_buttons(
     mut commands: Commands,
+    selected: Res<SelectedCharacter>,
     sim: Res<SimState>,
     mut query: Query<Entity, With<ActionButtonParent>>,
 ) {
+    debug!("populating action buttons");
+
     let mut parent = commands.entity(query.single_mut());
     // need to both despawna and clear the children
     parent.despawn_descendants();
     parent.clear_children();
+
+    // don't populate action buttons if no targets selected
+    let Some(selection) = sim.get_loc(selected.0) else {
+        return;
+    };
 
     parent.with_children(|parent| {
         let mut actions = Vec::new();
         sim.legal_actions(&mut actions);
         debug!("{:?}", actions);
         for (idx, action) in actions.into_iter().enumerate() {
-            if matches!(action, Action::Move { target: _ }) {
-                continue; // don't show buttons for move
+            if let Action::UseAbility { target, ability: _ } = action {
+                if target == selection {
+                    spawn_action_button(parent, &action.to_string(), idx);
+                }
+            } else if matches!(action, Action::EndTurn) {
+                spawn_action_button(parent, &action.to_string(), idx);
             }
-            spawn_action_button(parent, &action.to_string(), idx);
         }
     });
 }
