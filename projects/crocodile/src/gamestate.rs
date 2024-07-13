@@ -28,12 +28,14 @@ pub struct SimState {
     initiative: Vec<SimId>, // order of players
     locations: Vec<Option<SimCoords>>,
     entities: Vec<Option<SimEntity>>,
+    action_effects: Vec<ActionEffect>,
     /// Track if start of an entities turn, used to optimize AI search caching
     is_start_of_turn: bool,
     /// Don't allow move action after another move action
     can_move: bool,
 }
 
+#[derive(Hash, Clone)]
 struct ActionEffect {
     action_use: (SimId, usize),
     movement: (SimId, SimCoords),
@@ -138,6 +140,7 @@ impl SimState {
             can_move: true,
             locations: Vec::new(),
             entities: Vec::new(),
+            action_effects: Vec::new(),
         }
     }
 }
@@ -258,6 +261,9 @@ impl SimState {
     pub fn is_start_of_turn(&self) -> bool {
         self.is_start_of_turn
     }
+
+    /// undo the last action
+    pub fn undo(&mut self) {}
 }
 
 impl SimState {
@@ -469,5 +475,52 @@ impl Iterator for CoordIterator {
                 return Some(coord);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    const KNIGHT_ID: SimId = SimId(0);
+    const ORC_ID: SimId = SimId(1);
+    const KNIGHT_START: SimCoords = SimCoords { x: 10, y: 10 };
+    const ORC_START: SimCoords = SimCoords { x: 9, y: 10 };
+
+    fn create_test_world() -> SimState {
+        let mut state = SimState::new();
+        state.insert_entity(Character::Knight, vec![Ability::MeleeAttack], KNIGHT_START);
+        state.insert_entity(Character::Orc, vec![Ability::MeleeAttack], ORC_START);
+        state
+    }
+
+    #[test]
+    fn test_melee_move() {
+        let mut gs = create_test_world();
+        let starting_health = Character::Orc.default_health();
+
+        // have the knight attack the orc
+        gs.apply(Action::UseAbility {
+            target: ORC_START,
+            ability: Ability::MeleeAttack,
+        });
+
+        let cur_health = gs.get_entity(ORC_ID).health;
+        assert_eq!(cur_health, starting_health - Ability::MeleeAttack.dmg());
+
+        gs.apply(Action::Move {
+            target: KNIGHT_START + sc(0, 1),
+        });
+
+        let cur_loc = gs
+            .get_loc(KNIGHT_ID)
+            .expect("couldn't get location of knight");
+        assert_eq!(cur_loc, KNIGHT_START + sc(0, 1));
+    }
+
+    #[test]
+    fn test_undo() {
+        todo!()
     }
 }
