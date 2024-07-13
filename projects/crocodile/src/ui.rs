@@ -1,4 +1,10 @@
-use bevy::{input::common_conditions::*, math::vec2, prelude::*, window::PrimaryWindow};
+use bevy::{
+    input::common_conditions::*,
+    math::vec2,
+    prelude::*,
+    sprite::{MaterialMesh2dBundle, Mesh2dHandle},
+    window::PrimaryWindow,
+};
 
 use crate::{
     gamestate::{Action, SimCoords, SimId, SimState},
@@ -9,6 +15,7 @@ use crate::{
 const NORMAL_BUTTON: Color = Color::srgb(0.15, 0.15, 0.15);
 const HOVERED_BUTTON: Color = Color::srgb(0.25, 0.25, 0.25);
 const PRESSED_BUTTON: Color = Color::srgb(0.35, 0.75, 0.35);
+const VALID_MOVE: Color = Color::srgba(0.0, 0.5, 0.5, 0.5);
 
 pub struct UIPlugin;
 
@@ -34,7 +41,10 @@ impl Plugin for UIPlugin {
                 Update,
                 handle_right_click.run_if(input_just_pressed(MouseButton::Right)),
             )
-            .add_systems(OnEnter(PlayState::Waiting), populate_action_buttons);
+            .add_systems(
+                OnEnter(PlayState::Waiting),
+                (populate_action_buttons, highlight_moves),
+            );
     }
 }
 
@@ -55,6 +65,7 @@ struct ActionButtonParent;
 #[derive(Component)]
 struct ActionButton(usize);
 
+#[allow(clippy::type_complexity)]
 fn button_system(
     mut interaction_query: Query<
         (&Interaction, &mut BackgroundColor, &mut BorderColor),
@@ -178,6 +189,9 @@ fn populate_action_buttons(
         sim.legal_actions(&mut actions);
         debug!("{:?}", actions);
         for (idx, action) in actions.into_iter().enumerate() {
+            if matches!(action, Action::Move { target: _ }) {
+                continue; // don't show buttons for move
+            }
             spawn_action_button(parent, &action.to_string(), idx);
         }
     });
@@ -313,6 +327,36 @@ fn handle_right_click(
     }
 }
 
+/// Outline the tiles a character can validally move within
+fn highlight_moves(
+    mut commands: Commands,
+    sim: Res<SimState>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) {
+    let mut actions = Vec::new();
+    sim.legal_actions(&mut actions);
+
+    let color = VALID_MOVE;
+
+    let rect = Mesh2dHandle(meshes.add(Rectangle::new(TILE_SIZE as f32, TILE_SIZE as f32)));
+    for a in actions {
+        if let Action::Move { target } = a {
+            let wc = target.to_world();
+            commands.spawn((
+                MaterialMesh2dBundle {
+                    mesh: rect.clone(),
+                    material: materials.add(color),
+                    transform: Transform::from_xyz(wc.x, wc.y, 0.0),
+                    ..default()
+                },
+                StateScoped(PlayState::Waiting), // automatically unspawn when leave waiting
+            ));
+        }
+    }
+}
+
+#[allow(clippy::type_complexity)]
 fn action_button_action(
     interaction_query: Query<(&Interaction, &ActionButton), (Changed<Interaction>, With<Button>)>,
     mut ev_action: EventWriter<ActionEvent>,

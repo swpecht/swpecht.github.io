@@ -17,7 +17,8 @@ impl Plugin for StatePlugin {
             transition_to_waiting.run_if(in_state(PlayState::Setup)),
         )
         .add_systems(Update, monitor_processing)
-        .init_state::<PlayState>();
+        .init_state::<PlayState>()
+        .enable_state_scoped_entities::<PlayState>();
     }
 }
 

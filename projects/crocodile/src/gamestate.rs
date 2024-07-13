@@ -5,7 +5,7 @@ use std::{
 
 use bevy::prelude::{Component, Resource};
 use clone_from::CloneFrom;
-use itertools::Itertools;
+use itertools::{Itertools, Product};
 use tinyvec::ArrayVec;
 
 const WORLD_SIZE: usize = 20;
@@ -175,41 +175,32 @@ impl SimState {
         use Action::*;
         actions.push(Action::EndTurn);
 
-        let loc = self.loc(self.cur_char()).unwrap();
+        let cur_loc = self.get_loc(self.cur_char()).unwrap();
         let cur_entity = self.get_entity(self.cur_char());
+
+        // todo: come up with easy iterator to go through all the world cells within a given range rather than iterating everything
 
         // We check push the ability actions first so that these are preferentially explored
         // by the ai tree search. This avoids the units moving around without purpose to end in the same spot to attack
         if cur_entity.remaining_actions > 0 {
             for ability in cur_entity.abilities.iter() {
-                let populated_cells = self.populated_cells(loc, ability.range());
-                // filter out the characters own cell
-                for cell in populated_cells.iter().filter(|x| **x != loc) {
-                    actions.push(Action::UseAbility {
-                        target: *cell,
-                        ability: *ability,
-                    });
+                for l in CoordIterator::new(cur_loc, ability.range()) {
+                    if self.is_populated(&l) && l != cur_loc {
+                        actions.push(Action::UseAbility {
+                            target: l,
+                            ability: *ability,
+                        });
+                    }
                 }
             }
         }
 
         if cur_entity.movement > 0 && self.can_move {
-            let mut candidate_locs = Vec::new();
-            for x in 0..WORLD_SIZE {
-                for y in 0..WORLD_SIZE {
-                    let l = sc(x, y);
-                    if l.dist(&loc) <= cur_entity.movement {
-                        candidate_locs.push(l);
-                    }
+            for l in CoordIterator::new(cur_loc, cur_entity.movement) {
+                if !self.is_populated(&l) {
+                    actions.push(Move { target: l });
                 }
             }
-
-            let populdated_locs = self.populated_cells(loc, cur_entity.movement);
-            candidate_locs
-                .iter()
-                .filter(|x| !populdated_locs.contains(x))
-                .map(|&target| Move { target })
-                .for_each(|x| actions.push(x));
         }
     }
 
@@ -383,7 +374,7 @@ impl SimState {
             .collect_vec()
     }
 
-    pub fn loc(&self, id: SimId) -> Option<SimCoords> {
+    pub fn get_loc(&self, id: SimId) -> Option<SimCoords> {
         self.locations[id.0]
     }
 
@@ -391,15 +382,8 @@ impl SimState {
         self.get_entity(self.cur_char()).abilities.to_vec()
     }
 
-    /// Get all empty cells within range of loc
-    /// includes loc if it is empty
-    fn populated_cells(&self, target: SimCoords, radius: usize) -> Vec<SimCoords> {
-        self.locations
-            .clone()
-            .into_iter()
-            .flatten()
-            .filter(|loc| loc.dist(&target) <= radius)
-            .collect_vec()
+    fn is_populated(&self, target: &SimCoords) -> bool {
+        self.locations.iter().flatten().any(|x| x == target)
     }
 }
 
@@ -447,5 +431,43 @@ impl Display for Ability {
 impl Default for Team {
     fn default() -> Self {
         Team::NPCs(0)
+    }
+}
+
+/// Iterator over all world coords within distance d
+struct CoordIterator {
+    distance: usize,
+    middle: SimCoords,
+    raw_iterator: Product<std::ops::Range<usize>, std::ops::Range<usize>>,
+}
+
+impl CoordIterator {
+    fn new(middle: SimCoords, distance: usize) -> Self {
+        let min_x = middle.x.saturating_sub(distance);
+        let min_y = middle.y.saturating_sub(distance);
+        let max_x = (middle.x + distance).min(WORLD_SIZE);
+        let max_y = (middle.y + distance).min(WORLD_SIZE);
+
+        let raw_iterator = (min_x..max_x).cartesian_product(min_y..max_y);
+
+        Self {
+            distance,
+            middle,
+            raw_iterator,
+        }
+    }
+}
+
+impl Iterator for CoordIterator {
+    type Item = SimCoords;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let cp = self.raw_iterator.next()?;
+            let coord = sc(cp.0, cp.1);
+            if coord.dist(&self.middle) <= self.distance {
+                return Some(coord);
+            }
+        }
     }
 }
