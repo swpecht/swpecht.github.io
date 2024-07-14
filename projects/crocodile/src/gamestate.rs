@@ -28,18 +28,10 @@ pub struct SimState {
     initiative: Vec<SimId>, // order of players
     locations: Vec<Option<SimCoords>>,
     entities: Vec<Option<SimEntity>>,
-    action_effects: Vec<ActionEffect>,
     /// Track if start of an entities turn, used to optimize AI search caching
     is_start_of_turn: bool,
     /// Don't allow move action after another move action
     can_move: bool,
-}
-
-#[derive(Hash, Clone)]
-struct ActionEffect {
-    action_use: (SimId, usize),
-    movement: (SimId, SimCoords),
-    damage: (SimId, usize),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -140,7 +132,6 @@ impl SimState {
             can_move: true,
             locations: Vec::new(),
             entities: Vec::new(),
-            action_effects: Vec::new(),
         }
     }
 }
@@ -519,10 +510,5 @@ mod tests {
             .get_loc(KNIGHT_ID)
             .expect("couldn't get location of knight");
         assert_eq!(cur_loc, KNIGHT_START + sc(0, 1));
-    }
-
-    #[test]
-    fn test_undo() {
-        todo!()
     }
 }

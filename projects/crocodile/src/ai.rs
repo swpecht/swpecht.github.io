@@ -1,4 +1,5 @@
 use std::{
+    cmp::Ordering,
     hash::{DefaultHasher, Hash, Hasher},
     sync::Arc,
 };
@@ -16,15 +17,16 @@ pub fn find_best_move(root: SimState) -> Option<Action> {
 
     let mut first_guess = 0;
     let mut action = None;
+    let mut pv_cache = None;
 
     for d in 1..MAX_DEPTH {
-        (first_guess, action) = mtd_search(
-            root.clone(),
-            cur_team,
-            first_guess,
-            d,
-            AlphaBetaCache::new(),
-        );
+        let mut cache = AlphaBetaCache::new();
+        if let Some(c) = pv_cache {
+            cache.pv_moves = c;
+        }
+
+        (first_guess, action) = mtd_search(root.clone(), cur_team, first_guess, d, &mut cache);
+        pv_cache = Some(cache.pv_moves); // save the pv moves for the next run
     }
 
     action
@@ -38,7 +40,7 @@ fn mtd_search(
     maximizing_player: Team,
     first_guess: i8,
     max_depth: u8,
-    mut cache: AlphaBetaCache,
+    cache: &mut AlphaBetaCache,
 ) -> (i8, Option<Action>) {
     let mut g = first_guess;
     let mut best_action;
@@ -52,8 +54,9 @@ fn mtd_search(
             maximizing_player,
             (beta - 1) as f64,
             beta as f64,
+            0,
             max_depth,
-            &mut cache,
+            cache,
         );
         g = result.0 as i8;
         best_action = result.1;
@@ -84,6 +87,7 @@ struct AlphaBetaCache {
     vec_pool: Pool<Vec<Action>>,
     sim_pool: Pool<SimState>,
     transposition_table: Arc<DashMap<TranspositionKey, AlphaBetaResult>>,
+    pv_moves: [Option<Action>; MAX_DEPTH as usize],
 }
 
 impl AlphaBetaCache {
@@ -92,6 +96,7 @@ impl AlphaBetaCache {
             vec_pool: Pool::new(|| Vec::with_capacity(8)),
             sim_pool: Pool::new(SimState::default),
             transposition_table: Arc::new(DashMap::new()),
+            pv_moves: [None; MAX_DEPTH as usize],
         }
     }
 }
@@ -146,9 +151,10 @@ fn alpha_beta(
     mut alpha: f64,
     mut beta: f64,
     depth: u8,
+    max_depth: u8,
     cache: &mut AlphaBetaCache,
 ) -> (f64, Option<Action>) {
-    if gs.is_terminal() || depth == 0 {
+    if gs.is_terminal() || depth >= max_depth {
         let v = gs.evaluate(maximizing_team) as f64;
         return (v, None);
     }
@@ -175,17 +181,25 @@ fn alpha_beta(
     let team = gs.cur_team();
     let result;
 
-    let mut children = child_nodes(gs, maximizing_team, cache);
+    let mut children = child_nodes(gs, maximizing_team, cache, depth);
 
     if team == maximizing_team {
         let mut value = f64::NEG_INFINITY;
         for (ngs, a) in children.iter_mut() {
             let new_depth = if *a == Action::EndTurn {
-                depth - 1
+                depth + 1
             } else {
                 depth
             };
-            let (child_value, _) = alpha_beta(ngs, maximizing_team, alpha, beta, new_depth, cache);
+            let (child_value, _) = alpha_beta(
+                ngs,
+                maximizing_team,
+                alpha,
+                beta,
+                new_depth,
+                max_depth,
+                cache,
+            );
             if child_value > value {
                 value = child_value;
                 best_action = Some(*a);
@@ -202,11 +216,19 @@ fn alpha_beta(
 
         for (ngs, a) in children.iter_mut() {
             let new_depth = if *a == Action::EndTurn {
-                depth - 1
+                depth + 1
             } else {
                 depth
             };
-            let (child_value, _) = alpha_beta(ngs, maximizing_team, alpha, beta, new_depth, cache);
+            let (child_value, _) = alpha_beta(
+                ngs,
+                maximizing_team,
+                alpha,
+                beta,
+                new_depth,
+                max_depth,
+                cache,
+            );
             if child_value < value {
                 value = child_value;
                 best_action = Some(*a);
@@ -241,6 +263,8 @@ fn alpha_beta(
         .into_iter()
         .for_each(|(s, _)| cache.sim_pool.attach(s));
     cache.insert(gs, cache_value, maximizing_team, depth);
+    cache.pv_moves[depth as usize] = result.1;
+
     result
 }
 
@@ -249,6 +273,7 @@ fn child_nodes(
     gs: &SimState,
     maximizing_team: Team,
     cache: &mut AlphaBetaCache,
+    depth: u8,
 ) -> Vec<(SimState, Action)> {
     let mut actions = cache.vec_pool.detach();
     gs.legal_actions(&mut actions);
@@ -263,12 +288,30 @@ fn child_nodes(
         })
         .collect_vec();
 
-    result.sort_by(|(s1, _), (s2, _)| {
+    // use the pv moves from last time if available
+    let pv_action = cache.pv_moves[depth as usize];
+
+    // TODO: this will try the pv move first at this depth even if we're not on the PV chain
+    // (e.g. earlier moves were different). TBD if this is desired
+    result.sort_by(|(s1, a1), (s2, a2)| {
+        if Some(a1) == pv_action.as_ref() {
+            return Ordering::Less;
+        } else if Some(a2) == pv_action.as_ref() {
+            return Ordering::Greater;
+        }
+
         // we're doing a reverse sort so s2.cmp(s1)
         s2.evaluate(maximizing_team)
             .partial_cmp(&s1.evaluate(maximizing_team))
             .unwrap()
     });
+
+    // ensure we're trying the pv move first
+    if let Some(pva) = pv_action
+        && actions.contains(&pva)
+    {
+        assert_eq!(result[0].1, pva);
+    }
 
     actions.clear();
     cache.vec_pool.attach(actions);

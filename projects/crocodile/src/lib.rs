@@ -1,4 +1,5 @@
 #![feature(test)]
+#![feature(let_chains)]
 
 use bevy::prelude::*;
 use sprite::Curve;
