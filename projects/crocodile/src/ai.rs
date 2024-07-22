@@ -152,6 +152,7 @@ impl AlphaBetaCache {
 impl AlphaBetaCache {
     pub fn _reset(&mut self) {
         self.transposition_table.clear();
+        self.pv_moves = [None; MAX_DEPTH as usize];
     }
 }
 
