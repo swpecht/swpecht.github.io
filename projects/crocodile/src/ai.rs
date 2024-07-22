@@ -17,16 +17,10 @@ pub fn find_best_move(root: SimState) -> Option<Action> {
 
     let mut first_guess = 0;
     let mut action = None;
-    let mut pv_cache = None;
 
+    let mut cache = AlphaBetaCache::new();
     for d in 1..MAX_DEPTH {
-        let mut cache = AlphaBetaCache::new();
-        if let Some(c) = pv_cache {
-            cache.pv_moves = c;
-        }
-
         (first_guess, action) = mtd_search(root.clone(), cur_team, first_guess, d, &mut cache);
-        pv_cache = Some(cache.pv_moves); // save the pv moves for the next run
     }
 
     action
@@ -79,6 +73,7 @@ struct AlphaBetaResult {
     lower_bound: f64,
     upper_bound: f64,
     action: Option<Action>,
+    remaining_depth: u8,
 }
 type TranspositionKey = (Team, u64);
 /// Helper struct to speeding up alpha_beta search
@@ -102,23 +97,44 @@ impl AlphaBetaCache {
 }
 
 impl AlphaBetaCache {
-    pub fn get(&self, gs: &SimState, maximizing_team: Team) -> Option<AlphaBetaResult> {
+    pub fn get(
+        &self,
+        gs: &SimState,
+        maximizing_team: Team,
+        reamining_depth: u8,
+    ) -> Option<AlphaBetaResult> {
         let k = self.get_game_key(gs);
         if let Some(k) = k {
-            self.transposition_table
+            let r = self
+                .transposition_table
                 .get(&(maximizing_team, k))
                 .as_deref()
-                .copied()
+                .copied()?;
+            if r.remaining_depth >= reamining_depth {
+                Some(r)
+            } else {
+                None
+            }
         } else {
             None
         }
     }
 
-    pub fn insert(&self, gs: &SimState, v: AlphaBetaResult, maximizing_team: Team, _depth: u8) {
+    pub fn insert(&self, gs: &SimState, v: AlphaBetaResult, maximizing_team: Team) {
         // Check if the game wants to store this state
         let k = self.get_game_key(gs);
         if let Some(k) = k {
-            self.transposition_table.insert((maximizing_team, k), v);
+            // only insert the value if the remaining depth of the new value is greater
+            // than the one currently stored. This means the result is more accurate as it's from a
+            // deeper search
+            if let Some(cur_val) = self
+                .transposition_table
+                .get(&(maximizing_team, k))
+                .as_deref()
+                && cur_val.remaining_depth < v.remaining_depth
+            {
+                self.transposition_table.insert((maximizing_team, k), v);
+            }
         }
     }
 
@@ -163,7 +179,7 @@ fn alpha_beta(
     let beta_orig = beta;
     // We can only return the value if we have the right bound
     // http://people.csail.mit.edu/plaat/mtdf.html#abmem
-    if let Some(v) = cache.get(gs, maximizing_team) {
+    if let Some(v) = cache.get(gs, maximizing_team, MAX_DEPTH - depth) {
         if v.lower_bound >= beta {
             return (v.lower_bound, v.action);
         } else if v.upper_bound <= alpha {
@@ -247,6 +263,7 @@ fn alpha_beta(
         lower_bound: f64::NEG_INFINITY,
         upper_bound: f64::INFINITY,
         action: result.1,
+        remaining_depth: MAX_DEPTH - depth,
     };
 
     // transposition table scoring agains the original alpha and beta
@@ -262,7 +279,7 @@ fn alpha_beta(
     children
         .into_iter()
         .for_each(|(s, _)| cache.sim_pool.attach(s));
-    cache.insert(gs, cache_value, maximizing_team, depth);
+    cache.insert(gs, cache_value, maximizing_team);
     cache.pv_moves[depth as usize] = result.1;
 
     result
