@@ -1,10 +1,12 @@
 #![feature(test)]
 #![feature(let_chains)]
+#![feature(allocator_api)]
 
 use bevy::prelude::*;
 use sprite::Curve;
 
 pub mod ai;
+pub mod alloc;
 pub mod gamestate;
 pub mod sprite;
 pub mod ui;

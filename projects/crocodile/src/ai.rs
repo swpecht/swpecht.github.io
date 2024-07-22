@@ -79,7 +79,7 @@ type TranspositionKey = (Team, u64);
 /// Helper struct to speeding up alpha_beta search
 #[derive(Clone)]
 struct AlphaBetaCache {
-    vec_pool: Pool<Vec<Action>>,
+    action_vec: Vec<Action>,
     sim_pool: Pool<SimState>,
     transposition_table: Arc<DashMap<TranspositionKey, AlphaBetaResult>>,
     pv_moves: [Option<Action>; MAX_DEPTH as usize],
@@ -88,7 +88,7 @@ struct AlphaBetaCache {
 impl AlphaBetaCache {
     fn new() -> Self {
         Self {
-            vec_pool: Pool::new(|| Vec::with_capacity(8)),
+            action_vec: Vec::with_capacity(32),
             sim_pool: Pool::new(SimState::default),
             transposition_table: Arc::new(DashMap::new()),
             pv_moves: [None; MAX_DEPTH as usize],
@@ -293,10 +293,10 @@ fn child_nodes(
     cache: &mut AlphaBetaCache,
     depth: u8,
 ) -> Vec<(SimState, Action)> {
-    let mut actions = cache.vec_pool.detach();
-    gs.legal_actions(&mut actions);
+    gs.legal_actions(&mut cache.action_vec);
 
-    let mut result = actions
+    let mut result = cache
+        .action_vec
         .iter()
         .map(|a| {
             let mut ngs = cache.sim_pool.detach();
@@ -326,13 +326,12 @@ fn child_nodes(
 
     // ensure we're trying the pv move first
     if let Some(pva) = pv_action
-        && actions.contains(&pva)
+        && cache.action_vec.contains(&pva)
     {
         assert_eq!(result[0].1, pva);
     }
 
-    actions.clear();
-    cache.vec_pool.attach(actions);
+    cache.action_vec.clear();
     result
 }
 
