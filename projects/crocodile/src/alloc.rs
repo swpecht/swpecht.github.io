@@ -119,6 +119,7 @@ mod tests {
 
         slab.remove(&a);
         let c = slab.get_vacant();
+        assert_eq!(slab[&c], 1); // should be the old value
         let res = std::panic::catch_unwind(|| slab[&a]);
         assert!(res.is_err());
         slab[&c] = 0;
