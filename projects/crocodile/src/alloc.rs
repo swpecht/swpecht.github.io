@@ -19,7 +19,7 @@ pub struct SlabIdx {
 }
 
 impl<T> Slab<T> {
-    pub fn remove(&mut self, index: SlabIdx) {
+    pub fn remove(&mut self, index: &SlabIdx) {
         self.empty.push(index.loc);
         self.generation[index.loc as usize] += 1;
     }
@@ -56,13 +56,16 @@ impl<T: Default + Clone> Slab<T> {
 
     pub fn clone_from(&mut self, source_idx: &SlabIdx) -> SlabIdx {
         let target_idx = self.get_vacant();
+        assert_eq!(
+            self.generation[source_idx.loc as usize], source_idx.generation,
+            "tried to clone from key with invalid generation"
+        );
 
-        let Ok([source, target]) = self
+        let [source, target] = self
             .mem
             .get_many_mut([source_idx.loc as usize, target_idx.loc as usize])
-        else {
-            panic!("failed to split slab memory")
-        };
+            .expect("failed to get many mut for slab");
+
         target.clone_from(source);
 
         target_idx
@@ -72,7 +75,10 @@ impl<T: Default + Clone> Slab<T> {
 impl<T> IndexMut<&SlabIdx> for Slab<T> {
     fn index_mut(&mut self, index: &SlabIdx) -> &mut Self::Output {
         if index.generation != self.generation[index.loc as usize] {
-            panic!("tried to use key with invalid generation, {:?}", index);
+            panic!(
+                "tried to use key with invalid generation, key: {:?}, item gen: {}",
+                index, self.generation[index.loc as usize]
+            );
         }
 
         &mut self.mem[index.loc as usize]
@@ -84,7 +90,10 @@ impl<T> Index<&SlabIdx> for Slab<T> {
 
     fn index(&self, index: &SlabIdx) -> &Self::Output {
         if index.generation != self.generation[index.loc as usize] {
-            panic!("tried to use key with invalid generation, {:?}", index);
+            panic!(
+                "tried to use key with invalid generation, key: {:?}, item gen: {}",
+                index, self.generation[index.loc as usize]
+            );
         }
 
         &self.mem[index.loc as usize]
@@ -98,7 +107,7 @@ mod tests {
 
     #[test]
     fn test_slab() {
-        let mut slab: Slab<usize> = Slab::with_capacity(8);
+        let mut slab: Slab<usize> = Slab::with_capacity(2);
         let a = slab.get_vacant();
         slab[&a] = 1;
 
@@ -107,5 +116,13 @@ mod tests {
 
         assert_eq!(slab[&a], 1);
         assert_eq!(slab[&b], 2);
+
+        slab.remove(&a);
+        let c = slab.get_vacant();
+        let res = std::panic::catch_unwind(|| slab[&a]);
+        assert!(res.is_err());
+        slab[&c] = 0;
+        assert_eq!(slab[&b], 2);
+        assert_eq!(slab[&c], 0);
     }
 }

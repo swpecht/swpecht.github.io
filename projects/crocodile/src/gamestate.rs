@@ -291,9 +291,12 @@ impl SimState {
     }
 
     fn apply_use_ability(&mut self, target: SimCoords, ability: Ability) {
-        let target_id = self
-            .get_id(target)
-            .unwrap_or_else(|| panic!("failed to find entity at: {:?}", target));
+        let target_id = self.get_id(target).unwrap_or_else(|| {
+            panic!(
+                "failed to find entity at: {:?}, valid locations are: {:?}",
+                target, self.locations
+            )
+        });
         let target_entity = self.get_entity_mut(target_id);
         target_entity.health = target_entity.health.saturating_sub(ability.dmg());
 

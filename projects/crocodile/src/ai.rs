@@ -22,9 +22,10 @@ pub fn find_best_move(root: SimState) -> Option<Action> {
     let mut action = None;
 
     let mut cache = AlphaBetaCache::new();
-    let root = cache.slab.get_vacant();
+    let root_id = cache.slab.get_vacant();
+    cache.slab[&root_id].clone_from(&root);
     for d in 1..MAX_DEPTH {
-        (first_guess, action) = mtd_search(root.clone(), cur_team, first_guess, d, &mut cache);
+        (first_guess, action) = mtd_search(root_id.clone(), cur_team, first_guess, d, &mut cache);
     }
 
     action
@@ -271,8 +272,8 @@ fn alpha_beta(
         cache_value.lower_bound = result.0;
     }
 
-    children.into_iter().for_each(|(s, _)| cache.slab.remove(s));
     cache.insert(&cache.slab[gs], cache_value, maximizing_team);
+    children.iter().for_each(|(s, _)| cache.slab.remove(s));
     cache.pv_moves[depth as usize] = result.1;
 
     result
