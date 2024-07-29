@@ -1,6 +1,6 @@
 #![feature(test)]
 #![feature(let_chains)]
-#![feature(allocator_api)]
+#![feature(get_many_mut)]
 
 use bevy::prelude::*;
 use sprite::Curve;

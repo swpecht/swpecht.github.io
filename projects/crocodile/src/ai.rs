@@ -7,9 +7,12 @@ use std::{
 use dashmap::DashMap;
 use itertools::Itertools;
 
-use crate::gamestate::{Action, SimState, Team};
+use crate::{
+    alloc::{Slab, SlabIdx},
+    gamestate::{Action, SimState, Team},
+};
 
-const MAX_DEPTH: u8 = 5;
+const MAX_DEPTH: u8 = 8;
 
 pub fn find_best_move(root: SimState) -> Option<Action> {
     // todo: switch to iterative deepending: https://www.chessprogramming.org/MTD(f)
@@ -19,6 +22,7 @@ pub fn find_best_move(root: SimState) -> Option<Action> {
     let mut action = None;
 
     let mut cache = AlphaBetaCache::new();
+    let root = cache.slab.get_vacant();
     for d in 1..MAX_DEPTH {
         (first_guess, action) = mtd_search(root.clone(), cur_team, first_guess, d, &mut cache);
     }
@@ -30,7 +34,7 @@ pub fn find_best_move(root: SimState) -> Option<Action> {
 ///
 /// http://people.csail.mit.edu/plaat/mtdf.html#abmem
 fn mtd_search(
-    mut root: SimState,
+    root: SlabIdx,
     maximizing_player: Team,
     first_guess: i8,
     max_depth: u8,
@@ -44,7 +48,7 @@ fn mtd_search(
     loop {
         let beta = if g == lowerbound { g + 1 } else { g };
         let result = alpha_beta(
-            &mut root,
+            &root,
             maximizing_player,
             (beta - 1) as f64,
             beta as f64,
@@ -80,7 +84,7 @@ type TranspositionKey = (Team, u64);
 #[derive(Clone)]
 struct AlphaBetaCache {
     action_vec: Vec<Action>,
-    sim_pool: Pool<SimState>,
+    slab: Slab<SimState>,
     transposition_table: Arc<DashMap<TranspositionKey, AlphaBetaResult>>,
     pv_moves: [Option<Action>; MAX_DEPTH as usize],
 }
@@ -89,7 +93,7 @@ impl AlphaBetaCache {
     fn new() -> Self {
         Self {
             action_vec: Vec::with_capacity(32),
-            sim_pool: Pool::new(SimState::default),
+            slab: Slab::with_capacity(256),
             transposition_table: Arc::new(DashMap::new()),
             pv_moves: [None; MAX_DEPTH as usize],
         }
@@ -163,7 +167,7 @@ impl AlphaBetaCache {
 /// Adapted from openspiel:
 ///     https://github.com/deepmind/open_spiel/blob/master/open_spiel/python/algorithms/minimax.py
 fn alpha_beta(
-    gs: &mut SimState,
+    gs: &SlabIdx,
     maximizing_team: Team,
     mut alpha: f64,
     mut beta: f64,
@@ -171,8 +175,8 @@ fn alpha_beta(
     max_depth: u8,
     cache: &mut AlphaBetaCache,
 ) -> (f64, Option<Action>) {
-    if gs.is_terminal() || depth >= max_depth {
-        let v = gs.evaluate(maximizing_team) as f64;
+    if cache.slab[gs].is_terminal() || depth >= max_depth {
+        let v = cache.slab[gs].evaluate(maximizing_team) as f64;
         return (v, None);
     }
 
@@ -180,7 +184,7 @@ fn alpha_beta(
     let beta_orig = beta;
     // We can only return the value if we have the right bound
     // http://people.csail.mit.edu/plaat/mtdf.html#abmem
-    if let Some(v) = cache.get(gs, maximizing_team, MAX_DEPTH - depth) {
+    if let Some(v) = cache.get(&cache.slab[gs], maximizing_team, MAX_DEPTH - depth) {
         if v.lower_bound >= beta {
             return (v.lower_bound, v.action);
         } else if v.upper_bound <= alpha {
@@ -190,30 +194,25 @@ fn alpha_beta(
         beta = beta.min(v.upper_bound);
     }
 
-    if gs.is_chance_node() {
+    if cache.slab[gs].is_chance_node() {
         todo!("add support for chance nodes")
     }
 
     let mut best_action = None;
-    let team = gs.cur_team();
+    let team = cache.slab[gs].cur_team();
     let result;
 
     let mut children = child_nodes(gs, maximizing_team, cache, depth);
 
     if team == maximizing_team {
         let mut value = f64::NEG_INFINITY;
-        for (ngs, a) in children.iter_mut() {
-            let new_depth = if *a == Action::EndTurn {
-                depth + 1
-            } else {
-                depth
-            };
+        for (ngs, a) in children.iter() {
             let (child_value, _) = alpha_beta(
                 ngs,
                 maximizing_team,
                 alpha,
                 beta,
-                new_depth,
+                depth + 1,
                 max_depth,
                 cache,
             );
@@ -231,18 +230,13 @@ fn alpha_beta(
         let mut value = f64::INFINITY;
         children.reverse();
 
-        for (ngs, a) in children.iter_mut() {
-            let new_depth = if *a == Action::EndTurn {
-                depth + 1
-            } else {
-                depth
-            };
+        for (ngs, a) in children.iter() {
             let (child_value, _) = alpha_beta(
                 ngs,
                 maximizing_team,
                 alpha,
                 beta,
-                new_depth,
+                depth + 1,
                 max_depth,
                 cache,
             );
@@ -277,10 +271,8 @@ fn alpha_beta(
         cache_value.lower_bound = result.0;
     }
 
-    children
-        .into_iter()
-        .for_each(|(s, _)| cache.sim_pool.attach(s));
-    cache.insert(gs, cache_value, maximizing_team);
+    children.into_iter().for_each(|(s, _)| cache.slab.remove(s));
+    cache.insert(&cache.slab[gs], cache_value, maximizing_team);
     cache.pv_moves[depth as usize] = result.1;
 
     result
@@ -288,21 +280,20 @@ fn alpha_beta(
 
 /// Return all chilren nodes, sorted by value
 fn child_nodes(
-    gs: &SimState,
+    gs: &SlabIdx,
     maximizing_team: Team,
     cache: &mut AlphaBetaCache,
     depth: u8,
-) -> Vec<(SimState, Action)> {
-    gs.legal_actions(&mut cache.action_vec);
+) -> Vec<(SlabIdx, Action)> {
+    cache.slab[gs].legal_actions(&mut cache.action_vec);
 
     let mut result = cache
         .action_vec
         .iter()
         .map(|a| {
-            let mut ngs = cache.sim_pool.detach();
-            ngs.clone_from(gs);
-            ngs.apply(*a);
-            (ngs, *a)
+            let idx = cache.slab.clone_from(gs);
+            cache.slab[&idx].apply(*a);
+            (idx, *a)
         })
         .collect_vec();
 
@@ -319,8 +310,9 @@ fn child_nodes(
         }
 
         // we're doing a reverse sort so s2.cmp(s1)
-        s2.evaluate(maximizing_team)
-            .partial_cmp(&s1.evaluate(maximizing_team))
+        cache.slab[s2]
+            .evaluate(maximizing_team)
+            .partial_cmp(&cache.slab[s1].evaluate(maximizing_team))
             .unwrap()
     });
 
