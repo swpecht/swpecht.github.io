@@ -90,3 +90,22 @@ impl<T> Index<&SlabIdx> for Slab<T> {
         &self.mem[index.loc as usize]
     }
 }
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn test_slab() {
+        let mut slab: Slab<usize> = Slab::with_capacity(8);
+        let a = slab.get_vacant();
+        slab[&a] = 1;
+
+        let b = slab.clone_from(&a);
+        slab[&b] += 1;
+
+        assert_eq!(slab[&a], 1);
+        assert_eq!(slab[&b], 2);
+    }
+}
