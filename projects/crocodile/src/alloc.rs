@@ -1,4 +1,7 @@
-use std::ops::{Index, IndexMut};
+use std::{
+    fmt::Debug,
+    ops::{Index, IndexMut},
+};
 
 use itertools::Itertools;
 
@@ -9,12 +12,12 @@ pub struct Slab<T> {
     /// actual storage
     mem: Vec<T>,
     /// empty indexes
-    empty: Vec<u8>,
+    empty: Vec<u16>,
 }
 
 #[derive(Clone, Debug)]
 pub struct SlabIdx {
-    loc: u8,
+    loc: u16,
     generation: u16,
 }
 
@@ -30,7 +33,7 @@ impl<T: Default + Clone> Slab<T> {
         Slab {
             generation: vec![0; capacity],
             mem: (0..capacity).map(|_| T::default()).collect_vec(),
-            empty: (0..capacity).map(|x| x as u8).collect_vec(),
+            empty: (0..capacity).rev().map(|x| x as u16).collect_vec(),
         }
     }
 
@@ -38,7 +41,7 @@ impl<T: Default + Clone> Slab<T> {
     fn add_entry(&mut self) {
         let new_item = self.mem.len();
         self.mem.push(T::default());
-        self.empty.push(new_item as u8);
+        self.empty.push(new_item as u16);
         self.generation.push(0);
     }
 
@@ -70,6 +73,11 @@ impl<T: Default + Clone> Slab<T> {
 
         target_idx
     }
+
+    /// Checks if a key is valid
+    pub fn is_valid(&self, idx: &SlabIdx) -> bool {
+        idx.loc < self.mem.len() as u16 && idx.generation == self.generation[idx.loc as usize]
+    }
 }
 
 impl<T> IndexMut<&SlabIdx> for Slab<T> {
@@ -100,6 +108,15 @@ impl<T> Index<&SlabIdx> for Slab<T> {
     }
 }
 
+impl<T> Debug for Slab<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Slab")
+            .field("generation", &self.generation)
+            .field("empty", &self.empty)
+            .finish()
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -109,6 +126,7 @@ mod tests {
     fn test_slab() {
         let mut slab: Slab<usize> = Slab::with_capacity(2);
         let a = slab.get_vacant();
+        assert!(slab.is_valid(&a));
         slab[&a] = 1;
 
         let b = slab.clone_from(&a);

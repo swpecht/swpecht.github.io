@@ -23,9 +23,10 @@ pub fn find_best_move(root: SimState) -> Option<Action> {
 
     let mut cache = AlphaBetaCache::new();
     let root_id = cache.slab.get_vacant();
+    assert!(cache.slab.is_valid(&root_id));
     cache.slab[&root_id].clone_from(&root);
     for d in 1..MAX_DEPTH {
-        (first_guess, action) = mtd_search(root_id.clone(), cur_team, first_guess, d, &mut cache);
+        (first_guess, action) = mtd_search(&root_id, cur_team, first_guess, d, &mut cache);
     }
 
     action
@@ -35,7 +36,7 @@ pub fn find_best_move(root: SimState) -> Option<Action> {
 ///
 /// http://people.csail.mit.edu/plaat/mtdf.html#abmem
 fn mtd_search(
-    root: SlabIdx,
+    root: &SlabIdx,
     maximizing_player: Team,
     first_guess: i8,
     max_depth: u8,
@@ -49,7 +50,7 @@ fn mtd_search(
     loop {
         let beta = if g == lowerbound { g + 1 } else { g };
         let result = alpha_beta(
-            &root,
+            root,
             maximizing_player,
             (beta - 1) as f64,
             beta as f64,
@@ -176,6 +177,13 @@ fn alpha_beta(
     max_depth: u8,
     cache: &mut AlphaBetaCache,
 ) -> (f64, Option<Action>) {
+    if !cache.slab.is_valid(gs) {
+        panic!(
+            "{:?}, depth: {}, max_depth: {}, slab: {:?}",
+            gs, depth, max_depth, cache.slab
+        );
+    }
+
     if cache.slab[gs].is_terminal() || depth >= max_depth {
         let v = cache.slab[gs].evaluate(maximizing_team) as f64;
         return (v, None);
