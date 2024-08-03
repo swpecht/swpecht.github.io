@@ -12,7 +12,7 @@ use tinyvec::ArrayVec;
 
 use crate::{
     load_spec,
-    parser::{load_encounter, CharacterSpec},
+    parser::{load_encounter, CharacterId, CharacterSpec},
 };
 
 const WORLD_SIZE: usize = 20;
@@ -25,6 +25,7 @@ pub enum Team {
 
 #[derive(Debug, Clone, Hash)]
 pub struct Character {
+    id: CharacterId,
     stats: Stats,
 }
 
@@ -439,7 +440,10 @@ impl Character {
 
 impl CharacterSpec {
     pub fn character(&self) -> Character {
-        Character { stats: self.stats }
+        Character {
+            id: self.id,
+            stats: self.stats,
+        }
     }
 }
 
@@ -483,7 +487,10 @@ impl Default for Character {
             .unwrap_or_else(|| panic!("failed to find default character: {}", name))
             .clone();
 
-        Self { stats: spec.stats }
+        Self {
+            id: spec.id,
+            stats: spec.stats,
+        }
     }
 }
 
