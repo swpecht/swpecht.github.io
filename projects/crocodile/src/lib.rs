@@ -8,6 +8,7 @@ use sprite::Curve;
 pub mod ai;
 pub mod alloc;
 pub mod gamestate;
+pub mod parser;
 pub mod sprite;
 pub mod ui;
 

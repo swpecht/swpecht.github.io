@@ -20,6 +20,7 @@ const TILE_LAYER: f32 = 0.0;
 const CHAR_LAYER: f32 = 1.0;
 const PROJECTILE_LAYER: f32 = 2.0;
 
+const IDLE_LOCATION: &str = "/Idle/Idle-Sheet.png";
 pub struct SpritePlugin;
 
 impl Plugin for SpritePlugin {
@@ -131,16 +132,6 @@ fn animate_sprite(
             } else {
                 atlas.index + 1
             };
-        }
-    }
-}
-
-impl crate::gamestate::Character {
-    fn idle(&self) -> String {
-        use crate::gamestate::Character::*;
-        match self {
-            Knight => "pixel-crawler/Heroes/Knight/Idle/Idle-Sheet.png".to_string(),
-            Orc => "pixel-crawler/Enemy/Orc Crew/Orc/Idle/Idle-Sheet.png".to_string(),
         }
     }
 }
@@ -375,5 +366,14 @@ fn ai(sim: Res<SimState>, mut ev_action: EventWriter<ActionEvent>) {
         debug!("finding best move for: {:?}", sim.cur_char());
         let action = find_best_move(sim.clone()).expect("failed to find a best move");
         ev_action.send(ActionEvent { action });
+    }
+}
+
+impl crate::gamestate::Character {
+    pub fn idle(&self) -> String {
+        format!(
+            "{}{}",
+            "pixel-crawler/Enemy/Skeleton Crew/Skeleton - Base", IDLE_LOCATION
+        )
     }
 }

@@ -8,7 +8,7 @@ use itertools::Itertools;
 #[derive(Clone)]
 pub struct Slab<T> {
     /// generation count for each
-    generation: Vec<u16>,
+    generation: Vec<u32>,
     /// actual storage
     mem: Vec<T>,
     /// empty indexes
@@ -18,7 +18,7 @@ pub struct Slab<T> {
 #[derive(Clone, Debug)]
 pub struct SlabIdx {
     loc: u16,
-    generation: u16,
+    generation: u32,
 }
 
 impl<T> Slab<T> {

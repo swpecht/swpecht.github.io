@@ -12,7 +12,7 @@ use crate::{
     gamestate::{Action, SimState, Team},
 };
 
-const MAX_DEPTH: u8 = 8;
+const MAX_DEPTH: u8 = 2;
 
 pub fn find_best_move(root: SimState) -> Option<Action> {
     // todo: switch to iterative deepending: https://www.chessprogramming.org/MTD(f)
@@ -370,7 +370,10 @@ mod tests {
 
     use test::Bencher;
 
-    use crate::gamestate::{sc, Ability, Character, SimState};
+    use crate::{
+        gamestate::{sc, Ability, SimState, Team},
+        load_spec,
+    };
 
     use super::find_best_move;
 
@@ -378,15 +381,27 @@ mod tests {
     fn find_best_move_bench(b: &mut Bencher) {
         b.iter(|| {
             let mut state = SimState::new();
-
-            state.insert_entity(Character::Orc, vec![Ability::MeleeAttack], sc(5, 10));
-            // state.insert_entity(Character::Orc, vec![Ability::MeleeAttack], sc(6, 10));
-            state.insert_entity(Character::Orc, vec![Ability::MeleeAttack], sc(4, 10));
-
+            let skeleton = load_spec!("Skeleton");
             state.insert_entity(
-                Character::Knight,
+                skeleton.character(),
+                vec![Ability::MeleeAttack],
+                sc(5, 10),
+                Team::NPCs(0),
+            );
+            // state.insert_entity(Character::Orc, vec![Ability::MeleeAttack], sc(6, 10));
+            state.insert_entity(
+                skeleton.character(),
+                vec![Ability::MeleeAttack],
+                sc(4, 10),
+                Team::NPCs(0),
+            );
+
+            let knight = load_spec!("Knight");
+            state.insert_entity(
+                knight.character(),
                 vec![Ability::MeleeAttack, Ability::BowAttack { range: 20 }],
                 sc(0, 9),
+                Team::Players(0),
             );
 
             find_best_move(state);

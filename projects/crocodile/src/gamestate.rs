@@ -1,12 +1,19 @@
 use std::{
     fmt::Display,
     ops::{Add, Sub},
+    path::Path,
 };
 
 use bevy::prelude::{Component, Resource};
 use clone_from::CloneFrom;
 use itertools::{Itertools, Product};
+use serde::Deserialize;
 use tinyvec::ArrayVec;
+
+use crate::{
+    load_spec,
+    parser::{load_encounter, CharacterSpec},
+};
 
 const WORLD_SIZE: usize = 20;
 
@@ -16,12 +23,24 @@ pub enum Team {
     NPCs(usize),
 }
 
-#[derive(Debug, Clone, Copy, Hash, Default)]
-pub enum Character {
-    Knight,
-    #[default]
-    Orc,
+#[derive(Debug, Clone, Hash)]
+pub struct Character {
+    stats: Stats,
 }
+
+#[derive(Debug, Deserialize, Clone, Copy, Hash)]
+pub struct Stats {
+    pub health: u8,
+    pub str: u8,
+    pub dex: u8,
+    pub con: u8,
+    pub int: u8,
+    pub wis: u8,
+    pub cha: u8,
+    pub ac: u8,
+    pub movement: u8,
+}
+
 #[derive(Resource, Hash, CloneFrom)]
 pub struct SimState {
     next_id: usize,
@@ -139,15 +158,33 @@ impl SimState {
 impl Default for SimState {
     fn default() -> Self {
         let mut state = SimState::new();
+        let knight = load_spec!("Knight");
+        let skeleton = load_spec!("Skeleton");
 
         state.insert_entity(
-            Character::Knight,
+            knight.character(),
             vec![Ability::MeleeAttack, Ability::BowAttack { range: 20 }],
             sc(0, 9),
+            Team::Players(0),
         );
-        state.insert_entity(Character::Orc, vec![Ability::MeleeAttack], sc(5, 10));
-        state.insert_entity(Character::Orc, vec![Ability::MeleeAttack], sc(6, 10));
-        state.insert_entity(Character::Orc, vec![Ability::MeleeAttack], sc(4, 10));
+        state.insert_entity(
+            skeleton.character(),
+            vec![Ability::MeleeAttack],
+            sc(5, 10),
+            Team::NPCs(0),
+        );
+        state.insert_entity(
+            skeleton.character(),
+            vec![Ability::MeleeAttack],
+            sc(6, 10),
+            Team::NPCs(0),
+        );
+        state.insert_entity(
+            skeleton.character(),
+            vec![Ability::MeleeAttack],
+            sc(4, 10),
+            Team::NPCs(0),
+        );
 
         state
     }
@@ -258,12 +295,13 @@ impl SimState {
 }
 
 impl SimState {
-    pub fn insert_entity(&mut self, character: Character, abilities: Vec<Ability>, loc: SimCoords) {
-        let team = match character {
-            Character::Knight => Team::Players(0),
-            Character::Orc => Team::NPCs(0),
-        };
-
+    pub fn insert_entity(
+        &mut self,
+        character: Character,
+        abilities: Vec<Ability>,
+        loc: SimCoords,
+        team: Team,
+    ) {
         let mut ability_vec = ArrayVec::new();
         for a in abilities {
             ability_vec.push(a);
@@ -271,11 +309,11 @@ impl SimState {
 
         let entity = SimEntity {
             id: SimId(self.next_id),
-            character,
             abilities: ability_vec,
             health: character.default_health(),
             turn_movement: character.default_movement(),
             movement: character.default_movement(),
+            character,
             remaining_actions: 1,
             team,
         };
@@ -370,7 +408,7 @@ impl SimState {
                 (
                     e.as_ref().unwrap().id,
                     l.unwrap(),
-                    e.as_ref().unwrap().character,
+                    e.as_ref().unwrap().character.clone(),
                 )
             })
             .collect_vec()
@@ -391,17 +429,17 @@ impl SimState {
 
 impl Character {
     fn default_movement(&self) -> usize {
-        match self {
-            Character::Knight => 4,
-            Character::Orc => 4,
-        }
+        self.stats.movement as usize
     }
 
     fn default_health(&self) -> usize {
-        match self {
-            Character::Knight => 15,
-            Character::Orc => 10,
-        }
+        self.stats.health as usize
+    }
+}
+
+impl CharacterSpec {
+    pub fn character(&self) -> Character {
+        Character { stats: self.stats }
     }
 }
 
@@ -433,6 +471,19 @@ impl Display for Ability {
 impl Default for Team {
     fn default() -> Self {
         Team::NPCs(0)
+    }
+}
+
+impl Default for Character {
+    fn default() -> Self {
+        let name = "Giant goat";
+        let specs = load_encounter(Path::new("encounter.yaml")).expect("failed to load encounter");
+        let spec = specs
+            .get(name)
+            .unwrap_or_else(|| panic!("failed to find default character: {}", name))
+            .clone();
+
+        Self { stats: spec.stats }
     }
 }
 
@@ -477,17 +528,31 @@ impl Iterator for CoordIterator {
 #[cfg(test)]
 mod tests {
 
+    use crate::load_spec;
+
     use super::*;
 
     const KNIGHT_ID: SimId = SimId(0);
-    const ORC_ID: SimId = SimId(1);
+    const SKELETON: SimId = SimId(1);
     const KNIGHT_START: SimCoords = SimCoords { x: 10, y: 10 };
-    const ORC_START: SimCoords = SimCoords { x: 9, y: 10 };
+    const SKELETON_START: SimCoords = SimCoords { x: 9, y: 10 };
 
     fn create_test_world() -> SimState {
         let mut state = SimState::new();
-        state.insert_entity(Character::Knight, vec![Ability::MeleeAttack], KNIGHT_START);
-        state.insert_entity(Character::Orc, vec![Ability::MeleeAttack], ORC_START);
+        let knight = load_spec!("Knight");
+        let skeleton = load_spec!("Skeleton");
+        state.insert_entity(
+            knight.character(),
+            vec![Ability::MeleeAttack],
+            KNIGHT_START,
+            Team::Players(0),
+        );
+        state.insert_entity(
+            skeleton.character(),
+            vec![Ability::MeleeAttack],
+            SKELETON_START,
+            Team::NPCs(0),
+        );
         state
     }
 
@@ -497,13 +562,13 @@ mod tests {
 
         // have the knight attack the orc
         gs.apply(Action::UseAbility {
-            target: ORC_START,
+            target: SKELETON_START,
             ability: Ability::MeleeAttack,
         });
 
         assert_eq!(
-            gs.get_entity(ORC_ID).health,
-            Character::Orc.default_health() - Ability::MeleeAttack.dmg()
+            gs.get_entity(SKELETON).health,
+            10 - Ability::MeleeAttack.dmg()
         );
 
         // have the knight move
