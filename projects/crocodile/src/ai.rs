@@ -1,6 +1,5 @@
 use std::{
     cell::RefCell,
-    cmp::Ordering,
     hash::{DefaultHasher, Hash, Hasher},
     rc::Rc,
     sync::Arc,
@@ -13,7 +12,7 @@ use crate::{
     gamestate::{Action, SimState, Team},
 };
 
-const MAX_DEPTH: u8 = 5;
+const MAX_DEPTH: u8 = 6;
 
 pub fn find_best_move(root: SimState) -> Option<Action> {
     // todo: switch to iterative deepending: https://www.chessprogramming.org/MTD(f)
@@ -322,21 +321,18 @@ fn child_nodes(
     // use the pv moves from last time if available
     let pv_action = cache.pv_moves[depth as usize];
 
-    // TODO: this will try the pv move first at this depth even if we're not on the PV chain
+    // This will try the pv move first at this depth even if we're not on the PV chain
     // (e.g. earlier moves were different). TBD if this is desired
-    result.sort_by(|(s1, a1), (s2, a2)| {
-        if Some(a1) == pv_action.as_ref() {
-            return Ordering::Less;
-        } else if Some(a2) == pv_action.as_ref() {
-            return Ordering::Greater;
+    //
+    // We use cached key because evaluate can be expensive to calculate
+    result.sort_by_cached_key(|(s, a)| {
+        if Some(a) == pv_action.as_ref() {
+            return i32::MAX;
         }
-
         // we're doing a reverse sort so s2.cmp(s1)
-        cache.slab[s2]
-            .evaluate(maximizing_team)
-            .partial_cmp(&cache.slab[s1].evaluate(maximizing_team))
-            .unwrap()
+        cache.slab[s].evaluate(maximizing_team)
     });
+    result.reverse();
 
     // ensure we're trying the pv move first
     if let Some(pva) = pv_action
@@ -347,33 +343,6 @@ fn child_nodes(
 
     cache.action_vec.clear();
     Rc::clone(&cache.child_nodes[depth as usize])
-}
-
-#[derive(Clone)]
-pub struct Pool<T> {
-    pool: Vec<T>,
-    generator: fn() -> T,
-}
-
-impl<T> Pool<T> {
-    pub fn new(generator: fn() -> T) -> Self {
-        Self {
-            pool: Vec::new(),
-            generator,
-        }
-    }
-
-    pub fn detach(&mut self) -> T {
-        if self.pool.is_empty() {
-            return (self.generator)();
-        }
-
-        self.pool.pop().unwrap()
-    }
-
-    pub fn attach(&mut self, obj: T) {
-        self.pool.push(obj);
-    }
 }
 
 #[cfg(test)]

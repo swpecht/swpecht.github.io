@@ -251,9 +251,9 @@ impl SimState {
         count_players == 0 || count_npcs == 0
     }
 
-    pub fn evaluate(&self, team: Team) -> f32 {
-        const WIN_VALUE: f32 = 0.0; //  1000.0;
-                                    // todo: add score component for entity count
+    pub fn evaluate(&self, team: Team) -> i32 {
+        const WIN_VALUE: i32 = 0; //  1000.0;
+                                  // todo: add score component for entity count
 
         let mut player_health = 0;
         let mut npc_health = 0;
@@ -265,8 +265,8 @@ impl SimState {
         }
 
         let health_score = match team {
-            Team::Players(_) => player_health as f32 - npc_health as f32,
-            Team::NPCs(_) => npc_health as f32 - player_health as f32,
+            Team::Players(_) => player_health as i32 - npc_health as i32,
+            Team::NPCs(_) => npc_health as i32 - player_health as i32,
         };
 
         let win_score = match (team, player_health, npc_health) {
@@ -274,7 +274,7 @@ impl SimState {
             (Team::Players(_), _, 0) => WIN_VALUE,
             (Team::NPCs(_), 0, _) => WIN_VALUE,
             (Team::NPCs(_), _, 0) => -WIN_VALUE,
-            (_, _, _) => 0.0,
+            (_, _, _) => 0,
         };
 
         health_score + win_score
@@ -481,7 +481,7 @@ impl Default for Team {
 
 impl Default for Character {
     fn default() -> Self {
-        let name = "Giant goat";
+        let name = "Skeleton";
         let specs = load_encounter(Path::new("encounter.yaml")).expect("failed to load encounter");
         let spec = specs
             .get(name)
