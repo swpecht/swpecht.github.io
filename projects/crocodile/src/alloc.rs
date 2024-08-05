@@ -32,7 +32,7 @@ impl<T: Default + Clone> Slab<T> {
     pub fn with_capacity(capacity: usize) -> Self {
         Slab {
             generation: vec![0; capacity],
-            mem: (0..capacity).map(|_| T::default()).collect_vec(),
+            mem: vec![T::default(); capacity],
             empty: (0..capacity).rev().map(|x| x as u16).collect_vec(),
         }
     }
