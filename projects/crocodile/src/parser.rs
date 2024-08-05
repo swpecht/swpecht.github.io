@@ -1,41 +1,14 @@
-use std::{
-    hash::{DefaultHasher, Hasher},
-    path::Path,
-};
+use std::path::Path;
 
 use bevy::utils::HashMap;
 use serde::Deserialize;
 
-use crate::gamestate::Stats;
-
-pub type CharacterId = u8;
+use crate::{gamestate::Stats, sprite::CharacterSprite};
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(from = "CharacterSpecSerde")]
 pub struct CharacterSpec {
-    pub id: CharacterId,
-    pub art: String,
+    pub sprite: CharacterSprite,
     pub stats: Stats,
-}
-
-#[derive(Deserialize)]
-struct CharacterSpecSerde {
-    pub art: String,
-    pub stats: Stats,
-}
-
-impl From<CharacterSpecSerde> for CharacterSpec {
-    fn from(value: CharacterSpecSerde) -> Self {
-        let CharacterSpecSerde { art, stats } = value;
-        let mut hasher = DefaultHasher::new();
-        std::hash::Hash::hash(&art, &mut hasher);
-
-        CharacterSpec {
-            id: hasher.finish() as CharacterId,
-            art,
-            stats,
-        }
-    }
 }
 
 pub fn load_encounter(path: &Path) -> anyhow::Result<HashMap<String, CharacterSpec>> {

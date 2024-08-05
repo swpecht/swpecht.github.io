@@ -12,7 +12,8 @@ use tinyvec::ArrayVec;
 
 use crate::{
     load_spec,
-    parser::{load_encounter, CharacterId, CharacterSpec},
+    parser::{load_encounter, CharacterSpec},
+    sprite::CharacterSprite,
 };
 
 const WORLD_SIZE: usize = 20;
@@ -25,7 +26,7 @@ pub enum Team {
 
 #[derive(Debug, Clone, Hash)]
 pub struct Character {
-    id: CharacterId,
+    pub sprite: CharacterSprite,
     stats: Stats,
 }
 
@@ -441,7 +442,7 @@ impl Character {
 impl CharacterSpec {
     pub fn character(&self) -> Character {
         Character {
-            id: self.id,
+            sprite: self.sprite.clone(),
             stats: self.stats,
         }
     }
@@ -488,7 +489,7 @@ impl Default for Character {
             .clone();
 
         Self {
-            id: spec.id,
+            sprite: spec.sprite,
             stats: spec.stats,
         }
     }

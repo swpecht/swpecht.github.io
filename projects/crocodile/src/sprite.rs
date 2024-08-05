@@ -4,6 +4,7 @@ use bevy::{
     render::camera::ScalingMode,
     time::Stopwatch,
 };
+use serde::Deserialize;
 
 use crate::{
     ai::find_best_move,
@@ -67,6 +68,14 @@ struct SpawnProjectileEvent {
 
 #[derive(Component)]
 struct Projectile;
+
+#[derive(Debug, Clone, Hash, Deserialize)]
+pub enum CharacterSprite {
+    Skeleton,
+    Knight,
+    Orc,
+    Wizard,
+}
 
 impl Curve {
     fn cur_pos(&self) -> Vec2 {
@@ -155,7 +164,7 @@ fn sync_sim(
         .map(|(id, l, c)| (id, l.to_world(), c))
     {
         // TODO: add support for changing location of things if they're already spawned
-        let texture = asset_server.load(character.idle());
+        let texture = asset_server.load(character.sprite.idle());
         let layout = TextureAtlasLayout::from_grid(UVec2::new(32, 32), 4, 1, None, None);
         let texture_atlas_layout = texture_atlas_layouts.add(layout);
         // Use only the subset of sprites in the sheet that make up the run animation
@@ -369,11 +378,22 @@ fn ai(sim: Res<SimState>, mut ev_action: EventWriter<ActionEvent>) {
     }
 }
 
-impl crate::gamestate::Character {
+impl CharacterSprite {
     pub fn idle(&self) -> String {
-        format!(
-            "{}{}",
-            "pixel-crawler/Enemy/Skeleton Crew/Skeleton - Base", IDLE_LOCATION
-        )
+        match self {
+            CharacterSprite::Skeleton => format!(
+                "{}{}",
+                "pixel-crawler/Enemy/Skeleton Crew/Skeleton - Base", IDLE_LOCATION
+            ),
+            CharacterSprite::Knight => {
+                format!("{}{}", "pixel-crawler/Heroes/Knight", IDLE_LOCATION)
+            }
+            CharacterSprite::Orc => {
+                format!("{}{}", "pixel-crawler/Enemy/Orc Crew/Orc", IDLE_LOCATION)
+            }
+            CharacterSprite::Wizard => {
+                format!("{}{}", "pixel-crawler/Heroes/Wizard", IDLE_LOCATION)
+            }
+        }
     }
 }

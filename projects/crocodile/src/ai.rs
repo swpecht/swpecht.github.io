@@ -1,18 +1,19 @@
 use std::{
+    cell::RefCell,
     cmp::Ordering,
     hash::{DefaultHasher, Hash, Hasher},
+    rc::Rc,
     sync::Arc,
 };
 
 use dashmap::DashMap;
-use itertools::Itertools;
 
 use crate::{
     alloc::{Slab, SlabIdx},
     gamestate::{Action, SimState, Team},
 };
 
-const MAX_DEPTH: u8 = 2;
+const MAX_DEPTH: u8 = 8;
 
 pub fn find_best_move(root: SimState) -> Option<Action> {
     // todo: switch to iterative deepending: https://www.chessprogramming.org/MTD(f)
@@ -86,6 +87,7 @@ type TranspositionKey = (Team, u64);
 #[derive(Clone)]
 struct AlphaBetaCache {
     action_vec: Vec<Action>,
+    child_nodes: Vec<Rc<RefCell<Vec<(SlabIdx, Action)>>>>,
     slab: Slab<SimState>,
     transposition_table: Arc<DashMap<TranspositionKey, AlphaBetaResult>>,
     pv_moves: [Option<Action>; MAX_DEPTH as usize],
@@ -98,6 +100,12 @@ impl AlphaBetaCache {
             slab: Slab::with_capacity(256),
             transposition_table: Arc::new(DashMap::new()),
             pv_moves: [None; MAX_DEPTH as usize],
+            child_nodes: {
+                let mut v = Vec::with_capacity(MAX_DEPTH as usize);
+                (0..MAX_DEPTH as usize)
+                    .for_each(|_| v.push(Rc::new(RefCell::new(Vec::with_capacity(32)))));
+                v
+            },
         }
     }
 }
@@ -211,7 +219,10 @@ fn alpha_beta(
     let team = cache.slab[gs].cur_team();
     let result;
 
-    let mut children = child_nodes(gs, maximizing_team, cache, depth);
+    let children = child_nodes(gs, maximizing_team, cache, depth);
+    let mut children = children
+        .try_borrow_mut()
+        .unwrap_or_else(|_| panic!("failed to borrow children at depth: {}", depth));
 
     if team == maximizing_team {
         let mut value = f64::NEG_INFINITY;
@@ -293,18 +304,18 @@ fn child_nodes(
     maximizing_team: Team,
     cache: &mut AlphaBetaCache,
     depth: u8,
-) -> Vec<(SlabIdx, Action)> {
+) -> Rc<RefCell<Vec<(SlabIdx, Action)>>> {
+    let mut result = cache.child_nodes[depth as usize]
+        .try_borrow_mut()
+        .unwrap_or_else(|_| panic!("failed to borrow children at depth: {}", depth));
+    result.clear();
     cache.slab[gs].legal_actions(&mut cache.action_vec);
 
-    let mut result = cache
-        .action_vec
-        .iter()
-        .map(|a| {
-            let idx = cache.slab.clone_from(gs);
-            cache.slab[&idx].apply(*a);
-            (idx, *a)
-        })
-        .collect_vec();
+    cache.action_vec.iter().for_each(|a| {
+        let idx = cache.slab.clone_from(gs);
+        cache.slab[&idx].apply(*a);
+        result.push((idx, *a));
+    });
 
     // use the pv moves from last time if available
     let pv_action = cache.pv_moves[depth as usize];
@@ -333,7 +344,7 @@ fn child_nodes(
     }
 
     cache.action_vec.clear();
-    result
+    Rc::clone(&cache.child_nodes[depth as usize])
 }
 
 #[derive(Clone)]
