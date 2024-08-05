@@ -40,7 +40,8 @@ impl<T: Default + Clone> Slab<T> {
     /// Allocate new entry if needed.
     fn add_entry(&mut self) {
         let new_item = self.mem.len();
-        self.mem.push(T::default());
+        let new_entry = self.mem.last().unwrap().clone();
+        self.mem.push(new_entry);
         self.empty.push(new_item as u16);
         self.generation.push(0);
     }
