@@ -1,7 +1,89 @@
-[ ] Create rough ui for interacting with state
-[ ] Draw the basic player character
-[ ] Implement the ui to move the character around
-[ ] Build basic AI for enemy entities
-[ ] Implement attacks
-[ ] Build minimax AI
+[*] Create rough ui for interacting with state
+[*] Draw the basic player character
+[*] Draw basic tiles
+[*] Fix the offset issue with the world cords
+[*] Highlight grid square the mouse is on with gizmo outlining it
+[*] System to translate a click into simulation coords -- this can set selection
+[*] Implement selecting player character with mouse click
+[*] Show character based on position in world sim
+    [*] Make system to sync display to sim
+[ ] Highlight selected character
+[*] Implement poc for moving character
+[*] Implement right click to move the character around
+[*] Implement state for processing action and taking input
+[*] Implement attacks
+    [*] Need to implement states, then can run the button creation when go into input state
+    * How to handle? Have each attack take a list of the targets? Then can figure out the legal list from a separate attack action type stored within the sim entity?
+    * Select attack with button
+    * Valid squares to select are highlighted based on legal actions
+    * https://bevyengine.org/examples/Games/game-menu/ -- for how to make buttons work
+    * Likely have an id tied to each button, this is associates it with the vector of legal actions
+    [*] Fix bug where buttons don't update on turn end -- force PlayState change on turn end action?
+    [*] Have the buttons work with each action
+[*] Add a gamestate sync after each processing step is done
+    * Allow syncing without creating if it already exists
+[*] Add animation for attack
+    [*] Melee attack
+    [*] Bow attack
+[*] Refactor the action handling system to work off events?
+    * One system that does dispatch to all the other systems as events?
+    * Maybe a projectile event? And associated system
+[*] Implement legal actions
+[*] Build basic AI for enemy entities
+    [*] build is_terminal check
+    [*] build a score function
+[*] Build minimax AI
+    [*] fix where orcs not attacking
+    [*] fix the weird movement looping -- add movement actions at the end of legal actions?
+    [*] Add profiling test to track overall performance
+    [*] Switch to single move rather than chained moves?
+    [*] Implement iterative deepening
+    [*] Switch to integer score rather than f32?
+    [*] Switch depth to be based on number of entity look ahead?
+    [ ] Reduce size of the simstate object -- can we factor out some of the details? e.g. pre-define the abilities in a separate list, then just keep a list of integers for what each entity can do?
+    [*] Look at other search algorithms
+[*] Add in outline for where can move
+[*] Change actions to only show when selecting a character
+[*] Change to not reset transposition table one each iterative deepedning interation, instead have it check the reamiing depth to search so only take tt result if stronger than normal search
+[*] Fix logic error with new slab code, likely related to get_many_mut
+[*] Have the game dynamically look up art by character id -- need to create a global store of the info for bevy
+[ ] Look at wrapping all the unchaning simstate data into a refecne (Arc? Or just a reference?)
+
+
+https://news.ycombinator.com/item?id=21037125
+
+
+
+[ ] Add health bars
 [ ] Implement additional play character and enemies
+
+
+Maybe:
+[ ] Refactor sim state to enable undo and redo
+
+
+Benchmark results
+* Baseline: 63,289,459.20 ns/iter (+/- 11,958,311.88)
+* Multi-step move: 164,872,726.00 ns/iter (+/- 93,314,993.13)
+* 2 character look ahead: 221,082,558.80 ns/iter (+/- 2,627,776.55) 
+* Sorted moves: 493,477,100.10 ns/iter (+/- 88,491,696.70)
+* Iterative deepening: 187,976.70 ns/iter (+/- 8,288.82)
+* 4 steps: 537,902,490.80 ns/iter
+* Fix bug where movement only reduced by 1: 39,336,430.60 ns/iter
+* 5 moves ahead: 255,294,112.20 ns/iter (+/- 71,430,435.09)
+* Remove allocation for movement legal actions: 241,639,675.50 ns/iter (+/- 86,191,212.92)
+* Remove allocation for ability legal actions: 405,635,100.60 ns/iter (+/- 202,901,593.74)  
+* Add in system to only iterate over world coords in range: 123,592,024.30 ns/iter (+/- 9,580,663.70)
+* 5 moves w/o move ordering: 
+* 5 moves w/ increasing depth: 424,017,204.00 ns/iter (+/- 212,148,153.94)
+* Search PV first: 253,837,193.00 ns/iter (+/- 31,015,222.91)
+* Add in checks for depth: 429,567,544.60 ns/iter (+/- 96,946,865.88)
+* Don't reset transposition table between moves: 433,278,822.00 ns/iter (+/- 6,675,863.64)
+* Single action vec: 441,645,617.10 ns/iter (+/- 121,344,308.84)
+* Change to incrementing depth each call and switch to 8: 614,031,799.10 ns/iter (+/- 29,827,364.16)
+* Slab: 88,404,085.30 ns/iter (+/- 24,453,605.13) 
+* Switch to 5 moves: 165,896,103.70 ns/iter (+/- 101,483,562.71)
+* Re-use array to get child moves: 139,839,098.80 ns/iter (+/- 13,923,816.76) 
+* Remove deserialize call when creating new simstates for slab: 74,004,622.10 ns/iter (+/- 2,156,366.59)
+* Most recent: 15,477,548.50 ns/iter (+/- 12,629,083.19)
+* Change simstate to us RC for components, releive copy pressure:
