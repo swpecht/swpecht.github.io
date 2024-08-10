@@ -49,6 +49,7 @@ mod tests {
     fn test_load_encounter() {
         let characters =
             load_encounter(Path::new("encounter.yaml")).expect("error loading encounter");
+        load_spec!("Knight");
         print!("{:#?}", characters);
     }
 }

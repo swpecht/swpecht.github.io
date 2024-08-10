@@ -160,8 +160,8 @@ impl SimState {
 impl Default for SimState {
     fn default() -> Self {
         let mut state = SimState::new();
-        let knight = load_spec!("Knight");
-        let skeleton = load_spec!("Skeleton");
+        let knight = load_spec!("Human soldier");
+        let skeleton = load_spec!("Giant goat");
 
         state.insert_entity(
             knight.character(),
@@ -169,6 +169,13 @@ impl Default for SimState {
             sc(0, 9),
             Team::Players(0),
         );
+        state.insert_entity(
+            knight.character(),
+            vec![Ability::MeleeAttack, Ability::BowAttack { range: 20 }],
+            sc(0, 8),
+            Team::Players(0),
+        );
+
         state.insert_entity(
             skeleton.character(),
             vec![Ability::MeleeAttack],
@@ -185,6 +192,12 @@ impl Default for SimState {
             skeleton.character(),
             vec![Ability::MeleeAttack],
             sc(4, 10),
+            Team::NPCs(0),
+        );
+        state.insert_entity(
+            skeleton.character(),
+            vec![Ability::MeleeAttack],
+            sc(7, 10),
             Team::NPCs(0),
         );
 

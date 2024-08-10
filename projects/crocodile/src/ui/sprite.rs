@@ -350,7 +350,7 @@ pub(super) fn game_over(mut next_state: ResMut<NextState<PlayState>>, sim: Res<S
 }
 
 pub(super) fn ai(sim: Res<SimState>, mut ev_action: EventWriter<ActionEvent>) {
-    if matches!(sim.cur_team(), Team::NPCs(_)) {
+    if matches!(sim.cur_team(), Team::NPCs(_) | Team::Players(_)) {
         debug!("finding best move for: {:?}", sim.cur_char());
         let action = find_best_move(sim.clone()).expect("failed to find a best move");
         ev_action.send(ActionEvent { action });
