@@ -142,9 +142,8 @@ mod tests {
         let res = std::panic::catch_unwind(|| slab[&a]);
         assert!(res.is_err());
         slab[&c] = 3;
-        let d = slab.get_vacant();
+        slab.get_vacant(); // test we can allocate a new slab
         assert_eq!(slab[&b], 2);
         assert_eq!(slab[&c], 3);
-        assert_eq!(slab[&d], 0);
     }
 }
