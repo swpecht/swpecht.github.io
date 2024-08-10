@@ -9,9 +9,9 @@ clone_from = "0.1.0"
 dashmap = "5.5.3"
 itertools = "0.13.0"
 tinyvec = "1.6.1"
-bumpalo = { version = "3", features = ["allocator_api"] }
-bytemuck = "1.16.1"
-yaml-rust = "0.4.5"
+# bumpalo = { version = "3", features = ["allocator_api"] }
+# bytemuck = "1.16.1"
+# yaml-rust = "0.4.5"
 serde = "1.0.204"
 serde_yaml = "0.9.34"
 anyhow = "1.0.86"
