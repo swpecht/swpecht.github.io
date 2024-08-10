@@ -13,7 +13,7 @@ use tinyvec::ArrayVec;
 use crate::{
     load_spec,
     parser::{load_encounter, CharacterSpec},
-    sprite::CharacterSprite,
+    ui::sprite::CharacterSprite,
 };
 
 const WORLD_SIZE: usize = 20;

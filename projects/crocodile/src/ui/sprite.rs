@@ -22,27 +22,6 @@ const CHAR_LAYER: f32 = 1.0;
 const PROJECTILE_LAYER: f32 = 2.0;
 
 const IDLE_LOCATION: &str = "/Idle/Idle-Sheet.png";
-pub struct SpritePlugin;
-
-impl Plugin for SpritePlugin {
-    fn build(&self, app: &mut App) {
-        app.add_event::<SpawnProjectileEvent>();
-
-        app.add_systems(Startup, (setup_camera, sync_sim, setup_tiles))
-            .add_systems(
-                Update,
-                (
-                    animate_sprite,
-                    process_curves,
-                    spawn_projectile,
-                    cleanup_projectiles,
-                ),
-            )
-            // Only process actions if we're actually waiting for action input
-            .add_systems(Update, action_system.run_if(in_state(PlayState::Waiting)))
-            .add_systems(OnExit(PlayState::Processing), (sync_sim, game_over, ai));
-    }
-}
 
 #[derive(Component, Clone)]
 pub struct Curve {
@@ -52,22 +31,22 @@ pub struct Curve {
 }
 
 #[derive(Component)]
-struct AnimationIndices {
+pub(super) struct AnimationIndices {
     first: usize,
     last: usize,
 }
 
 #[derive(Component, Deref, DerefMut)]
-struct AnimationTimer(Timer);
+pub(super) struct AnimationTimer(Timer);
 
 #[derive(Event, Debug)]
-struct SpawnProjectileEvent {
+pub(super) struct SpawnProjectileEvent {
     start: Vec2,
     target: Vec2,
 }
 
 #[derive(Component)]
-struct Projectile;
+pub(super) struct Projectile;
 
 #[derive(Debug, Clone, Hash, Deserialize)]
 pub enum CharacterSprite {
@@ -113,7 +92,7 @@ impl Curve {
 #[derive(Component)]
 pub struct MainCamera;
 
-fn setup_camera(mut commands: Commands) {
+pub(super) fn setup_camera(mut commands: Commands) {
     // Camera
     let mut camera_bundle = Camera2dBundle {
         transform: Transform::from_xyz(
@@ -129,7 +108,7 @@ fn setup_camera(mut commands: Commands) {
     commands.spawn((camera_bundle, MainCamera));
 }
 
-fn animate_sprite(
+pub(super) fn animate_sprite(
     time: Res<Time>,
     mut query: Query<(&AnimationIndices, &mut AnimationTimer, &mut TextureAtlas)>,
 ) {
@@ -145,7 +124,7 @@ fn animate_sprite(
     }
 }
 
-fn sync_sim(
+pub(super) fn sync_sim(
     mut commands: Commands,
     sim: Res<SimState>,
     asset_server: Res<AssetServer>,
@@ -186,7 +165,7 @@ fn sync_sim(
     }
 }
 
-fn setup_tiles(
+pub(super) fn setup_tiles(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
@@ -217,7 +196,7 @@ fn setup_tiles(
 }
 
 /// Translate action events into the proper display within the game visualization
-fn action_system(
+pub(super) fn action_system(
     mut commands: Commands,
     mut ev_action: EventReader<ActionEvent>,
     mut ev_projectile: EventWriter<SpawnProjectileEvent>,
@@ -259,7 +238,7 @@ fn action_system(
     }
 }
 
-fn handle_move(
+pub(super) fn handle_move(
     commands: &mut Commands,
     target: SimCoords,
     query: &Query<(Entity, &SimId, &Transform)>,
@@ -299,7 +278,7 @@ fn handle_melee(
         });
 }
 
-fn spawn_projectile(
+pub(super) fn spawn_projectile(
     mut commands: Commands,
     mut ev_action: EventReader<SpawnProjectileEvent>,
     asset_server: Res<AssetServer>,
@@ -336,7 +315,7 @@ fn spawn_projectile(
 }
 
 /// Despan projectiles that are no longer moving
-fn cleanup_projectiles(
+pub(super) fn cleanup_projectiles(
     mut commands: Commands,
     query: Query<Entity, (With<Projectile>, Without<Curve>)>,
 ) {
@@ -345,7 +324,7 @@ fn cleanup_projectiles(
     }
 }
 
-fn process_curves(
+pub(super) fn process_curves(
     mut commands: Commands,
     time: Res<Time>,
     mut gizmos: Gizmos,
@@ -363,14 +342,14 @@ fn process_curves(
     }
 }
 
-fn game_over(mut next_state: ResMut<NextState<PlayState>>, sim: Res<SimState>) {
+pub(super) fn game_over(mut next_state: ResMut<NextState<PlayState>>, sim: Res<SimState>) {
     if sim.is_terminal() {
         warn!("game over");
         next_state.set(PlayState::Terminal);
     }
 }
 
-fn ai(sim: Res<SimState>, mut ev_action: EventWriter<ActionEvent>) {
+pub(super) fn ai(sim: Res<SimState>, mut ev_action: EventWriter<ActionEvent>) {
     if matches!(sim.cur_team(), Team::NPCs(_)) {
         debug!("finding best move for: {:?}", sim.cur_char());
         let action = find_best_move(sim.clone()).expect("failed to find a best move");

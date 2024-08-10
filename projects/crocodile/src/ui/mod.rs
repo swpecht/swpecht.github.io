@@ -5,12 +5,14 @@ use bevy::{
     sprite::{MaterialMesh2dBundle, Mesh2dHandle},
     window::PrimaryWindow,
 };
+use sprite::*;
 
 use crate::{
     gamestate::{Action, SimCoords, SimId, SimState},
-    sprite::{MainCamera, TILE_SIZE},
     PlayState,
 };
+
+pub mod sprite;
 
 const NORMAL_BUTTON: Color = Color::srgb(0.15, 0.15, 0.15);
 const HOVERED_BUTTON: Color = Color::srgb(0.25, 0.25, 0.25);
@@ -22,6 +24,12 @@ pub struct UIPlugin;
 impl Plugin for UIPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<ActionEvent>();
+        app.add_event::<SpawnProjectileEvent>();
+
+        app.add_systems(Startup, (setup_camera, sync_sim, setup_tiles))
+            // Only process actions if we're actually waiting for action input
+            .add_systems(Update, action_system.run_if(in_state(PlayState::Waiting)))
+            .add_systems(OnExit(PlayState::Processing), (sync_sim, game_over, ai));
 
         app.add_systems(Startup, setup_ui)
             .add_systems(
@@ -30,7 +38,10 @@ impl Plugin for UIPlugin {
                     button_system,
                     action_button_action,
                     cursor_locator,
-                    tile_highlight,
+                    tile_highlight.after(animate_sprite), // ensure we draw the highlights over the sprites
+                    process_curves,
+                    spawn_projectile,
+                    cleanup_projectiles,
                 ),
             )
             .add_systems(

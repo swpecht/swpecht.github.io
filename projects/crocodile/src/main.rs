@@ -3,7 +3,7 @@ use bevy::{
     prelude::*,
     DefaultPlugins,
 };
-use crocodile::{gamestate::SimState, sprite::SpritePlugin, ui::UIPlugin, StatePlugin};
+use crocodile::{gamestate::SimState, ui::UIPlugin, StatePlugin};
 
 pub enum TransitionState {
     Waiting,    // waiting on an action
@@ -21,7 +21,7 @@ fn main() {
                     ..default()
                 }),
         ) // prevents blurry sprites
-        .add_plugins((StatePlugin, UIPlugin, SpritePlugin))
+        .add_plugins((StatePlugin, UIPlugin))
         .init_resource::<SimState>()
         .run();
 }

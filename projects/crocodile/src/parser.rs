@@ -3,12 +3,21 @@ use std::path::Path;
 use bevy::utils::HashMap;
 use serde::Deserialize;
 
-use crate::{gamestate::Stats, sprite::CharacterSprite};
+use crate::{gamestate::Stats, ui::sprite::CharacterSprite};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CharacterSpec {
     pub sprite: CharacterSprite,
     pub stats: Stats,
+    actions: HashMap<String, ActionStats>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct ActionStats {
+    max_range: u8,
+    // min_range: u8,
+    damage: u8,
+    to_hit: u8,
 }
 
 pub fn load_encounter(path: &Path) -> anyhow::Result<HashMap<String, CharacterSpec>> {

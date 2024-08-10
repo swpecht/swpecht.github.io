@@ -3,13 +3,11 @@
 #![feature(get_many_mut)]
 
 use bevy::prelude::*;
-use sprite::Curve;
 
 pub mod ai;
 pub mod alloc;
 pub mod gamestate;
 pub mod parser;
-pub mod sprite;
 pub mod ui;
 
 pub struct StatePlugin;
@@ -39,7 +37,7 @@ pub enum PlayState {
 fn monitor_processing(
     state: Res<State<PlayState>>,
     mut next_state: ResMut<NextState<PlayState>>,
-    query: Query<Entity, With<Curve>>,
+    query: Query<Entity, With<ui::sprite::Curve>>,
 ) {
     use PlayState::*;
     match (state.get(), &query.iter().len()) {
