@@ -1,0 +1,14 @@
+{
+  "name": "kiwi-server",
+  "version": "1.0.0",
+  "description": "* Have a separate service responsible for creating the machines * Have the runner just choose any of the open machines to run one * This allows having a constant available runner up, e.g. hetzner that can be chosen -- different from the ephemeral runners * Creates a question on how to get the data to where it needs to go -- less of a problem if there are no inputs",
+  "main": "./dist/script.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@xterm/xterm": "^5.4.0"
+  }
+}
