@@ -328,7 +328,7 @@ impl SimState {
             )
         });
         let target_entity = self.get_entity_mut(target_id);
-        target_entity.health = target_entity.health.saturating_sub(ability.dmg() as u8);
+        target_entity.health = target_entity.health.saturating_sub(ability.dmg());
 
         if target_entity.health == 0 {
             self.remove_entity(target_id);
