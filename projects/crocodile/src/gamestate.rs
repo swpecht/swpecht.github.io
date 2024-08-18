@@ -9,7 +9,10 @@ use itertools::{Itertools, Product};
 use serde::Deserialize;
 use tinyvec::ArrayVec;
 
-use crate::{sim::info::PreBuiltCharacter, ui::sprite::CharacterSprite};
+use crate::{
+    sim::info::{Ability, PreBuiltCharacter},
+    ui::sprite::CharacterSprite,
+};
 
 const WORLD_SIZE: usize = 20;
 
@@ -75,17 +78,6 @@ impl Display for Action {
             }
         }
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
-pub enum Ability {
-    #[default]
-    MeleeAttack,
-    BowAttack {
-        range: usize,
-    },
-    Longsword,
-    LightCrossbow,
 }
 
 #[derive(CloneFrom, Hash)]
@@ -195,7 +187,7 @@ impl SimState {
         // by the ai tree search. This avoids the units moving around without purpose to end in the same spot to attack
         if cur_entity.remaining_actions > 0 {
             for ability in cur_entity.abilities.iter() {
-                for l in CoordIterator::new(cur_loc, ability.range()) {
+                for l in CoordIterator::new(cur_loc, ability.max_range()) {
                     if self.is_populated(&l) && l != cur_loc {
                         actions.push(Action::UseAbility {
                             target: l,
@@ -436,39 +428,6 @@ impl Character {
 
     fn default_health(&self) -> u8 {
         self.stats.health
-    }
-}
-
-impl Ability {
-    pub fn range(&self) -> usize {
-        use Ability::*;
-        match self {
-            MeleeAttack | Longsword => 1,
-            Self::LightCrossbow => 16,
-            BowAttack { range } => *range,
-        }
-    }
-
-    pub fn dmg(&self) -> u8 {
-        use Ability::*;
-        match self {
-            MeleeAttack => 5,
-            BowAttack { range: _ } => 2,
-            Longsword => 8,
-            LightCrossbow => 6,
-        }
-    }
-}
-
-impl Display for Ability {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use Ability::*;
-        f.write_str(match self {
-            MeleeAttack => "Melee",
-            BowAttack { range: _ } => "Bow",
-            Longsword => "LongSword",
-            LightCrossbow => "LightCrossbow",
-        })
     }
 }
 

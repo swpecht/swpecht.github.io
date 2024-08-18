@@ -1,7 +1,6 @@
-use crate::{
-    gamestate::{Ability, Stats},
-    ui::sprite::CharacterSprite,
-};
+use std::fmt::Display;
+
+use crate::{gamestate::Stats, ui::sprite::CharacterSprite};
 
 /// Pre-built characters
 #[derive(Debug)]
@@ -14,12 +13,13 @@ pub enum PreBuiltCharacter {
     FemaleSteeder,
 }
 
-#[derive(Debug, Clone)]
-pub struct ActionStats {
-    max_range: u8,
-    // min_range: u8,
-    damage: u8,
-    to_hit: u8,
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+pub enum Ability {
+    #[default]
+    MeleeAttack,
+    BowAttack,
+    Longsword,
+    LightCrossbow,
 }
 
 impl PreBuiltCharacter {
@@ -91,11 +91,52 @@ impl PreBuiltCharacter {
         use PreBuiltCharacter::*;
         match self {
             Skeleton => vec![Ability::MeleeAttack],
-            Knight => vec![Ability::MeleeAttack, Ability::BowAttack { range: 20 }],
-            HumanSoldier => vec![Ability::MeleeAttack, Ability::BowAttack { range: 20 }],
+            Knight => vec![Ability::MeleeAttack, Ability::BowAttack],
+            HumanSoldier => vec![Ability::MeleeAttack, Ability::BowAttack],
             GiantGoat => vec![Ability::MeleeAttack],
             _ => panic!("not implemented for: {:?}", self),
         }
+    }
+}
+
+impl Ability {
+    pub fn max_range(&self) -> usize {
+        use Ability::*;
+        match self {
+            MeleeAttack | Longsword => 1,
+            LightCrossbow => 16,
+            BowAttack => 20,
+        }
+    }
+
+    pub fn min_range(&self) -> usize {
+        todo!()
+    }
+
+    pub fn dmg(&self) -> u8 {
+        use Ability::*;
+        match self {
+            MeleeAttack => 5,
+            BowAttack => 2,
+            Longsword => 8,
+            LightCrossbow => 6,
+        }
+    }
+
+    pub fn to_hit(&self) -> u8 {
+        todo!()
+    }
+}
+
+impl Display for Ability {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use Ability::*;
+        f.write_str(match self {
+            MeleeAttack => "Melee",
+            BowAttack => "Bow",
+            Longsword => "LongSword",
+            LightCrossbow => "LightCrossbow",
+        })
     }
 }
 

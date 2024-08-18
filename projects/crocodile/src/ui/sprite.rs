@@ -8,7 +8,8 @@ use serde::Deserialize;
 
 use crate::{
     ai::find_best_move,
-    gamestate::{Ability, Action, SimCoords, SimId, SimState, Team},
+    gamestate::{Action, SimCoords, SimId, SimState, Team},
+    sim::info::Ability,
     ui::{ActionEvent, CurrentCharacter},
     PlayState,
 };
@@ -230,7 +231,7 @@ pub(super) fn action_system(
             Move { target } => handle_move(&mut commands, target, &query, cur.0),
             UseAbility {
                 target,
-                ability: Ability::BowAttack { range: _ } | Ability::LightCrossbow,
+                ability: Ability::BowAttack | Ability::LightCrossbow,
             } => {
                 ev_projectile.send(SpawnProjectileEvent {
                     start: cur_char_pos,
