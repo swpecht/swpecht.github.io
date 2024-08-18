@@ -320,7 +320,18 @@ impl SimState {
             )
         });
         let target_entity = self.get_entity_mut(target_id);
-        target_entity.health = target_entity.health.saturating_sub(ability.dmg());
+
+        let target_ac = target_entity.character.stats.ac;
+        let to_hit = ability.to_hit();
+
+        // 1 out of 20 times we crit, auto hit and 2x dmg
+        let crit_dmg = 1.0 / 20.0 * (ability.dmg() * 2) as f32;
+        // for the other 19 possible rolls, only the ones > ac - to_hit actually hit
+        // add 1 since if we match ac we hit
+        let chance_to_hit_no_crit = (19 - target_ac + to_hit + 1) as f32 / 19.0;
+        let expected_dmg = chance_to_hit_no_crit * ability.dmg() as f32 + crit_dmg;
+
+        target_entity.health = target_entity.health.saturating_sub(expected_dmg as u8);
 
         if target_entity.health == 0 {
             self.remove_entity(target_id);
@@ -503,10 +514,17 @@ mod tests {
             ability: Ability::MeleeAttack,
         });
 
-        assert_eq!(
-            gs.get_entity(SKELETON).health,
-            10 - Ability::MeleeAttack.dmg()
-        );
+        assert_eq!(Ability::MeleeAttack.to_hit(), 5);
+        assert_eq!(PreBuiltCharacter::Skeleton.stats().ac, 11);
+        assert_eq!(Ability::MeleeAttack.dmg(), 5);
+        assert_eq!(PreBuiltCharacter::Skeleton.stats().health, 10);
+
+        // expected crit damage = 5% * 5 * 2 = 0.5
+        // rolls that hit, but no crit = 19 - 11 + 5 + 1 = 14
+        // expected no crit dmg = 14 / 19 * 5 = 3.7
+        // expected damage = 3.7 + 0.5 = 4.2
+        // remaining health = 10 - 4 = 6
+        assert_eq!(gs.get_entity(SKELETON).health, 6);
 
         // have the knight move
         gs.apply(Action::Move {

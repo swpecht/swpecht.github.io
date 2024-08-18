@@ -9,11 +9,6 @@ path = "src/lib.rs"
 proc-macro = true
 
 
-# Enable debug data in release build for profiling
-[profile.release]
-debug = true
-
-
 [dependencies.proc-macro2]
 version = "1.0.74"
 features = ["proc-macro"]

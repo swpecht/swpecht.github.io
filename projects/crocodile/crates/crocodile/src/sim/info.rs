@@ -124,7 +124,13 @@ impl Ability {
     }
 
     pub fn to_hit(&self) -> u8 {
-        todo!()
+        use Ability::*;
+        match self {
+            MeleeAttack => 5,
+            BowAttack => 5,
+            Longsword => 5,
+            LightCrossbow => 4,
+        }
     }
 }
 
