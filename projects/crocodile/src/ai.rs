@@ -353,7 +353,7 @@ mod tests {
     use test::Bencher;
 
     use crate::{
-        gamestate::{sc, Ability, SimState, Team},
+        gamestate::{sc, SimState, Team},
         sim::info::PreBuiltCharacter,
     };
 
