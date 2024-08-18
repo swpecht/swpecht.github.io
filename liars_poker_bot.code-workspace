@@ -17,7 +17,9 @@
 		},
 		"python.formatting.provider": "none",
 		"rust-analyzer.linkedProjects": [
-			"./crates/card_platypus/Cargo.toml"
+			"./crates/card_platypus/Cargo.toml",
+			"./crates/ml/Cargo.toml",
+			"./crates/ml/Cargo.toml"
 		]
 	}
 }

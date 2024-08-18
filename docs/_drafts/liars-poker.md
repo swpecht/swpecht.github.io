@@ -19,72 +19,71 @@ Going to use Liar's poker bots to illustrate why.
 ## TODOs
 
 Todos:
+[*] Have indexer save it's hash function on commit
+    * Move all config to be saved, including cards played, hash, and max size
+[*] Make it so euchre cfr requires an Option<path>, lets us load the indexer if it exists -- otherwise we re-generate
+
+[ ] After training, the agents are only using 1/4 of the theorhetical max number of infostates
+    * What's causing this? Just states that don't really get explored?
+    * There are a bunch of states you don't reach in practice, e.g. [Td, Jd, Qd, Kd, Ad, 9s, P, P, P, P, P, P, P, P, H, 9d]
+    * Would have always called diamonds if got to this state
+    * Do we add a compression step -- or could we compress on disk? -- is that possible to do on the fly?
+
+[ ] Switch website to use the new agent -- and change to load from special file
+[ ] Evaluate performance of lossy agents
+[ ] Look at using CFR to estimate distribution of opponent cards -- then can use this to feed the the PIMCTS agent -- how much better is it if it has a belief about the opponent hand state?
+[ ] explore using a ppo algorithm -- expose the game as a gym in python?
+
 
 [ ] Play euchre against bots
-    [ ] Use label "east wins" instead of the turn tracker on clearing trick
-    [ ] Add something showing the game is over before going to the next one?
-    [ ] Show players bid actions while waiting for other human to go
-    [ ] Add click to say ready for game end, including tricks taken, running score, etc.
-    [ ] Update text for dealer pickup to say "take card"
-    [ ] Show all bid actions for players, e.g. if passed twice, show pass, pass
-    [ ] Add icon to show which players are computers versus humans
-    [*] Switch to pre-rendering pages -- seems pretty complex and not well supported -- can we get rid of the router?
-        * Alternative is to move the origingal page to html -- and then just have the button say loading, button and text are replaced when we move to the different pages -- e.g. hide and show the context div on certain page loads
-        * Can use the dioxus cli to convert to html
-        * Make sure tailwind sees the page
-    [ ] Switch to cfr as the agent -- update with latest weights
-    [ ] Add gamestate key to action request
-    [ ] Change server to run as a service
+    [ ] Fix go home link and add game over debug game
+    [ ] Add post hand card log -- show what everyone had, feedback from Ian
+    [ ] Color code the suit in the game information area: trump is X, called by Y
+    [ ] When south player is discarding, add message that says choose card to discard
+    [ ] Fix start new game button, make return home work
+    [ ] Fix bug where shows the old suit when calling suit
 
+[ ] Create xtask to re-train everything
+[ ] Switch old isomorphic code for PIMCTS to use the new suit representation, and use masking for building rather than iteratively doing so
+[ ] switch istate resampling to use constrain propogation like a sudoku solver
+
+[ ] Reduce memory usage for CFR
+    [ ] Evaluate bfloats versus f32 bot
 
 
 Improving exploitability and CFR
-[ ] Do we actually need to pre-compute everything for tabular exploitability? Instead can we 'search' and compute on the fly?
-    * Is there not some way to "filter" for this?
-    * Confirm why the MC chance sampled version doesn't converge
 [ ] What people are doing these days for approximate best response is running "DQN-BR" (use reinforcement learning as an exploiter). See, for example, the MMD paper: https://arxiv.org/pdf/2206.05825.pdf. There's an example of this in OpenSpiel:  https://github.com/deepmind/open_spiel/blob/master/open_spiel/python/examples/rl_response.py. This idea is the basis of PSRO, btw, which is a paper which may interest you: https://arxiv.org/abs/1711.00832. Anyway, there are even more sophisticated methods that add MCTS search on top of it (see our ABR paper: https://arxiv.org/abs/2004.09677) but it is a bit heavy and compute-hungry so I'd recommend starting with DQN-BR.
 
 
+## Bot comparison
 
-Misc ideas
-[ ] Multithread for rollout?
-[ ] Implement other rollout methods
-[ ] For benchmarking -- create a policy agent. Takes policy as an input -- might be an easier way to have all the agents play
-[ ] Blog post on an introduction to these search alogirithms:
-    * Start with min-max
-    * Ok, but no perfect information -- so instead we sample a bunch of possible worlds -- this is X
-    * Ok, but have locality problem -- so ismcts
-    * then improvements for alpha mu
+played games: 10000
+cfr, 1 cards played     cfr, 3 cards played f32 0.473
+cfr, 0 cards played     cfr, 0 cards played     0.4811
+pimcts, 50 worlds       random                  0.9908
+cfr, 0 cards played     cfr, 1 cards played     0.4576
+cfr, 3 cards played f32 cfr, 0 cards played     0.5018
+random                  random                  0.4915
+cfr, 1 cards played     cfr, 1 cards played     0.4791
+random                  cfr, 1 cards played     0.0052
+cfr, 1 cards played     pimcts, 50 worlds       0.5456
+random                  pimcts, 50 worlds       0.0061
+cfr, 0 cards played     random                  0.9932
+random                  cfr, 0 cards played     0.0064
+cfr, 1 cards played     cfr, 0 cards played     0.4997
+pimcts, 50 worlds       cfr, 3 cards played f32 0.4009
+cfr, 0 cards played     pimcts, 50 worlds       0.526
+cfr, 3 cards played f32 cfr, 1 cards played     0.4857
+pimcts, 50 worlds       pimcts, 50 worlds       0.4888
+cfr, 3 cards played f32 random                  0.9934
+cfr, 0 cards played     cfr, 3 cards played f32 0.4614
+cfr, 3 cards played f32 pimcts, 50 worlds       0.5573
+pimcts, 50 worlds       cfr, 0 cards played     0.434
+pimcts, 50 worlds       cfr, 1 cards played     0.4116
+cfr, 3 cards played f32 cfr, 3 cards played f32 0.4797
+cfr, 1 cards played     random                  0.9943
+random                  cfr, 3 cards played f32 0.0063
 
-## Tricky things about euchre
 
-* Resampling isn't trivial -- what's the right way to handle discards -- what policy should be used?
 
-## Estimating Euchre game tree
-
-### Starting states
-
-There are 600 million possible states given a a deal of euchre.
-24 cards in a deck, with 6 revealed (5 in hand + 1 shown to dealer)
-
-    `18 choose 5 * 14 choose 5 * 8 choose 5 = 618m`
-
-### Estimating the size of the game tree
-
-For the first layer of the gametree, the minimum memory required is:
-
-    `600m * 24 cards * 2 bits / 8 bits per byte / 1000 kB per byte / 1000 MB per kB = 3,600 MB`
-The 2 bits represent the 4 locations that unknowns cards can be in: 3 hands + discard
-Each of these possible states could play out in a variety of ways.
-| Phase   | number of options | Notes                            |
-| ------- | ----------------- | -------------------------------- |
-| Pick-up | 4                 | Each player can pickup or skip   |
-| Call    | 81                | each player has 3 options, $3^4$ |
-| Round 1 | 625               | 5 cards across 4 players, $5^4$  |
-| Round 2 | 256               | $4^4$                            |
-| Round 3 | 81                | $3^4$                            |
-| Round 4 | 16                | $2^4$                            |
-| Round 5 | 1                 | $1^4$                            |
-
-From playing rounds alone, there are 207M options. Including pre-play rounds there are 67 billion options.
 
