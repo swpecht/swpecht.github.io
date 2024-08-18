@@ -1,6 +1,7 @@
 use burn::tensor::{backend::Backend, Tensor};
 
 mod ppo;
+mod stats;
 
 fn computation<B: Backend>() {
     // Create the device where to do the computation

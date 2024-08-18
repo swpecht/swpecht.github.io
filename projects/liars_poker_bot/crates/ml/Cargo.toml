@@ -7,4 +7,6 @@ edition = "2021"
 
 [dependencies]
 games =  { path = "../games" }
-burn = { version = "0.12", features = ["train", "wgpu"] }
+burn = { version = "0.12", features = ["train", "tui", "wgpu"] }
+rand = "0.8.5"
+itertools = "0.12.1"
