@@ -17,7 +17,7 @@ Skeleton:
     Melee:
       max_range: 1
       damage: 5
-      to hit: 5
+      to_hit: 5
 
 Knight:
   sprite: "Knight"
@@ -35,11 +35,11 @@ Knight:
     Melee:
       max_range: 1
       damage: 5
-      to hit: 5
+      to_hit: 5
     Bow:
       max_range: 8
       damage: 2
-      to hit: 5
+      to_hit: 5
 
 ####### Game specs #######
 # https://joe.nittoly.ca/wordpress/wp-content/uploads/2021/04/DD-5e-Fighter-3-Champion-Human-Soldier.pdf
@@ -59,11 +59,11 @@ Human soldier:
     Longsword:
       max_range: 1
       damage: 8
-      to hit: 5
+      to_hit: 5
     Light Crossbow:
       max_range: 16
       damage: 6
-      to hit: 4
+      to_hit: 4
   bonus_actions:
     Second Wind:
       max_range: 0
@@ -90,16 +90,17 @@ War Magic Wizard:
     ac: 11
     movement: 6
   actions: 
-    Farie Fire:
-    Blade Ward:
+    # Farie Fire:
+    # Blade Ward:
     Fire Bolt:
       max_range: 24
       damage: 5
+      to_hit: 5 # TBD
       # figure out chance to hit for spells
-    True Strike:
-      max_range: 6
-    Invisibility:
-    Scorching Ray:
+    # True Strike:
+    #   max_range: 6
+    # Invisibility:
+    # Scorching Ray:
 
 Giant goat:
   sprite: "Skeleton"
@@ -117,11 +118,12 @@ Giant goat:
     Ram:
       max_range: 1
       damage: 8
-      to hit: 5
+      to_hit: 5
     Charge:
       min_range: 4
       max_range: 4
       damage: 13
+      to_hit: 5
       effects:
         knock down:
           dc: 13
@@ -145,7 +147,7 @@ Female Steeder:
     Bite:
       max_range: 1
       damage: 7
-      to hit: 5
+      to_hit: 5
       effects:
         acid:
           dc: 12
@@ -154,6 +156,7 @@ Female Steeder:
           dmg_succede: 4
       Sticky Leg:
         max_range: 1
+        to_hit: 20 # always hit since applies effect
         effects:
           web:
             effect: "Grappled"

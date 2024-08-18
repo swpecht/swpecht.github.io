@@ -47,14 +47,19 @@
 [*] Change to not reset transposition table one each iterative deepedning interation, instead have it check the reamiing depth to search so only take tt result if stronger than normal search
 [*] Fix logic error with new slab code, likely related to get_many_mut
 [*] Have the game dynamically look up art by character id -- need to create a global store of the info for bevy
+[ ] Can we do all this loading with code-gen?
+
+[ ] Create enums that map all the info we need -- more peformant than the lookups?
+    * Is this just creating a macro?
+[ ] Add stats for how many nodes searched
+[ ] Dynamically populate actions from file
 [ ] Look at wrapping all the unchaning simstate data into a refecne (Arc? Or just a reference?)
 
 
 https://news.ycombinator.com/item?id=21037125
 
 
-
-[ ] Add health bars
+[*] Add health bars
 [ ] Implement additional play character and enemies
 
 
@@ -86,4 +91,5 @@ Benchmark results
 * Re-use array to get child moves: 139,839,098.80 ns/iter (+/- 13,923,816.76) 
 * Remove deserialize call when creating new simstates for slab: 74,004,622.10 ns/iter (+/- 2,156,366.59)
 * Most recent: 15,477,548.50 ns/iter (+/- 12,629,083.19)
-* Change simstate to us RC for components, releive copy pressure:
+* Switch to 6 moves: 
+* Confirm starting with PV move

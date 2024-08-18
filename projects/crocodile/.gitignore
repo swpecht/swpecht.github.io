@@ -22,3 +22,5 @@ Cargo.lock
 
 # Game assets
 assets/
+
+perf.*
