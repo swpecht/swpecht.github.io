@@ -10,11 +10,7 @@ use itertools::{Itertools, Product};
 use serde::Deserialize;
 use tinyvec::ArrayVec;
 
-use crate::{
-    load_spec,
-    parser::{load_encounter, CharacterSpec},
-    ui::sprite::CharacterSprite,
-};
+use crate::{sim::info::PreBuiltCharacter, ui::sprite::CharacterSprite};
 
 const WORLD_SIZE: usize = 20;
 
@@ -93,7 +89,7 @@ pub enum Ability {
     LightCrossbow,
 }
 
-#[derive(CloneFrom, Hash, Default)]
+#[derive(CloneFrom, Hash)]
 struct SimEntity {
     health: u8,
     id: SimId,
@@ -162,46 +158,14 @@ impl SimState {
 impl Default for SimState {
     fn default() -> Self {
         let mut state = SimState::new();
-        let knight = load_spec!("Human soldier");
-        let skeleton = load_spec!("Giant goat");
 
-        state.insert_entity(
-            knight.character(),
-            vec![Ability::MeleeAttack, Ability::BowAttack { range: 20 }],
-            sc(0, 9),
-            Team::Players(0),
-        );
-        state.insert_entity(
-            knight.character(),
-            vec![Ability::MeleeAttack, Ability::BowAttack { range: 20 }],
-            sc(0, 8),
-            Team::Players(0),
-        );
+        state.insert_prebuilt(PreBuiltCharacter::HumanSoldier, sc(0, 9), Team::Players(0));
+        state.insert_prebuilt(PreBuiltCharacter::HumanSoldier, sc(0, 8), Team::Players(0));
 
-        state.insert_entity(
-            skeleton.character(),
-            vec![Ability::MeleeAttack],
-            sc(5, 10),
-            Team::NPCs(0),
-        );
-        state.insert_entity(
-            skeleton.character(),
-            vec![Ability::MeleeAttack],
-            sc(6, 10),
-            Team::NPCs(0),
-        );
-        state.insert_entity(
-            skeleton.character(),
-            vec![Ability::MeleeAttack],
-            sc(4, 10),
-            Team::NPCs(0),
-        );
-        state.insert_entity(
-            skeleton.character(),
-            vec![Ability::MeleeAttack],
-            sc(7, 10),
-            Team::NPCs(0),
-        );
+        state.insert_prebuilt(PreBuiltCharacter::GiantGoat, sc(5, 10), Team::NPCs(0));
+        state.insert_prebuilt(PreBuiltCharacter::GiantGoat, sc(4, 10), Team::NPCs(0));
+        state.insert_prebuilt(PreBuiltCharacter::GiantGoat, sc(6, 10), Team::NPCs(0));
+        state.insert_prebuilt(PreBuiltCharacter::GiantGoat, sc(7, 10), Team::NPCs(0));
 
         state
     }
@@ -312,6 +276,18 @@ impl SimState {
 }
 
 impl SimState {
+    pub fn insert_prebuilt(&mut self, prebuilt: PreBuiltCharacter, loc: SimCoords, team: Team) {
+        self.insert_entity(
+            Character {
+                sprite: prebuilt.sprite(),
+                stats: prebuilt.stats(),
+            },
+            prebuilt.abilities(),
+            loc,
+            team,
+        )
+    }
+
     pub fn insert_entity(
         &mut self,
         character: Character,
@@ -464,15 +440,6 @@ impl Character {
     }
 }
 
-impl CharacterSpec {
-    pub fn character(&self) -> Character {
-        Character {
-            sprite: self.sprite.clone(),
-            stats: self.stats,
-        }
-    }
-}
-
 impl Ability {
     pub fn range(&self) -> usize {
         use Ability::*;
@@ -509,22 +476,6 @@ impl Display for Ability {
 impl Default for Team {
     fn default() -> Self {
         Team::NPCs(0)
-    }
-}
-
-impl Default for Character {
-    fn default() -> Self {
-        let name = "Skeleton";
-        let specs = load_encounter(Path::new("encounter.yaml")).expect("failed to load encounter");
-        let spec = specs
-            .get(name)
-            .unwrap_or_else(|| panic!("failed to find default character: {}", name))
-            .clone();
-
-        Self {
-            sprite: spec.sprite,
-            stats: spec.stats,
-        }
     }
 }
 
@@ -569,8 +520,6 @@ impl Iterator for CoordIterator {
 #[cfg(test)]
 mod tests {
 
-    use crate::load_spec;
-
     use super::*;
 
     const KNIGHT_ID: SimId = SimId(0);
@@ -580,20 +529,9 @@ mod tests {
 
     fn create_test_world() -> SimState {
         let mut state = SimState::new();
-        let knight = load_spec!("Knight");
-        let skeleton = load_spec!("Skeleton");
-        state.insert_entity(
-            knight.character(),
-            vec![Ability::MeleeAttack],
-            KNIGHT_START,
-            Team::Players(0),
-        );
-        state.insert_entity(
-            skeleton.character(),
-            vec![Ability::MeleeAttack],
-            SKELETON_START,
-            Team::NPCs(0),
-        );
+
+        state.insert_prebuilt(PreBuiltCharacter::Knight, KNIGHT_START, Team::Players(0));
+        state.insert_prebuilt(PreBuiltCharacter::Skeleton, SKELETON_START, Team::NPCs(0));
         state
     }
 

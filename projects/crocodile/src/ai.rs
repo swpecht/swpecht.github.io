@@ -354,7 +354,7 @@ mod tests {
 
     use crate::{
         gamestate::{sc, Ability, SimState, Team},
-        load_spec,
+        sim::info::PreBuiltCharacter,
     };
 
     use super::find_best_move;
@@ -363,28 +363,10 @@ mod tests {
     fn find_best_move_bench(b: &mut Bencher) {
         b.iter(|| {
             let mut state = SimState::new();
-            let skeleton = load_spec!("Skeleton");
-            state.insert_entity(
-                skeleton.character(),
-                vec![Ability::MeleeAttack],
-                sc(5, 10),
-                Team::NPCs(0),
-            );
-            // state.insert_entity(Character::Orc, vec![Ability::MeleeAttack], sc(6, 10));
-            state.insert_entity(
-                skeleton.character(),
-                vec![Ability::MeleeAttack],
-                sc(4, 10),
-                Team::NPCs(0),
-            );
+            state.insert_prebuilt(PreBuiltCharacter::Skeleton, sc(4, 10), Team::NPCs(0));
+            state.insert_prebuilt(PreBuiltCharacter::Skeleton, sc(5, 10), Team::NPCs(0));
 
-            let knight = load_spec!("Knight");
-            state.insert_entity(
-                knight.character(),
-                vec![Ability::MeleeAttack, Ability::BowAttack { range: 20 }],
-                sc(0, 9),
-                Team::Players(0),
-            );
+            state.insert_prebuilt(PreBuiltCharacter::Knight, sc(0, 9), Team::Players(0));
 
             find_best_move(state);
         });

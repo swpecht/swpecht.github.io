@@ -7,7 +7,7 @@ use bevy::prelude::*;
 pub mod ai;
 pub mod alloc;
 pub mod gamestate;
-pub mod parser;
+pub mod sim;
 pub mod ui;
 
 pub struct StatePlugin;
