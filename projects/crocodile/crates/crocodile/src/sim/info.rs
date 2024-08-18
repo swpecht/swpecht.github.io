@@ -13,6 +13,12 @@ pub enum PreBuiltCharacter {
     FemaleSteeder,
 }
 
+pub enum Effect {
+    /// Moves self to the square next to the target
+    Charge,
+}
+
+/// The "Actions" a character can take in D&D terminology
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub enum Ability {
     #[default]
@@ -20,6 +26,8 @@ pub enum Ability {
     BowAttack,
     Longsword,
     LightCrossbow,
+    Charge,
+    Ram,
 }
 
 impl PreBuiltCharacter {
@@ -93,7 +101,7 @@ impl PreBuiltCharacter {
             Skeleton => vec![Ability::MeleeAttack],
             Knight => vec![Ability::MeleeAttack, Ability::BowAttack],
             HumanSoldier => vec![Ability::MeleeAttack, Ability::BowAttack],
-            GiantGoat => vec![Ability::MeleeAttack],
+            GiantGoat => vec![Ability::Ram, Ability::Charge],
             _ => panic!("not implemented for: {:?}", self),
         }
     }
@@ -103,14 +111,19 @@ impl Ability {
     pub fn max_range(&self) -> usize {
         use Ability::*;
         match self {
-            MeleeAttack | Longsword => 1,
+            MeleeAttack | Longsword | Ram => 1,
+            Charge => 4,
             LightCrossbow => 16,
             BowAttack => 20,
         }
     }
 
     pub fn min_range(&self) -> usize {
-        todo!()
+        use Ability::*;
+        match self {
+            Charge => 4,
+            _ => 1, // By default can cast to all targets other than self
+        }
     }
 
     pub fn dmg(&self) -> u8 {
@@ -120,6 +133,8 @@ impl Ability {
             BowAttack => 2,
             Longsword => 8,
             LightCrossbow => 6,
+            Charge => 13,
+            Ram => 8,
         }
     }
 
@@ -130,6 +145,7 @@ impl Ability {
             BowAttack => 5,
             Longsword => 5,
             LightCrossbow => 4,
+            Charge | Ram => 5,
         }
     }
 }
@@ -142,6 +158,8 @@ impl Display for Ability {
             BowAttack => "Bow",
             Longsword => "LongSword",
             LightCrossbow => "LightCrossbow",
+            Charge => "Charge",
+            Ram => "Ram",
         })
     }
 }

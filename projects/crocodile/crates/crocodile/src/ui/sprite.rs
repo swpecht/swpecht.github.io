@@ -240,7 +240,7 @@ pub(super) fn action_system(
             }
             UseAbility {
                 target,
-                ability: Ability::MeleeAttack | Ability::Longsword,
+                ability: Ability::MeleeAttack | Ability::Longsword | Ability::Ram | Ability::Charge, // todo fix this
             } => handle_melee(&mut commands, target, &query, cur.0),
         }
         cur.0 = sim.cur_char();
@@ -278,7 +278,7 @@ fn handle_melee(
         .iter()
         .filter(|(_, id, _)| **id == cur)
         .for_each(|(e, _, t)| {
-            let start = vec2(t.translation.x, t.translation.y);
+            let start = t.translation.truncate();
             let curve = Curve {
                 path: vec![start, target.to_world().lerp(start, 0.5), start],
                 time: Stopwatch::new(),

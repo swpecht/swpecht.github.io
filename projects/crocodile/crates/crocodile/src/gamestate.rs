@@ -187,7 +187,7 @@ impl SimState {
         // by the ai tree search. This avoids the units moving around without purpose to end in the same spot to attack
         if cur_entity.remaining_actions > 0 {
             for ability in cur_entity.abilities.iter() {
-                for l in CoordIterator::new(cur_loc, ability.max_range()) {
+                for l in CoordIterator::new(cur_loc, ability.max_range(), ability.min_range()) {
                     if self.is_populated(&l) && l != cur_loc {
                         actions.push(Action::UseAbility {
                             target: l,
@@ -199,7 +199,7 @@ impl SimState {
         }
 
         if cur_entity.movement > 0 && self.can_move {
-            for l in CoordIterator::new(cur_loc, cur_entity.movement) {
+            for l in CoordIterator::new(cur_loc, cur_entity.movement, 1) {
                 if !self.is_populated(&l) {
                     actions.push(Move { target: l });
                 }
@@ -450,24 +450,26 @@ impl Default for Team {
 
 /// Iterator over all world coords within distance d
 struct CoordIterator {
-    distance: usize,
+    max_range: usize,
+    min_range: usize,
     middle: SimCoords,
     raw_iterator: Product<std::ops::Range<usize>, std::ops::Range<usize>>,
 }
 
 impl CoordIterator {
-    fn new(middle: SimCoords, distance: usize) -> Self {
-        let min_x = middle.x.saturating_sub(distance);
-        let min_y = middle.y.saturating_sub(distance);
-        let max_x = (middle.x + distance).min(WORLD_SIZE);
-        let max_y = (middle.y + distance).min(WORLD_SIZE);
+    fn new(middle: SimCoords, max_range: usize, min_range: usize) -> Self {
+        let min_x = middle.x.saturating_sub(max_range);
+        let min_y = middle.y.saturating_sub(max_range);
+        let max_x = (middle.x + max_range).min(WORLD_SIZE);
+        let max_y = (middle.y + max_range).min(WORLD_SIZE);
 
         let raw_iterator = (min_x..max_x + 1).cartesian_product(min_y..max_y + 1);
 
         Self {
-            distance,
+            max_range,
             middle,
             raw_iterator,
+            min_range,
         }
     }
 }
@@ -479,7 +481,8 @@ impl Iterator for CoordIterator {
         loop {
             let cp = self.raw_iterator.next()?;
             let coord = sc(cp.0, cp.1);
-            if coord.dist(&self.middle) <= self.distance {
+            let dist = coord.dist(&self.middle);
+            if dist <= self.max_range && dist >= self.min_range {
                 return Some(coord);
             }
         }
