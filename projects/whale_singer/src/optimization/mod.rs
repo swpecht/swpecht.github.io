@@ -1,5 +1,6 @@
 use anyhow::{Context, Ok};
 
+use itertools::Itertools;
 use log::debug;
 
 use crate::{app::populate_progress, encode::SAMPLE_RATE, samples::Samples};
@@ -65,7 +66,9 @@ impl AtomOptimizer {
     }
 
     pub fn cur_samples(&self) -> Samples {
-        self.constructed_sample.samples()
+        let raw_samples = self.constructed_sample.samples();
+        raw_samples.data().into_iter().chunks(self.chunk_len);
+        todo!("Add volume normalization");
     }
 
     /// Adds a chunk from the atoms that most reduces the error between output and target

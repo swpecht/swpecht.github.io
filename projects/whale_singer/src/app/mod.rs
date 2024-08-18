@@ -44,7 +44,6 @@ use crate::{
     encode::{save_wav, SAMPLE_RATE},
     guage,
     optimization::{AtomOptimizer, AtomSearchResult},
-    samples::Samples,
 };
 #[derive(Debug)]
 struct App {

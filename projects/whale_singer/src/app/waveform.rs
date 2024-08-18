@@ -1,9 +1,6 @@
 use itertools::Itertools;
 use ratatui::prelude::*;
-use ratatui::widgets::block::Title;
-use ratatui::widgets::{Bar, BarChart, BarGroup, Block, Borders, Chart, Dataset, Widget};
-
-use crate::samples::Samples;
+use ratatui::widgets::Widget;
 
 /// Show a waveform of audio samples using the RMS function
 /// https://manual.audacityteam.org/man/glossary.html#rms
