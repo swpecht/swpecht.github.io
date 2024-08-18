@@ -109,7 +109,7 @@ impl PreBuiltCharacter {
 }
 
 impl Ability {
-    pub fn max_range(&self) -> usize {
+    pub fn max_range(&self) -> u8 {
         use Ability::*;
         match self {
             MeleeAttack | Longsword | Ram => 1,
@@ -119,7 +119,7 @@ impl Ability {
         }
     }
 
-    pub fn min_range(&self) -> usize {
+    pub fn min_range(&self) -> u8 {
         use Ability::*;
         match self {
             Charge => 4,

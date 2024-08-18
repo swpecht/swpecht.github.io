@@ -51,7 +51,7 @@ pub(super) struct SpawnProjectileEvent {
 #[derive(Component)]
 pub(super) struct Projectile;
 
-#[derive(Debug, Clone, Hash, Deserialize)]
+#[derive(Debug, Clone, Hash, Deserialize, PartialEq, Eq)]
 pub enum CharacterSprite {
     Skeleton,
     Knight,

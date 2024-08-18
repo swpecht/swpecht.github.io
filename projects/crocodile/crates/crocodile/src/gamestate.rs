@@ -22,13 +22,13 @@ pub enum Team {
     NPCs(usize),
 }
 
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq)]
 pub struct Character {
     pub sprite: CharacterSprite,
     stats: Stats,
 }
 
-#[derive(Debug, Deserialize, Clone, Copy, Hash)]
+#[derive(Debug, Deserialize, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct Stats {
     pub health: u8,
     pub str: u8,
@@ -41,12 +41,15 @@ pub struct Stats {
     pub movement: u8,
 }
 
-#[derive(Resource, Hash, CloneFrom)]
+#[derive(Resource, CloneFrom, Debug, PartialEq)]
 pub struct SimState {
+    generation: u16,
     next_id: usize,
+    queued_results: Vec<ActionResult>,
+    applied_results: Vec<AppliedActionResult>,
     initiative: Vec<SimId>, // order of players
     locations: Vec<Option<SimCoords>>,
-    entities: Vec<Option<SimEntity>>,
+    entities: Vec<SimEntity>,
     /// Track if start of an entities turn, used to optimize AI search caching
     is_start_of_turn: bool,
     /// Don't allow move action after another move action
@@ -66,6 +69,54 @@ pub enum Action {
     },
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ActionResult {
+    Move {
+        id: SimId,
+        start: SimCoords,
+        end: SimCoords,
+    },
+    Damage {
+        id: SimId,
+        amount: u8,
+    },
+    /// A special action result that is computed after damage is done
+    RemoveEntity {
+        loc: SimCoords,
+        id: SimId,
+    },
+    SpendActionPoint {
+        id: SimId,
+    },
+    SpendMovement {
+        id: SimId,
+        amount: u8,
+    },
+    // Items for reseting at the end of a turn
+    /// This only ends the turn, it doesn't do anything to reset, that must be
+    /// done by using "restore actions"
+    EndTurn,
+    /// Restore movement to an entity, often used at the end of a turn to return to full amounts
+    RestoreMovement {
+        id: SimId,
+        amount: u8,
+    },
+    RestoreActionPoint {
+        id: SimId,
+    },
+
+    // Items to control gamestate for optimizations
+    CanMove(bool), // e.g. disable after moving
+    NewTurn(bool),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct AppliedActionResult {
+    result: ActionResult,
+    /// Track the turn when the result was applied
+    generation: u16,
+}
+
 impl Display for Action {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -80,12 +131,12 @@ impl Display for Action {
     }
 }
 
-#[derive(CloneFrom, Hash)]
+#[derive(CloneFrom, Hash, Debug, PartialEq)]
 struct SimEntity {
     health: u8,
     id: SimId,
-    turn_movement: usize,
-    movement: usize,
+    turn_movement: u8,
+    movement: u8,
     character: Character,
     abilities: ArrayVec<[Ability; 5]>,
     remaining_actions: usize,
@@ -142,6 +193,9 @@ impl SimState {
             can_move: true,
             locations: Vec::new(),
             entities: Vec::new(),
+            queued_results: Vec::new(),
+            applied_results: Vec::new(),
+            generation: 0,
         }
     }
 }
@@ -164,13 +218,22 @@ impl Default for SimState {
 
 impl SimState {
     pub fn apply(&mut self, action: Action) {
-        self.is_start_of_turn = false;
+        assert_eq!(self.queued_results.len(), 0); // all queued results should have been applied
+
+        if self.is_start_of_turn {
+            self.queued_results.push(ActionResult::NewTurn(false));
+        }
 
         match action {
-            Action::EndTurn => self.apply_end_turn(),
-            Action::Move { target } => self.apply_move_entity(target),
-            Action::UseAbility { target, ability } => self.apply_use_ability(target, ability),
+            Action::EndTurn => self.generate_results_end_turn(),
+            Action::Move { target } => self.generate_results_move_entity(target),
+            Action::UseAbility { target, ability } => {
+                self.generate_results_use_ability(target, ability)
+            }
         }
+
+        self.apply_queued_results();
+        self.generation += 1;
     }
 
     pub fn legal_actions(&self, actions: &mut Vec<Action>) {
@@ -212,7 +275,10 @@ impl SimState {
     pub fn is_terminal(&self) -> bool {
         let mut count_players = 0;
         let mut count_npcs = 0;
-        for entity in self.entities.iter().flatten() {
+        for entity in self.entities.iter() {
+            if entity.health == 0 {
+                continue;
+            }
             match entity.team {
                 Team::Players(_) => count_players += 1,
                 Team::NPCs(_) => count_npcs += 1,
@@ -227,7 +293,7 @@ impl SimState {
 
         let mut player_health = 0;
         let mut npc_health = 0;
-        for entity in self.entities.iter().flatten() {
+        for entity in self.entities.iter() {
             match entity.team {
                 Team::Players(_) => player_health += entity.health,
                 Team::NPCs(_) => npc_health += entity.health,
@@ -263,10 +329,103 @@ impl SimState {
     }
 
     /// undo the last action
-    pub fn undo(&mut self) {}
+    pub fn undo(&mut self) {
+        if self.generation == 0 {
+            panic!("tried to undo on generation 0");
+        }
+
+        self.generation -= 1;
+
+        while let Some(result) = self.applied_results.last()
+            && result.generation == self.generation
+        {
+            match result.result {
+                ActionResult::Move { start, end: _, id } => {
+                    self.locations[id.0] = Some(start);
+                }
+                ActionResult::Damage { id, amount } => {
+                    self.entities[id.0].health += amount;
+                }
+                ActionResult::RemoveEntity { loc, id } => self.locations[id.0] = Some(loc),
+                ActionResult::SpendActionPoint { id } => self.entities[id.0].remaining_actions += 1,
+                ActionResult::SpendMovement { id, amount } => {
+                    self.entities[id.0].movement += amount;
+                }
+                ActionResult::EndTurn => {
+                    loop {
+                        self.initiative.rotate_right(1);
+                        // keep rotating through initiative until find unit with health
+                        if self.entities[self.initiative[0].0].health > 0 {
+                            break;
+                        }
+                    }
+                }
+                ActionResult::RestoreMovement { id, amount } => {
+                    self.entities[id.0].movement -= amount
+                }
+                ActionResult::RestoreActionPoint { id } => {
+                    self.entities[id.0].remaining_actions -= 1
+                }
+                ActionResult::CanMove(x) => self.can_move = !x,
+                ActionResult::NewTurn(x) => self.is_start_of_turn = !x,
+            }
+
+            // actually remove the item from the list
+            self.applied_results.pop();
+        }
+    }
 }
 
 impl SimState {
+    /// Apply all of the queued results
+    fn apply_queued_results(&mut self) {
+        let generation = self.generation;
+
+        while let Some(result) = self.queued_results.pop() {
+            match result {
+                ActionResult::Move { start: _, end, id } => {
+                    self.locations[id.0] = Some(end);
+                }
+                ActionResult::Damage { id, amount } => {
+                    self.entities[id.0].health -= amount;
+                }
+                ActionResult::RemoveEntity { loc: _, id } => {
+                    self.locations[id.0] = None;
+                    // Here we don't actually remove the entity, TBD if this creates issues doen the line
+                    // but this means we don't need to do anything to restore it other than set location
+                    // self.entities[id.0] = None;
+                }
+                ActionResult::SpendActionPoint { id } => {
+                    self.entities[id.0].remaining_actions -= 1;
+                }
+                ActionResult::SpendMovement { id, amount } => {
+                    self.entities[id.0].movement -= amount;
+                }
+                ActionResult::EndTurn => {
+                    loop {
+                        self.initiative.rotate_left(1);
+                        // keep rotating through initiative until find unit with health
+                        if self.entities[self.initiative[0].0].health > 0 {
+                            break;
+                        }
+                    }
+                }
+                ActionResult::RestoreMovement { id, amount } => {
+                    self.entities[id.0].movement += amount;
+                }
+                ActionResult::RestoreActionPoint { id } => {
+                    let ent = self.get_entity_mut(id);
+                    ent.remaining_actions += 1;
+                }
+                ActionResult::CanMove(x) => self.can_move = x,
+                ActionResult::NewTurn(x) => self.is_start_of_turn = x,
+            }
+
+            self.applied_results
+                .push(AppliedActionResult { result, generation })
+        }
+    }
+
     pub fn insert_prebuilt(&mut self, prebuilt: PreBuiltCharacter, loc: SimCoords, team: Team) {
         self.insert_entity(
             Character {
@@ -303,7 +462,7 @@ impl SimState {
         };
 
         self.initiative.push(SimId(self.next_id));
-        self.entities.push(Some(entity));
+        self.entities.push(entity);
         self.locations.push(Some(loc));
         self.next_id += 1;
     }
@@ -312,7 +471,7 @@ impl SimState {
         self.initiative[0]
     }
 
-    fn apply_use_ability(&mut self, target: SimCoords, ability: Ability) {
+    fn generate_results_use_ability(&mut self, target: SimCoords, ability: Ability) {
         let target_id = self.get_id(target).unwrap_or_else(|| {
             panic!(
                 "failed to find entity at: {:?}, valid locations are: {:?}",
@@ -330,41 +489,70 @@ impl SimState {
         // add 1 since if we match ac we hit
         let chance_to_hit_no_crit = (19 - target_ac + to_hit + 1) as f32 / 19.0;
         let expected_dmg = chance_to_hit_no_crit * ability.dmg() as f32 + crit_dmg;
+        let cur_health = target_entity.health;
+        let target_id = target_entity.id;
 
-        target_entity.health = target_entity.health.saturating_sub(expected_dmg as u8);
+        self.queued_results.push(ActionResult::SpendActionPoint {
+            id: self.cur_char(),
+        });
+        self.queued_results.push(ActionResult::Damage {
+            id: target_id,
+            amount: (expected_dmg as u8).min(cur_health),
+        });
 
-        if target_entity.health == 0 {
-            self.remove_entity(target_id);
+        if cur_health <= expected_dmg as u8 {
+            self.queued_results.push(ActionResult::RemoveEntity {
+                loc: target,
+                id: target_id,
+            });
         }
 
-        self.get_entity_mut(self.cur_char()).remaining_actions -= 1;
-        self.can_move = true;
+        // we only add this if the reset is needed, this allows us to properly undo
+        if !self.can_move {
+            self.queued_results.push(ActionResult::CanMove(true));
+        }
     }
 
-    fn apply_move_entity(&mut self, target: SimCoords) {
+    fn generate_results_move_entity(&mut self, target: SimCoords) {
         let id = self.initiative[0].0;
         let start = self.locations[id].expect("trying to move deleted entity");
         let distance = target.dist(&start);
 
-        let entity = self.entities[id]
-            .as_mut()
-            .expect("trying to move deleted entity");
-        entity.movement -= distance;
-        self.locations[id] = Some(target);
+        self.queued_results.push(ActionResult::Move {
+            start,
+            end: target,
+            id: self.initiative[0],
+        });
+        self.queued_results.push(ActionResult::SpendMovement {
+            id: SimId(id),
+            amount: distance as u8,
+        });
 
-        self.can_move = false;
+        if self.can_move {
+            self.queued_results.push(ActionResult::CanMove(false));
+        }
     }
 
-    fn apply_end_turn(&mut self) {
-        // reset movement
+    fn generate_results_end_turn(&mut self) {
         let cur_char = self.cur_char();
-        let entity = self.get_entity_mut(cur_char);
-        entity.movement = entity.turn_movement;
-        entity.remaining_actions = 1;
+        let entity = self.get_entity(cur_char);
+        let amount = entity.turn_movement - entity.movement;
 
-        self.initiative.rotate_left(1);
-        self.is_start_of_turn = true;
-        self.can_move = true;
+        self.queued_results.push(ActionResult::EndTurn);
+        self.queued_results.push(ActionResult::RestoreMovement {
+            id: cur_char,
+            amount,
+        });
+        self.queued_results
+            .push(ActionResult::RestoreActionPoint { id: cur_char });
+
+        if !self.is_start_of_turn {
+            self.queued_results.push(ActionResult::NewTurn(true))
+        }
+
+        if !self.can_move {
+            self.queued_results.push(ActionResult::CanMove(true));
+        }
     }
 
     pub fn get_id(&self, coords: SimCoords) -> Option<SimId> {
@@ -377,35 +565,19 @@ impl SimState {
     }
 
     fn get_entity_mut(&mut self, id: SimId) -> &mut SimEntity {
-        self.entities[id.0]
-            .as_mut()
-            .expect("accessing deleted entity")
+        &mut self.entities[id.0]
     }
 
     fn get_entity(&self, id: SimId) -> &SimEntity {
-        self.entities[id.0]
-            .as_ref()
-            .expect("accessing deleted entity")
-    }
-
-    fn remove_entity(&mut self, id: SimId) {
-        self.locations[id.0] = None;
-        self.entities[id.0] = None;
-        self.initiative.retain(|x| *x != id);
+        &self.entities[id.0]
     }
 
     pub fn characters(&self) -> Vec<(SimId, SimCoords, Character)> {
         self.entities
             .iter()
             .zip(self.locations.iter())
-            .filter(|(e, l)| e.is_some() && l.is_some())
-            .map(|(e, l)| {
-                (
-                    e.as_ref().unwrap().id,
-                    l.unwrap(),
-                    e.as_ref().unwrap().character.clone(),
-                )
-            })
+            .filter(|(_, l)| l.is_some())
+            .map(|(e, l)| (e.id, l.unwrap(), e.character.clone()))
             .collect_vec()
     }
 
@@ -422,19 +594,19 @@ impl SimState {
     }
 
     pub fn health(&self, id: &SimId) -> Option<u8> {
-        self.entities[id.0].as_ref().map(|x| x.health)
+        self.entities.get(id.0).map(|x| x.health)
     }
 
     pub fn max_health(&self, id: &SimId) -> Option<u8> {
-        self.entities[id.0]
-            .as_ref()
+        self.entities
+            .get(id.0)
             .map(|x| x.character.default_health())
     }
 }
 
 impl Character {
-    fn default_movement(&self) -> usize {
-        self.stats.movement as usize
+    fn default_movement(&self) -> u8 {
+        self.stats.movement
     }
 
     fn default_health(&self) -> u8 {
@@ -457,19 +629,19 @@ struct CoordIterator {
 }
 
 impl CoordIterator {
-    fn new(middle: SimCoords, max_range: usize, min_range: usize) -> Self {
-        let min_x = middle.x.saturating_sub(max_range);
-        let min_y = middle.y.saturating_sub(max_range);
-        let max_x = (middle.x + max_range).min(WORLD_SIZE);
-        let max_y = (middle.y + max_range).min(WORLD_SIZE);
+    fn new(middle: SimCoords, max_range: u8, min_range: u8) -> Self {
+        let min_x = middle.x.saturating_sub(max_range as usize);
+        let min_y = middle.y.saturating_sub(max_range as usize);
+        let max_x = (middle.x + max_range as usize).min(WORLD_SIZE);
+        let max_y = (middle.y + max_range as usize).min(WORLD_SIZE);
 
         let raw_iterator = (min_x..max_x + 1).cartesian_product(min_y..max_y + 1);
 
         Self {
-            max_range,
+            max_range: max_range as usize,
             middle,
             raw_iterator,
-            min_range,
+            min_range: min_range as usize,
         }
     }
 }
@@ -489,8 +661,21 @@ impl Iterator for CoordIterator {
     }
 }
 
+impl std::hash::Hash for SimState {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.next_id.hash(state);
+        self.initiative.hash(state);
+        self.locations.hash(state);
+        self.entities.hash(state);
+        self.is_start_of_turn.hash(state);
+        self.can_move.hash(state);
+    }
+}
+
 #[cfg(test)]
 mod tests {
+
+    use rand::{rngs::StdRng, SeedableRng};
 
     use super::*;
 
@@ -538,5 +723,50 @@ mod tests {
             .get_loc(KNIGHT_ID)
             .expect("couldn't get location of knight");
         assert_eq!(cur_loc, KNIGHT_START + sc(0, 1));
+    }
+
+    #[test]
+    fn test_undo() {
+        let mut start_state = SimState::new();
+
+        start_state.insert_prebuilt(
+            PreBuiltCharacter::Knight,
+            SimCoords { x: 8, y: 10 },
+            Team::Players(0),
+        );
+        start_state.insert_prebuilt(
+            PreBuiltCharacter::Skeleton,
+            SimCoords { x: 9, y: 10 },
+            Team::NPCs(0),
+        );
+        start_state.insert_prebuilt(
+            PreBuiltCharacter::Skeleton,
+            SimCoords { x: 9, y: 11 },
+            Team::NPCs(0),
+        );
+
+        let mut rng: StdRng = SeedableRng::seed_from_u64(42);
+        let mut actions = Vec::new();
+
+        for _ in 0..1000 {
+            // times to run the test
+            let mut state = start_state.clone();
+            for _ in 0..100 {
+                // max number of generations
+                if state.is_terminal() {
+                    break;
+                }
+
+                let undo_state = state.clone();
+                state.legal_actions(&mut actions);
+
+                use rand::prelude::SliceRandom;
+                let a = *actions.choose(&mut rng).unwrap();
+                state.apply(a);
+                state.undo();
+                assert_eq!(state, undo_state);
+                state.apply(a);
+            }
+        }
     }
 }

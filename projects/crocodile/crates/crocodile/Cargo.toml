@@ -7,6 +7,7 @@ edition = "2021"
 [dependencies]
 crocodile_proc = { path = "../crocodile_proc" }
 
+rand = "0.8"
 clone_from = "0.1.0"
 dashmap = "5.5.3"
 itertools = "0.13.0"

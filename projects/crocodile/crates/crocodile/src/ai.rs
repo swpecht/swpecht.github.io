@@ -12,7 +12,7 @@ use crate::{
     gamestate::{Action, SimState, Team},
 };
 
-const MAX_DEPTH: u8 = 6;
+const MAX_DEPTH: u8 = 5;
 
 pub fn find_best_move(root: SimState) -> Option<Action> {
     // todo: switch to iterative deepending: https://www.chessprogramming.org/MTD(f)
