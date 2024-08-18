@@ -99,8 +99,8 @@ pub(super) fn setup_camera(mut commands: Commands) {
     // Camera
     let mut camera_bundle = Camera2dBundle {
         transform: Transform::from_xyz(
-            (GRID_WIDTH * TILE_SIZE / 2) as f32,
-            (GRID_HEIGHT * TILE_SIZE / 2) as f32,
+            ((GRID_WIDTH + 1) * TILE_SIZE / 2) as f32,
+            ((GRID_HEIGHT + 1) * TILE_SIZE / 2) as f32,
             0.0,
         ),
         ..default()
@@ -184,8 +184,8 @@ pub(super) fn setup_tiles(
     let layout = TextureAtlasLayout::from_grid(UVec2::new(32, 32), 4, 4, None, None);
     let texture_atlas_layout = texture_atlas_layouts.add(layout);
 
-    for r in 0..GRID_WIDTH {
-        for c in 0..GRID_HEIGHT {
+    for r in 0..GRID_WIDTH + 1 {
+        for c in 0..GRID_HEIGHT + 1 {
             commands.spawn((
                 SpriteBundle {
                     texture: texture.clone(),
@@ -368,14 +368,14 @@ pub(super) fn ai(sim: Res<SimState>, mut ev_action: EventWriter<ActionEvent>) {
 }
 
 pub(super) fn healthbars(mut gizmos: Gizmos, query: Query<(&Transform, &Health)>) {
-    const BAR_WIDTH: f32 = GRID_WIDTH as f32 * 0.8; // 80% of grid item for health
+    const BAR_WIDTH: f32 = TILE_SIZE as f32 * 0.8; // 80% of grid item for health
     for (transform, health) in &query {
         let left = transform.translation.x - BAR_WIDTH / 2.0;
         let bar_fill_frac = health.cur as f32 / health.max as f32;
         let right = left + BAR_WIDTH * bar_fill_frac;
         // translation.y is the middle of the grid. We want to have the health bar slightly above the top of the grid
         // so we divide by slightly less than 2 to place it
-        let y = transform.translation.y + GRID_HEIGHT as f32;
+        let y = transform.translation.y + TILE_SIZE as f32 / 2.0;
         gizmos.line_2d(vec2(left, y), vec2(right, y), HEALTH_BAR_COLOR);
     }
 }
