@@ -89,11 +89,13 @@ pub enum Ability {
     BowAttack {
         range: usize,
     },
+    Longsword,
+    LightCrossbow,
 }
 
 #[derive(CloneFrom, Hash, Default)]
 struct SimEntity {
-    health: usize,
+    health: u8,
     id: SimId,
     turn_movement: usize,
     movement: usize,
@@ -351,7 +353,7 @@ impl SimState {
             )
         });
         let target_entity = self.get_entity_mut(target_id);
-        target_entity.health = target_entity.health.saturating_sub(ability.dmg());
+        target_entity.health = target_entity.health.saturating_sub(ability.dmg() as u8);
 
         if target_entity.health == 0 {
             self.remove_entity(target_id);
@@ -440,6 +442,16 @@ impl SimState {
     fn is_populated(&self, target: &SimCoords) -> bool {
         self.locations.iter().flatten().any(|x| x == target)
     }
+
+    pub fn health(&self, id: &SimId) -> Option<u8> {
+        self.entities[id.0].as_ref().map(|x| x.health)
+    }
+
+    pub fn max_health(&self, id: &SimId) -> Option<u8> {
+        self.entities[id.0]
+            .as_ref()
+            .map(|x| x.character.default_health())
+    }
 }
 
 impl Character {
@@ -447,8 +459,8 @@ impl Character {
         self.stats.movement as usize
     }
 
-    fn default_health(&self) -> usize {
-        self.stats.health as usize
+    fn default_health(&self) -> u8 {
+        self.stats.health
     }
 }
 
@@ -463,26 +475,34 @@ impl CharacterSpec {
 
 impl Ability {
     pub fn range(&self) -> usize {
+        use Ability::*;
         match self {
-            Ability::MeleeAttack => 1,
-            Ability::BowAttack { range } => *range,
+            MeleeAttack | Longsword => 1,
+            Self::LightCrossbow => 16,
+            BowAttack { range } => *range,
         }
     }
 
-    pub fn dmg(&self) -> usize {
+    pub fn dmg(&self) -> u8 {
+        use Ability::*;
         match self {
-            Ability::MeleeAttack => 5,
-            Ability::BowAttack { range: _ } => 2,
+            MeleeAttack => 5,
+            BowAttack { range: _ } => 2,
+            Longsword => 8,
+            LightCrossbow => 6,
         }
     }
 }
 
 impl Display for Ability {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Ability::MeleeAttack => f.write_str("Melee"),
-            Ability::BowAttack { range: _ } => f.write_str("Bow"),
-        }
+        use Ability::*;
+        f.write_str(match self {
+            MeleeAttack => "Melee",
+            BowAttack { range: _ } => "Bow",
+            Longsword => "LongSword",
+            LightCrossbow => "LightCrossbow",
+        })
     }
 }
 

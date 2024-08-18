@@ -21,6 +21,8 @@ const TILE_LAYER: f32 = 0.0;
 const CHAR_LAYER: f32 = 1.0;
 const PROJECTILE_LAYER: f32 = 2.0;
 
+const HEALTH_BAR_COLOR: Color = Color::srgb(1.0, 0.0, 0.0);
+
 const IDLE_LOCATION: &str = "/Idle/Idle-Sheet.png";
 
 #[derive(Component, Clone)]
@@ -148,6 +150,12 @@ pub(super) fn sync_sim(
         let texture_atlas_layout = texture_atlas_layouts.add(layout);
         // Use only the subset of sprites in the sheet that make up the run animation
         let animation_indices = AnimationIndices { first: 0, last: 3 };
+
+        let health = Health {
+            cur: sim.health(&id).unwrap(),
+            max: sim.max_health(&id).unwrap(),
+        };
+
         commands.spawn((
             SpriteBundle {
                 texture,
@@ -160,6 +168,7 @@ pub(super) fn sync_sim(
             },
             animation_indices,
             AnimationTimer(Timer::from_seconds(0.1, TimerMode::Repeating)),
+            health,
             id,
         ));
     }
@@ -221,7 +230,7 @@ pub(super) fn action_system(
             Move { target } => handle_move(&mut commands, target, &query, cur.0),
             UseAbility {
                 target,
-                ability: Ability::BowAttack { range: _ },
+                ability: Ability::BowAttack { range: _ } | Ability::LightCrossbow,
             } => {
                 ev_projectile.send(SpawnProjectileEvent {
                     start: cur_char_pos,
@@ -230,7 +239,7 @@ pub(super) fn action_system(
             }
             UseAbility {
                 target,
-                ability: Ability::MeleeAttack,
+                ability: Ability::MeleeAttack | Ability::Longsword,
             } => handle_melee(&mut commands, target, &query, cur.0),
         }
         cur.0 = sim.cur_char();
@@ -355,6 +364,25 @@ pub(super) fn ai(sim: Res<SimState>, mut ev_action: EventWriter<ActionEvent>) {
         let action = find_best_move(sim.clone()).expect("failed to find a best move");
         ev_action.send(ActionEvent { action });
     }
+}
+
+pub(super) fn healthbars(mut gizmos: Gizmos, query: Query<(&Transform, &Health)>) {
+    const BAR_WIDTH: f32 = GRID_WIDTH as f32 * 0.8; // 80% of grid item for health
+    for (transform, health) in &query {
+        let left = transform.translation.x - BAR_WIDTH / 2.0;
+        let bar_fill_frac = health.cur as f32 / health.max as f32;
+        let right = left + BAR_WIDTH * bar_fill_frac;
+        // translation.y is the middle of the grid. We want to have the health bar slightly above the top of the grid
+        // so we divide by slightly less than 2 to place it
+        let y = transform.translation.y + GRID_HEIGHT as f32;
+        gizmos.line_2d(vec2(left, y), vec2(right, y), HEALTH_BAR_COLOR);
+    }
+}
+
+#[derive(Component)]
+pub(super) struct Health {
+    cur: u8,
+    max: u8,
 }
 
 impl CharacterSprite {
