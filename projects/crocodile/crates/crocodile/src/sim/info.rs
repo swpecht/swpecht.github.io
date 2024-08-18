@@ -16,6 +16,7 @@ pub enum PreBuiltCharacter {
 pub enum Effect {
     /// Moves self to the square next to the target
     Charge,
+    KnockDown,
 }
 
 /// The "Actions" a character can take in D&D terminology
