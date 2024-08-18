@@ -225,6 +225,15 @@ pub(super) fn action_system(
     for ev in ev_action.read() {
         debug!("action event received: {:?}", ev);
         sim.apply(ev.action);
+        // use crate::gamestate::ActionResult::*;
+        // for ar in sim.diff() {
+        //     match ar {
+        //         Move { id, start, end } => todo!(),
+        //         Damage { id, amount } => todo!(),
+        //         RemoveEntity { loc, id } => todo!(),
+
+        //     }
+        // }
         use Action::*;
         match ev.action {
             EndTurn => next_state.set(PlayState::Processing),

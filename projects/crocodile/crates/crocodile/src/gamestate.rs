@@ -602,6 +602,15 @@ impl SimState {
             .get(id.0)
             .map(|x| x.character.default_health())
     }
+
+    /// Returns all of the action results to go from the previous state to the current one
+    pub fn diff(&self) -> Vec<ActionResult> {
+        self.applied_results
+            .iter()
+            .filter(|x| x.generation == self.generation - 1)
+            .map(|x| x.result.clone())
+            .collect_vec()
+    }
 }
 
 impl Character {
