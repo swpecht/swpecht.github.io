@@ -38,7 +38,8 @@ impl Plugin for UIPlugin {
                     button_system,
                     action_button_action,
                     cursor_locator,
-                    tile_highlight.before(animate_sprite), // ensure we draw the highlights over the sprites
+                    tile_highlight,
+                    animate_sprite,
                     healthbars,
                     process_curves,
                     spawn_projectile,
