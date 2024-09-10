@@ -42,6 +42,7 @@ impl Plugin for UIPlugin {
                     animate_sprite,
                     healthbars,
                     process_curves,
+                    // _paint_curves,
                     spawn_projectile,
                     cleanup_projectiles,
                 ),

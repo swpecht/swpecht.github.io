@@ -1,3 +1,5 @@
+use std::f32::consts::PI;
+
 use bevy::{
     math::{vec2, vec3},
     prelude::*,
@@ -309,7 +311,7 @@ pub(super) fn spawn_projectile(
         let mut layout = TextureAtlasLayout::new_empty(UVec2::new(192, 112));
         layout.add_texture(URect::from_corners(UVec2::new(32, 0), UVec2::new(48, 16)));
         let texture_atlas_layout = texture_atlas_layouts.add(layout);
-        let angle = (ev.target - ev.start).angle_between(ev.target);
+        let angle = (ev.target - ev.start).angle_between(ev.start);
         let mut transform = Transform::from_xyz(ev.start.x, ev.start.y, PROJECTILE_LAYER);
         transform.rotation = Quat::from_rotation_z(angle);
 
@@ -326,7 +328,7 @@ pub(super) fn spawn_projectile(
             Curve {
                 path: vec![ev.start, ev.target],
                 time: Stopwatch::new(),
-                speed: 256.0,
+                speed: 125.0, // 256.0,
             },
             Projectile,
         ));
@@ -346,11 +348,9 @@ pub(super) fn cleanup_projectiles(
 pub(super) fn process_curves(
     mut commands: Commands,
     time: Res<Time>,
-    mut gizmos: Gizmos,
     mut query: Query<(Entity, &mut Transform, &mut Curve)>,
 ) {
     for (entity, mut transform, mut curve) in &mut query {
-        gizmos.linestrip_2d(curve.path.clone(), Color::WHITE);
         curve.time.tick(time.delta());
         let pos = curve.cur_pos();
         transform.translation = pos.extend(transform.translation.z);
@@ -358,6 +358,12 @@ pub(super) fn process_curves(
         if curve.is_finished() {
             commands.entity(entity).remove::<Curve>();
         }
+    }
+}
+
+pub(super) fn _paint_curves(mut gizmos: Gizmos, query: Query<&Curve>) {
+    for curve in &query {
+        gizmos.linestrip_2d(curve.path.clone(), Color::WHITE);
     }
 }
 
