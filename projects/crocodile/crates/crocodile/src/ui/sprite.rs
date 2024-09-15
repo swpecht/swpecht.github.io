@@ -14,17 +14,17 @@ use crate::{
     PlayState,
 };
 
+use super::animation::{load_animation, Animation};
+
 pub const TILE_SIZE: usize = 32;
 const GRID_WIDTH: usize = 20;
 const GRID_HEIGHT: usize = 20;
 
-const TILE_LAYER: f32 = 0.0;
-const CHAR_LAYER: f32 = 1.0;
+pub(super) const TILE_LAYER: f32 = 0.0;
+pub(super) const CHAR_LAYER: f32 = 1.0;
 const PROJECTILE_LAYER: f32 = 2.0;
 
 const HEALTH_BAR_COLOR: Color = Color::srgb(1.0, 0.0, 0.0);
-
-const IDLE_LOCATION: &str = "/Idle/Idle-Sheet.png";
 
 #[derive(Component, Clone)]
 pub struct Curve {
@@ -32,15 +32,6 @@ pub struct Curve {
     time: Stopwatch,
     speed: f32,
 }
-
-#[derive(Component)]
-pub(super) struct AnimationIndices {
-    first: usize,
-    last: usize,
-}
-
-#[derive(Component, Deref, DerefMut)]
-pub(super) struct AnimationTimer(Timer);
 
 #[derive(Event, Debug)]
 pub(super) struct SpawnProjectileEvent {
@@ -111,22 +102,6 @@ pub(super) fn setup_camera(mut commands: Commands) {
     commands.spawn((camera_bundle, MainCamera));
 }
 
-pub(super) fn animate_sprite(
-    time: Res<Time>,
-    mut query: Query<(&AnimationIndices, &mut AnimationTimer, &mut TextureAtlas)>,
-) {
-    for (indices, mut timer, mut atlas) in &mut query {
-        timer.tick(time.delta());
-        if timer.just_finished() {
-            atlas.index = if atlas.index == indices.last {
-                indices.first
-            } else {
-                atlas.index + 1
-            };
-        }
-    }
-}
-
 pub(super) fn sync_sim(
     mut commands: Commands,
     sim: Res<SimState>,
@@ -146,32 +121,20 @@ pub(super) fn sync_sim(
         .map(|(id, l, c)| (id, l.to_world(), c))
     {
         // TODO: add support for changing location of things if they're already spawned
-        let texture = asset_server.load(character.sprite.idle());
-        let layout = TextureAtlasLayout::from_grid(UVec2::new(32, 32), 4, 1, None, None);
-        let texture_atlas_layout = texture_atlas_layouts.add(layout);
-        // Use only the subset of sprites in the sheet that make up the run animation
-        let animation_indices = AnimationIndices { first: 0, last: 3 };
+        let mut animation_bundle = load_animation(
+            &asset_server,
+            &mut texture_atlas_layouts,
+            &character.sprite,
+            Animation::IDLE,
+        );
+        animation_bundle.sb.transform = Transform::from_translation(vec3(loc.x, loc.y, CHAR_LAYER));
 
         let health = Health {
             cur: sim.health(&id).unwrap(),
             max: sim.max_health(&id).unwrap(),
         };
 
-        commands.spawn((
-            SpriteBundle {
-                texture,
-                transform: Transform::from_translation(vec3(loc.x, loc.y, CHAR_LAYER)),
-                ..default()
-            },
-            TextureAtlas {
-                layout: texture_atlas_layout,
-                index: animation_indices.first,
-            },
-            animation_indices,
-            AnimationTimer(Timer::from_seconds(0.1, TimerMode::Repeating)),
-            health,
-            id,
-        ));
+        commands.spawn((animation_bundle, health, id));
     }
 }
 
@@ -397,24 +360,4 @@ pub(super) fn healthbars(mut gizmos: Gizmos, query: Query<(&Transform, &Health)>
 pub(super) struct Health {
     cur: u8,
     max: u8,
-}
-
-impl CharacterSprite {
-    pub fn idle(&self) -> String {
-        match self {
-            CharacterSprite::Skeleton => format!(
-                "{}{}",
-                "pixel-crawler/Enemy/Skeleton Crew/Skeleton - Base", IDLE_LOCATION
-            ),
-            CharacterSprite::Knight => {
-                format!("{}{}", "pixel-crawler/Heroes/Knight", IDLE_LOCATION)
-            }
-            CharacterSprite::Orc => {
-                format!("{}{}", "pixel-crawler/Enemy/Orc Crew/Orc", IDLE_LOCATION)
-            }
-            CharacterSprite::Wizard => {
-                format!("{}{}", "pixel-crawler/Heroes/Wizard", IDLE_LOCATION)
-            }
-        }
-    }
 }

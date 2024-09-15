@@ -1,3 +1,4 @@
+use animation::animate_sprite;
 use bevy::{
     input::common_conditions::*,
     math::vec2,
@@ -12,6 +13,7 @@ use crate::{
     PlayState,
 };
 
+pub mod animation;
 pub mod sprite;
 
 const NORMAL_BUTTON: Color = Color::srgb(0.15, 0.15, 0.15);
