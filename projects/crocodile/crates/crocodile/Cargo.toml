@@ -15,6 +15,7 @@ tinyvec = "1.6.1"
 serde = "1.0.204"
 # serde_yaml = "0.9.34"
 anyhow = "1.0.86"
+json = "0.12.4"
 
 
 [dependencies.bevy]
