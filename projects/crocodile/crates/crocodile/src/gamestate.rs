@@ -76,6 +76,17 @@ pub enum ActionResult {
         start: SimCoords,
         end: SimCoords,
     },
+
+    MeleeAttack {
+        id: SimId,
+        target: SimCoords,
+    },
+
+    Arrow {
+        from: SimCoords,
+        to: SimCoords,
+    },
+
     Damage {
         id: SimId,
         amount: u8,
@@ -368,6 +379,10 @@ impl SimState {
                 }
                 ActionResult::CanMove(x) => self.can_move = !x,
                 ActionResult::NewTurn(x) => self.is_start_of_turn = !x,
+
+                // no undo needed for visual results
+                ActionResult::MeleeAttack { id: _, target: _ } => {}
+                ActionResult::Arrow { from: _, to: _ } => {}
             }
 
             // actually remove the item from the list
@@ -419,6 +434,10 @@ impl SimState {
                 }
                 ActionResult::CanMove(x) => self.can_move = x,
                 ActionResult::NewTurn(x) => self.is_start_of_turn = x,
+
+                // no update needed for visual result
+                ActionResult::MeleeAttack { id: _, target: _ } => {}
+                ActionResult::Arrow { from: _, to: _ } => {}
             }
 
             self.applied_results
@@ -519,6 +538,21 @@ impl SimState {
                 start: cur_loc,
                 end: closest.expect("no empty squar found for move"),
             });
+        }
+
+        if matches!(ability, Ability::MeleeAttack) {
+            self.queued_results.push(ActionResult::MeleeAttack {
+                id: self.cur_char(),
+                target,
+            })
+        }
+
+        if matches!(ability, Ability::BowAttack) {
+            let cur_loc = self.locations[self.cur_char().0].unwrap();
+            self.queued_results.push(ActionResult::Arrow {
+                from: cur_loc,
+                to: target,
+            })
         }
 
         // we only add this if the reset is needed, this allows us to properly undo

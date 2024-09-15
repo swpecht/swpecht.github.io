@@ -37,8 +37,8 @@ pub struct Curve {
 
 #[derive(Event, Debug)]
 pub(super) struct SpawnProjectileEvent {
-    start: Vec2,
-    target: Vec2,
+    from: Vec2,
+    to: Vec2,
 }
 
 #[derive(Component)]
@@ -190,32 +190,22 @@ pub(super) fn action_system(
     for ev in ev_action.read() {
         debug!("action event received: {:?}", ev);
         sim.apply(ev.action);
-        // use crate::gamestate::ActionResult::*;
-        // for ar in sim.diff() {
-        //     match ar {
-        //         Move { id, start, end } => todo!(),
-        //         Damage { id, amount } => todo!(),
-        //         RemoveEntity { loc, id } => todo!(),
-
-        //     }
-        // }
-        use Action::*;
-        match ev.action {
-            EndTurn => next_state.set(PlayState::Processing),
-            Move { target } => handle_move(&mut commands, target, &query, cur.0),
-            UseAbility {
-                target,
-                ability: Ability::BowAttack | Ability::LightCrossbow,
-            } => {
-                ev_projectile.send(SpawnProjectileEvent {
-                    start: cur_char_pos,
-                    target: target.to_world(),
-                });
+        use crate::gamestate::ActionResult::*;
+        for ar in sim.diff() {
+            match ar {
+                Move { id, start: _, end } => handle_move(&mut commands, end, &query, id),
+                // Damage { id, amount } => todo!(), // hit animation?
+                // RemoveEntity { loc, id } => todo!(), // death animation?
+                MeleeAttack { id, target } => handle_melee(&mut commands, target, &query, id),
+                Arrow { from, to } => {
+                    ev_projectile.send(SpawnProjectileEvent {
+                        from: from.to_world(),
+                        to: to.to_world(),
+                    });
+                }
+                EndTurn => next_state.set(PlayState::Processing),
+                _ => {} // no ui impact for most actions
             }
-            UseAbility {
-                target,
-                ability: Ability::MeleeAttack | Ability::Longsword | Ability::Ram | Ability::Charge, // todo fix this
-            } => handle_melee(&mut commands, target, &query, cur.0),
         }
         cur.0 = sim.cur_char();
         debug!("{:?}", sim.cur_char());
@@ -281,8 +271,8 @@ pub(super) fn spawn_projectile(
 
         layout.add_texture(URect::from_corners(UVec2::new(32, 0), UVec2::new(48, 16)));
         let texture_atlas_layout = texture_atlas_layouts.add(layout);
-        let angle = (ev.target - ev.start).angle_between(ev.start);
-        let mut transform = Transform::from_xyz(ev.start.x, ev.start.y, PROJECTILE_LAYER);
+        let angle = (ev.to - ev.from).angle_between(ev.from);
+        let mut transform = Transform::from_xyz(ev.from.x, ev.from.y, PROJECTILE_LAYER);
         transform.rotation = Quat::from_rotation_z(angle);
 
         commands.spawn((
@@ -296,7 +286,7 @@ pub(super) fn spawn_projectile(
                 index: 0,
             },
             Curve {
-                path: vec![ev.start, ev.target],
+                path: vec![ev.from, ev.to],
                 time: Stopwatch::new(),
                 speed: 125.0, // 256.0,
             },
