@@ -1,3 +1,5 @@
+use std::fs;
+
 use bevy::{
     math::{vec2, vec3},
     prelude::*,
@@ -269,7 +271,14 @@ pub(super) fn spawn_projectile(
     for ev in ev_action.read() {
         debug!("spawning projectile: {:?}", ev);
         let texture = asset_server.load("pixel-crawler/Weapons/Wood/Wood.png");
-        let mut layout = TextureAtlasLayout::new_empty(UVec2::new(192, 112));
+        let metadata = json::parse(
+            &fs::read_to_string("assets/pixel-crawler/Weapons/Wood/Wood.json").unwrap(),
+        )
+        .unwrap();
+        let w = metadata["meta"]["size"]["w"].as_u32().unwrap();
+        let h = metadata["meta"]["size"]["h"].as_u32().unwrap();
+        let mut layout = TextureAtlasLayout::new_empty(UVec2::new(w, h));
+
         layout.add_texture(URect::from_corners(UVec2::new(32, 0), UVec2::new(48, 16)));
         let texture_atlas_layout = texture_atlas_layouts.add(layout);
         let angle = (ev.target - ev.start).angle_between(ev.start);
