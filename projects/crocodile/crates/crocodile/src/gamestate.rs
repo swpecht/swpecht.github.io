@@ -22,7 +22,7 @@ pub enum Team {
     NPCs(usize),
 }
 
-#[derive(Component, Debug, Clone, Hash, PartialEq)]
+#[derive(Debug, Clone, Hash, PartialEq)]
 pub struct Character {
     pub sprite: CharacterSprite,
     stats: Stats,
@@ -52,8 +52,6 @@ pub struct SimState {
     entities: Vec<SimEntity>,
     /// Track if start of an entities turn, used to optimize AI search caching
     is_start_of_turn: bool,
-    /// Don't allow move action after another move action
-    can_move: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -117,7 +115,6 @@ pub enum ActionResult {
     },
 
     // Items to control gamestate for optimizations
-    CanMove(bool), // e.g. disable after moving
     NewTurn(bool),
 }
 
@@ -201,7 +198,6 @@ impl SimState {
             next_id: 0,
             initiative: Vec::new(),
             is_start_of_turn: true,
-            can_move: true,
             locations: Vec::new(),
             entities: Vec::new(),
             queued_results: Vec::new(),
@@ -272,8 +268,9 @@ impl SimState {
             }
         }
 
-        if cur_entity.movement > 0 && self.can_move {
-            for l in CoordIterator::new(cur_loc, cur_entity.movement, 1) {
+        if cur_entity.movement > 0 {
+            // only allow moving 1 tile
+            for l in CoordIterator::new(cur_loc, 1, 1) {
                 if !self.is_populated(&l) {
                     actions.push(Move { target: l });
                 }
@@ -377,7 +374,6 @@ impl SimState {
                 ActionResult::RestoreActionPoint { id } => {
                     self.entities[id.0].remaining_actions -= 1
                 }
-                ActionResult::CanMove(x) => self.can_move = !x,
                 ActionResult::NewTurn(x) => self.is_start_of_turn = !x,
 
                 // no undo needed for visual results
@@ -432,7 +428,6 @@ impl SimState {
                     let ent = self.get_entity_mut(id);
                     ent.remaining_actions += 1;
                 }
-                ActionResult::CanMove(x) => self.can_move = x,
                 ActionResult::NewTurn(x) => self.is_start_of_turn = x,
 
                 // no update needed for visual result
@@ -554,11 +549,6 @@ impl SimState {
                 to: target,
             })
         }
-
-        // we only add this if the reset is needed, this allows us to properly undo
-        if !self.can_move {
-            self.queued_results.push(ActionResult::CanMove(true));
-        }
     }
 
     fn generate_results_move_entity(&mut self, target: SimCoords) {
@@ -575,10 +565,6 @@ impl SimState {
             id: SimId(id),
             amount: distance as u8,
         });
-
-        if self.can_move {
-            self.queued_results.push(ActionResult::CanMove(false));
-        }
     }
 
     fn generate_results_end_turn(&mut self) {
@@ -596,10 +582,6 @@ impl SimState {
 
         if !self.is_start_of_turn {
             self.queued_results.push(ActionResult::NewTurn(true))
-        }
-
-        if !self.can_move {
-            self.queued_results.push(ActionResult::CanMove(true));
         }
     }
 
@@ -725,7 +707,6 @@ impl std::hash::Hash for SimState {
         self.locations.hash(state);
         self.entities.hash(state);
         self.is_start_of_turn.hash(state);
-        self.can_move.hash(state);
     }
 }
 
