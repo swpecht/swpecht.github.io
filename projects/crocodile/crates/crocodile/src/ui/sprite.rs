@@ -129,7 +129,7 @@ pub(super) fn sync_sim(
             &Animation::IDLE,
             // &Animation::RUN,
         );
-        animation_bundle.sb.transform = Transform::from_translation(vec3(loc.x, loc.y, CHAR_LAYER));
+        animation_bundle.sb.transform.translation = vec3(loc.x, loc.y, CHAR_LAYER);
 
         let health = Health {
             cur: sim.health(&id).unwrap(),

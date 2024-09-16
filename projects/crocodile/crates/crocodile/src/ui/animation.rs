@@ -1,6 +1,6 @@
 use std::fs;
 
-use bevy::prelude::*;
+use bevy::{math::vec3, prelude::*};
 
 use super::CharacterSprite;
 
@@ -111,6 +111,7 @@ pub(super) fn load_animation(
     AnimationBundle {
         sb: SpriteBundle {
             texture,
+            transform: Transform::from_scale(vec3(32.0 / w as f32, 32.0 / w as f32, 1.0)),
             ..default()
         },
         texture_atlas: TextureAtlas {
