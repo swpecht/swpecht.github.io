@@ -10,8 +10,7 @@ use serde::Deserialize;
 
 use crate::{
     ai::find_best_move,
-    gamestate::{Action, SimCoords, SimId, SimState, Team},
-    sim::info::Ability,
+    gamestate::{SimCoords, SimId, SimState, Team},
     ui::{ActionEvent, CurrentCharacter},
     PlayState,
 };
@@ -44,7 +43,7 @@ pub(super) struct SpawnProjectileEvent {
 #[derive(Component)]
 pub(super) struct Projectile;
 
-#[derive(Debug, Clone, Hash, Deserialize, PartialEq, Eq)]
+#[derive(Component, Debug, Clone, Hash, Deserialize, PartialEq, Eq, Copy)]
 pub enum CharacterSprite {
     Skeleton,
     Knight,
@@ -127,7 +126,8 @@ pub(super) fn sync_sim(
             &asset_server,
             &mut texture_atlas_layouts,
             &character.sprite,
-            Animation::IDLE,
+            &Animation::IDLE,
+            // &Animation::RUN,
         );
         animation_bundle.sb.transform = Transform::from_translation(vec3(loc.x, loc.y, CHAR_LAYER));
 
@@ -180,13 +180,6 @@ pub(super) fn action_system(
     mut cur: ResMut<CurrentCharacter>,
     mut next_state: ResMut<NextState<PlayState>>,
 ) {
-    let cur_char_pos = query
-        .iter()
-        .filter(|(_, id, _)| **id == cur.0)
-        .map(|(_, _, t)| vec2(t.translation.x, t.translation.y))
-        .next()
-        .unwrap();
-
     for ev in ev_action.read() {
         debug!("action event received: {:?}", ev);
         sim.apply(ev.action);
@@ -228,7 +221,7 @@ pub(super) fn handle_move(
                 time: Stopwatch::new(),
                 speed: 64.0,
             };
-            commands.entity(e).insert(curve.clone());
+            commands.entity(e).insert((curve.clone(), Animation::RUN));
         });
 }
 

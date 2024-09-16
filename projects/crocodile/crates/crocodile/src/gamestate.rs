@@ -22,7 +22,7 @@ pub enum Team {
     NPCs(usize),
 }
 
-#[derive(Debug, Clone, Hash, PartialEq)]
+#[derive(Component, Debug, Clone, Hash, PartialEq)]
 pub struct Character {
     pub sprite: CharacterSprite,
     stats: Stats,

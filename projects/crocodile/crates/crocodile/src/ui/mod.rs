@@ -1,4 +1,4 @@
-use animation::animate_sprite;
+use animation::{animate_sprite, update_animation};
 use bevy::{
     input::common_conditions::*,
     math::vec2,
@@ -42,6 +42,7 @@ impl Plugin for UIPlugin {
                     cursor_locator,
                     tile_highlight,
                     animate_sprite,
+                    update_animation,
                     healthbars,
                     process_curves,
                     // _paint_curves,

@@ -20,6 +20,24 @@ pub(super) fn animate_sprite(
     }
 }
 
+pub(super) fn update_animation(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
+    query: Query<(Entity, &CharacterSprite, &Animation, &Transform), Changed<Animation>>,
+) {
+    for (entity, character, animation, transform) in &query {
+        let mut animation_bundle = load_animation(
+            &asset_server,
+            &mut texture_atlas_layouts,
+            character,
+            animation,
+        );
+        animation_bundle.sb.transform = *transform;
+        commands.entity(entity).insert(animation_bundle);
+    }
+}
+
 #[derive(Component)]
 pub(super) struct AnimationIndices {
     pub first: usize,
@@ -29,6 +47,7 @@ pub(super) struct AnimationIndices {
 #[derive(Component, Deref, DerefMut)]
 pub(super) struct AnimationTimer(Timer);
 
+#[derive(Component)]
 pub enum Animation {
     IDLE,
     RUN,
@@ -59,15 +78,16 @@ pub struct AnimationBundle {
     texture_atlas: TextureAtlas,
     animation_indices: AnimationIndices,
     animation_timer: AnimationTimer,
+    character_sprite: CharacterSprite,
 }
 
 pub(super) fn load_animation(
     asset_server: &Res<AssetServer>,
     texture_atlas_layouts: &mut ResMut<Assets<TextureAtlasLayout>>,
-    char: &CharacterSprite,
-    animation: Animation,
+    character: &CharacterSprite,
+    animation: &Animation,
 ) -> AnimationBundle {
-    let base_path = format!("{}{}", char.asset_loc(), animation.location());
+    let base_path = format!("{}{}", character.asset_loc(), animation.location());
 
     let texture = asset_server.load(format!("{}{}", base_path, ".png"));
 
@@ -77,14 +97,15 @@ pub(super) fn load_animation(
             .unwrap_or_else(|x| panic!("failed to load: {}: {}", meta_file, x)),
     )
     .unwrap();
-    let num_frames = metadata["frames"].len();
-    let layout =
-        TextureAtlasLayout::from_grid(UVec2::new(32, 32), num_frames as u32, 1, None, None);
+    let num_frames = metadata["frames"].len() as u32;
+    let w = metadata["meta"]["size"]["w"].as_u32().unwrap() / num_frames;
+
+    let layout = TextureAtlasLayout::from_grid(UVec2::new(w, w), num_frames, 1, None, None);
     let texture_atlas_layout = texture_atlas_layouts.add(layout);
     // Use only the subset of sprites in the sheet that make up the run animation
     let animation_indices = AnimationIndices {
         first: 0,
-        last: num_frames - 1,
+        last: num_frames as usize - 1,
     };
 
     AnimationBundle {
@@ -98,5 +119,6 @@ pub(super) fn load_animation(
         },
         animation_indices,
         animation_timer: AnimationTimer(Timer::from_seconds(0.1, TimerMode::Repeating)),
+        character_sprite: *character,
     }
 }
