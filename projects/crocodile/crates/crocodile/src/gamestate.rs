@@ -521,33 +521,28 @@ impl SimState {
             });
         }
 
-        // move the attacker to square closet them and next to target
-        if matches!(ability, Ability::Charge) {
-            let cur_loc = self.locations[self.cur_char().0].unwrap();
-            // TODO: implement check to ensure only moving to the closest square and not moving through people
-            let closest = CoordIterator::new(target, 1, 1)
-                .filter(|x| !self.is_populated(x))
-                .min_by_key(|x| x.dist(&cur_loc));
-            self.queued_results.push(ActionResult::Move {
-                id: self.cur_char(),
-                start: cur_loc,
-                end: closest.expect("no empty squar found for move"),
-            });
-        }
-
-        if matches!(ability, Ability::MeleeAttack | Ability::Ram) {
-            self.queued_results.push(ActionResult::MeleeAttack {
+        let cur_loc = self.locations[self.cur_char().0].unwrap();
+        use Ability::*;
+        match ability {
+            MeleeAttack | Ram | Longsword => self.queued_results.push(ActionResult::MeleeAttack {
                 id: self.cur_char(),
                 target,
-            })
-        }
-
-        if matches!(ability, Ability::BowAttack) {
-            let cur_loc = self.locations[self.cur_char().0].unwrap();
-            self.queued_results.push(ActionResult::Arrow {
+            }),
+            BowAttack | LightCrossbow => self.queued_results.push(ActionResult::Arrow {
                 from: cur_loc,
                 to: target,
-            })
+            }),
+            Charge => {
+                // TODO: implement check to ensure only moving to the closest square and not moving through people
+                let closest = CoordIterator::new(target, 1, 1)
+                    .filter(|x| !self.is_populated(x))
+                    .min_by_key(|x| x.dist(&cur_loc));
+                self.queued_results.push(ActionResult::Move {
+                    id: self.cur_char(),
+                    start: cur_loc,
+                    end: closest.expect("no empty squar found for move"),
+                });
+            }
         }
     }
 
