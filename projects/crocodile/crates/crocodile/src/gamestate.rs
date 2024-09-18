@@ -48,6 +48,7 @@ pub struct SimState {
     queued_results: Vec<ActionResult>,
     applied_results: Vec<AppliedActionResult>,
     initiative: Vec<SimId>, // order of players
+    /// Location of each entity, indexed by entity id
     locations: Vec<Option<SimCoords>>,
     entities: Vec<SimEntity>,
     /// Track if start of an entities turn, used to optimize AI search caching
@@ -550,6 +551,26 @@ impl SimState {
         let id = self.initiative[0].0;
         let start = self.locations[id].expect("trying to move deleted entity");
         let distance = target.dist(&start);
+
+        // implement attack of opportunity
+        for neighbor in CoordIterator::new(start, 1, 1) {
+            if let Some(attacker) = self.locations.iter().position(|x| x == &Some(neighbor)) {
+                if self.entities[attacker].team == self.entities[id].team {
+                    continue;
+                }
+
+                self.queued_results.push(ActionResult::MeleeAttack {
+                    id: SimId(attacker),
+                    target: start,
+                });
+
+                self.queued_results.push(ActionResult::Damage {
+                    id: SimId(id),
+                    amount: Ability::Longsword.dmg(),
+                });
+                todo!("move to same code path as melee atack for calculating dmg")
+            }
+        }
 
         self.queued_results.push(ActionResult::Move {
             start,
