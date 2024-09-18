@@ -493,29 +493,19 @@ impl SimState {
                 target, self.locations
             )
         });
-        let target_entity = self.get_entity_mut(target_id);
 
-        let target_ac = target_entity.character.stats.ac;
-        let to_hit = ability.to_hit();
-
-        // 1 out of 20 times we crit, auto hit and 2x dmg
-        let crit_dmg = 1.0 / 20.0 * (ability.dmg() * 2) as f32;
-        // for the other 19 possible rolls, only the ones > ac - to_hit actually hit
-        // add 1 since if we match ac we hit
-        let chance_to_hit_no_crit = (19 - target_ac + to_hit + 1) as f32 / 19.0;
-        let expected_dmg = chance_to_hit_no_crit * ability.dmg() as f32 + crit_dmg;
-        let cur_health = target_entity.health;
-        let target_id = target_entity.id;
+        let remaining_health = self.get_entity(target_id).health;
+        let expected_dmg = self.calculate_dmg(target_id, &ability, remaining_health);
 
         self.queued_results.push(ActionResult::SpendActionPoint {
             id: self.cur_char(),
         });
         self.queued_results.push(ActionResult::Damage {
             id: target_id,
-            amount: (expected_dmg as u8).min(cur_health),
+            amount: expected_dmg,
         });
 
-        if cur_health <= expected_dmg as u8 {
+        if self.get_entity(target_id).health <= expected_dmg {
             self.queued_results.push(ActionResult::RemoveEntity {
                 loc: target,
                 id: target_id,
@@ -553,22 +543,27 @@ impl SimState {
         let distance = target.dist(&start);
 
         // implement attack of opportunity
+        let mut opp_atk_dmg = 0;
         for neighbor in CoordIterator::new(start, 1, 1) {
             if let Some(attacker) = self.locations.iter().position(|x| x == &Some(neighbor)) {
                 if self.entities[attacker].team == self.entities[id].team {
                     continue;
                 }
-
                 self.queued_results.push(ActionResult::MeleeAttack {
                     id: SimId(attacker),
                     target: start,
                 });
-
+                let dmg = self.calculate_dmg(
+                    SimId(id),
+                    &Ability::Longsword,
+                    self.entities[id].health - opp_atk_dmg,
+                );
                 self.queued_results.push(ActionResult::Damage {
                     id: SimId(id),
-                    amount: Ability::Longsword.dmg(),
+                    amount: dmg,
                 });
-                todo!("move to same code path as melee atack for calculating dmg")
+                // track total dmg so we don't overkill
+                opp_atk_dmg += dmg;
             }
         }
 
@@ -599,6 +594,22 @@ impl SimState {
         if !self.is_start_of_turn {
             self.queued_results.push(ActionResult::NewTurn(true))
         }
+    }
+
+    /// Calcualte dmg accounting for health remaining from un processed actions
+    fn calculate_dmg(&self, target: SimId, ability: &Ability, remaining_health: u8) -> u8 {
+        let target_entity = self.get_entity(target);
+
+        let target_ac = target_entity.character.stats.ac;
+        let to_hit = ability.to_hit();
+
+        // 1 out of 20 times we crit, auto hit and 2x dmg
+        let crit_dmg = 1.0 / 20.0 * (ability.dmg() * 2) as f32;
+        // for the other 19 possible rolls, only the ones > ac - to_hit actually hit
+        // add 1 since if we match ac we hit
+        let chance_to_hit_no_crit = (19 - target_ac + to_hit + 1) as f32 / 19.0;
+        let expected_dmg = chance_to_hit_no_crit * ability.dmg() as f32 + crit_dmg;
+        (expected_dmg as u8).min(remaining_health)
     }
 
     pub fn get_id(&self, coords: SimCoords) -> Option<SimId> {
