@@ -535,7 +535,7 @@ impl SimState {
             });
         }
 
-        if matches!(ability, Ability::MeleeAttack) {
+        if matches!(ability, Ability::MeleeAttack | Ability::Ram) {
             self.queued_results.push(ActionResult::MeleeAttack {
                 id: self.cur_char(),
                 target,

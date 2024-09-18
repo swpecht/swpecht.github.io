@@ -102,7 +102,7 @@ impl PreBuiltCharacter {
             Skeleton => vec![Ability::MeleeAttack],
             Knight => vec![Ability::MeleeAttack, Ability::BowAttack],
             HumanSoldier => vec![Ability::MeleeAttack, Ability::BowAttack],
-            GiantGoat => vec![Ability::Ram, Ability::Charge],
+            GiantGoat => vec![Ability::Ram], //, Ability::Charge],
             _ => panic!("not implemented for: {:?}", self),
         }
     }
