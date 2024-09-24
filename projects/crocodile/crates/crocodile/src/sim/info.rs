@@ -5,6 +5,7 @@ use crate::{gamestate::Stats, ui::sprite::CharacterSprite};
 /// Pre-built characters
 #[derive(Debug)]
 pub enum PreBuiltCharacter {
+    /// https://www.dndbeyond.com/monsters/17015-skeleton
     Skeleton,
     Knight,
     HumanSoldier,
@@ -25,6 +26,8 @@ pub enum Ability {
     #[default]
     MeleeAttack,
     BowAttack,
+    Shortsword,
+    Shortbow,
     Longsword,
     LightCrossbow,
     Charge,
@@ -48,15 +51,15 @@ impl PreBuiltCharacter {
         use PreBuiltCharacter::*;
         match self {
             Skeleton => Stats {
-                health: 10,
-                str: 17,
-                dex: 11,
-                con: 12,
-                int: 3,
-                wis: 12,
-                cha: 6,
-                ac: 11,
-                movement: 8,
+                health: 13,
+                str: 10,
+                dex: 14,
+                con: 15,
+                int: 6,
+                wis: 8,
+                cha: 5,
+                ac: 13,
+                movement: 6,
             },
             Knight => Stats {
                 health: 15,
@@ -99,7 +102,7 @@ impl PreBuiltCharacter {
     pub fn abilities(&self) -> Vec<Ability> {
         use PreBuiltCharacter::*;
         match self {
-            Skeleton => vec![Ability::MeleeAttack],
+            Skeleton => vec![Ability::Shortsword, Ability::Shortbow],
             Knight => vec![Ability::MeleeAttack, Ability::BowAttack],
             HumanSoldier => vec![Ability::MeleeAttack, Ability::BowAttack],
             GiantGoat => vec![Ability::Ram], //, Ability::Charge],
@@ -112,9 +115,9 @@ impl Ability {
     pub fn max_range(&self) -> u8 {
         use Ability::*;
         match self {
-            MeleeAttack | Longsword | Ram => 1,
+            MeleeAttack | Longsword | Ram | Shortsword => 1,
             Charge => 4,
-            LightCrossbow => 16,
+            LightCrossbow | Shortbow => 16,
             BowAttack => 20,
         }
     }
@@ -136,6 +139,8 @@ impl Ability {
             LightCrossbow => 6,
             Charge => 13,
             Ram => 8,
+            Shortsword => 5,
+            Shortbow => 5,
         }
     }
 
@@ -145,6 +150,7 @@ impl Ability {
             MeleeAttack => 5,
             BowAttack => 5,
             Longsword => 5,
+            Shortsword | Shortbow => 4,
             LightCrossbow => 4,
             Charge | Ram => 5,
         }
@@ -161,6 +167,8 @@ impl Display for Ability {
             LightCrossbow => "LightCrossbow",
             Charge => "Charge",
             Ram => "Ram",
+            Shortsword => "Shortsword",
+            Shortbow => "Shortbow",
         })
     }
 }

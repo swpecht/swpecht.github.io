@@ -215,10 +215,11 @@ impl Default for SimState {
         state.insert_prebuilt(PreBuiltCharacter::HumanSoldier, sc(0, 9), Team::Players(0));
         state.insert_prebuilt(PreBuiltCharacter::HumanSoldier, sc(0, 8), Team::Players(0));
 
-        state.insert_prebuilt(PreBuiltCharacter::GiantGoat, sc(5, 10), Team::NPCs(0));
-        state.insert_prebuilt(PreBuiltCharacter::GiantGoat, sc(4, 10), Team::NPCs(0));
-        state.insert_prebuilt(PreBuiltCharacter::GiantGoat, sc(6, 10), Team::NPCs(0));
-        state.insert_prebuilt(PreBuiltCharacter::GiantGoat, sc(7, 10), Team::NPCs(0));
+        state.insert_prebuilt(PreBuiltCharacter::Skeleton, sc(5, 10), Team::NPCs(0));
+        state.insert_prebuilt(PreBuiltCharacter::Skeleton, sc(4, 10), Team::NPCs(0));
+        state.insert_prebuilt(PreBuiltCharacter::Skeleton, sc(6, 10), Team::NPCs(0));
+        state.insert_prebuilt(PreBuiltCharacter::Skeleton, sc(7, 10), Team::NPCs(0));
+        state.insert_prebuilt(PreBuiltCharacter::Skeleton, sc(7, 11), Team::NPCs(0));
 
         state
     }
@@ -515,11 +516,13 @@ impl SimState {
         let cur_loc = self.locations[self.cur_char().0].unwrap();
         use Ability::*;
         match ability {
-            MeleeAttack | Ram | Longsword => self.queued_results.push(ActionResult::MeleeAttack {
-                id: self.cur_char(),
-                target,
-            }),
-            BowAttack | LightCrossbow => self.queued_results.push(ActionResult::Arrow {
+            MeleeAttack | Ram | Longsword | Shortsword => {
+                self.queued_results.push(ActionResult::MeleeAttack {
+                    id: self.cur_char(),
+                    target,
+                })
+            }
+            BowAttack | LightCrossbow | Shortbow => self.queued_results.push(ActionResult::Arrow {
                 from: cur_loc,
                 to: target,
             }),
