@@ -1,4 +1,5 @@
 use std::{
+    fmt::Debug,
     fmt::Display,
     ops::{Add, Sub},
 };
@@ -41,7 +42,7 @@ pub struct Stats {
     pub movement: u8,
 }
 
-#[derive(Resource, CloneFrom, Debug, PartialEq)]
+#[derive(Resource, CloneFrom, PartialEq)]
 pub struct SimState {
     generation: u16,
     next_id: usize,
@@ -387,6 +388,7 @@ impl SimState {
             // actually remove the item from the list
             self.applied_results.pop();
         }
+        // assert!(self.entities[self.initiative[0].0].health > 0)
     }
 }
 
@@ -428,8 +430,7 @@ impl SimState {
                     self.entities[id.0].movement += amount;
                 }
                 ActionResult::RestoreActionPoint { id } => {
-                    let ent = self.get_entity_mut(id);
-                    ent.remaining_actions += 1;
+                    self.entities[id.0].remaining_actions += 1;
                 }
                 ActionResult::NewTurn(x) => self.is_start_of_turn = x,
 
@@ -589,17 +590,23 @@ impl SimState {
         let entity = self.get_entity(cur_char);
         let amount = entity.turn_movement - entity.movement;
 
-        self.queued_results.push(ActionResult::EndTurn);
+        // only restore action points if spent them
+        if entity.remaining_actions == 0 {
+            self.queued_results
+                .push(ActionResult::RestoreActionPoint { id: cur_char });
+        }
+
         self.queued_results.push(ActionResult::RestoreMovement {
             id: cur_char,
             amount,
         });
-        self.queued_results
-            .push(ActionResult::RestoreActionPoint { id: cur_char });
 
         if !self.is_start_of_turn {
             self.queued_results.push(ActionResult::NewTurn(true))
         }
+
+        // Needs to be the last item to process, changes the current player
+        self.queued_results.push(ActionResult::EndTurn);
     }
 
     /// Calcualte dmg accounting for health remaining from un processed actions
@@ -743,6 +750,20 @@ impl std::hash::Hash for SimState {
     }
 }
 
+impl Debug for SimState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SimState")
+            .field("generation", &self.generation)
+            .field("next_id", &self.next_id)
+            .field("queued_results", &self.queued_results)
+            .field("initiative", &self.initiative)
+            .field("locations", &self.locations)
+            .field("entities", &self.entities)
+            .field("is_start_of_turn", &self.is_start_of_turn)
+            .finish()
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -818,6 +839,7 @@ mod tests {
 
         let mut rng: StdRng = SeedableRng::seed_from_u64(42);
         let mut actions = Vec::new();
+        let mut index = 0;
 
         for _ in 0..1000 {
             // times to run the test
@@ -833,11 +855,53 @@ mod tests {
 
                 use rand::prelude::SliceRandom;
                 let a = *actions.choose(&mut rng).unwrap();
+
                 state.apply(a);
+                let diff_state = state.clone();
                 state.undo();
-                assert_eq!(state, undo_state);
+                assert_eq!(
+                    state,
+                    undo_state,
+                    "failed to undo index {}: {:?}\n{:?}\n{:#?}",
+                    index,
+                    a,
+                    diff_state.diff(),
+                    state
+                );
                 state.apply(a);
+                index += 1;
             }
         }
+    }
+
+    #[test]
+    fn test_undo_dead() {
+        let mut state = SimState::new();
+
+        state.insert_prebuilt(
+            PreBuiltCharacter::Knight,
+            SimCoords { x: 8, y: 10 },
+            Team::Players(0),
+        );
+        state.insert_prebuilt(
+            PreBuiltCharacter::Skeleton,
+            SimCoords { x: 9, y: 10 },
+            Team::NPCs(0),
+        );
+
+        state.insert_prebuilt(
+            PreBuiltCharacter::Skeleton,
+            SimCoords { x: 9, y: 10 },
+            Team::NPCs(0),
+        );
+
+        assert_eq!(state.cur_char().0, 0);
+        state.entities[1].health = 0;
+        state.apply(Action::EndTurn);
+        // skip entity 1 since no life
+        assert_eq!(state.cur_char().0, 2);
+        state.undo();
+        // undo should also take us back to 0 since 1 is skipped in the other direction
+        assert_eq!(state.cur_char().0, 0);
     }
 }
