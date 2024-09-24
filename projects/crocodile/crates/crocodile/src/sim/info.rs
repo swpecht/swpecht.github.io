@@ -12,6 +12,7 @@ pub enum PreBuiltCharacter {
     WarMagicWizard,
     GiantGoat,
     FemaleSteeder,
+    Orc,
 }
 
 pub enum Effect {
@@ -32,6 +33,8 @@ pub enum Ability {
     LightCrossbow,
     Charge,
     Ram,
+    GreatAxe,
+    Javelin,
 }
 
 impl PreBuiltCharacter {
@@ -44,6 +47,7 @@ impl PreBuiltCharacter {
             WarMagicWizard => CharacterSprite::Wizard,
             GiantGoat => CharacterSprite::Skeleton,
             FemaleSteeder => CharacterSprite::Orc,
+            Orc => CharacterSprite::Orc,
         }
     }
 
@@ -83,16 +87,16 @@ impl PreBuiltCharacter {
                 ac: 18,
                 movement: 6,
             },
-            GiantGoat => Stats {
-                health: 19,
-                str: 17,
-                dex: 11,
-                con: 12,
-                int: 3,
-                wis: 12,
-                cha: 6,
-                ac: 11,
-                movement: 8,
+            Orc => Stats {
+                health: 15,
+                str: 16,
+                dex: 12,
+                con: 16,
+                int: 7,
+                wis: 11,
+                cha: 10,
+                ac: 13,
+                movement: 5,
             },
 
             _ => panic!("not implemented for: {:?}", self),
@@ -105,7 +109,7 @@ impl PreBuiltCharacter {
             Skeleton => vec![Ability::Shortsword, Ability::Shortbow],
             Knight => vec![Ability::MeleeAttack, Ability::BowAttack],
             HumanSoldier => vec![Ability::MeleeAttack, Ability::BowAttack],
-            GiantGoat => vec![Ability::Ram], //, Ability::Charge],
+            Orc => vec![Ability::GreatAxe, Ability::Javelin],
             _ => panic!("not implemented for: {:?}", self),
         }
     }
@@ -115,7 +119,8 @@ impl Ability {
     pub fn max_range(&self) -> u8 {
         use Ability::*;
         match self {
-            MeleeAttack | Longsword | Ram | Shortsword => 1,
+            MeleeAttack | Longsword | Ram | Shortsword | GreatAxe => 1,
+            Javelin => 6,
             Charge => 4,
             LightCrossbow | Shortbow => 16,
             BowAttack => 20,
@@ -141,6 +146,8 @@ impl Ability {
             Ram => 8,
             Shortsword => 5,
             Shortbow => 5,
+            GreatAxe => 9,
+            Javelin => 6,
         }
     }
 
@@ -153,6 +160,8 @@ impl Ability {
             Shortsword | Shortbow => 4,
             LightCrossbow => 4,
             Charge | Ram => 5,
+            GreatAxe => 5,
+            Javelin => 5,
         }
     }
 }
@@ -169,6 +178,8 @@ impl Display for Ability {
             Ram => "Ram",
             Shortsword => "Shortsword",
             Shortbow => "Shortbow",
+            GreatAxe => "GreatAxe",
+            Javelin => "Javelin",
         })
     }
 }

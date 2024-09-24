@@ -218,8 +218,9 @@ impl Default for SimState {
         state.insert_prebuilt(PreBuiltCharacter::Skeleton, sc(5, 10), Team::NPCs(0));
         state.insert_prebuilt(PreBuiltCharacter::Skeleton, sc(4, 10), Team::NPCs(0));
         state.insert_prebuilt(PreBuiltCharacter::Skeleton, sc(6, 10), Team::NPCs(0));
-        state.insert_prebuilt(PreBuiltCharacter::Skeleton, sc(7, 10), Team::NPCs(0));
-        state.insert_prebuilt(PreBuiltCharacter::Skeleton, sc(7, 11), Team::NPCs(0));
+        state.insert_prebuilt(PreBuiltCharacter::Orc, sc(7, 10), Team::NPCs(0));
+        state.insert_prebuilt(PreBuiltCharacter::Orc, sc(7, 11), Team::NPCs(0));
+        state.insert_prebuilt(PreBuiltCharacter::Orc, sc(8, 11), Team::NPCs(0));
 
         state
     }
@@ -516,16 +517,18 @@ impl SimState {
         let cur_loc = self.locations[self.cur_char().0].unwrap();
         use Ability::*;
         match ability {
-            MeleeAttack | Ram | Longsword | Shortsword => {
+            MeleeAttack | Ram | Longsword | Shortsword | GreatAxe => {
                 self.queued_results.push(ActionResult::MeleeAttack {
                     id: self.cur_char(),
                     target,
                 })
             }
-            BowAttack | LightCrossbow | Shortbow => self.queued_results.push(ActionResult::Arrow {
-                from: cur_loc,
-                to: target,
-            }),
+            BowAttack | LightCrossbow | Shortbow | Javelin => {
+                self.queued_results.push(ActionResult::Arrow {
+                    from: cur_loc,
+                    to: target,
+                })
+            }
             Charge => {
                 // TODO: implement check to ensure only moving to the closest square and not moving through people
                 let closest = CoordIterator::new(target, 1, 1)
@@ -771,16 +774,16 @@ mod tests {
         });
 
         assert_eq!(Ability::MeleeAttack.to_hit(), 5);
-        assert_eq!(PreBuiltCharacter::Skeleton.stats().ac, 11);
+        assert_eq!(PreBuiltCharacter::Skeleton.stats().ac, 13);
         assert_eq!(Ability::MeleeAttack.dmg(), 5);
-        assert_eq!(PreBuiltCharacter::Skeleton.stats().health, 10);
+        assert_eq!(PreBuiltCharacter::Skeleton.stats().health, 13);
 
         // expected crit damage = 5% * 5 * 2 = 0.5
         // rolls that hit, but no crit = 19 - 11 + 5 + 1 = 14
         // expected no crit dmg = 14 / 19 * 5 = 3.7
         // expected damage = 3.7 + 0.5 = 4.2
         // remaining health = 10 - 4 = 6
-        assert_eq!(gs.get_entity(SKELETON).health, 6);
+        assert_eq!(gs.get_entity(SKELETON).health, 10);
 
         // have the knight move
         gs.apply(Action::Move {
