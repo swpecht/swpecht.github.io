@@ -21,6 +21,6 @@ Cargo.lock
 #.idea/
 
 # Game assets
-assets/
+# assets/
 
 perf.*

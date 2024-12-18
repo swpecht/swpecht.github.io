@@ -396,6 +396,8 @@ impl SimState {
     /// Apply all of the queued results
     fn apply_queued_results(&mut self) {
         let generation = self.generation;
+        // apply them in the order they were added
+        self.queued_results.reverse();
 
         while let Some(result) = self.queued_results.pop() {
             match result {
@@ -442,6 +444,11 @@ impl SimState {
             self.applied_results
                 .push(AppliedActionResult { result, generation })
         }
+        assert!(
+            self.entities[self.initiative[0].0].health > 0,
+            "{:#?}",
+            self.applied_results
+        );
     }
 
     pub fn insert_prebuilt(&mut self, prebuilt: PreBuiltCharacter, loc: SimCoords, team: Team) {

@@ -60,11 +60,51 @@ https://news.ycombinator.com/item?id=21037125
 
 
 [*] Add health bars
+[*] Implement the undo function with action results
+[*] Add test for undo function
+[*] Fix idle animation
+[*] Change the interpolation between gamestates to use the actionresult rather than actions themselves -- can just apply them all at once, make a meleee attack, charge, etc.
+
+[*] Switch to using json files to pull sprite information
+    [ ] Add sword to idle animation
+    [*] Add running animation
+[ ] Implement attack of opportunity
+    [ ] Fix bug with undo -- found in test, doing something wrong with action point tracking -- seems like getting double spent
+    * Seems like the issue is related to ending up with an enemy where the current character ends up with 0 health, is the damage incorrect?
+    * Or maybe the wrong target?
+[ ] Implement Giant Goats
+    [ ] Create new art for the goats
+    [*] Implement the displacement for charge
+    [ ] Implement the movement cost for charge
+    [ ] Implement attack of opportunity
+    [ ] Implement Knockdown effect and prone results
+    [ ] Implement action and effect log in the UI
+    [ ] Implement actual randomness for running the sim for the game itself rather than search, have an apply action expectation (current one), and an apply action that takes an RNG?
+    [ ] Implement visual effect for going prone
+
 [ ] Implement additional play character and enemies
 
 
 Maybe:
 [ ] Refactor sim state to enable undo and redo
+
+
+## thoughts on implementing undo
+The idea of creating the effects of every action, e.g. dmg X, spend action on unit Y, move Z is becoming more appealing.
+
+We could keep this a list of all actions -- including a generation when they were applied. Undoing a turn would be as simple as popping everything in that generation. This would also give us a way to query all the action results from the previous turn, making it easier to figure out what to translate the gamestate transition into visuals.
+
+Rough design:
+
+Have ActionResult enum. Implement a way to apply and unapply every possible action result. Trick things:
+* Status effects: should be a need to apply them, but could do it as a diff if needed, e.g. adding turns to something.
+* How do we put an enemy that dies back into the proper place? -- can have a RemoveEntity action that we can dynamically create if we notice an enemy has died
+* How do we handle resetting stats at the start of a turn? -- can we just ignore things like SpendActionPoint and do a reset at the end of undo? But how we we know this was a generation when a turn ended? Special case? -- if we do the reset through a series of action events (as diffs between where we are and reset state) -- this gives us an easy way to get back to the pre-end turn state
+
+How it works:
+* Convert each action into ActionResult list
+* process each action result, applying it's changes to all items
+* create an undo for each action result
 
 
 Benchmark results
@@ -91,5 +131,7 @@ Benchmark results
 * Re-use array to get child moves: 139,839,098.80 ns/iter (+/- 13,923,816.76) 
 * Remove deserialize call when creating new simstates for slab: 74,004,622.10 ns/iter (+/- 2,156,366.59)
 * Most recent: 15,477,548.50 ns/iter (+/- 12,629,083.19)
-* Switch to 6 moves: 
+* 5 moves with the new action result queue: 17,332,275.50 ns/iter (+/- 11,693,912.79)
+* 5 moves with undo:  11,299,049.00 ns/iter (+/- 633,671.14)
+* Switch to 6 moves:  194,917,867.30 ns/iter (+/- 38,836,177.15)
 * Confirm starting with PV move
