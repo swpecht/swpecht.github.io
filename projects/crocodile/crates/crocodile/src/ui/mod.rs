@@ -225,7 +225,7 @@ fn spawn_action_button(parent: &mut ChildBuilder, text: &str, idx: usize) {
                 align_items: AlignItems::Center,
                 ..default()
             },
-            BackgroundColor(NORMAL_BUTTON.into()),
+            BackgroundColor(NORMAL_BUTTON),
             BorderColor(Color::BLACK),
             ActionButton(idx),
         ))
@@ -282,7 +282,7 @@ fn cursor_locator(
     // then, ask bevy to convert into world coordinates, and truncate to discard Z
     if let Some(world_position) = window
         .cursor_position()
-        .and_then(|cursor| Some(camera.viewport_to_world(camera_transform, cursor).unwrap()))
+        .map(|cursor| camera.viewport_to_world(camera_transform, cursor).unwrap())
         .map(|ray| ray.origin.truncate())
     {
         mycoords.0 = world_position;
@@ -361,7 +361,7 @@ fn highlight_moves(
         if let Action::Move { target } = a {
             let wc = target.to_world();
             commands.spawn((
-                Mesh2d(meshes.add(rect.clone())),
+                Mesh2d(meshes.add(rect)),
                 MeshMaterial2d(materials.add(color)),
                 Transform::from_xyz(wc.x, wc.y, 0.0),
                 StateScoped(PlayState::Waiting), // automatically unspawn when leave waiting

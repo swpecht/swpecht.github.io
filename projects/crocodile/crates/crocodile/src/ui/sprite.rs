@@ -61,7 +61,7 @@ impl Curve {
         }
 
         // if no other matches, we're at the end of the path
-        return *self.path.last().unwrap();
+        *self.path.last().unwrap()
     }
 
     fn is_finished(&self) -> bool {
@@ -251,7 +251,7 @@ pub(super) fn spawn_projectile(
 
         layout.add_texture(URect::from_corners(UVec2::new(32, 0), UVec2::new(48, 16)));
         let texture_atlas_layout = texture_atlas_layouts.add(layout);
-        let angle = (ev.to - ev.from).angle_between(ev.from);
+        let angle = (ev.to - ev.from).angle_to(ev.from);
         let mut transform = Transform::from_xyz(ev.from.x, ev.from.y, PROJECTILE_LAYER);
         transform.rotation = Quat::from_rotation_z(angle);
 

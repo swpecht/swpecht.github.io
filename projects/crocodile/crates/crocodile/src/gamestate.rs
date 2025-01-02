@@ -23,6 +23,25 @@ pub enum Team {
     NPCs(usize),
 }
 
+pub enum Phase {
+    Command,
+    Movement,
+    Shooting,
+    Charge,
+    Fight,
+}
+
+/// Represents a 40k style unit, could be made up of multiple models
+/// As implemented to support at most 6 models in a single unit
+struct Unit {
+    /// A bit mask representing which squares are occupied by the model
+    models: u64,
+}
+
+struct Model {
+    unit: u8,
+}
+
 #[derive(Debug, Clone, Hash, PartialEq)]
 pub struct Character {
     pub sprite: CharacterSprite,
@@ -217,10 +236,10 @@ impl Default for SimState {
         state.insert_prebuilt(PreBuiltCharacter::HumanSoldier, sc(0, 8), Team::Players(0));
 
         state.insert_prebuilt(PreBuiltCharacter::Skeleton, sc(5, 10), Team::NPCs(0));
-        state.insert_prebuilt(PreBuiltCharacter::Skeleton, sc(4, 10), Team::NPCs(0));
-        state.insert_prebuilt(PreBuiltCharacter::Skeleton, sc(6, 10), Team::NPCs(0));
-        state.insert_prebuilt(PreBuiltCharacter::Orc, sc(7, 10), Team::NPCs(0));
-        state.insert_prebuilt(PreBuiltCharacter::Orc, sc(7, 11), Team::NPCs(0));
+        // state.insert_prebuilt(PreBuiltCharacter::Skeleton, sc(4, 10), Team::NPCs(0));
+        // state.insert_prebuilt(PreBuiltCharacter::Skeleton, sc(6, 10), Team::NPCs(0));
+        // state.insert_prebuilt(PreBuiltCharacter::Orc, sc(7, 10), Team::NPCs(0));
+        // state.insert_prebuilt(PreBuiltCharacter::Orc, sc(7, 11), Team::NPCs(0));
         state.insert_prebuilt(PreBuiltCharacter::Orc, sc(8, 11), Team::NPCs(0));
 
         state
