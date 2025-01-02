@@ -1,11 +1,6 @@
-use animation::{animate_sprite, update_animation};
-use bevy::{
-    input::common_conditions::*,
-    math::vec2,
-    prelude::*,
-    sprite::{MaterialMesh2dBundle, Mesh2dHandle},
-    window::PrimaryWindow,
-};
+use animation::animate_sprite;
+use bevy::{input::common_conditions::*, math::vec2, prelude::*, window::PrimaryWindow};
+use character::{spawn_character, CharacterSpawnEvent};
 use sprite::*;
 
 use crate::{
@@ -14,6 +9,7 @@ use crate::{
 };
 
 pub mod animation;
+pub mod character;
 pub mod sprite;
 
 const NORMAL_BUTTON: Color = Color::srgb(0.15, 0.15, 0.15);
@@ -27,6 +23,7 @@ impl Plugin for UIPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<ActionEvent>();
         app.add_event::<SpawnProjectileEvent>();
+        app.add_event::<CharacterSpawnEvent>();
 
         app.add_systems(Startup, (setup_camera, sync_sim, setup_tiles))
             // Only process actions if we're actually waiting for action input
@@ -42,12 +39,13 @@ impl Plugin for UIPlugin {
                     cursor_locator,
                     tile_highlight,
                     animate_sprite,
-                    update_animation,
                     healthbars,
                     process_curves,
                     // _paint_curves,
                     spawn_projectile,
                     cleanup_projectiles,
+                    spawn_character,
+                    // update_character_animation,
                 ),
             )
             .add_systems(
@@ -119,40 +117,29 @@ fn setup_ui(mut commands: Commands) {
 
     // root node
     commands
-        .spawn(NodeBundle {
-            style: Style {
-                width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
-                justify_content: JustifyContent::SpaceBetween,
-                ..default()
-            },
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
             ..default()
         })
         .with_children(|parent| {
             // left vertical fill (content)
             parent
-                .spawn(NodeBundle {
-                    style: Style {
+                .spawn((
+                    Node {
                         width: Val::Percent(100.),
                         ..default()
                     },
-                    background_color: Color::srgba(1.0, 1.0, 1.0, 0.0).into(),
-                    ..default()
-                })
+                    BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.0)),
+                ))
                 .with_children(|parent| {
                     // text
                     parent.spawn((
-                        TextBundle::from_section(
-                            "Text Example",
-                            TextStyle {
-                                font_size: 30.0,
-                                ..default()
-                            },
-                        )
-                        .with_style(Style {
-                            margin: UiRect::all(Val::Px(5.)),
+                        Text("Text Example".to_string()),
+                        TextFont {
+                            font_size: 30.0,
                             ..default()
-                        }),
+                        },
                         // Because this is a distinct label widget and
                         // not button/list item text, this is necessary
                         // for accessibility to treat the text accordingly.
@@ -164,31 +151,26 @@ fn setup_ui(mut commands: Commands) {
             use bevy::color::palettes::css::*;
             parent
                 .spawn((
-                    NodeBundle {
-                        style: Style {
-                            flex_direction: FlexDirection::Column,
-                            justify_content: JustifyContent::Start,
-                            align_items: AlignItems::Start,
-                            width: Val::Px(400.),
-                            border: UiRect::all(Val::Px(2.)),
-                            ..default()
-                        },
-                        border_color: GREEN.into(),
-                        background_color: Color::srgb(0.15, 0.15, 0.15).into(),
+                    Node {
+                        flex_direction: FlexDirection::Column,
+                        justify_content: JustifyContent::Start,
+                        align_items: AlignItems::Start,
+                        width: Val::Px(400.),
+                        border: UiRect::all(Val::Px(2.)),
                         ..default()
                     },
+                    BorderColor(GREEN.into()),
+                    BackgroundColor(Color::srgb(0.15, 0.15, 0.15)),
                     ActionButtonParent,
                 ))
                 .with_children(|parent| {
                     // Title
                     parent.spawn((
-                        TextBundle::from_section(
-                            "Right bar",
-                            TextStyle {
-                                font_size: 25.,
-                                ..default()
-                            },
-                        ),
+                        Text("Right bar".to_string()),
+                        TextFont {
+                            font_size: 25.,
+                            ..default()
+                        },
                         Label,
                     ));
                 });
@@ -232,31 +214,30 @@ fn populate_action_buttons(
 fn spawn_action_button(parent: &mut ChildBuilder, text: &str, idx: usize) {
     parent
         .spawn((
-            ButtonBundle {
-                style: Style {
-                    width: Val::Px(300.0),
-                    height: Val::Px(30.0),
-                    border: UiRect::all(Val::Px(5.0)),
-                    // horizontally center child text
-                    justify_content: JustifyContent::Center,
-                    // vertically center child text
-                    align_items: AlignItems::Center,
-                    ..default()
-                },
-                border_color: BorderColor(Color::BLACK),
-                background_color: NORMAL_BUTTON.into(),
+            Button,
+            Node {
+                width: Val::Px(300.0),
+                height: Val::Px(30.0),
+                border: UiRect::all(Val::Px(5.0)),
+                // horizontally center child text
+                justify_content: JustifyContent::Center,
+                // vertically center child text
+                align_items: AlignItems::Center,
                 ..default()
             },
+            BackgroundColor(NORMAL_BUTTON.into()),
+            BorderColor(Color::BLACK),
             ActionButton(idx),
         ))
         .with_children(|parent| {
-            parent.spawn(TextBundle::from_section(
-                text,
-                TextStyle {
+            parent.spawn((
+                Text(text.to_string()),
+                TextFont {
                     font: Default::default(),
                     font_size: 25.0,
-                    color: Color::srgb(0.9, 0.9, 0.9),
+                    ..default()
                 },
+                TextColor(Color::srgb(0.9, 0.9, 0.9)),
             ));
         });
 }
@@ -301,7 +282,7 @@ fn cursor_locator(
     // then, ask bevy to convert into world coordinates, and truncate to discard Z
     if let Some(world_position) = window
         .cursor_position()
-        .and_then(|cursor| camera.viewport_to_world(camera_transform, cursor))
+        .and_then(|cursor| Some(camera.viewport_to_world(camera_transform, cursor).unwrap()))
         .map(|ray| ray.origin.truncate())
     {
         mycoords.0 = world_position;
@@ -313,7 +294,11 @@ fn tile_highlight(mouse_coords: Res<MouseWorldCoords>, mut gizmos: Gizmos) {
     let offset = (TILE_SIZE / 2) as f32;
     let x = mouse_coords.0.x - (mouse_coords.0.x + offset) % TILE_SIZE as f32 + offset;
     let y = mouse_coords.0.y - (mouse_coords.0.y + offset) % TILE_SIZE as f32 + offset;
-    gizmos.rect_2d(vec2(x, y), 0.0, Vec2::splat(TILE_SIZE as f32), Color::BLACK);
+    gizmos.rect_2d(
+        Isometry2d::from_translation(vec2(x, y)),
+        Vec2::splat(TILE_SIZE as f32),
+        Color::BLACK,
+    );
 }
 
 fn selection(
@@ -371,17 +356,14 @@ fn highlight_moves(
 
     let color = VALID_MOVE;
 
-    let rect = Mesh2dHandle(meshes.add(Rectangle::new(TILE_SIZE as f32, TILE_SIZE as f32)));
+    let rect = Rectangle::new(TILE_SIZE as f32, TILE_SIZE as f32);
     for a in actions {
         if let Action::Move { target } = a {
             let wc = target.to_world();
             commands.spawn((
-                MaterialMesh2dBundle {
-                    mesh: rect.clone(),
-                    material: materials.add(color),
-                    transform: Transform::from_xyz(wc.x, wc.y, 0.0),
-                    ..default()
-                },
+                Mesh2d(meshes.add(rect.clone())),
+                MeshMaterial2d(materials.add(color)),
+                Transform::from_xyz(wc.x, wc.y, 0.0),
                 StateScoped(PlayState::Waiting), // automatically unspawn when leave waiting
             ));
         }

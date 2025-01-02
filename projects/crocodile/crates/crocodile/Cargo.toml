@@ -23,4 +23,4 @@ features = [
   "dynamic_linking", # Dynamic linking for faster compile-times
   # "wayland",
 ]
-version = "0.14"
+version = "0.15"

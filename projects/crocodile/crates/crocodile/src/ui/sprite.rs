@@ -6,7 +6,6 @@ use bevy::{
     render::camera::ScalingMode,
     time::Stopwatch,
 };
-use serde::Deserialize;
 
 use crate::{
     ai::find_best_move,
@@ -15,7 +14,7 @@ use crate::{
     PlayState,
 };
 
-use super::animation::{load_animation, Animation};
+use super::character::{CharacterAnimation, CharacterSpawnEvent};
 
 pub const TILE_SIZE: usize = 32;
 const GRID_WIDTH: usize = 20;
@@ -42,14 +41,6 @@ pub(super) struct SpawnProjectileEvent {
 
 #[derive(Component)]
 pub(super) struct Projectile;
-
-#[derive(Component, Debug, Clone, Hash, Deserialize, PartialEq, Eq, Copy)]
-pub enum CharacterSprite {
-    Skeleton,
-    Knight,
-    Orc,
-    Wizard,
-}
 
 impl Curve {
     fn cur_pos(&self) -> Vec2 {
@@ -88,26 +79,26 @@ impl Curve {
 pub struct MainCamera;
 
 pub(super) fn setup_camera(mut commands: Commands) {
-    // Camera
-    let mut camera_bundle = Camera2dBundle {
-        transform: Transform::from_xyz(
+    commands.spawn((
+        Camera2d {},
+        Projection::Orthographic(OrthographicProjection {
+            scaling_mode: ScalingMode::FixedVertical {
+                viewport_height: (GRID_HEIGHT * TILE_SIZE + TILE_SIZE) as f32,
+            },
+            ..OrthographicProjection::default_2d()
+        }),
+        Transform::from_xyz(
             ((GRID_WIDTH + 1) * TILE_SIZE / 2) as f32,
             ((GRID_HEIGHT + 1) * TILE_SIZE / 2) as f32,
             0.0,
         ),
-        ..default()
-    };
-    camera_bundle.projection.scaling_mode =
-        ScalingMode::FixedVertical((GRID_HEIGHT * TILE_SIZE + TILE_SIZE) as f32);
-
-    commands.spawn((camera_bundle, MainCamera));
+        MainCamera,
+    ));
 }
 
 pub(super) fn sync_sim(
     mut commands: Commands,
     sim: Res<SimState>,
-    asset_server: Res<AssetServer>,
-    mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
     spawned_entities: Query<Entity, With<SimId>>,
 ) {
     // delete everything that's already spawned
@@ -122,21 +113,16 @@ pub(super) fn sync_sim(
         .map(|(id, l, c)| (id, l.to_world(), c))
     {
         // TODO: add support for changing location of things if they're already spawned
-        let mut animation_bundle = load_animation(
-            &asset_server,
-            &mut texture_atlas_layouts,
-            &character.sprite,
-            &Animation::IDLE,
-            // &Animation::RUN,
-        );
-        animation_bundle.sb.transform.translation = vec3(loc.x, loc.y, CHAR_LAYER);
-
-        let health = Health {
-            cur: sim.health(&id).unwrap(),
-            max: sim.max_health(&id).unwrap(),
-        };
-
-        commands.spawn((animation_bundle, health, id));
+        commands.send_event(CharacterSpawnEvent {
+            id,
+            sprite: character.sprite,
+            animation: CharacterAnimation::IDLE,
+            loc,
+            health: Health {
+                cur: sim.health(&id).unwrap(),
+                max: sim.max_health(&id).unwrap(),
+            },
+        });
     }
 }
 
@@ -152,19 +138,18 @@ pub(super) fn setup_tiles(
     for r in 0..GRID_WIDTH + 1 {
         for c in 0..GRID_HEIGHT + 1 {
             commands.spawn((
-                SpriteBundle {
-                    texture: texture.clone(),
-                    transform: Transform::from_translation(vec3(
-                        (r * TILE_SIZE) as f32,
-                        (c * TILE_SIZE) as f32,
-                        TILE_LAYER,
-                    )),
-                    ..default()
-                },
-                TextureAtlas {
-                    layout: texture_atlas_layout.clone(),
-                    index: 5,
-                },
+                Sprite::from_atlas_image(
+                    texture.clone(),
+                    TextureAtlas {
+                        layout: texture_atlas_layout.clone(),
+                        index: 5,
+                    },
+                ),
+                Transform::from_translation(vec3(
+                    (r * TILE_SIZE) as f32,
+                    (c * TILE_SIZE) as f32,
+                    TILE_LAYER,
+                )),
             ));
         }
     }
@@ -221,7 +206,9 @@ pub(super) fn handle_move(
                 time: Stopwatch::new(),
                 speed: 64.0,
             };
-            commands.entity(e).insert((curve.clone(), Animation::RUN));
+            commands
+                .entity(e)
+                .insert((curve.clone(), CharacterAnimation::RUN));
         });
 }
 
@@ -269,15 +256,14 @@ pub(super) fn spawn_projectile(
         transform.rotation = Quat::from_rotation_z(angle);
 
         commands.spawn((
-            SpriteBundle {
+            Sprite::from_atlas_image(
                 texture,
-                transform,
-                ..default()
-            },
-            TextureAtlas {
-                layout: texture_atlas_layout,
-                index: 0,
-            },
+                TextureAtlas {
+                    layout: texture_atlas_layout,
+                    index: 0,
+                },
+            ),
+            transform,
             Curve {
                 path: vec![ev.from, ev.to],
                 time: Stopwatch::new(),
@@ -348,7 +334,7 @@ pub(super) fn healthbars(mut gizmos: Gizmos, query: Query<(&Transform, &Health)>
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Clone)]
 pub(super) struct Health {
     cur: u8,
     max: u8,

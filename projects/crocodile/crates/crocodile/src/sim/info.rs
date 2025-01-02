@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::{gamestate::Stats, ui::sprite::CharacterSprite};
+use crate::{gamestate::Stats, ui::character::CharacterSprite};
 
 /// Pre-built characters
 #[derive(Debug)]

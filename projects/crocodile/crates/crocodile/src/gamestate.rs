@@ -12,7 +12,7 @@ use tinyvec::ArrayVec;
 
 use crate::{
     sim::info::{Ability, PreBuiltCharacter},
-    ui::sprite::CharacterSprite,
+    ui::character::CharacterSprite,
 };
 
 const WORLD_SIZE: usize = 20;
