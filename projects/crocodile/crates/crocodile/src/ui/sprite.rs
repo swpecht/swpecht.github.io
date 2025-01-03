@@ -168,16 +168,11 @@ pub(super) fn action_system(
         use crate::gamestate::ActionResult::*;
         for ar in sim.diff() {
             match ar {
-                Move { id, start: _, end } => handle_move(&mut commands, end, &query, id),
-                // Damage { id, amount } => todo!(), // hit animation?
-                // RemoveEntity { loc, id } => todo!(), // death animation?
-                MeleeAttack { id, target } => handle_melee(&mut commands, target, &query, id),
-                Arrow { from, to } => {
-                    ev_projectile.send(SpawnProjectileEvent {
-                        from: from.to_world(),
-                        to: to.to_world(),
-                    });
-                }
+                Move {
+                    id,
+                    from: _,
+                    to: end,
+                } => handle_move(&mut commands, end, &query, id),
                 EndTurn => next_state.set(PlayState::Processing),
                 _ => {} // no ui impact for most actions
             }
@@ -302,10 +297,10 @@ pub(super) fn _paint_curves(mut gizmos: Gizmos, query: Query<&Curve>) {
 }
 
 pub(super) fn game_over(mut next_state: ResMut<NextState<PlayState>>, sim: Res<SimState>) {
-    if sim.is_terminal() {
-        warn!("game over");
-        next_state.set(PlayState::Terminal);
-    }
+    // if sim.is_terminal() {
+    //     warn!("game over");
+    //     next_state.set(PlayState::Terminal);
+    // }
 }
 
 pub(super) fn ai(_sim: Res<SimState>, mut _ev_action: EventWriter<ActionEvent>) {

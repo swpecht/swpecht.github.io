@@ -59,31 +59,8 @@ pub enum Action {
 pub enum ActionResult {
     Move {
         id: SimId,
-        start: SimCoords,
-        end: SimCoords,
-    },
-
-    MeleeAttack {
-        id: SimId,
-        target: SimCoords,
-    },
-
-    Arrow {
         from: SimCoords,
         to: SimCoords,
-    },
-
-    Damage {
-        id: SimId,
-        amount: u8,
-    },
-    /// A special action result that is computed after damage is done
-    RemoveEntity {
-        loc: SimCoords,
-        id: SimId,
-    },
-    SpendActionPoint {
-        id: SimId,
     },
     SpendMovement {
         id: SimId,
@@ -97,9 +74,6 @@ pub enum ActionResult {
     RestoreMovement {
         id: SimId,
         amount: u8,
-    },
-    RestoreActionPoint {
-        id: SimId,
     },
 
     // Items to control gamestate for optimizations
@@ -214,9 +188,7 @@ impl SimState {
 
         match action {
             Action::EndTurn => self.generate_results_end_turn(),
-            Action::Move { id, from, to } => {
-                todo!()
-            } // self.generate_results_move_entity(target),
+            Action::Move { id, from, to } => self.generate_results_move_entity(id, from, to),
         }
 
         self.apply_queued_results();
@@ -243,20 +215,6 @@ impl SimState {
                 }
             }
         }
-
-        // actions.push(Action::EndTurn);
-
-        // let cur_loc = self.get_loc(self.cur_char()).unwrap();
-        // let cur_entity = self.get_entity(self.cur_char());
-
-        // if cur_entity.movement > 0 {
-        //     // only allow moving 1 tile
-        //     for l in CoordIterator::new(cur_loc, 1, 1) {
-        //         if !self.is_populated(&l) {
-        //             actions.push(Move { target: l });
-        //         }
-        //     }
-        // }
     }
 
     /// Determine if the sim is in a terminal gamestate where all player characters or
@@ -326,17 +284,14 @@ impl SimState {
             && result.generation == self.generation
         {
             match result.result {
-                ActionResult::Move { start, end: _, id } => {
+                ActionResult::Move {
+                    from: start,
+                    to: _,
+                    id,
+                } => {
                     self.locations[id.0] = Some(start);
                 }
-                ActionResult::Damage {
-                    id: _id,
-                    amount: _amount,
-                } => {
-                    todo!()
-                }
-                ActionResult::RemoveEntity { loc, id } => self.locations[id.0] = Some(loc),
-                ActionResult::SpendActionPoint { id } => self.models[id.0].remaining_actions += 1,
+
                 ActionResult::SpendMovement { id, amount } => {
                     self.models[id.0].movement += amount;
                 }
@@ -346,12 +301,8 @@ impl SimState {
                 ActionResult::RestoreMovement { id, amount } => {
                     self.models[id.0].movement -= amount
                 }
-                ActionResult::RestoreActionPoint { id } => self.models[id.0].remaining_actions -= 1,
-                ActionResult::NewTurn(x) => self.is_start_of_turn = !x,
 
-                // no undo needed for visual results
-                ActionResult::MeleeAttack { id: _, target: _ } => {}
-                ActionResult::Arrow { from: _, to: _ } => {}
+                ActionResult::NewTurn(x) => self.is_start_of_turn = !x,
             }
 
             // actually remove the item from the list
@@ -370,24 +321,14 @@ impl SimState {
 
         while let Some(result) = self.queued_results.pop() {
             match result {
-                ActionResult::Move { start: _, end, id } => {
+                ActionResult::Move {
+                    from: _,
+                    to: end,
+                    id,
+                } => {
                     self.locations[id.0] = Some(end);
                 }
-                ActionResult::Damage {
-                    id: _id,
-                    amount: _amount,
-                } => {
-                    todo!();
-                }
-                ActionResult::RemoveEntity { loc: _, id } => {
-                    self.locations[id.0] = None;
-                    // Here we don't actually remove the entity, TBD if this creates issues doen the line
-                    // but this means we don't need to do anything to restore it other than set location
-                    // self.entities[id.0] = None;
-                }
-                ActionResult::SpendActionPoint { id } => {
-                    self.models[id.0].remaining_actions -= 1;
-                }
+
                 ActionResult::SpendMovement { id, amount } => {
                     self.models[id.0].movement -= amount;
                 }
@@ -397,14 +338,8 @@ impl SimState {
                 ActionResult::RestoreMovement { id, amount } => {
                     self.models[id.0].movement += amount;
                 }
-                ActionResult::RestoreActionPoint { id } => {
-                    self.models[id.0].remaining_actions += 1;
-                }
-                ActionResult::NewTurn(x) => self.is_start_of_turn = x,
 
-                // no update needed for visual result
-                ActionResult::MeleeAttack { id: _, target: _ } => {}
-                ActionResult::Arrow { from: _, to: _ } => {}
+                ActionResult::NewTurn(x) => self.is_start_of_turn = x,
             }
 
             self.applied_results
@@ -443,17 +378,13 @@ impl SimState {
         self.initiative[0]
     }
 
-    fn generate_results_move_entity(&mut self, model: SimId, target: SimCoords) {
-        let start = self.locations[model.0].expect("trying to move deleted entity");
-        let distance = target.dist(&start);
+    fn generate_results_move_entity(&mut self, id: SimId, from: SimCoords, to: SimCoords) {
+        let distance = to.dist(&from);
 
-        self.queued_results.push(ActionResult::Move {
-            start,
-            end: target,
-            id: model,
-        });
+        self.queued_results
+            .push(ActionResult::Move { from, to, id });
         self.queued_results.push(ActionResult::SpendMovement {
-            id: model,
+            id,
             amount: distance as u8,
         });
     }
