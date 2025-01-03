@@ -161,7 +161,6 @@ pub(super) fn action_system(
     mut ev_projectile: EventWriter<SpawnProjectileEvent>,
     query: Query<(Entity, &SimId, &Transform)>,
     mut sim: ResMut<SimState>,
-    mut cur: ResMut<CurrentCharacter>,
     mut next_state: ResMut<NextState<PlayState>>,
 ) {
     for ev in ev_action.read() {
@@ -184,8 +183,6 @@ pub(super) fn action_system(
                 _ => {} // no ui impact for most actions
             }
         }
-        cur.0 = sim.cur_char();
-        debug!("{:?}", sim.cur_char());
     }
 }
 

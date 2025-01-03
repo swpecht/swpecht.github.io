@@ -19,7 +19,9 @@ pub enum Team {
     NPCs,
 }
 
+#[derive(Default, PartialEq, Eq, Clone)]
 pub enum Phase {
+    #[default]
     Command,
     Movement,
     Shooting,
@@ -27,16 +29,17 @@ pub enum Phase {
     Fight,
 }
 
-#[derive(Resource, CloneFrom, PartialEq)]
+#[derive(Resource, PartialEq, Clone)]
 pub struct SimState {
     generation: u16,
     next_id: usize,
     queued_results: Vec<ActionResult>,
     applied_results: Vec<AppliedActionResult>,
-    initiative: Vec<SimId>, // order of players
+    initiative: Vec<Team>,
     /// Location of each entity, indexed by entity id
     locations: Vec<Option<SimCoords>>,
     entities: Vec<Model>,
+    phase: Phase,
     /// Track if start of an entities turn, used to optimize AI search caching
     is_start_of_turn: bool,
 }
@@ -186,6 +189,7 @@ impl SimState {
             queued_results: Vec::new(),
             applied_results: Vec::new(),
             generation: 0,
+            phase: Phase::Movement,
         }
     }
 }
@@ -208,7 +212,7 @@ impl SimState {
 
         match action {
             Action::EndTurn => self.generate_results_end_turn(),
-            Action::Move { target } => self.generate_results_move_entity(target),
+            Action::Move { target } => todo!(), // self.generate_results_move_entity(target),
         }
 
         self.apply_queued_results();
@@ -218,19 +222,19 @@ impl SimState {
     pub fn legal_actions(&self, actions: &mut Vec<Action>) {
         actions.clear();
         use Action::*;
-        actions.push(Action::EndTurn);
+        // actions.push(Action::EndTurn);
 
-        let cur_loc = self.get_loc(self.cur_char()).unwrap();
-        let cur_entity = self.get_entity(self.cur_char());
+        // let cur_loc = self.get_loc(self.cur_char()).unwrap();
+        // let cur_entity = self.get_entity(self.cur_char());
 
-        if cur_entity.movement > 0 {
-            // only allow moving 1 tile
-            for l in CoordIterator::new(cur_loc, 1, 1) {
-                if !self.is_populated(&l) {
-                    actions.push(Move { target: l });
-                }
-            }
-        }
+        // if cur_entity.movement > 0 {
+        //     // only allow moving 1 tile
+        //     for l in CoordIterator::new(cur_loc, 1, 1) {
+        //         if !self.is_populated(&l) {
+        //             actions.push(Move { target: l });
+        //         }
+        //     }
+        // }
     }
 
     /// Determine if the sim is in a terminal gamestate where all player characters or
@@ -282,10 +286,6 @@ impl SimState {
 
     pub fn is_chance_node(&self) -> bool {
         false
-    }
-
-    pub fn cur_team(&self) -> Team {
-        self.get_entity(self.cur_char()).team
     }
 
     pub fn is_start_of_turn(&self) -> bool {
@@ -414,54 +414,53 @@ impl SimState {
             max_wound: wound,
         };
 
-        self.initiative.push(SimId(self.next_id));
         self.entities.push(entity);
         self.locations.push(Some(loc));
         self.next_id += 1;
     }
 
-    pub fn cur_char(&self) -> SimId {
+    pub fn cur_team(&self) -> Team {
         self.initiative[0]
     }
 
-    fn generate_results_move_entity(&mut self, target: SimCoords) {
-        let id = self.initiative[0].0;
-        let start = self.locations[id].expect("trying to move deleted entity");
+    fn generate_results_move_entity(&mut self, model: SimId, target: SimCoords) {
+        let start = self.locations[model.0].expect("trying to move deleted entity");
         let distance = target.dist(&start);
 
         self.queued_results.push(ActionResult::Move {
             start,
             end: target,
-            id: self.initiative[0],
+            id: model,
         });
         self.queued_results.push(ActionResult::SpendMovement {
-            id: SimId(id),
+            id: model,
             amount: distance as u8,
         });
     }
 
     fn generate_results_end_turn(&mut self) {
-        let cur_char = self.cur_char();
-        let entity = self.get_entity(cur_char);
-        let amount = entity.turn_movement - entity.movement;
+        todo!() // iterate through all controlled models and reset relevant stats
+                // let cur_char = self.cur_char();
+                // let entity = self.get_entity(cur_char);
+                // let amount = entity.turn_movement - entity.movement;
 
-        // only restore action points if spent them
-        if entity.remaining_actions == 0 {
-            self.queued_results
-                .push(ActionResult::RestoreActionPoint { id: cur_char });
-        }
+        // // only restore action points if spent them
+        // if entity.remaining_actions == 0 {
+        //     self.queued_results
+        //         .push(ActionResult::RestoreActionPoint { id: cur_char });
+        // }
 
-        self.queued_results.push(ActionResult::RestoreMovement {
-            id: cur_char,
-            amount,
-        });
+        // self.queued_results.push(ActionResult::RestoreMovement {
+        //     id: cur_char,
+        //     amount,
+        // });
 
-        if !self.is_start_of_turn {
-            self.queued_results.push(ActionResult::NewTurn(true))
-        }
+        // if !self.is_start_of_turn {
+        //     self.queued_results.push(ActionResult::NewTurn(true))
+        // }
 
-        // Needs to be the last item to process, changes the current player
-        self.queued_results.push(ActionResult::EndTurn);
+        // // Needs to be the last item to process, changes the current player
+        // self.queued_results.push(ActionResult::EndTurn);
     }
 
     pub fn get_id(&self, coords: SimCoords) -> Option<SimId> {
