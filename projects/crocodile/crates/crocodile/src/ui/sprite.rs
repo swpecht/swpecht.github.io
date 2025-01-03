@@ -107,15 +107,15 @@ pub(super) fn sync_sim(
     }
 
     // respawn everything
-    for (id, loc, character) in sim
-        .characters()
+    for (id, loc, sprite) in sim
+        .sprites()
         .into_iter()
         .map(|(id, l, c)| (id, l.to_world(), c))
     {
         // TODO: add support for changing location of things if they're already spawned
         commands.send_event(CharacterSpawnEvent {
             id,
-            sprite: character.sprite,
+            sprite,
             animation: CharacterAnimation::IDLE,
             loc,
             health: Health {
@@ -314,11 +314,12 @@ pub(super) fn game_over(mut next_state: ResMut<NextState<PlayState>>, sim: Res<S
 }
 
 pub(super) fn ai(sim: Res<SimState>, mut ev_action: EventWriter<ActionEvent>) {
-    if matches!(sim.cur_team(), Team::NPCs(_) | Team::Players(_)) {
-        debug!("finding best move for: {:?}", sim.cur_char());
-        let action = find_best_move(sim.clone()).expect("failed to find a best move");
-        ev_action.send(ActionEvent { action });
-    }
+    // disable the ai for now
+    // if matches!(sim.cur_team(), Team::NPCs | Team::Players) {
+    //     debug!("finding best move for: {:?}", sim.cur_char());
+    //     let action = find_best_move(sim.clone()).expect("failed to find a best move");
+    //     ev_action.send(ActionEvent { action });
+    // }
 }
 
 pub(super) fn healthbars(mut gizmos: Gizmos, query: Query<(&Transform, &Health)>) {

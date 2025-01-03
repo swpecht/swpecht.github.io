@@ -9,7 +9,7 @@ use super::{animation::AnimationConfig, Health, CHAR_LAYER};
 #[derive(Event)]
 pub struct CharacterSpawnEvent {
     pub(super) id: SimId,
-    pub(super) sprite: CharacterSprite,
+    pub(super) sprite: ModelSprite,
     pub(super) animation: CharacterAnimation,
     pub(super) loc: Vec2,
     pub(super) health: Health,
@@ -19,20 +19,20 @@ pub struct CharacterSpawnEvent {
 pub struct CharacterAnimationUpdateEvent {}
 
 #[derive(Component, Debug, Clone, Hash, serde::Deserialize, PartialEq, Eq, Copy)]
-pub enum CharacterSprite {
+pub enum ModelSprite {
     Skeleton,
     Knight,
     Orc,
     Wizard,
 }
 
-impl CharacterSprite {
+impl ModelSprite {
     fn asset_loc(&self) -> &str {
         match self {
-            CharacterSprite::Skeleton => "pixel-crawler/Enemy/Skeleton Crew/Skeleton - Base",
-            CharacterSprite::Knight => "pixel-crawler/Heroes/Knight",
-            CharacterSprite::Orc => "pixel-crawler/Enemy/Orc Crew/Orc",
-            CharacterSprite::Wizard => "pixel-crawler/Heroes/Wizard",
+            ModelSprite::Skeleton => "pixel-crawler/Enemy/Skeleton Crew/Skeleton - Base",
+            ModelSprite::Knight => "pixel-crawler/Heroes/Knight",
+            ModelSprite::Orc => "pixel-crawler/Enemy/Orc Crew/Orc",
+            ModelSprite::Wizard => "pixel-crawler/Heroes/Wizard",
         }
     }
 }

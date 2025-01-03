@@ -179,7 +179,6 @@ fn setup_ui(mut commands: Commands) {
 
 fn populate_action_buttons(
     mut commands: Commands,
-    selected: Res<SelectedCharacter>,
     sim: Res<SimState>,
     mut query: Query<Entity, With<ActionButtonParent>>,
 ) {
@@ -190,21 +189,12 @@ fn populate_action_buttons(
     parent.despawn_descendants();
     parent.clear_children();
 
-    // don't populate action buttons if no targets selected
-    let Some(selection) = sim.get_loc(selected.0) else {
-        return;
-    };
-
     parent.with_children(|parent| {
         let mut actions = Vec::new();
         sim.legal_actions(&mut actions);
         debug!("{:?}", actions);
         for (idx, action) in actions.into_iter().enumerate() {
-            if let Action::UseAbility { target, ability: _ } = action {
-                if target == selection {
-                    spawn_action_button(parent, &action.to_string(), idx);
-                }
-            } else if matches!(action, Action::EndTurn) {
+            if matches!(action, Action::EndTurn) {
                 spawn_action_button(parent, &action.to_string(), idx);
             }
         }

@@ -1,355 +1,92 @@
 use std::fmt::Display;
 
-use crate::{gamestate::Stats, ui::character::CharacterSprite};
+use crate::{
+    gamestate::{sc, SimCoords, SimState, Team},
+    ui::character::ModelSprite,
+};
 
-/// Pre-built characters
-#[derive(Debug)]
-pub enum PreBuiltCharacter {
-    /// https://www.dndbeyond.com/monsters/17015-skeleton
-    Skeleton,
-    Knight,
-    HumanSoldier,
-    WarMagicWizard,
-    GiantGoat,
-    FemaleSteeder,
-    Orc,
+pub fn insert_space_marine_unit(gs: &mut SimState, loc: SimCoords, team: Team, num_models: usize) {
+    for i in 0..num_models {
+        gs.insert_model(ModelSprite::Knight, sc(loc.x + i, loc.y), team, 0, 6, 2);
+    }
 }
 
-pub enum Effect {
-    /// Moves self to the square next to the target
-    Charge,
-    KnockDown,
+// https://wahapedia.ru/wh40k10ed/factions/space-marines/datasheets.html#Tactical-Squad
+
+pub struct RangedWeaponStats {
+    pub range: u8,
+    pub attack: AttackValue,
+    pub ballistic_skill: u8,
+    pub strength: u8,
+    pub armor_penetration: u8,
+    pub damage: u8,
 }
 
-/// The "Actions" a character can take in D&D terminology
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
-pub enum Ability {
+pub enum AttackValue {
+    One,
+    Two,
+    Three,
+    D6,
+    D3,
+}
+
+// https://wahapedia.ru/wh40k10ed/factions/space-marines/datasheets.html#Tactical-Squad
+#[derive(PartialEq, Debug, Default, Clone, Hash)]
+pub enum RangedWeapon {
     #[default]
-    MeleeAttack,
-    BowAttack,
-    Shortsword,
-    Shortbow,
-    Longsword,
-    LightCrossbow,
-    Charge,
-    Ram,
-    GreatAxe,
-    Javelin,
+    BoltPistol,
+    Boltgun,
+    Flamer,
+    MissleLauncherFrag,
 }
 
-impl PreBuiltCharacter {
-    pub fn sprite(&self) -> CharacterSprite {
-        use PreBuiltCharacter::*;
+impl RangedWeapon {
+    pub fn stats(&self) -> RangedWeaponStats {
         match self {
-            Skeleton => CharacterSprite::Skeleton,
-            Knight => CharacterSprite::Knight,
-            HumanSoldier => CharacterSprite::Knight,
-            WarMagicWizard => CharacterSprite::Wizard,
-            GiantGoat => CharacterSprite::Skeleton,
-            FemaleSteeder => CharacterSprite::Orc,
-            Orc => CharacterSprite::Orc,
-        }
-    }
-
-    pub fn stats(&self) -> Stats {
-        use PreBuiltCharacter::*;
-        match self {
-            Skeleton => Stats {
-                health: 13,
-                str: 10,
-                dex: 14,
-                con: 15,
-                int: 6,
-                wis: 8,
-                cha: 5,
-                ac: 13,
-                movement: 6,
+            RangedWeapon::BoltPistol => RangedWeaponStats {
+                range: 12,
+                attack: AttackValue::One,
+                ballistic_skill: 3,
+                strength: 4,
+                armor_penetration: 0,
+                damage: 1,
             },
-            Knight => Stats {
-                health: 15,
-                str: 17,
-                dex: 11,
-                con: 12,
-                int: 3,
-                wis: 12,
-                cha: 6,
-                ac: 11,
-                movement: 8,
+            RangedWeapon::Boltgun => RangedWeaponStats {
+                range: 24,
+                attack: AttackValue::Two,
+                ballistic_skill: 3,
+                strength: 4,
+                armor_penetration: 0,
+                damage: 1,
             },
-            HumanSoldier => Stats {
-                health: 28,
-                str: 16,
-                dex: 14,
-                con: 15,
-                int: 9,
-                wis: 13,
-                cha: 11,
-                ac: 18,
-                movement: 6,
+            RangedWeapon::Flamer => RangedWeaponStats {
+                range: 12,
+                attack: AttackValue::D6,
+                ballistic_skill: 0, // torrent weapon so always hits
+                strength: 4,
+                armor_penetration: 0,
+                damage: 1,
             },
-            Orc => Stats {
-                health: 15,
-                str: 16,
-                dex: 12,
-                con: 16,
-                int: 7,
-                wis: 11,
-                cha: 10,
-                ac: 13,
-                movement: 5,
+            RangedWeapon::MissleLauncherFrag => RangedWeaponStats {
+                range: 48,
+                attack: AttackValue::D6,
+                ballistic_skill: 4,
+                strength: 4,
+                armor_penetration: 0,
+                damage: 1,
             },
-
-            _ => panic!("not implemented for: {:?}", self),
-        }
-    }
-
-    pub fn abilities(&self) -> Vec<Ability> {
-        use PreBuiltCharacter::*;
-        match self {
-            Skeleton => vec![Ability::Shortsword, Ability::Shortbow],
-            Knight => vec![Ability::MeleeAttack, Ability::BowAttack],
-            HumanSoldier => vec![Ability::MeleeAttack, Ability::BowAttack],
-            Orc => vec![Ability::GreatAxe, Ability::Javelin],
-            _ => panic!("not implemented for: {:?}", self),
         }
     }
 }
 
-impl Ability {
-    pub fn max_range(&self) -> u8 {
-        use Ability::*;
-        match self {
-            MeleeAttack | Longsword | Ram | Shortsword | GreatAxe => 1,
-            Javelin => 6,
-            Charge => 4,
-            LightCrossbow | Shortbow => 16,
-            BowAttack => 20,
-        }
-    }
-
-    pub fn min_range(&self) -> u8 {
-        use Ability::*;
-        match self {
-            Charge => 4,
-            _ => 1, // By default can cast to all targets other than self
-        }
-    }
-
-    pub fn dmg(&self) -> u8 {
-        use Ability::*;
-        match self {
-            MeleeAttack => 5,
-            BowAttack => 2,
-            Longsword => 8,
-            LightCrossbow => 6,
-            Charge => 13,
-            Ram => 8,
-            Shortsword => 5,
-            Shortbow => 5,
-            GreatAxe => 9,
-            Javelin => 6,
-        }
-    }
-
-    pub fn to_hit(&self) -> u8 {
-        use Ability::*;
-        match self {
-            MeleeAttack => 5,
-            BowAttack => 5,
-            Longsword => 5,
-            Shortsword | Shortbow => 4,
-            LightCrossbow => 4,
-            Charge | Ram => 5,
-            GreatAxe => 5,
-            Javelin => 5,
-        }
-    }
-}
-
-impl Display for Ability {
+impl Display for RangedWeapon {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use Ability::*;
+        use RangedWeapon::*;
         f.write_str(match self {
-            MeleeAttack => "Melee",
-            BowAttack => "Bow",
-            Longsword => "LongSword",
-            LightCrossbow => "LightCrossbow",
-            Charge => "Charge",
-            Ram => "Ram",
-            Shortsword => "Shortsword",
-            Shortbow => "Shortbow",
-            GreatAxe => "GreatAxe",
-            Javelin => "Javelin",
+            BoltPistol => "Bolt pistol",
+            Boltgun => "Boltgun",
+            Flamer => "Flamer",
+            MissleLauncherFrag => "Missle Launcher - Frag",
         })
     }
 }
-
-// ##### Testing specs #####
-// # DO NOT EDIT or tests need to be updated
-
-// Skeleton:
-//   sprite: "Skeleton"
-//   stats:
-//     health: 10
-//     str: 17
-//     dex: 11
-//     con: 12
-//     int: 3
-//     wis: 12
-//     cha: 6
-//     ac: 11
-//     movement: 8
-//   actions:
-//     Melee:
-//       max_range: 1
-//       damage: 5
-//       to_hit: 5
-
-// Knight:
-//   sprite: "Knight"
-//   stats:
-//     health: 15
-//     str: 17
-//     dex: 11
-//     con: 12
-//     int: 3
-//     wis: 12
-//     cha: 6
-//     ac: 11
-//     movement: 8
-//   actions:
-//     Melee:
-//       max_range: 1
-//       damage: 5
-//       to_hit: 5
-//     Bow:
-//       max_range: 8
-//       damage: 2
-//       to_hit: 5
-
-// ####### Game specs #######
-// # https://joe.nittoly.ca/wordpress/wp-content/uploads/2021/04/DD-5e-Fighter-3-Champion-Human-Soldier.pdf
-// Human soldier:
-//   sprite: "Knight"
-//   stats:
-//     health: 28
-//     str: 16
-//     dex: 14
-//     con: 15
-//     int: 9
-//     wis: 13
-//     cha: 11
-//     ac: 18
-//     movement: 6
-//   actions:
-//     Longsword:
-//       max_range: 1
-//       damage: 8
-//       to_hit: 5
-//     Light Crossbow:
-//       max_range: 16
-//       damage: 6
-//       to_hit: 4
-//   bonus_actions:
-//     Second Wind:
-//       max_range: 0
-//       damage: -8
-//       reset: "short_rest"
-//     Action Surge:
-//       max_range: 0
-//       addtl_action: 1
-//       reset: "short_rest"
-//   # passives:
-//   #   Improved Critical:
-
-// # https://joe.nittoly.ca/wordpress/wp-content/uploads/2021/04/DD-5e-Wizard-3-War-Magic-Dark-Elf-Mercenary-Veteran.pdf
-// War Magic Wizard:
-//   sprite: "Wizard"
-//   stats:
-//     health: 20
-//     str: 10
-//     dex: 12
-//     con: 14
-//     int: 15
-//     wis: 10
-//     cha: 14
-//     ac: 11
-//     movement: 6
-//   actions:
-//     # Farie Fire:
-//     # Blade Ward:
-//     Fire Bolt:
-//       max_range: 24
-//       damage: 5
-//       to_hit: 5 # TBD
-//       # figure out chance to hit for spells
-//     # True Strike:
-//     #   max_range: 6
-//     # Invisibility:
-//     # Scorching Ray:
-
-// Giant goat:
-//   sprite: "Skeleton"
-//   stats:
-//     health: 19
-//     str: 17
-//     dex: 11
-//     con: 12
-//     int: 3
-//     wis: 12
-//     cha: 6
-//     ac: 11
-//     movement: 8
-//   actions:
-//     Ram:
-//       max_range: 1
-//       damage: 8
-//       to_hit: 5
-//     Charge:
-//       min_range: 4
-//       max_range: 4
-//       damage: 13
-//       to_hit: 5
-//       effects:
-//         knock down:
-//           dc: 13
-//           type: "str"
-//           effect: "Prone"
-//         # todo: figure out the movement part
-
-// Female Steeder:
-//   sprite: "Orc"
-//   stats:
-//     health: 30
-//     str: 15
-//     dex: 16
-//     con: 14
-//     int: 2
-//     wis: 10
-//     cha: 3
-//     ac: 14
-//     movement: 6
-//   actions:
-//     Bite:
-//       max_range: 1
-//       damage: 7
-//       to_hit: 5
-//       effects:
-//         acid:
-//           dc: 12
-//           type: "con"
-//           dmg_fail: 9
-//           dmg_succede: 4
-//       Sticky Leg:
-//         max_range: 1
-//         to_hit: 20 # always hit since applies effect
-//         effects:
-//           web:
-//             effect: "Grappled"
-//             dc: 12
-//             type: "str"
-//             immediate: false
-//   bonus_actions:
-//     Leap:
-//       min_movement: 6
-//       range: 18

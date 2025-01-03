@@ -7,20 +7,19 @@ use std::{
 use bevy::prelude::{Component, Resource};
 use clone_from::CloneFrom;
 use itertools::{Itertools, Product};
-use serde::Deserialize;
 use tinyvec::ArrayVec;
 
 use crate::{
-    sim::info::{Ability, PreBuiltCharacter},
-    ui::character::CharacterSprite,
+    sim::info::{insert_space_marine_unit, RangedWeapon},
+    ui::character::ModelSprite,
 };
 
 const WORLD_SIZE: usize = 20;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Team {
-    Players(usize),
-    NPCs(usize),
+    Players,
+    NPCs,
 }
 
 pub enum Phase {
@@ -29,36 +28,6 @@ pub enum Phase {
     Shooting,
     Charge,
     Fight,
-}
-
-/// Represents a 40k style unit, could be made up of multiple models
-/// As implemented to support at most 6 models in a single unit
-struct Unit {
-    /// A bit mask representing which squares are occupied by the model
-    models: u64,
-}
-
-struct Model {
-    unit: u8,
-}
-
-#[derive(Debug, Clone, Hash, PartialEq)]
-pub struct Character {
-    pub sprite: CharacterSprite,
-    stats: Stats,
-}
-
-#[derive(Debug, Deserialize, Clone, Copy, Hash, PartialEq, Eq)]
-pub struct Stats {
-    pub health: u8,
-    pub str: u8,
-    pub dex: u8,
-    pub con: u8,
-    pub int: u8,
-    pub wis: u8,
-    pub cha: u8,
-    pub ac: u8,
-    pub movement: u8,
 }
 
 #[derive(Resource, CloneFrom, PartialEq)]
@@ -70,7 +39,7 @@ pub struct SimState {
     initiative: Vec<SimId>, // order of players
     /// Location of each entity, indexed by entity id
     locations: Vec<Option<SimCoords>>,
-    entities: Vec<SimEntity>,
+    entities: Vec<Model>,
     /// Track if start of an entities turn, used to optimize AI search caching
     is_start_of_turn: bool,
 }
@@ -79,10 +48,6 @@ pub struct SimState {
 pub enum Action {
     #[default]
     EndTurn,
-    UseAbility {
-        target: SimCoords,
-        ability: Ability,
-    },
     Move {
         target: SimCoords,
     },
@@ -150,9 +115,6 @@ impl Display for Action {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Action::EndTurn => f.write_str("End turn"),
-            Action::UseAbility { target, ability } => {
-                f.write_fmt(format_args!("{}: {}, {}", ability, target.x, target.y))
-            }
             Action::Move { target } => {
                 f.write_fmt(format_args!("Move: {}, {}", target.x, target.y))
             }
@@ -160,14 +122,17 @@ impl Display for Action {
     }
 }
 
+/// Represents a 40k style model
 #[derive(CloneFrom, Hash, Debug, PartialEq)]
-struct SimEntity {
-    health: u8,
+struct Model {
+    unit: u8,
     id: SimId,
+    is_destroyed: bool,
     turn_movement: u8,
     movement: u8,
-    character: Character,
-    abilities: ArrayVec<[Ability; 5]>,
+    pub sprite: ModelSprite,
+    cur_wound: u8,
+    max_wound: u8,
     remaining_actions: usize,
     team: Team,
 }
@@ -231,17 +196,7 @@ impl SimState {
 impl Default for SimState {
     fn default() -> Self {
         let mut state = SimState::new();
-
-        state.insert_prebuilt(PreBuiltCharacter::HumanSoldier, sc(0, 9), Team::Players(0));
-        state.insert_prebuilt(PreBuiltCharacter::HumanSoldier, sc(0, 8), Team::Players(0));
-
-        state.insert_prebuilt(PreBuiltCharacter::Skeleton, sc(5, 10), Team::NPCs(0));
-        // state.insert_prebuilt(PreBuiltCharacter::Skeleton, sc(4, 10), Team::NPCs(0));
-        // state.insert_prebuilt(PreBuiltCharacter::Skeleton, sc(6, 10), Team::NPCs(0));
-        // state.insert_prebuilt(PreBuiltCharacter::Orc, sc(7, 10), Team::NPCs(0));
-        // state.insert_prebuilt(PreBuiltCharacter::Orc, sc(7, 11), Team::NPCs(0));
-        state.insert_prebuilt(PreBuiltCharacter::Orc, sc(8, 11), Team::NPCs(0));
-
+        insert_space_marine_unit(&mut state, sc(5, 10), Team::Players, 10);
         state
     }
 }
@@ -257,9 +212,6 @@ impl SimState {
         match action {
             Action::EndTurn => self.generate_results_end_turn(),
             Action::Move { target } => self.generate_results_move_entity(target),
-            Action::UseAbility { target, ability } => {
-                self.generate_results_use_ability(target, ability)
-            }
         }
 
         self.apply_queued_results();
@@ -273,23 +225,6 @@ impl SimState {
 
         let cur_loc = self.get_loc(self.cur_char()).unwrap();
         let cur_entity = self.get_entity(self.cur_char());
-
-        // todo: come up with easy iterator to go through all the world cells within a given range rather than iterating everything
-
-        // We check push the ability actions first so that these are preferentially explored
-        // by the ai tree search. This avoids the units moving around without purpose to end in the same spot to attack
-        if cur_entity.remaining_actions > 0 {
-            for ability in cur_entity.abilities.iter() {
-                for l in CoordIterator::new(cur_loc, ability.max_range(), ability.min_range()) {
-                    if self.is_populated(&l) && l != cur_loc {
-                        actions.push(Action::UseAbility {
-                            target: l,
-                            ability: *ability,
-                        });
-                    }
-                }
-            }
-        }
 
         if cur_entity.movement > 0 {
             // only allow moving 1 tile
@@ -307,12 +242,12 @@ impl SimState {
         let mut count_players = 0;
         let mut count_npcs = 0;
         for entity in self.entities.iter() {
-            if entity.health == 0 {
+            if entity.is_destroyed {
                 continue;
             }
             match entity.team {
-                Team::Players(_) => count_players += 1,
-                Team::NPCs(_) => count_npcs += 1,
+                Team::Players => count_players += 1,
+                Team::NPCs => count_npcs += 1,
             };
         }
         count_players == 0 || count_npcs == 0
@@ -322,29 +257,29 @@ impl SimState {
         const WIN_VALUE: i32 = 0; //  1000.0;
                                   // todo: add score component for entity count
 
-        let mut player_health = 0;
-        let mut npc_health = 0;
-        for entity in self.entities.iter() {
+        let mut player_models = 0;
+        let mut npc_models = 0;
+        for entity in self.entities.iter().filter(|e| !e.is_destroyed) {
             match entity.team {
-                Team::Players(_) => player_health += entity.health,
-                Team::NPCs(_) => npc_health += entity.health,
+                Team::Players => player_models += 1,
+                Team::NPCs => npc_models += 1,
             }
         }
 
-        let health_score = match team {
-            Team::Players(_) => player_health as i32 - npc_health as i32,
-            Team::NPCs(_) => npc_health as i32 - player_health as i32,
+        let model_score = match team {
+            Team::Players => player_models as i32 - npc_models as i32,
+            Team::NPCs => npc_models as i32 - player_models as i32,
         };
 
-        let win_score = match (team, player_health, npc_health) {
-            (Team::Players(_), 0, _) => -WIN_VALUE,
-            (Team::Players(_), _, 0) => WIN_VALUE,
-            (Team::NPCs(_), 0, _) => WIN_VALUE,
-            (Team::NPCs(_), _, 0) => -WIN_VALUE,
+        let win_score = match (team, player_models, npc_models) {
+            (Team::Players, 0, _) => -WIN_VALUE,
+            (Team::Players, _, 0) => WIN_VALUE,
+            (Team::NPCs, 0, _) => WIN_VALUE,
+            (Team::NPCs, _, 0) => -WIN_VALUE,
             (_, _, _) => 0,
         };
 
-        health_score + win_score
+        model_score + win_score
     }
 
     pub fn is_chance_node(&self) -> bool {
@@ -375,7 +310,7 @@ impl SimState {
                     self.locations[id.0] = Some(start);
                 }
                 ActionResult::Damage { id, amount } => {
-                    self.entities[id.0].health += amount;
+                    todo!()
                 }
                 ActionResult::RemoveEntity { loc, id } => self.locations[id.0] = Some(loc),
                 ActionResult::SpendActionPoint { id } => self.entities[id.0].remaining_actions += 1,
@@ -383,13 +318,7 @@ impl SimState {
                     self.entities[id.0].movement += amount;
                 }
                 ActionResult::EndTurn => {
-                    loop {
-                        self.initiative.rotate_right(1);
-                        // keep rotating through initiative until find unit with health
-                        if self.entities[self.initiative[0].0].health > 0 {
-                            break;
-                        }
-                    }
+                    todo!()
                 }
                 ActionResult::RestoreMovement { id, amount } => {
                     self.entities[id.0].movement -= amount
@@ -424,7 +353,7 @@ impl SimState {
                     self.locations[id.0] = Some(end);
                 }
                 ActionResult::Damage { id, amount } => {
-                    self.entities[id.0].health -= amount;
+                    todo!();
                 }
                 ActionResult::RemoveEntity { loc: _, id } => {
                     self.locations[id.0] = None;
@@ -439,13 +368,7 @@ impl SimState {
                     self.entities[id.0].movement -= amount;
                 }
                 ActionResult::EndTurn => {
-                    loop {
-                        self.initiative.rotate_left(1);
-                        // keep rotating through initiative until find unit with health
-                        if self.entities[self.initiative[0].0].health > 0 {
-                            break;
-                        }
-                    }
+                    todo!()
                 }
                 ActionResult::RestoreMovement { id, amount } => {
                     self.entities[id.0].movement += amount;
@@ -463,46 +386,28 @@ impl SimState {
             self.applied_results
                 .push(AppliedActionResult { result, generation })
         }
-        assert!(
-            self.entities[self.initiative[0].0].health > 0,
-            "{:#?}",
-            self.applied_results
-        );
     }
 
-    pub fn insert_prebuilt(&mut self, prebuilt: PreBuiltCharacter, loc: SimCoords, team: Team) {
-        self.insert_entity(
-            Character {
-                sprite: prebuilt.sprite(),
-                stats: prebuilt.stats(),
-            },
-            prebuilt.abilities(),
-            loc,
-            team,
-        )
-    }
-
-    pub fn insert_entity(
+    pub fn insert_model(
         &mut self,
-        character: Character,
-        abilities: Vec<Ability>,
+        sprite: ModelSprite,
         loc: SimCoords,
         team: Team,
+        unit: u8,
+        movement: u8,
+        wound: u8,
     ) {
-        let mut ability_vec = ArrayVec::new();
-        for a in abilities {
-            ability_vec.push(a);
-        }
-
-        let entity = SimEntity {
+        let entity = Model {
             id: SimId(self.next_id),
-            abilities: ability_vec,
-            health: character.default_health(),
-            turn_movement: character.default_movement(),
-            movement: character.default_movement(),
-            character,
+            turn_movement: movement,
+            movement,
             remaining_actions: 1,
             team,
+            unit,
+            is_destroyed: false,
+            sprite,
+            cur_wound: wound,
+            max_wound: wound,
         };
 
         self.initiative.push(SimId(self.next_id));
@@ -515,90 +420,10 @@ impl SimState {
         self.initiative[0]
     }
 
-    fn generate_results_use_ability(&mut self, target: SimCoords, ability: Ability) {
-        let target_id = self.get_id(target).unwrap_or_else(|| {
-            panic!(
-                "failed to find entity at: {:?}, valid locations are: {:?}",
-                target, self.locations
-            )
-        });
-
-        let remaining_health = self.get_entity(target_id).health;
-        let expected_dmg = self.calculate_dmg(target_id, &ability, remaining_health);
-
-        self.queued_results.push(ActionResult::SpendActionPoint {
-            id: self.cur_char(),
-        });
-        self.queued_results.push(ActionResult::Damage {
-            id: target_id,
-            amount: expected_dmg,
-        });
-
-        if self.get_entity(target_id).health <= expected_dmg {
-            self.queued_results.push(ActionResult::RemoveEntity {
-                loc: target,
-                id: target_id,
-            });
-        }
-
-        let cur_loc = self.locations[self.cur_char().0].unwrap();
-        use Ability::*;
-        match ability {
-            MeleeAttack | Ram | Longsword | Shortsword | GreatAxe => {
-                self.queued_results.push(ActionResult::MeleeAttack {
-                    id: self.cur_char(),
-                    target,
-                })
-            }
-            BowAttack | LightCrossbow | Shortbow | Javelin => {
-                self.queued_results.push(ActionResult::Arrow {
-                    from: cur_loc,
-                    to: target,
-                })
-            }
-            Charge => {
-                // TODO: implement check to ensure only moving to the closest square and not moving through people
-                let closest = CoordIterator::new(target, 1, 1)
-                    .filter(|x| !self.is_populated(x))
-                    .min_by_key(|x| x.dist(&cur_loc));
-                self.queued_results.push(ActionResult::Move {
-                    id: self.cur_char(),
-                    start: cur_loc,
-                    end: closest.expect("no empty squar found for move"),
-                });
-            }
-        }
-    }
-
     fn generate_results_move_entity(&mut self, target: SimCoords) {
         let id = self.initiative[0].0;
         let start = self.locations[id].expect("trying to move deleted entity");
         let distance = target.dist(&start);
-
-        // implement attack of opportunity
-        let mut opp_atk_dmg = 0;
-        for neighbor in CoordIterator::new(start, 1, 1) {
-            if let Some(attacker) = self.locations.iter().position(|x| x == &Some(neighbor)) {
-                if self.entities[attacker].team == self.entities[id].team {
-                    continue;
-                }
-                self.queued_results.push(ActionResult::MeleeAttack {
-                    id: SimId(attacker),
-                    target: start,
-                });
-                let dmg = self.calculate_dmg(
-                    SimId(id),
-                    &Ability::Longsword,
-                    self.entities[id].health - opp_atk_dmg,
-                );
-                self.queued_results.push(ActionResult::Damage {
-                    id: SimId(id),
-                    amount: dmg,
-                });
-                // track total dmg so we don't overkill
-                opp_atk_dmg += dmg;
-            }
-        }
 
         self.queued_results.push(ActionResult::Move {
             start,
@@ -635,22 +460,6 @@ impl SimState {
         self.queued_results.push(ActionResult::EndTurn);
     }
 
-    /// Calcualte dmg accounting for health remaining from un processed actions
-    fn calculate_dmg(&self, target: SimId, ability: &Ability, remaining_health: u8) -> u8 {
-        let target_entity = self.get_entity(target);
-
-        let target_ac = target_entity.character.stats.ac;
-        let to_hit = ability.to_hit();
-
-        // 1 out of 20 times we crit, auto hit and 2x dmg
-        let crit_dmg = 1.0 / 20.0 * (ability.dmg() * 2) as f32;
-        // for the other 19 possible rolls, only the ones > ac - to_hit actually hit
-        // add 1 since if we match ac we hit
-        let chance_to_hit_no_crit = (19 - target_ac + to_hit + 1) as f32 / 19.0;
-        let expected_dmg = chance_to_hit_no_crit * ability.dmg() as f32 + crit_dmg;
-        (expected_dmg as u8).min(remaining_health)
-    }
-
     pub fn get_id(&self, coords: SimCoords) -> Option<SimId> {
         self.locations
             .iter()
@@ -660,20 +469,20 @@ impl SimState {
             .next()
     }
 
-    fn get_entity_mut(&mut self, id: SimId) -> &mut SimEntity {
+    fn get_entity_mut(&mut self, id: SimId) -> &mut Model {
         &mut self.entities[id.0]
     }
 
-    fn get_entity(&self, id: SimId) -> &SimEntity {
+    fn get_entity(&self, id: SimId) -> &Model {
         &self.entities[id.0]
     }
 
-    pub fn characters(&self) -> Vec<(SimId, SimCoords, Character)> {
+    pub fn sprites(&self) -> Vec<(SimId, SimCoords, ModelSprite)> {
         self.entities
             .iter()
             .zip(self.locations.iter())
             .filter(|(_, l)| l.is_some())
-            .map(|(e, l)| (e.id, l.unwrap(), e.character.clone()))
+            .map(|(e, l)| (e.id, l.unwrap(), e.sprite.clone()))
             .collect_vec()
     }
 
@@ -681,22 +490,16 @@ impl SimState {
         self.locations[id.0]
     }
 
-    pub fn abilities(&self) -> Vec<Ability> {
-        self.get_entity(self.cur_char()).abilities.to_vec()
-    }
-
     fn is_populated(&self, target: &SimCoords) -> bool {
         self.locations.iter().flatten().any(|x| x == target)
     }
 
     pub fn health(&self, id: &SimId) -> Option<u8> {
-        self.entities.get(id.0).map(|x| x.health)
+        self.entities.get(id.0).map(|x| x.cur_wound)
     }
 
     pub fn max_health(&self, id: &SimId) -> Option<u8> {
-        self.entities
-            .get(id.0)
-            .map(|x| x.character.default_health())
+        self.entities.get(id.0).map(|x| x.max_wound)
     }
 
     /// Returns all of the action results to go from the previous state to the current one
@@ -709,19 +512,9 @@ impl SimState {
     }
 }
 
-impl Character {
-    fn default_movement(&self) -> u8 {
-        self.stats.movement
-    }
-
-    fn default_health(&self) -> u8 {
-        self.stats.health
-    }
-}
-
 impl Default for Team {
     fn default() -> Self {
-        Team::NPCs(0)
+        Team::NPCs
     }
 }
 
@@ -804,64 +597,19 @@ mod tests {
 
     fn create_test_world() -> SimState {
         let mut state = SimState::new();
-
-        state.insert_prebuilt(PreBuiltCharacter::Knight, KNIGHT_START, Team::Players(0));
-        state.insert_prebuilt(PreBuiltCharacter::Skeleton, SKELETON_START, Team::NPCs(0));
+        insert_space_marine_unit(&mut state, sc(1, 10), Team::NPCs, 10);
         state
     }
 
     #[test]
-    fn test_melee_move() {
-        let mut gs = create_test_world();
-
-        // have the knight attack the orc
-        gs.apply(Action::UseAbility {
-            target: SKELETON_START,
-            ability: Ability::MeleeAttack,
-        });
-
-        assert_eq!(Ability::MeleeAttack.to_hit(), 5);
-        assert_eq!(PreBuiltCharacter::Skeleton.stats().ac, 13);
-        assert_eq!(Ability::MeleeAttack.dmg(), 5);
-        assert_eq!(PreBuiltCharacter::Skeleton.stats().health, 13);
-
-        // expected crit damage = 5% * 5 * 2 = 0.5
-        // rolls that hit, but no crit = 19 - 11 + 5 + 1 = 14
-        // expected no crit dmg = 14 / 19 * 5 = 3.7
-        // expected damage = 3.7 + 0.5 = 4.2
-        // remaining health = 10 - 4 = 6
-        assert_eq!(gs.get_entity(SKELETON).health, 10);
-
-        // have the knight move
-        gs.apply(Action::Move {
-            target: KNIGHT_START + sc(0, 1),
-        });
-
-        let cur_loc = gs
-            .get_loc(KNIGHT_ID)
-            .expect("couldn't get location of knight");
-        assert_eq!(cur_loc, KNIGHT_START + sc(0, 1));
+    fn test_move() {
+        todo!()
     }
 
     #[test]
     fn test_undo() {
         let mut start_state = SimState::new();
-
-        start_state.insert_prebuilt(
-            PreBuiltCharacter::Knight,
-            SimCoords { x: 8, y: 10 },
-            Team::Players(0),
-        );
-        start_state.insert_prebuilt(
-            PreBuiltCharacter::Skeleton,
-            SimCoords { x: 9, y: 10 },
-            Team::NPCs(0),
-        );
-        start_state.insert_prebuilt(
-            PreBuiltCharacter::Skeleton,
-            SimCoords { x: 9, y: 11 },
-            Team::NPCs(0),
-        );
+        insert_space_marine_unit(&mut start_state, sc(1, 10), Team::NPCs, 10);
 
         let mut rng: StdRng = SeedableRng::seed_from_u64(42);
         let mut actions = Vec::new();
@@ -898,36 +646,5 @@ mod tests {
                 index += 1;
             }
         }
-    }
-
-    #[test]
-    fn test_undo_dead() {
-        let mut state = SimState::new();
-
-        state.insert_prebuilt(
-            PreBuiltCharacter::Knight,
-            SimCoords { x: 8, y: 10 },
-            Team::Players(0),
-        );
-        state.insert_prebuilt(
-            PreBuiltCharacter::Skeleton,
-            SimCoords { x: 9, y: 10 },
-            Team::NPCs(0),
-        );
-
-        state.insert_prebuilt(
-            PreBuiltCharacter::Skeleton,
-            SimCoords { x: 9, y: 10 },
-            Team::NPCs(0),
-        );
-
-        assert_eq!(state.cur_char().0, 0);
-        state.entities[1].health = 0;
-        state.apply(Action::EndTurn);
-        // skip entity 1 since no life
-        assert_eq!(state.cur_char().0, 2);
-        state.undo();
-        // undo should also take us back to 0 since 1 is skipped in the other direction
-        assert_eq!(state.cur_char().0, 0);
     }
 }
