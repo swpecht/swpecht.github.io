@@ -9,7 +9,7 @@ use bevy::{
 
 use crate::{
     gamestate::{SimCoords, SimId, SimState},
-    ui::{ActionEvent, CurrentCharacter, PROJECTILE_LAYER},
+    ui::{ActionEvent, PROJECTILE_LAYER},
     PlayState,
 };
 
@@ -157,7 +157,6 @@ pub(super) fn setup_tiles(
 pub(super) fn action_system(
     mut commands: Commands,
     mut ev_action: EventReader<ActionEvent>,
-    mut ev_projectile: EventWriter<SpawnProjectileEvent>,
     query: Query<(Entity, &SimId, &Transform)>,
     mut sim: ResMut<SimState>,
     mut next_state: ResMut<NextState<PlayState>>,
@@ -202,7 +201,7 @@ pub(super) fn handle_move(
         });
 }
 
-fn handle_melee(
+fn _handle_melee(
     commands: &mut Commands,
     target: SimCoords,
     query: &Query<(Entity, &SimId, &Transform)>,
@@ -296,7 +295,7 @@ pub(super) fn _paint_curves(mut gizmos: Gizmos, query: Query<&Curve>) {
     }
 }
 
-pub(super) fn game_over(mut next_state: ResMut<NextState<PlayState>>, sim: Res<SimState>) {
+pub(super) fn game_over(mut _next_state: ResMut<NextState<PlayState>>, _sim: Res<SimState>) {
     // if sim.is_terminal() {
     //     warn!("game over");
     //     next_state.set(PlayState::Terminal);
