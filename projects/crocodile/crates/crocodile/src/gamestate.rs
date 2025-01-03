@@ -7,18 +7,15 @@ use std::{
 use bevy::prelude::{Component, Resource};
 use clone_from::CloneFrom;
 use itertools::{Itertools, Product};
-use tinyvec::ArrayVec;
 
-use crate::{
-    sim::info::{insert_space_marine_unit, RangedWeapon},
-    ui::character::ModelSprite,
-};
+use crate::{sim::info::insert_space_marine_unit, ui::character::ModelSprite};
 
 const WORLD_SIZE: usize = 20;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub enum Team {
     Players,
+    #[default]
     NPCs,
 }
 
@@ -257,6 +254,7 @@ impl SimState {
         const WIN_VALUE: i32 = 0; //  1000.0;
                                   // todo: add score component for entity count
 
+        // TODO: include wounds in this? Easier to differentiate
         let mut player_models = 0;
         let mut npc_models = 0;
         for entity in self.entities.iter().filter(|e| !e.is_destroyed) {
@@ -267,8 +265,8 @@ impl SimState {
         }
 
         let model_score = match team {
-            Team::Players => player_models as i32 - npc_models as i32,
-            Team::NPCs => npc_models as i32 - player_models as i32,
+            Team::Players => player_models - npc_models,
+            Team::NPCs => npc_models - player_models,
         };
 
         let win_score = match (team, player_models, npc_models) {
@@ -309,7 +307,10 @@ impl SimState {
                 ActionResult::Move { start, end: _, id } => {
                     self.locations[id.0] = Some(start);
                 }
-                ActionResult::Damage { id, amount } => {
+                ActionResult::Damage {
+                    id: _id,
+                    amount: _amount,
+                } => {
                     todo!()
                 }
                 ActionResult::RemoveEntity { loc, id } => self.locations[id.0] = Some(loc),
@@ -352,7 +353,10 @@ impl SimState {
                 ActionResult::Move { start: _, end, id } => {
                     self.locations[id.0] = Some(end);
                 }
-                ActionResult::Damage { id, amount } => {
+                ActionResult::Damage {
+                    id: _id,
+                    amount: _amount,
+                } => {
                     todo!();
                 }
                 ActionResult::RemoveEntity { loc: _, id } => {
@@ -469,10 +473,6 @@ impl SimState {
             .next()
     }
 
-    fn get_entity_mut(&mut self, id: SimId) -> &mut Model {
-        &mut self.entities[id.0]
-    }
-
     fn get_entity(&self, id: SimId) -> &Model {
         &self.entities[id.0]
     }
@@ -482,7 +482,7 @@ impl SimState {
             .iter()
             .zip(self.locations.iter())
             .filter(|(_, l)| l.is_some())
-            .map(|(e, l)| (e.id, l.unwrap(), e.sprite.clone()))
+            .map(|(e, l)| (e.id, l.unwrap(), e.sprite))
             .collect_vec()
     }
 
@@ -509,12 +509,6 @@ impl SimState {
             .filter(|x| x.generation == self.generation - 1)
             .map(|x| x.result.clone())
             .collect_vec()
-    }
-}
-
-impl Default for Team {
-    fn default() -> Self {
-        Team::NPCs
     }
 }
 
@@ -589,17 +583,6 @@ mod tests {
     use rand::{rngs::StdRng, SeedableRng};
 
     use super::*;
-
-    const KNIGHT_ID: SimId = SimId(0);
-    const SKELETON: SimId = SimId(1);
-    const KNIGHT_START: SimCoords = SimCoords { x: 10, y: 10 };
-    const SKELETON_START: SimCoords = SimCoords { x: 9, y: 10 };
-
-    fn create_test_world() -> SimState {
-        let mut state = SimState::new();
-        insert_space_marine_unit(&mut state, sc(1, 10), Team::NPCs, 10);
-        state
-    }
 
     #[test]
     fn test_move() {

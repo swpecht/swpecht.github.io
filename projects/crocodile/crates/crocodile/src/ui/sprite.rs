@@ -8,8 +8,7 @@ use bevy::{
 };
 
 use crate::{
-    ai::find_best_move,
-    gamestate::{SimCoords, SimId, SimState, Team},
+    gamestate::{SimCoords, SimId, SimState},
     ui::{ActionEvent, CurrentCharacter},
     PlayState,
 };
@@ -313,7 +312,7 @@ pub(super) fn game_over(mut next_state: ResMut<NextState<PlayState>>, sim: Res<S
     }
 }
 
-pub(super) fn ai(sim: Res<SimState>, mut ev_action: EventWriter<ActionEvent>) {
+pub(super) fn ai(_sim: Res<SimState>, mut _ev_action: EventWriter<ActionEvent>) {
     // disable the ai for now
     // if matches!(sim.cur_team(), Team::NPCs | Team::Players) {
     //     debug!("finding best move for: {:?}", sim.cur_char());
