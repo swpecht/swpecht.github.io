@@ -195,7 +195,7 @@ impl SimState {
         match action {
             Action::EndTurn => self.generate_results_end_turn(),
             Action::Move { id, from, to } => self.generate_results_move_model(id, from, to),
-            Action::RemoveModel { id } => todo!(),
+            Action::RemoveModel { id } => self.generate_results_remove_model(id),
         }
 
         self.apply_queued_results();
@@ -396,7 +396,7 @@ impl SimState {
 
             self.models
                 .iter()
-                .filter(|m| m.unit == unit)
+                .filter(|m| m.unit == unit && !m.is_destroyed)
                 .for_each(|m| results.push((m.id, is_coherent)));
         }
 
@@ -718,11 +718,10 @@ mod tests {
                 assert_eq!(
                     state,
                     undo_state,
-                    "failed to undo index {}: {:?}\n{:?}\n{:#?}",
+                    "failed to undo index {}: {:?}\n{:?}",
                     index,
                     a,
-                    diff_state.diff(),
-                    state
+                    diff_state.diff()
                 );
                 state.apply(a);
                 index += 1;
