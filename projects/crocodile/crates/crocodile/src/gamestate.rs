@@ -54,6 +54,8 @@ pub enum Action {
         from: SimCoords,
         to: SimCoords,
     },
+    /// Remove a model due to lack of unit coherency
+    RemoveModel { id: SimId },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -76,7 +78,9 @@ pub enum ActionResult {
         id: SimId,
         amount: u8,
     },
-
+    RemoveModel {
+        id: SimId,
+    },
     // Items to control gamestate for optimizations
     NewTurn(bool),
 }
@@ -95,6 +99,7 @@ impl Display for Action {
             Action::Move { id, from, to } => {
                 f.write_fmt(format_args!("Moving {:?}: from {:?} to {:?}", id, from, to))
             }
+            Action::RemoveModel { id } => f.write_fmt(format_args!("Removing unit: {:?}", id)),
         }
     }
 }
@@ -190,6 +195,7 @@ impl SimState {
         match action {
             Action::EndTurn => self.generate_results_end_turn(),
             Action::Move { id, from, to } => self.generate_results_move_model(id, from, to),
+            Action::RemoveModel { id } => todo!(),
         }
 
         self.apply_queued_results();
@@ -200,7 +206,16 @@ impl SimState {
         actions.clear();
         use Action::*;
 
-        actions.push(Action::EndTurn);
+        let coherency = self.unit_coherency();
+
+        if coherency.iter().filter(|x| !x.1).count() == 0 {
+            actions.push(Action::EndTurn);
+        }
+
+        coherency
+            .into_iter()
+            .filter(|x| !x.1)
+            .for_each(|x| actions.push(Action::RemoveModel { id: x.0 }));
 
         let cur_team = self.cur_team();
         for model in self.models.iter().filter(|m| m.team == cur_team) {
@@ -305,6 +320,7 @@ impl SimState {
                 }
 
                 ActionResult::NewTurn(x) => self.is_start_of_turn = !x,
+                ActionResult::RemoveModel { id } => self.models[id.0].is_destroyed = false,
             }
 
             // actually remove the item from the list
@@ -416,6 +432,7 @@ impl SimState {
                 }
 
                 ActionResult::NewTurn(x) => self.is_start_of_turn = x,
+                ActionResult::RemoveModel { id } => self.models[id.0].is_destroyed = true,
             }
 
             self.applied_results
@@ -463,6 +480,10 @@ impl SimState {
             id,
             amount: distance as u8,
         });
+    }
+
+    fn generate_results_remove_model(&mut self, id: SimId) {
+        self.queued_results.push(ActionResult::RemoveModel { id });
     }
 
     fn generate_results_end_turn(&mut self) {
@@ -653,6 +674,12 @@ mod tests {
         insert_space_marine_unit(&mut gs, sc(1, 12), Team::Players, 0, 1);
         insert_space_marine_unit(&mut gs, sc(2, 12), Team::Players, 0, 1);
         assert!(!gs.unit_coherency().iter().all(|x| x.1));
+        let mut actions = Vec::new();
+        gs.legal_actions(&mut actions);
+        assert!(
+            !actions.contains(&Action::EndTurn),
+            "Can't end turn when not in unit coherency"
+        )
     }
 
     #[test]
