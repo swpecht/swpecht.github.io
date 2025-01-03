@@ -21,6 +21,7 @@ const NORMAL_BUTTON: Color = Color::srgb(0.15, 0.15, 0.15);
 const HOVERED_BUTTON: Color = Color::srgb(0.25, 0.25, 0.25);
 const PRESSED_BUTTON: Color = Color::srgb(0.35, 0.75, 0.35);
 const VALID_MOVE: Color = Color::srgba(0.0, 0.5, 0.5, 0.5);
+const INCOHERENT_UNIT: Color = Color::srgba(0.7, 0.0, 0.0, 0.5);
 
 pub struct UIPlugin;
 
@@ -70,7 +71,11 @@ impl Plugin for UIPlugin {
             )
             .add_systems(
                 OnEnter(PlayState::Waiting),
-                (populate_action_buttons, highlight_moves),
+                (
+                    populate_action_buttons,
+                    highlight_moves,
+                    highlight_incoherent_unit,
+                ),
             );
     }
 }
@@ -365,8 +370,6 @@ fn highlight_moves(
     let mut actions = Vec::new();
     sim.legal_actions(&mut actions);
 
-    let color = VALID_MOVE;
-
     let rect = Rectangle::new(TILE_SIZE as f32, TILE_SIZE as f32);
     for a in actions.iter() {
         if let Action::Move {
@@ -382,12 +385,39 @@ fn highlight_moves(
             let wc = to.to_world();
             commands.spawn((
                 Mesh2d(meshes.add(rect)),
-                MeshMaterial2d(materials.add(color)),
+                MeshMaterial2d(materials.add(VALID_MOVE)),
                 Transform::from_xyz(wc.x, wc.y, UI_LAYER),
                 StateScoped(PlayState::Waiting), // automatically unspawn when leave waiting
                 MovementHighlight,
             ));
         }
+    }
+}
+
+fn highlight_incoherent_unit(
+    mut commands: Commands,
+    sim: Res<SimState>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) {
+    debug!("running incoherence system");
+    let rect = Rectangle::new(TILE_SIZE as f32, TILE_SIZE as f32);
+
+    for incoherent_id in sim
+        .unit_coherency()
+        .iter()
+        .filter(|(_, is_coherent)| !is_coherent)
+        .map(|x| x.0)
+    {
+        debug!("incoherent unit found");
+        let loc = sim.get_loc(incoherent_id).unwrap();
+        let wc = loc.to_world();
+        commands.spawn((
+            Mesh2d(meshes.add(rect)),
+            MeshMaterial2d(materials.add(INCOHERENT_UNIT)),
+            Transform::from_xyz(wc.x, wc.y, UI_LAYER),
+            StateScoped(PlayState::Waiting), // automatically unspawn when leave waiting
+        ));
     }
 }
 

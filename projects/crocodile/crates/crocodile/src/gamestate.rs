@@ -350,6 +350,7 @@ impl SimState {
             }
 
             let g = petgraph::graph::UnGraph::<bool, ()>::from_edges(&edges);
+
             // First check that each model has enough neighbors
             let required_neighbors = if unit_size == 1 {
                 0 // no neighbors if only 1 model
