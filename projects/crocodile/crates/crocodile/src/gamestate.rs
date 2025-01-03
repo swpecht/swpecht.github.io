@@ -7,6 +7,7 @@ use std::{
 use bevy::prelude::{Component, Resource};
 use clone_from::CloneFrom;
 use itertools::{Itertools, Product};
+use petgraph::algo::{has_path_connecting, DfsSpace};
 
 use crate::{sim::info::insert_space_marine_unit, ui::character::ModelSprite};
 
@@ -173,7 +174,7 @@ impl SimState {
 impl Default for SimState {
     fn default() -> Self {
         let mut state = SimState::new();
-        insert_space_marine_unit(&mut state, sc(5, 10), Team::Players, 10);
+        insert_space_marine_unit(&mut state, sc(5, 10), Team::Players, 0, 10);
         state
     }
 }
@@ -310,6 +311,79 @@ impl SimState {
             self.applied_results.pop();
         }
         // assert!(self.entities[self.initiative[0].0].health > 0)
+    }
+
+    /// Returns a list for every non-destroyed unit if it is in unit coherency or not
+    pub fn unit_coherency(&self) -> Vec<(SimId, bool)> {
+        const SWARM_MODEL_COUNT: usize = 7;
+        const NEIGHBORS_NORMAL: usize = 1;
+        const NEIGHBORS_SWARM: usize = 2;
+
+        let units = self.models.iter().map(|m| m.unit).unique();
+        let mut results = Vec::new();
+
+        for unit in units {
+            let mut is_coherent = true;
+            let mut unit_size = 0;
+
+            // We create a graph to represent the models in a unit
+            let mut edges = Vec::new();
+            for unit_model in self
+                .models
+                .iter()
+                .filter(|m| m.unit == unit)
+                .filter(|m| !m.is_destroyed)
+            {
+                let unit_loc = self.get_loc(unit_model.id).unwrap();
+                unit_size += 1;
+                for neighbor_id in CoordIterator::new(unit_loc, 1, 1)
+                    .filter_map(|l| self.get_id(l))
+                    .filter(|id| self.get_entity(*id).unit == unit)
+                {
+                    edges.push((unit_model.id.0 as u32, neighbor_id.0 as u32));
+                }
+            }
+
+            // handle case where there are no edges, but more than 1 unit
+            if edges.is_empty() && unit_size > 1 {
+                is_coherent = false;
+            }
+
+            let g = petgraph::graph::UnGraph::<bool, ()>::from_edges(&edges);
+            // First check that each model has enough neighbors
+            let required_neighbors = if unit_size == 1 {
+                0 // no neighbors if only 1 model
+            } else if unit_size >= SWARM_MODEL_COUNT {
+                NEIGHBORS_SWARM
+            } else {
+                NEIGHBORS_NORMAL
+            };
+            if !g
+                .node_indices()
+                // Divide by 2 since edges are being counted twice
+                .all(|n| g.neighbors(n).count() / 2 >= required_neighbors)
+            {
+                is_coherent = false;
+            }
+
+            // Second we check that the graph is fully connected, i.e. aren't two separate groups of units
+            if let Some(node) = g.node_indices().next() {
+                let mut space = DfsSpace::new(&g);
+                if !g
+                    .node_indices()
+                    .all(|n2| has_path_connecting(&g, node, n2, Some(&mut space)))
+                {
+                    is_coherent = false;
+                }
+            }
+
+            self.models
+                .iter()
+                .filter(|m| m.unit == unit)
+                .for_each(|m| results.push((m.id, is_coherent)));
+        }
+
+        results
     }
 }
 
@@ -531,6 +605,56 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_unit_coherency() {
+        // Single model units are coherent
+        let mut gs = SimState::new();
+        insert_space_marine_unit(&mut gs, sc(1, 10), Team::Players, 0, 1);
+        assert!(gs.unit_coherency().iter().all(|x| x.1));
+
+        // Models in a straight line don't have coherency as swarms
+        let mut gs = SimState::new();
+        insert_space_marine_unit(&mut gs, sc(1, 10), Team::Players, 0, 10);
+        assert!(!gs.unit_coherency().iter().all(|x| x.1));
+
+        // But non-swarm units will
+        let mut gs = SimState::new();
+        insert_space_marine_unit(&mut gs, sc(1, 10), Team::Players, 0, 5);
+        assert!(gs.unit_coherency().iter().all(|x| x.1));
+
+        // Non-swarm aren't coherent with a gap
+        let mut gs = SimState::new();
+        insert_space_marine_unit(&mut gs, sc(1, 10), Team::Players, 0, 1);
+        insert_space_marine_unit(&mut gs, sc(3, 10), Team::Players, 0, 1);
+        assert!(
+            !gs.unit_coherency().iter().all(|x| x.1),
+            "Non-swarm aren't coherent with a gap"
+        );
+
+        // Swarm are coherent in a rectangle
+        let mut gs = SimState::new();
+        for i in 0..2 {
+            insert_space_marine_unit(&mut gs, sc(1, 10 + i), Team::Players, 0, 1);
+            insert_space_marine_unit(&mut gs, sc(2, 10 + i), Team::Players, 0, 1);
+        }
+        assert!(gs.unit_coherency().iter().all(|x| x.1));
+
+        // enemy units don't count for coherency
+        let mut gs = SimState::new();
+        insert_space_marine_unit(&mut gs, sc(1, 10), Team::Players, 0, 1);
+        insert_space_marine_unit(&mut gs, sc(2, 10), Team::NPCs, 1, 1);
+        insert_space_marine_unit(&mut gs, sc(3, 10), Team::Players, 0, 1);
+        assert_eq!(gs.unit_coherency().iter().filter(|x| !x.1).count(), 2);
+
+        // All units in a unit must have a path between them, e.g. can't have two groups
+        let mut gs = SimState::new();
+        insert_space_marine_unit(&mut gs, sc(1, 10), Team::Players, 0, 1);
+        insert_space_marine_unit(&mut gs, sc(2, 10), Team::Players, 0, 1);
+        insert_space_marine_unit(&mut gs, sc(1, 12), Team::Players, 0, 1);
+        insert_space_marine_unit(&mut gs, sc(2, 12), Team::Players, 0, 1);
+        assert!(!gs.unit_coherency().iter().all(|x| x.1));
+    }
+
+    #[test]
     fn test_move() {
         todo!()
     }
@@ -538,8 +662,8 @@ mod tests {
     #[test]
     fn test_undo() {
         let mut start_state = SimState::new();
-        insert_space_marine_unit(&mut start_state, sc(1, 10), Team::Players, 10);
-        insert_space_marine_unit(&mut start_state, sc(1, 15), Team::NPCs, 10);
+        insert_space_marine_unit(&mut start_state, sc(1, 10), Team::Players, 0, 10);
+        insert_space_marine_unit(&mut start_state, sc(1, 15), Team::NPCs, 1, 10);
 
         let mut rng: StdRng = SeedableRng::seed_from_u64(42);
         let mut actions = Vec::new();

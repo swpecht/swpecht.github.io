@@ -5,9 +5,15 @@ use crate::{
     ui::character::ModelSprite,
 };
 
-pub fn insert_space_marine_unit(gs: &mut SimState, loc: SimCoords, team: Team, num_models: usize) {
+pub fn insert_space_marine_unit(
+    gs: &mut SimState,
+    loc: SimCoords,
+    team: Team,
+    unit: u8,
+    num_models: usize,
+) {
     for i in 0..num_models {
-        gs.insert_model(ModelSprite::Knight, sc(loc.x + i, loc.y), team, 0, 6, 2);
+        gs.insert_model(ModelSprite::Knight, sc(loc.x + i, loc.y), team, unit, 6, 2);
     }
 }
 
