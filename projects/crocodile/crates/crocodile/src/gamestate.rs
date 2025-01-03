@@ -188,7 +188,7 @@ impl SimState {
 
         match action {
             Action::EndTurn => self.generate_results_end_turn(),
-            Action::Move { id, from, to } => self.generate_results_move_entity(id, from, to),
+            Action::Move { id, from, to } => self.generate_results_move_model(id, from, to),
         }
 
         self.apply_queued_results();
@@ -199,8 +199,9 @@ impl SimState {
         actions.clear();
         use Action::*;
 
-        let cur_team = self.cur_team();
+        actions.push(Action::EndTurn);
 
+        let cur_team = self.cur_team();
         for model in self.models.iter().filter(|m| m.team == cur_team) {
             if model.movement > 0 {
                 let model_loc = self.get_loc(model.id).unwrap();
@@ -296,7 +297,7 @@ impl SimState {
                     self.models[id.0].movement += amount;
                 }
                 ActionResult::EndTurn => {
-                    todo!()
+                    self.initiative.rotate_right(1);
                 }
                 ActionResult::RestoreMovement { id, amount } => {
                     self.models[id.0].movement -= amount
@@ -333,7 +334,7 @@ impl SimState {
                     self.models[id.0].movement -= amount;
                 }
                 ActionResult::EndTurn => {
-                    todo!()
+                    self.initiative.rotate_left(1);
                 }
                 ActionResult::RestoreMovement { id, amount } => {
                     self.models[id.0].movement += amount;
@@ -378,7 +379,7 @@ impl SimState {
         self.initiative[0]
     }
 
-    fn generate_results_move_entity(&mut self, id: SimId, from: SimCoords, to: SimCoords) {
+    fn generate_results_move_model(&mut self, id: SimId, from: SimCoords, to: SimCoords) {
         let distance = to.dist(&from);
 
         self.queued_results
@@ -390,28 +391,23 @@ impl SimState {
     }
 
     fn generate_results_end_turn(&mut self) {
-        todo!() // iterate through all controlled models and reset relevant stats
-                // let cur_char = self.cur_char();
-                // let entity = self.get_entity(cur_char);
-                // let amount = entity.turn_movement - entity.movement;
-
-        // // only restore action points if spent them
-        // if entity.remaining_actions == 0 {
-        //     self.queued_results
-        //         .push(ActionResult::RestoreActionPoint { id: cur_char });
-        // }
-
-        // self.queued_results.push(ActionResult::RestoreMovement {
-        //     id: cur_char,
-        //     amount,
-        // });
+        let cur_team = self.cur_team();
+        for model in self.models.iter().filter(|m| m.team == cur_team) {
+            let movement_restore = model.turn_movement - model.movement;
+            if movement_restore > 0 {
+                self.queued_results.push(ActionResult::RestoreMovement {
+                    id: model.id,
+                    amount: movement_restore,
+                });
+            }
+        }
 
         // if !self.is_start_of_turn {
         //     self.queued_results.push(ActionResult::NewTurn(true))
         // }
 
-        // // Needs to be the last item to process, changes the current player
-        // self.queued_results.push(ActionResult::EndTurn);
+        // Needs to be the last item to process, changes the current player
+        self.queued_results.push(ActionResult::EndTurn);
     }
 
     pub fn get_id(&self, coords: SimCoords) -> Option<SimId> {
@@ -542,7 +538,8 @@ mod tests {
     #[test]
     fn test_undo() {
         let mut start_state = SimState::new();
-        insert_space_marine_unit(&mut start_state, sc(1, 10), Team::NPCs, 10);
+        insert_space_marine_unit(&mut start_state, sc(1, 10), Team::Players, 10);
+        insert_space_marine_unit(&mut start_state, sc(1, 15), Team::NPCs, 10);
 
         let mut rng: StdRng = SeedableRng::seed_from_u64(42);
         let mut actions = Vec::new();
