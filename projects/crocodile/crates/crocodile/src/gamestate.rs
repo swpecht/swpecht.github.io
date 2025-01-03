@@ -38,7 +38,7 @@ pub struct SimState {
     initiative: Vec<Team>,
     /// Location of each entity, indexed by entity id
     locations: Vec<Option<SimCoords>>,
-    entities: Vec<Model>,
+    models: Vec<Model>,
     phase: Phase,
     /// Track if start of an entities turn, used to optimize AI search caching
     is_start_of_turn: bool,
@@ -49,7 +49,9 @@ pub enum Action {
     #[default]
     EndTurn,
     Move {
-        target: SimCoords,
+        id: SimId,
+        from: SimCoords,
+        to: SimCoords,
     },
 }
 
@@ -115,8 +117,8 @@ impl Display for Action {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Action::EndTurn => f.write_str("End turn"),
-            Action::Move { target } => {
-                f.write_fmt(format_args!("Move: {}, {}", target.x, target.y))
+            Action::Move { id, from, to } => {
+                f.write_fmt(format_args!("Moving {:?}: from {:?} to {:?}", id, from, to))
             }
         }
     }
@@ -182,10 +184,10 @@ impl SimState {
     pub fn new() -> Self {
         Self {
             next_id: 0,
-            initiative: Vec::new(),
+            initiative: vec![Team::Players, Team::NPCs],
             is_start_of_turn: true,
             locations: Vec::new(),
-            entities: Vec::new(),
+            models: Vec::new(),
             queued_results: Vec::new(),
             applied_results: Vec::new(),
             generation: 0,
@@ -212,7 +214,9 @@ impl SimState {
 
         match action {
             Action::EndTurn => self.generate_results_end_turn(),
-            Action::Move { target } => todo!(), // self.generate_results_move_entity(target),
+            Action::Move { id, from, to } => {
+                todo!()
+            } // self.generate_results_move_entity(target),
         }
 
         self.apply_queued_results();
@@ -222,6 +226,24 @@ impl SimState {
     pub fn legal_actions(&self, actions: &mut Vec<Action>) {
         actions.clear();
         use Action::*;
+
+        let cur_team = self.cur_team();
+
+        for model in self.models.iter().filter(|m| m.team == cur_team) {
+            if model.movement > 0 {
+                let model_loc = self.get_loc(model.id).unwrap();
+                for l in CoordIterator::new(model_loc, model.movement, 1) {
+                    if !self.is_populated(&l) {
+                        actions.push(Move {
+                            id: model.id,
+                            from: model_loc,
+                            to: l,
+                        });
+                    }
+                }
+            }
+        }
+
         // actions.push(Action::EndTurn);
 
         // let cur_loc = self.get_loc(self.cur_char()).unwrap();
@@ -242,7 +264,7 @@ impl SimState {
     pub fn is_terminal(&self) -> bool {
         let mut count_players = 0;
         let mut count_npcs = 0;
-        for entity in self.entities.iter() {
+        for entity in self.models.iter() {
             if entity.is_destroyed {
                 continue;
             }
@@ -261,7 +283,7 @@ impl SimState {
         // TODO: include wounds in this? Easier to differentiate
         let mut player_models = 0;
         let mut npc_models = 0;
-        for entity in self.entities.iter().filter(|e| !e.is_destroyed) {
+        for entity in self.models.iter().filter(|e| !e.is_destroyed) {
             match entity.team {
                 Team::Players => player_models += 1,
                 Team::NPCs => npc_models += 1,
@@ -314,19 +336,17 @@ impl SimState {
                     todo!()
                 }
                 ActionResult::RemoveEntity { loc, id } => self.locations[id.0] = Some(loc),
-                ActionResult::SpendActionPoint { id } => self.entities[id.0].remaining_actions += 1,
+                ActionResult::SpendActionPoint { id } => self.models[id.0].remaining_actions += 1,
                 ActionResult::SpendMovement { id, amount } => {
-                    self.entities[id.0].movement += amount;
+                    self.models[id.0].movement += amount;
                 }
                 ActionResult::EndTurn => {
                     todo!()
                 }
                 ActionResult::RestoreMovement { id, amount } => {
-                    self.entities[id.0].movement -= amount
+                    self.models[id.0].movement -= amount
                 }
-                ActionResult::RestoreActionPoint { id } => {
-                    self.entities[id.0].remaining_actions -= 1
-                }
+                ActionResult::RestoreActionPoint { id } => self.models[id.0].remaining_actions -= 1,
                 ActionResult::NewTurn(x) => self.is_start_of_turn = !x,
 
                 // no undo needed for visual results
@@ -366,19 +386,19 @@ impl SimState {
                     // self.entities[id.0] = None;
                 }
                 ActionResult::SpendActionPoint { id } => {
-                    self.entities[id.0].remaining_actions -= 1;
+                    self.models[id.0].remaining_actions -= 1;
                 }
                 ActionResult::SpendMovement { id, amount } => {
-                    self.entities[id.0].movement -= amount;
+                    self.models[id.0].movement -= amount;
                 }
                 ActionResult::EndTurn => {
                     todo!()
                 }
                 ActionResult::RestoreMovement { id, amount } => {
-                    self.entities[id.0].movement += amount;
+                    self.models[id.0].movement += amount;
                 }
                 ActionResult::RestoreActionPoint { id } => {
-                    self.entities[id.0].remaining_actions += 1;
+                    self.models[id.0].remaining_actions += 1;
                 }
                 ActionResult::NewTurn(x) => self.is_start_of_turn = x,
 
@@ -414,7 +434,7 @@ impl SimState {
             max_wound: wound,
         };
 
-        self.entities.push(entity);
+        self.models.push(entity);
         self.locations.push(Some(loc));
         self.next_id += 1;
     }
@@ -473,11 +493,11 @@ impl SimState {
     }
 
     fn get_entity(&self, id: SimId) -> &Model {
-        &self.entities[id.0]
+        &self.models[id.0]
     }
 
     pub fn sprites(&self) -> Vec<(SimId, SimCoords, ModelSprite)> {
-        self.entities
+        self.models
             .iter()
             .zip(self.locations.iter())
             .filter(|(_, l)| l.is_some())
@@ -494,11 +514,11 @@ impl SimState {
     }
 
     pub fn health(&self, id: &SimId) -> Option<u8> {
-        self.entities.get(id.0).map(|x| x.cur_wound)
+        self.models.get(id.0).map(|x| x.cur_wound)
     }
 
     pub fn max_health(&self, id: &SimId) -> Option<u8> {
-        self.entities.get(id.0).map(|x| x.max_wound)
+        self.models.get(id.0).map(|x| x.max_wound)
     }
 
     /// Returns all of the action results to go from the previous state to the current one
@@ -557,7 +577,7 @@ impl std::hash::Hash for SimState {
         self.next_id.hash(state);
         self.initiative.hash(state);
         self.locations.hash(state);
-        self.entities.hash(state);
+        self.models.hash(state);
         self.is_start_of_turn.hash(state);
     }
 }
@@ -570,7 +590,7 @@ impl Debug for SimState {
             .field("queued_results", &self.queued_results)
             .field("initiative", &self.initiative)
             .field("locations", &self.locations)
-            .field("entities", &self.entities)
+            .field("entities", &self.models)
             .field("is_start_of_turn", &self.is_start_of_turn)
             .finish()
     }

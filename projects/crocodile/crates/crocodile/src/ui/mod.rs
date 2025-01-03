@@ -322,16 +322,16 @@ fn handle_right_click(
 ) {
     debug!("handling right click");
 
-    let target = mouse_coords.to_sim();
+    // let target = mouse_coords.to_sim();
 
-    let mut legal_actions = Vec::new();
-    sim.legal_actions(&mut legal_actions);
-    let action = Action::Move { target };
-    if legal_actions.contains(&action) {
-        ev_action.send(ActionEvent { action });
-    } else {
-        warn!("trying to move to location that's not a legal action")
-    }
+    // let mut legal_actions = Vec::new();
+    // sim.legal_actions(&mut legal_actions);
+    // let action = Action::Move { to: target };
+    // if legal_actions.contains(&action) {
+    //     ev_action.send(ActionEvent { action });
+    // } else {
+    //     warn!("trying to move to location that's not a legal action")
+    // }
 }
 
 /// Outline the tiles a character can validally move within
@@ -348,7 +348,12 @@ fn highlight_moves(
 
     let rect = Rectangle::new(TILE_SIZE as f32, TILE_SIZE as f32);
     for a in actions {
-        if let Action::Move { target } = a {
+        if let Action::Move {
+            id: id,
+            from: from,
+            to: target,
+        } = a
+        {
             let wc = target.to_world();
             commands.spawn((
                 Mesh2d(meshes.add(rect)),
