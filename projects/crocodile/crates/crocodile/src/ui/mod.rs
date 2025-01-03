@@ -12,6 +12,11 @@ pub mod animation;
 pub mod character;
 pub mod sprite;
 
+pub(super) const TILE_LAYER: f32 = 0.0;
+pub(super) const CHAR_LAYER: f32 = 1.0;
+const PROJECTILE_LAYER: f32 = 2.0;
+const UI_LAYER: f32 = 3.0;
+
 const NORMAL_BUTTON: Color = Color::srgb(0.15, 0.15, 0.15);
 const HOVERED_BUTTON: Color = Color::srgb(0.25, 0.25, 0.25);
 const PRESSED_BUTTON: Color = Color::srgb(0.35, 0.75, 0.35);
@@ -51,8 +56,11 @@ impl Plugin for UIPlugin {
             .add_systems(
                 Update,
                 (
-                    selection.before(populate_action_buttons),
+                    selection
+                        .before(populate_action_buttons)
+                        .before(highlight_moves),
                     populate_action_buttons,
+                    highlight_moves,
                 )
                     .run_if(input_just_pressed(MouseButton::Left)),
             )
@@ -83,6 +91,9 @@ struct ActionButtonParent;
 
 #[derive(Component)]
 struct ActionButton(usize);
+
+#[derive(Component)]
+struct MovementHighlight;
 
 #[allow(clippy::type_complexity)]
 fn button_system(
@@ -192,7 +203,6 @@ fn populate_action_buttons(
     parent.with_children(|parent| {
         let mut actions = Vec::new();
         sim.legal_actions(&mut actions);
-        debug!("{:?}", actions);
         for (idx, action) in actions.into_iter().enumerate() {
             if matches!(action, Action::EndTurn) {
                 spawn_action_button(parent, &action.to_string(), idx);
@@ -338,28 +348,40 @@ fn handle_right_click(
 fn highlight_moves(
     mut commands: Commands,
     sim: Res<SimState>,
+    selected: Res<SelectedCharacter>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    old_highlights: Query<Entity, With<MovementHighlight>>,
 ) {
+    // delete the old highlights
+    old_highlights
+        .iter()
+        .for_each(|e| commands.entity(e).despawn());
+
     let mut actions = Vec::new();
     sim.legal_actions(&mut actions);
 
     let color = VALID_MOVE;
 
     let rect = Rectangle::new(TILE_SIZE as f32, TILE_SIZE as f32);
-    for a in actions {
+    for a in actions.iter() {
         if let Action::Move {
-            id: id,
-            from: from,
-            to: target,
+            id,
+            from: _from,
+            to,
         } = a
         {
-            let wc = target.to_world();
+            if id != &selected.0 {
+                continue; // only show moves for the selected character
+            }
+
+            let wc = to.to_world();
             commands.spawn((
                 Mesh2d(meshes.add(rect)),
                 MeshMaterial2d(materials.add(color)),
-                Transform::from_xyz(wc.x, wc.y, 0.0),
+                Transform::from_xyz(wc.x, wc.y, UI_LAYER),
                 StateScoped(PlayState::Waiting), // automatically unspawn when leave waiting
+                MovementHighlight,
             ));
         }
     }

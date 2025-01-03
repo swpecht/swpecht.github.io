@@ -9,19 +9,18 @@ use bevy::{
 
 use crate::{
     gamestate::{SimCoords, SimId, SimState},
-    ui::{ActionEvent, CurrentCharacter},
+    ui::{ActionEvent, CurrentCharacter, PROJECTILE_LAYER},
     PlayState,
 };
 
-use super::character::{CharacterAnimation, CharacterSpawnEvent};
+use super::{
+    character::{CharacterAnimation, CharacterSpawnEvent},
+    TILE_LAYER,
+};
 
 pub const TILE_SIZE: usize = 32;
 const GRID_WIDTH: usize = 20;
 const GRID_HEIGHT: usize = 20;
-
-pub(super) const TILE_LAYER: f32 = 0.0;
-pub(super) const CHAR_LAYER: f32 = 1.0;
-const PROJECTILE_LAYER: f32 = 2.0;
 
 const HEALTH_BAR_COLOR: Color = Color::srgb(1.0, 0.0, 0.0);
 
