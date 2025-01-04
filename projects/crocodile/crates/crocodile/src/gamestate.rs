@@ -218,7 +218,11 @@ impl SimState {
             .for_each(|x| actions.push(Action::RemoveModel { id: x.0 }));
 
         let cur_team = self.cur_team();
-        for model in self.models.iter().filter(|m| m.team == cur_team) {
+        for model in self
+            .models
+            .iter()
+            .filter(|m| m.team == cur_team && !m.is_destroyed)
+        {
             if model.movement > 0 {
                 let model_loc = self.get_loc(model.id).unwrap();
                 for l in CoordIterator::new(model_loc, model.movement, 1) {
@@ -510,7 +514,7 @@ impl SimState {
         self.locations
             .iter()
             .enumerate()
-            .filter(|(_, &c)| c == Some(coords))
+            .filter(|(i, &c)| c == Some(coords) && !self.get_entity(SimId(*i)).is_destroyed)
             .map(|(id, _)| SimId(id))
             .next()
     }
@@ -523,7 +527,7 @@ impl SimState {
         self.models
             .iter()
             .zip(self.locations.iter())
-            .filter(|(_, l)| l.is_some())
+            .filter(|(m, l)| l.is_some() && !m.is_destroyed)
             .map(|(e, l)| (e.id, l.unwrap(), e.sprite))
             .collect_vec()
     }
@@ -533,7 +537,10 @@ impl SimState {
     }
 
     fn is_populated(&self, target: &SimCoords) -> bool {
-        self.locations.iter().flatten().any(|x| x == target)
+        self.locations
+            .iter()
+            .enumerate()
+            .any(|x| x.1 == &Some(*target) && !self.get_entity(SimId(x.0)).is_destroyed)
     }
 
     pub fn health(&self, id: &SimId) -> Option<u8> {

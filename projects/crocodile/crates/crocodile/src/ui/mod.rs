@@ -81,7 +81,7 @@ impl Plugin for UIPlugin {
 }
 
 #[derive(Resource, Default)]
-struct SelectedCharacter(SimId);
+struct SelectedModel(SimId);
 
 /// Track which character is currently up to go
 #[derive(Resource, Default)]
@@ -128,7 +128,7 @@ fn button_system(
 
 fn setup_ui(mut commands: Commands) {
     commands.init_resource::<MouseWorldCoords>();
-    commands.init_resource::<SelectedCharacter>();
+    commands.init_resource::<SelectedModel>();
     commands.init_resource::<CurrentCharacter>();
 
     // root node
@@ -196,6 +196,7 @@ fn setup_ui(mut commands: Commands) {
 fn populate_action_buttons(
     mut commands: Commands,
     sim: Res<SimState>,
+    selected: Res<SelectedModel>,
     mut query: Query<Entity, With<ActionButtonParent>>,
 ) {
     debug!("populating action buttons");
@@ -211,6 +212,8 @@ fn populate_action_buttons(
         for (idx, action) in actions.into_iter().enumerate() {
             if matches!(action, Action::EndTurn) {
                 spawn_action_button(parent, &action.to_string(), idx);
+            } else if matches!(action, Action::RemoveModel { id } if id == selected.0) {
+                spawn_action_button(parent, "Remove model", idx);
             }
         }
     });
@@ -309,7 +312,7 @@ fn tile_highlight(mouse_coords: Res<MouseWorldCoords>, mut gizmos: Gizmos) {
 fn selection(
     mouse_coords: Res<MouseWorldCoords>,
     sim: Res<SimState>,
-    mut selected: ResMut<SelectedCharacter>,
+    mut selected: ResMut<SelectedModel>,
 ) {
     // convert mouse coords to sim coords
     // get entity at the relevant sim position
@@ -333,7 +336,7 @@ fn selection(
 fn handle_right_click(
     mut ev_action: EventWriter<ActionEvent>,
     mouse_coords: Res<MouseWorldCoords>,
-    selected: Res<SelectedCharacter>,
+    selected: Res<SelectedModel>,
     sim: Res<SimState>,
 ) {
     debug!("handling right click");
@@ -357,7 +360,7 @@ fn handle_right_click(
 fn highlight_moves(
     mut commands: Commands,
     sim: Res<SimState>,
-    selected: Res<SelectedCharacter>,
+    selected: Res<SelectedModel>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     old_highlights: Query<Entity, With<MovementHighlight>>,

@@ -172,7 +172,9 @@ pub(super) fn action_system(
                     from: _,
                     to: end,
                 } => handle_move(&mut commands, end, &query, id),
+                // Reset the ui
                 EndTurn => next_state.set(PlayState::Processing),
+                RemoveModel { id: _id } => next_state.set(PlayState::Processing),
                 _ => {} // no ui impact for most actions
             }
         }
