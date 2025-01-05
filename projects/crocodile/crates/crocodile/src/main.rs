@@ -3,7 +3,8 @@ use bevy::{
     prelude::*,
     DefaultPlugins,
 };
-use crocodile::{gamestate::SimState, ui::UIPlugin, StatePlugin};
+use crocodile::{ui::UIPlugin, StatePlugin};
+use simulation::gamestate::SimState;
 
 pub enum TransitionState {
     Waiting,    // waiting on an action

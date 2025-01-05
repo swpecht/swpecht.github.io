@@ -6,8 +6,7 @@ use std::{
 };
 
 use dashmap::DashMap;
-
-use crate::gamestate::{Action, SimState, Team};
+use simulation::gamestate::{Action, SimState, Team};
 
 const MAX_DEPTH: u8 = 6;
 
@@ -340,22 +339,20 @@ mod tests {
 
     extern crate test;
 
-    use test::Bencher;
-
     // use crate::gamestate::{sc, SimState, Team};
 
     // use super::find_best_move;
 
-    #[bench]
-    fn find_best_move_bench(b: &mut Bencher) {
-        b.iter(|| {
-            // let mut state = SimState::new();
-            // // state.insert_prebuilt(PreBuiltCharacter::Skeleton, sc(4, 10), Team::NPCs);
-            // // state.insert_prebuilt(PreBuiltCharacter::Skeleton, sc(5, 10), Team::NPCs);
-            // // state.insert_prebuilt(PreBuiltCharacter::Knight, sc(0, 9), Team::Players);
+    // #[bench]
+    // fn find_best_move_bench(b: &mut Bencher) {
+    //     b.iter(|| {
+    //         // let mut state = SimState::new();
+    //         // // state.insert_prebuilt(PreBuiltCharacter::Skeleton, sc(4, 10), Team::NPCs);
+    //         // // state.insert_prebuilt(PreBuiltCharacter::Skeleton, sc(5, 10), Team::NPCs);
+    //         // // state.insert_prebuilt(PreBuiltCharacter::Knight, sc(0, 9), Team::Players);
 
-            // find_best_move(state);
-            todo!()
-        });
-    }
+    //         // find_best_move(state);
+    //         todo!()
+    //     });
+    // }
 }

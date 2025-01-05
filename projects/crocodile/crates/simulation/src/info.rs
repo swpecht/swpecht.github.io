@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use crate::{
     gamestate::{sc, SimCoords, SimState, Team},
-    ui::character::ModelSprite,
+    ModelSprite,
 };
 
 pub fn insert_space_marine_unit(

@@ -1,12 +1,10 @@
 use animation::animate_sprite;
 use bevy::{input::common_conditions::*, math::vec2, prelude::*, window::PrimaryWindow};
 use character::{spawn_character, CharacterSpawnEvent};
+use simulation::gamestate::{Action, SimCoords, SimId, SimState};
 use sprite::*;
 
-use crate::{
-    gamestate::{Action, SimCoords, SimId, SimState},
-    PlayState,
-};
+use crate::PlayState;
 
 pub mod animation;
 pub mod character;
@@ -264,10 +262,8 @@ impl MouseWorldCoords {
     }
 }
 
-impl SimCoords {
-    pub fn to_world(&self) -> Vec2 {
-        vec2((self.x * TILE_SIZE) as f32, (self.y * TILE_SIZE) as f32)
-    }
+pub fn to_world(coords: &SimCoords) -> Vec2 {
+    vec2((coords.x * TILE_SIZE) as f32, (coords.y * TILE_SIZE) as f32)
 }
 
 /// Stores the position of the mouse in terms of world coords
@@ -385,7 +381,7 @@ fn highlight_moves(
                 continue; // only show moves for the selected character
             }
 
-            let wc = to.to_world();
+            let wc = to_world(to);
             commands.spawn((
                 Mesh2d(meshes.add(rect)),
                 MeshMaterial2d(materials.add(VALID_MOVE)),
@@ -414,7 +410,7 @@ fn highlight_incoherent_unit(
     {
         debug!("incoherent unit found");
         let loc = sim.get_loc(incoherent_id).unwrap();
-        let wc = loc.to_world();
+        let wc = to_world(&loc);
         commands.spawn((
             Mesh2d(meshes.add(rect)),
             MeshMaterial2d(materials.add(INCOHERENT_UNIT)),

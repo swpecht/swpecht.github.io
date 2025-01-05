@@ -1,8 +1,7 @@
 use std::fs;
 
 use bevy::{math::vec3, prelude::*};
-
-use crate::gamestate::SimId;
+use simulation::{gamestate::SimId, ModelSprite};
 
 use super::{animation::AnimationConfig, Health, CHAR_LAYER};
 
@@ -17,25 +16,6 @@ pub struct CharacterSpawnEvent {
 
 #[derive(Event)]
 pub struct CharacterAnimationUpdateEvent {}
-
-#[derive(Component, Debug, Clone, Hash, serde::Deserialize, PartialEq, Eq, Copy)]
-pub enum ModelSprite {
-    Skeleton,
-    Knight,
-    Orc,
-    Wizard,
-}
-
-impl ModelSprite {
-    fn asset_loc(&self) -> &str {
-        match self {
-            ModelSprite::Skeleton => "pixel-crawler/Enemy/Skeleton Crew/Skeleton - Base",
-            ModelSprite::Knight => "pixel-crawler/Heroes/Knight",
-            ModelSprite::Orc => "pixel-crawler/Enemy/Orc Crew/Orc",
-            ModelSprite::Wizard => "pixel-crawler/Heroes/Wizard",
-        }
-    }
-}
 
 #[derive(Component)]
 pub enum CharacterAnimation {

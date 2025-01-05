@@ -5,11 +5,10 @@ use std::{
 };
 
 use bevy::prelude::{Component, Resource};
-use clone_from::CloneFrom;
 use itertools::{Itertools, Product};
 use petgraph::algo::{has_path_connecting, DfsSpace};
 
-use crate::{sim::info::insert_space_marine_unit, ui::character::ModelSprite};
+use crate::{info::insert_space_marine_unit, ModelSprite};
 
 const WORLD_SIZE: usize = 20;
 
@@ -30,7 +29,7 @@ pub enum Phase {
     Fight,
 }
 
-#[derive(Resource, PartialEq, Clone)]
+#[derive(PartialEq, Clone, Resource)]
 pub struct SimState {
     generation: u16,
     next_id: usize,
@@ -105,7 +104,7 @@ impl Display for Action {
 }
 
 /// Represents a 40k style model
-#[derive(CloneFrom, Hash, Debug, PartialEq)]
+#[derive(Hash, Debug, PartialEq, Clone)]
 struct Model {
     unit: u8,
     id: SimId,
@@ -119,7 +118,7 @@ struct Model {
     team: Team,
 }
 
-#[derive(Clone, Copy, Debug, Default, Component, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Component)]
 pub struct SimId(usize);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -178,9 +177,12 @@ impl SimState {
 
 impl Default for SimState {
     fn default() -> Self {
-        let mut state = SimState::new();
-        insert_space_marine_unit(&mut state, sc(5, 10), Team::Players, 0, 10);
-        state
+        let mut gs = SimState::new();
+        // insert_space_marine_unit(&mut state, sc(5, 10), Team::Players, 0, 10);
+        insert_space_marine_unit(&mut gs, sc(1, 10), Team::Players, 0, 1);
+        insert_space_marine_unit(&mut gs, sc(2, 10), Team::Players, 0, 1);
+        insert_space_marine_unit(&mut gs, sc(4, 10), Team::Players, 0, 1);
+        gs
     }
 }
 
@@ -358,7 +360,10 @@ impl SimState {
                 unit_size += 1;
                 for neighbor_id in CoordIterator::new(unit_loc, 1, 1)
                     .filter_map(|l| self.get_id(l))
-                    .filter(|id| self.get_entity(*id).unit == unit)
+                    .filter(|id| {
+                        let m2 = self.get_model(*id);
+                        m2.unit == unit && !m2.is_destroyed
+                    })
                 {
                     edges.push((unit_model.id.0 as u32, neighbor_id.0 as u32));
                 }
@@ -370,6 +375,10 @@ impl SimState {
             }
 
             let g = petgraph::graph::UnGraph::<bool, ()>::from_edges(&edges);
+
+            if g.node_count() < unit_size && unit_size > 1 {
+                is_coherent = false; // have a lone unit somewhere
+            }
 
             // First check that each model has enough neighbors
             let required_neighbors = if unit_size == 1 {
@@ -514,12 +523,12 @@ impl SimState {
         self.locations
             .iter()
             .enumerate()
-            .filter(|(i, &c)| c == Some(coords) && !self.get_entity(SimId(*i)).is_destroyed)
+            .filter(|(i, &c)| c == Some(coords) && !self.get_model(SimId(*i)).is_destroyed)
             .map(|(id, _)| SimId(id))
             .next()
     }
 
-    fn get_entity(&self, id: SimId) -> &Model {
+    fn get_model(&self, id: SimId) -> &Model {
         &self.models[id.0]
     }
 
@@ -540,7 +549,7 @@ impl SimState {
         self.locations
             .iter()
             .enumerate()
-            .any(|x| x.1 == &Some(*target) && !self.get_entity(SimId(x.0)).is_destroyed)
+            .any(|x| x.1 == &Some(*target) && !self.get_model(SimId(x.0)).is_destroyed)
     }
 
     pub fn health(&self, id: &SimId) -> Option<u8> {
@@ -674,6 +683,13 @@ mod tests {
         insert_space_marine_unit(&mut gs, sc(3, 10), Team::Players, 0, 1);
         assert_eq!(gs.unit_coherency().iter().filter(|x| !x.1).count(), 2);
 
+        // player models but different units don't count for coherency
+        let mut gs = SimState::new();
+        insert_space_marine_unit(&mut gs, sc(1, 10), Team::Players, 0, 1);
+        insert_space_marine_unit(&mut gs, sc(2, 10), Team::Players, 1, 1);
+        insert_space_marine_unit(&mut gs, sc(3, 10), Team::Players, 0, 1);
+        assert_eq!(gs.unit_coherency().iter().filter(|x| !x.1).count(), 2);
+
         // All units in a unit must have a path between them, e.g. can't have two groups
         let mut gs = SimState::new();
         insert_space_marine_unit(&mut gs, sc(1, 10), Team::Players, 0, 1);
@@ -686,12 +702,16 @@ mod tests {
         assert!(
             !actions.contains(&Action::EndTurn),
             "Can't end turn when not in unit coherency"
-        )
-    }
+        );
 
-    #[test]
-    fn test_move() {
-        todo!()
+        // Removing a unit should fix unit coherency
+        let mut gs = SimState::new();
+        insert_space_marine_unit(&mut gs, sc(1, 10), Team::Players, 0, 1);
+        insert_space_marine_unit(&mut gs, sc(2, 10), Team::Players, 0, 1);
+        insert_space_marine_unit(&mut gs, sc(4, 10), Team::Players, 0, 1);
+        assert!(!gs.unit_coherency().iter().all(|x| x.1));
+        gs.apply(Action::RemoveModel { id: SimId(2) });
+        assert!(gs.unit_coherency().iter().all(|x| x.1));
     }
 
     #[test]

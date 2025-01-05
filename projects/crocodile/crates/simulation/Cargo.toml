@@ -1,0 +1,10 @@
+[package]
+name = "simulation"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+petgraph = "0.7.0"
+itertools = "0.13.0"
+rand = "0.8"
+bevy = { version = "0.15", default-features = false, features = [] }

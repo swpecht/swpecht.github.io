@@ -6,16 +6,16 @@ use bevy::{
     render::camera::ScalingMode,
     time::Stopwatch,
 };
+use simulation::gamestate::{ActionResult, SimCoords, SimId, SimState};
 
 use crate::{
-    gamestate::{SimCoords, SimId, SimState},
     ui::{ActionEvent, PROJECTILE_LAYER},
     PlayState,
 };
 
 use super::{
     character::{CharacterAnimation, CharacterSpawnEvent},
-    TILE_LAYER,
+    to_world, TILE_LAYER,
 };
 
 pub const TILE_SIZE: usize = 32;
@@ -108,7 +108,7 @@ pub(super) fn sync_sim(
     for (id, loc, sprite) in sim
         .sprites()
         .into_iter()
-        .map(|(id, l, c)| (id, l.to_world(), c))
+        .map(|(id, l, c)| (id, to_world(&l), c))
     {
         // TODO: add support for changing location of things if they're already spawned
         commands.send_event(CharacterSpawnEvent {
@@ -164,17 +164,19 @@ pub(super) fn action_system(
     for ev in ev_action.read() {
         debug!("action event received: {:?}", ev);
         sim.apply(ev.action);
-        use crate::gamestate::ActionResult::*;
+
         for ar in sim.diff() {
             match ar {
-                Move {
+                ActionResult::Move {
                     id,
                     from: _,
                     to: end,
                 } => handle_move(&mut commands, end, &query, id),
                 // Reset the ui
-                EndTurn => next_state.set(PlayState::Processing),
-                RemoveModel { id: _id } => next_state.set(PlayState::Processing),
+                ActionResult::EndTurn => next_state.set(PlayState::Processing),
+                ActionResult::RemoveModel { id: _id } => {
+                    next_state.set(PlayState::Processing);
+                }
                 _ => {} // no ui impact for most actions
             }
         }
@@ -193,7 +195,7 @@ pub(super) fn handle_move(
         .for_each(|(e, _, t)| {
             let start = vec2(t.translation.x, t.translation.y);
             let curve = Curve {
-                path: vec![start, target.to_world()],
+                path: vec![start, to_world(&target)],
                 time: Stopwatch::new(),
                 speed: 64.0,
             };
@@ -215,7 +217,7 @@ fn _handle_melee(
         .for_each(|(e, _, t)| {
             let start = t.translation.truncate();
             let curve = Curve {
-                path: vec![start, target.to_world().lerp(start, 0.5), start],
+                path: vec![start, to_world(&target).lerp(start, 0.5), start],
                 time: Stopwatch::new(),
                 speed: 128.0,
             };
