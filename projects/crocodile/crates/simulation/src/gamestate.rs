@@ -8,7 +8,10 @@ use bevy::prelude::{Component, Resource};
 use itertools::{Itertools, Product};
 use petgraph::algo::{has_path_connecting, DfsSpace};
 
-use crate::{info::insert_space_marine_unit, ModelSprite};
+use crate::{
+    info::{insert_necron_unit, insert_space_marine_unit},
+    ModelSprite,
+};
 
 const WORLD_SIZE: usize = 20;
 
@@ -181,7 +184,11 @@ impl Default for SimState {
         // insert_space_marine_unit(&mut state, sc(5, 10), Team::Players, 0, 10);
         insert_space_marine_unit(&mut gs, sc(1, 10), Team::Players, 0, 1);
         insert_space_marine_unit(&mut gs, sc(2, 10), Team::Players, 0, 1);
-        insert_space_marine_unit(&mut gs, sc(4, 10), Team::Players, 0, 1);
+        insert_space_marine_unit(&mut gs, sc(3, 10), Team::Players, 0, 1);
+
+        insert_necron_unit(&mut gs, sc(1, 15), Team::NPCs, 1, 1);
+        insert_necron_unit(&mut gs, sc(2, 15), Team::NPCs, 1, 1);
+        insert_necron_unit(&mut gs, sc(3, 15), Team::NPCs, 1, 1);
         gs
     }
 }

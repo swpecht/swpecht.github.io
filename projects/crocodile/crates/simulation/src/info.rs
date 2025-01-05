@@ -17,6 +17,26 @@ pub fn insert_space_marine_unit(
     }
 }
 
+pub fn insert_necron_unit(
+    gs: &mut SimState,
+    loc: SimCoords,
+    team: Team,
+    unit: u8,
+    num_models: usize,
+) {
+    for i in 0..num_models {
+        // https://wahapedia.ru/wh40k10ed/factions/necrons/Necron-Warriors
+        gs.insert_model(
+            ModelSprite::Skeleton,
+            sc(loc.x + i, loc.y),
+            team,
+            unit,
+            5,
+            1,
+        );
+    }
+}
+
 // https://wahapedia.ru/wh40k10ed/factions/space-marines/datasheets.html#Tactical-Squad
 
 pub struct RangedWeaponStats {
