@@ -9,10 +9,7 @@ use bevy::{
     utils::hashbrown::HashMap,
 };
 use itertools::{Itertools, Product};
-use petgraph::{
-    algo::{has_path_connecting, DfsSpace},
-    visit::{EdgeIndexable, NodeIndexable},
-};
+use petgraph::algo::{has_path_connecting, DfsSpace};
 
 use crate::{
     info::{insert_necron_unit, insert_space_marine_unit},
