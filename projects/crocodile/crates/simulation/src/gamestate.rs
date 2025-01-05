@@ -4,9 +4,15 @@ use std::{
     ops::{Add, Sub},
 };
 
-use bevy::prelude::{Component, Resource};
+use bevy::{
+    prelude::{Component, Resource},
+    utils::hashbrown::HashMap,
+};
 use itertools::{Itertools, Product};
-use petgraph::algo::{has_path_connecting, DfsSpace};
+use petgraph::{
+    algo::{has_path_connecting, DfsSpace},
+    visit::{EdgeIndexable, NodeIndexable},
+};
 
 use crate::{
     info::{insert_necron_unit, insert_space_marine_unit},
@@ -121,7 +127,7 @@ struct Model {
     team: Team,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Component)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Component, PartialOrd, Ord)]
 pub struct SimId(usize);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -217,7 +223,13 @@ impl SimState {
 
         let coherency = self.unit_coherency();
 
-        if coherency.iter().filter(|x| !x.1).count() == 0 {
+        if coherency
+            .iter()
+            .filter(|(id, _)| self.get_model(*id).team == self.cur_team())
+            .filter(|x| !x.1)
+            .count()
+            == 0
+        {
             actions.push(Action::EndTurn);
         }
 
@@ -356,13 +368,25 @@ impl SimState {
             let mut unit_size = 0;
 
             // We create a graph to represent the models in a unit
-            let mut edges = Vec::new();
+            let mut g = petgraph::graph::UnGraph::<SimId, ()>::new_undirected();
+            let mut node_lookup = HashMap::new();
+
+            self.models
+                .iter()
+                .filter(|m| m.unit == unit)
+                .filter(|m| !m.is_destroyed)
+                .for_each(|m| {
+                    let idx = g.add_node(m.id);
+                    node_lookup.insert(m.id, idx);
+                });
+
             for unit_model in self
                 .models
                 .iter()
                 .filter(|m| m.unit == unit)
                 .filter(|m| !m.is_destroyed)
             {
+                let m1_idx = node_lookup.get(&unit_model.id).unwrap();
                 let unit_loc = self.get_loc(unit_model.id).unwrap();
                 unit_size += 1;
                 for neighbor_id in CoordIterator::new(unit_loc, 1, 1)
@@ -372,19 +396,9 @@ impl SimState {
                         m2.unit == unit && !m2.is_destroyed
                     })
                 {
-                    edges.push((unit_model.id.0 as u32, neighbor_id.0 as u32));
+                    let m2_idx = node_lookup.get(&neighbor_id).unwrap();
+                    g.add_edge(*m1_idx, *m2_idx, ());
                 }
-            }
-
-            // handle case where there are no edges, but more than 1 unit
-            if edges.is_empty() && unit_size > 1 {
-                is_coherent = false;
-            }
-
-            let g = petgraph::graph::UnGraph::<bool, ()>::from_edges(&edges);
-
-            if g.node_count() < unit_size && unit_size > 1 {
-                is_coherent = false; // have a lone unit somewhere
             }
 
             // First check that each model has enough neighbors
@@ -718,6 +732,17 @@ mod tests {
         insert_space_marine_unit(&mut gs, sc(4, 10), Team::Players, 0, 1);
         assert!(!gs.unit_coherency().iter().all(|x| x.1));
         gs.apply(Action::RemoveModel { id: SimId(2) });
+        assert!(gs.unit_coherency().iter().all(|x| x.1));
+
+        // Coherency works with multiple units and teams
+        let mut gs = SimState::new();
+        // insert_space_marine_unit(&mut state, sc(5, 10), Team::Players, 0, 10);
+        insert_space_marine_unit(&mut gs, sc(1, 10), Team::Players, 0, 1);
+        insert_space_marine_unit(&mut gs, sc(2, 10), Team::Players, 0, 1);
+        insert_space_marine_unit(&mut gs, sc(3, 10), Team::Players, 0, 1);
+        insert_necron_unit(&mut gs, sc(1, 15), Team::NPCs, 1, 1);
+        insert_necron_unit(&mut gs, sc(2, 15), Team::NPCs, 1, 1);
+        insert_necron_unit(&mut gs, sc(3, 15), Team::NPCs, 1, 1);
         assert!(gs.unit_coherency().iter().all(|x| x.1));
     }
 
