@@ -64,6 +64,7 @@ pub enum RangedWeapon {
     Boltgun,
     Flamer,
     MissleLauncherFrag,
+    GaussFlayer,
 }
 
 impl RangedWeapon {
@@ -96,6 +97,14 @@ impl RangedWeapon {
             RangedWeapon::MissleLauncherFrag => RangedWeaponStats {
                 range: 48,
                 attack: AttackValue::D6,
+                ballistic_skill: 4,
+                strength: 4,
+                armor_penetration: 0,
+                damage: 1,
+            },
+            RangedWeapon::GaussFlayer => RangedWeaponStats {
+                range: 24,
+                attack: AttackValue::One,
                 ballistic_skill: 4,
                 strength: 4,
                 armor_penetration: 0,
