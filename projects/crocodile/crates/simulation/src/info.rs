@@ -13,7 +13,17 @@ pub fn insert_space_marine_unit(
     num_models: usize,
 ) {
     for i in 0..num_models {
-        gs.insert_model(ModelSprite::Knight, sc(loc.x + i, loc.y), team, unit, 6, 2);
+        gs.insert_model(
+            ModelSprite::Knight,
+            sc(loc.x + i, loc.y),
+            team,
+            unit,
+            ModelStats {
+                movement: 6,
+                wound: 2,
+            },
+            vec![RangedWeapon::BoltPistol, RangedWeapon::Boltgun],
+        );
     }
 }
 
@@ -31,8 +41,11 @@ pub fn insert_necron_unit(
             sc(loc.x + i, loc.y),
             team,
             unit,
-            5,
-            1,
+            ModelStats {
+                movement: 5,
+                wound: 1,
+            },
+            vec![RangedWeapon::GaussFlayer],
         );
     }
 }
@@ -46,6 +59,12 @@ pub struct RangedWeaponStats {
     pub strength: u8,
     pub armor_penetration: u8,
     pub damage: u8,
+}
+
+#[derive(Hash, Debug, PartialEq, Clone)]
+pub struct ModelStats {
+    pub movement: u8,
+    pub wound: u8,
 }
 
 pub enum AttackValue {

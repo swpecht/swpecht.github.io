@@ -8,7 +8,7 @@ use itertools::{Itertools, Product};
 use petgraph::algo::{has_path_connecting, DfsSpace};
 
 use crate::{
-    info::{insert_necron_unit, insert_space_marine_unit},
+    info::{insert_necron_unit, insert_space_marine_unit, ModelStats, RangedWeapon},
     ModelSprite,
 };
 
@@ -130,13 +130,12 @@ struct Model {
     unit: u8,
     id: SimId,
     is_destroyed: bool,
-    turn_movement: u8,
-    movement: u8,
     pub sprite: ModelSprite,
-    cur_wound: u8,
-    max_wound: u8,
+    cur_stats: ModelStats,
+    base_stats: ModelStats,
     remaining_actions: usize,
     team: Team,
+    ranged_weapons: Vec<RangedWeapon>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -317,7 +316,7 @@ impl SimState {
                 }
 
                 ActionResult::SpendMovement { id, amount } => {
-                    self.models[id.0].movement += amount;
+                    self.models[id.0].cur_stats.movement += amount;
                 }
                 ActionResult::EndPhase => {
                     if self.phase == Phase::Command {
@@ -332,7 +331,7 @@ impl SimState {
                     };
                 }
                 ActionResult::RestoreMovement { id, amount } => {
-                    self.models[id.0].movement -= amount
+                    self.models[id.0].cur_stats.movement -= amount
                 }
 
                 ActionResult::NewTurn(x) => self.is_start_of_turn = !x,
@@ -462,9 +461,9 @@ impl SimState {
             .iter()
             .filter(|m| m.team == cur_team && !m.is_destroyed)
         {
-            if model.movement > 0 {
+            if model.cur_stats.movement > 0 {
                 let model_loc = self.get_loc(model.id).unwrap();
-                for l in CoordIterator::new(model_loc, model.movement, 1) {
+                for l in CoordIterator::new(model_loc, model.cur_stats.movement, 1) {
                     if !self.is_populated(&l) {
                         actions.push(Move {
                             id: model.id,
@@ -506,7 +505,7 @@ impl SimState {
                 }
 
                 ActionResult::SpendMovement { id, amount } => {
-                    self.models[id.0].movement -= amount;
+                    self.models[id.0].cur_stats.movement -= amount;
                 }
                 ActionResult::EndPhase => {
                     if self.phase == Phase::Fight {
@@ -522,7 +521,7 @@ impl SimState {
                     };
                 }
                 ActionResult::RestoreMovement { id, amount } => {
-                    self.models[id.0].movement += amount;
+                    self.models[id.0].cur_stats.movement += amount;
                 }
 
                 ActionResult::NewTurn(x) => self.is_start_of_turn = x,
@@ -540,20 +539,19 @@ impl SimState {
         loc: SimCoords,
         team: Team,
         unit: u8,
-        movement: u8,
-        wound: u8,
+        model_stats: ModelStats,
+        ranged_weapons: Vec<RangedWeapon>,
     ) {
         let entity = Model {
             id: SimId(self.next_id),
-            turn_movement: movement,
-            movement,
+            cur_stats: model_stats.clone(),
+            base_stats: model_stats,
             remaining_actions: 1,
             team,
             unit,
             is_destroyed: false,
             sprite,
-            cur_wound: wound,
-            max_wound: wound,
+            ranged_weapons,
         };
 
         self.models.push(entity);
@@ -584,7 +582,7 @@ impl SimState {
         if self.phase == Phase::Movement {
             let cur_team = self.cur_team();
             for model in self.models.iter().filter(|m| m.team == cur_team) {
-                let movement_restore = model.turn_movement - model.movement;
+                let movement_restore = model.base_stats.movement - model.cur_stats.movement;
                 if movement_restore > 0 {
                     self.queued_results.push(ActionResult::RestoreMovement {
                         id: model.id,
@@ -631,11 +629,11 @@ impl SimState {
     }
 
     pub fn health(&self, id: &SimId) -> Option<u8> {
-        self.models.get(id.0).map(|x| x.cur_wound)
+        self.models.get(id.0).map(|x| x.cur_stats.wound)
     }
 
     pub fn max_health(&self, id: &SimId) -> Option<u8> {
-        self.models.get(id.0).map(|x| x.max_wound)
+        self.models.get(id.0).map(|x| x.base_stats.wound)
     }
 
     /// Returns all of the action results to go from the previous state to the current one
