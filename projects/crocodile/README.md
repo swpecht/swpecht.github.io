@@ -1,8 +1,8 @@
 # Update sim to Warhammer 40k style rules
     [*] Implement unit coherency for movement
     [ ] Implement shooting phases
-        [ ] Implement all phase changes and cycling -- have an end phase action
-        [ ] Implement legal actions to depends on the phase
+        [*] Implement all phase changes and cycling -- have an end phase action, incl. fix for active team
+        [*] Implement legal actions to depends on the phase
         [ ] Select eligible unit
         [ ] Select targets
         [ ] Make ranged attacks
@@ -16,10 +16,12 @@
     [ ] Implement charge phase
     [ ] Implement fight phase
     [ ] Implement Command phase
+    [ ] Imlpement victory points, including the per round cards that are drawn or controlling areas. See some 40k in 40min videos
     [ ] Implement passives, like the necron regrowth
     
 [ ] Switch to hexes for world map instead of squares, details: https://www.redblobgames.com/grids/hexagons/
     * Likely want to model everything as a graph for many operations, e.g. path finding we get for free, each node could have a cost to traverse by team, terrain is tough for all, can pass through friends, not enemies
+    * Instead of storing coords, could store the index in the grpah, then can lookup by that
 
 # QoL:
 [ ] Implement highlight for the selected unit

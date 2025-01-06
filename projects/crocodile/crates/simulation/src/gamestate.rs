@@ -56,7 +56,7 @@ pub struct SimState {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Action {
     #[default]
-    EndMovementPhase,
+    EndPhase,
     Move {
         id: SimId,
         from: SimCoords,
@@ -80,7 +80,7 @@ pub enum ActionResult {
     // Items for reseting at the end of a turn
     /// This only ends the turn, it doesn't do anything to reset, that must be
     /// done by using "restore actions"
-    EndMovementPhase,
+    EndPhase,
     /// Restore movement to an entity, often used at the end of a turn to return to full amounts
     RestoreMovement {
         id: SimId,
@@ -103,7 +103,7 @@ struct AppliedActionResult {
 impl Display for Action {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Action::EndMovementPhase => f.write_str("End movement phase"),
+            Action::EndPhase => f.write_str("End movement phase"),
             Action::Move { id, from, to } => {
                 f.write_fmt(format_args!("Moving {:?}: from {:?} to {:?}", id, from, to))
             }
@@ -208,7 +208,7 @@ impl SimState {
         }
 
         match action {
-            Action::EndMovementPhase => self.generate_results_end_movement(),
+            Action::EndPhase => self.generate_results_end_phase(),
             Action::Move { id, from, to } => self.generate_results_move_model(id, from, to),
             Action::RemoveModel { id } => self.generate_results_remove_model(id),
         }
@@ -219,43 +219,13 @@ impl SimState {
 
     pub fn legal_actions(&self, actions: &mut Vec<Action>) {
         actions.clear();
-        use Action::*;
 
-        let coherency = self.unit_coherency();
-
-        if coherency
-            .iter()
-            .filter(|(id, _)| self.get_model(*id).team == self.cur_team())
-            .filter(|x| !x.1)
-            .count()
-            == 0
-        {
-            actions.push(Action::EndMovementPhase);
-        }
-
-        coherency
-            .into_iter()
-            .filter(|x| !x.1)
-            .for_each(|x| actions.push(Action::RemoveModel { id: x.0 }));
-
-        let cur_team = self.cur_team();
-        for model in self
-            .models
-            .iter()
-            .filter(|m| m.team == cur_team && !m.is_destroyed)
-        {
-            if model.movement > 0 {
-                let model_loc = self.get_loc(model.id).unwrap();
-                for l in CoordIterator::new(model_loc, model.movement, 1) {
-                    if !self.is_populated(&l) {
-                        actions.push(Move {
-                            id: model.id,
-                            from: model_loc,
-                            to: l,
-                        });
-                    }
-                }
-            }
+        match &self.phase {
+            Phase::Command => self.legal_actions_command(actions),
+            Phase::Movement => self.legal_actions_movement(actions),
+            Phase::Shooting(_shooting_phase) => self.legal_actions_shooting(actions),
+            Phase::Charge => self.legal_actions_charge(actions),
+            Phase::Fight => self.legal_actions_fight(actions),
         }
     }
 
@@ -337,9 +307,17 @@ impl SimState {
                 ActionResult::SpendMovement { id, amount } => {
                     self.models[id.0].movement += amount;
                 }
-                ActionResult::EndMovementPhase => {
-                    self.initiative.rotate_right(1);
-                    self.phase = Phase::Movement;
+                ActionResult::EndPhase => {
+                    if self.phase == Phase::Command {
+                        self.initiative.rotate_right(1);
+                    }
+                    self.phase = match self.phase {
+                        Phase::Command => Phase::Fight,
+                        Phase::Movement => Phase::Command,
+                        Phase::Shooting(_) => Phase::Movement,
+                        Phase::Charge => Phase::Shooting(ShootingPhase::SelectUnit),
+                        Phase::Fight => Phase::Charge,
+                    };
                 }
                 ActionResult::RestoreMovement { id, amount } => {
                     self.models[id.0].movement -= amount
@@ -440,6 +418,61 @@ impl SimState {
 }
 
 impl SimState {
+    fn legal_actions_command(&self, actions: &mut Vec<Action>) {
+        actions.push(Action::EndPhase);
+    }
+
+    fn legal_actions_movement(&self, actions: &mut Vec<Action>) {
+        use Action::*;
+        let coherency = self.unit_coherency();
+        if coherency
+            .iter()
+            .filter(|(id, _)| self.get_model(*id).team == self.cur_team())
+            .filter(|x| !x.1)
+            .count()
+            == 0
+        {
+            actions.push(Action::EndPhase);
+        }
+
+        coherency
+            .into_iter()
+            .filter(|x| !x.1)
+            .for_each(|x| actions.push(Action::RemoveModel { id: x.0 }));
+
+        let cur_team = self.cur_team();
+        for model in self
+            .models
+            .iter()
+            .filter(|m| m.team == cur_team && !m.is_destroyed)
+        {
+            if model.movement > 0 {
+                let model_loc = self.get_loc(model.id).unwrap();
+                for l in CoordIterator::new(model_loc, model.movement, 1) {
+                    if !self.is_populated(&l) {
+                        actions.push(Move {
+                            id: model.id,
+                            from: model_loc,
+                            to: l,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    fn legal_actions_shooting(&self, actions: &mut Vec<Action>) {
+        actions.push(Action::EndPhase);
+    }
+
+    fn legal_actions_charge(&self, actions: &mut Vec<Action>) {
+        actions.push(Action::EndPhase);
+    }
+
+    fn legal_actions_fight(&self, actions: &mut Vec<Action>) {
+        actions.push(Action::EndPhase);
+    }
+
     /// Apply all of the queued results
     fn apply_queued_results(&mut self) {
         let generation = self.generation;
@@ -459,9 +492,18 @@ impl SimState {
                 ActionResult::SpendMovement { id, amount } => {
                     self.models[id.0].movement -= amount;
                 }
-                ActionResult::EndMovementPhase => {
-                    self.initiative.rotate_left(1);
-                    self.phase = Phase::Shooting(ShootingPhase::SelectUnit);
+                ActionResult::EndPhase => {
+                    if self.phase == Phase::Fight {
+                        self.initiative.rotate_left(1);
+                    }
+
+                    self.phase = match self.phase {
+                        Phase::Command => Phase::Movement,
+                        Phase::Movement => Phase::Shooting(ShootingPhase::SelectUnit),
+                        Phase::Shooting(_) => Phase::Charge,
+                        Phase::Charge => Phase::Fight,
+                        Phase::Fight => Phase::Command,
+                    };
                 }
                 ActionResult::RestoreMovement { id, amount } => {
                     self.models[id.0].movement += amount;
@@ -522,19 +564,21 @@ impl SimState {
         self.queued_results.push(ActionResult::RemoveModel { id });
     }
 
-    fn generate_results_end_movement(&mut self) {
-        let cur_team = self.cur_team();
-        for model in self.models.iter().filter(|m| m.team == cur_team) {
-            let movement_restore = model.turn_movement - model.movement;
-            if movement_restore > 0 {
-                self.queued_results.push(ActionResult::RestoreMovement {
-                    id: model.id,
-                    amount: movement_restore,
-                });
+    fn generate_results_end_phase(&mut self) {
+        if self.phase == Phase::Movement {
+            let cur_team = self.cur_team();
+            for model in self.models.iter().filter(|m| m.team == cur_team) {
+                let movement_restore = model.turn_movement - model.movement;
+                if movement_restore > 0 {
+                    self.queued_results.push(ActionResult::RestoreMovement {
+                        id: model.id,
+                        amount: movement_restore,
+                    });
+                }
             }
         }
 
-        self.queued_results.push(ActionResult::EndMovementPhase);
+        self.queued_results.push(ActionResult::EndPhase);
     }
 
     pub fn get_id(&self, coords: SimCoords) -> Option<SimId> {
@@ -719,7 +763,7 @@ mod tests {
         let mut actions = Vec::new();
         gs.legal_actions(&mut actions);
         assert!(
-            !actions.contains(&Action::EndMovementPhase),
+            !actions.contains(&Action::EndPhase),
             "Can't end turn when not in unit coherency"
         );
 
