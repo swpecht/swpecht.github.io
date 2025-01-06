@@ -6,9 +6,10 @@ use bevy::{
     render::camera::ScalingMode,
     time::Stopwatch,
 };
-use simulation::gamestate::{ActionResult, SimCoords, SimId, SimState};
+use simulation::gamestate::{ActionResult, SimCoords, SimId};
 
 use crate::{
+    sim_wrapper::{SimIdComponent, SimStateResource},
     ui::{ActionEvent, PROJECTILE_LAYER},
     PlayState,
 };
@@ -96,8 +97,8 @@ pub(super) fn setup_camera(mut commands: Commands) {
 
 pub(super) fn sync_sim(
     mut commands: Commands,
-    sim: Res<SimState>,
-    spawned_entities: Query<Entity, With<SimId>>,
+    sim: Res<SimStateResource>,
+    spawned_entities: Query<Entity, With<SimIdComponent>>,
 ) {
     // delete everything that's already spawned
     for entity in &spawned_entities {
@@ -106,6 +107,7 @@ pub(super) fn sync_sim(
 
     // respawn everything
     for (id, loc, sprite) in sim
+        .0
         .sprites()
         .into_iter()
         .map(|(id, l, c)| (id, to_world(&l), c))
@@ -117,8 +119,8 @@ pub(super) fn sync_sim(
             animation: CharacterAnimation::IDLE,
             loc,
             health: Health {
-                cur: sim.health(&id).unwrap(),
-                max: sim.max_health(&id).unwrap(),
+                cur: sim.0.health(&id).unwrap(),
+                max: sim.0.max_health(&id).unwrap(),
             },
         });
     }
@@ -157,15 +159,15 @@ pub(super) fn setup_tiles(
 pub(super) fn action_system(
     mut commands: Commands,
     mut ev_action: EventReader<ActionEvent>,
-    query: Query<(Entity, &SimId, &Transform)>,
-    mut sim: ResMut<SimState>,
+    query: Query<(Entity, &SimIdComponent, &Transform)>,
+    mut sim: ResMut<SimStateResource>,
     mut next_state: ResMut<NextState<PlayState>>,
 ) {
     for ev in ev_action.read() {
         debug!("action event received: {:?}", ev);
-        sim.apply(ev.action);
+        sim.0.apply(ev.action);
 
-        for ar in sim.diff() {
+        for ar in sim.0.diff() {
             match ar {
                 ActionResult::Move {
                     id,
@@ -186,12 +188,12 @@ pub(super) fn action_system(
 pub(super) fn handle_move(
     commands: &mut Commands,
     target: SimCoords,
-    query: &Query<(Entity, &SimId, &Transform)>,
+    query: &Query<(Entity, &SimIdComponent, &Transform)>,
     cur: SimId,
 ) {
     query
         .iter()
-        .filter(|(_, id, _)| **id == cur)
+        .filter(|(_, id, _)| id.0 == cur)
         .for_each(|(e, _, t)| {
             let start = vec2(t.translation.x, t.translation.y);
             let curve = Curve {
@@ -208,12 +210,12 @@ pub(super) fn handle_move(
 fn _handle_melee(
     commands: &mut Commands,
     target: SimCoords,
-    query: &Query<(Entity, &SimId, &Transform)>,
+    query: &Query<(Entity, &SimIdComponent, &Transform)>,
     cur: SimId,
 ) {
     query
         .iter()
-        .filter(|(_, id, _)| **id == cur)
+        .filter(|(_, id, _)| id.0 == cur)
         .for_each(|(e, _, t)| {
             let start = t.translation.truncate();
             let curve = Curve {
@@ -299,14 +301,17 @@ pub(super) fn _paint_curves(mut gizmos: Gizmos, query: Query<&Curve>) {
     }
 }
 
-pub(super) fn game_over(mut _next_state: ResMut<NextState<PlayState>>, _sim: Res<SimState>) {
+pub(super) fn game_over(
+    mut _next_state: ResMut<NextState<PlayState>>,
+    _sim: Res<SimStateResource>,
+) {
     // if sim.is_terminal() {
     //     warn!("game over");
     //     next_state.set(PlayState::Terminal);
     // }
 }
 
-pub(super) fn ai(_sim: Res<SimState>, mut _ev_action: EventWriter<ActionEvent>) {
+pub(super) fn ai(_sim: Res<SimStateResource>, mut _ev_action: EventWriter<ActionEvent>) {
     // disable the ai for now
     // if matches!(sim.cur_team(), Team::NPCs | Team::Players) {
     //     debug!("finding best move for: {:?}", sim.cur_char());

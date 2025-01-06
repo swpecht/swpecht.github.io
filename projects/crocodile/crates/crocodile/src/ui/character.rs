@@ -3,6 +3,8 @@ use std::fs;
 use bevy::{math::vec3, prelude::*};
 use simulation::{gamestate::SimId, ModelSprite};
 
+use crate::sim_wrapper::SimIdComponent;
+
 use super::{animation::AnimationConfig, Health, CHAR_LAYER};
 
 #[derive(Event)]
@@ -57,7 +59,7 @@ pub(super) fn spawn_character(
         let texture_atlas_layout = texture_atlas_layouts.add(layout);
 
         commands.spawn((
-            event.id,
+            SimIdComponent(event.id),
             Sprite::from_atlas_image(
                 texture,
                 TextureAtlas {

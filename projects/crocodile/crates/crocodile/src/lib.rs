@@ -4,6 +4,7 @@
 
 use bevy::prelude::*;
 
+pub mod sim_wrapper;
 pub mod ui;
 
 pub struct StatePlugin;

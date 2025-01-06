@@ -1,13 +1,11 @@
 #![feature(test)]
 #![feature(let_chains)]
 
-use bevy::prelude::Component;
-
 pub mod ai;
 pub mod gamestate;
 pub mod info;
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Copy, Component)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Copy)]
 pub enum ModelSprite {
     Skeleton,
     Knight,

@@ -1,10 +1,10 @@
 use animation::animate_sprite;
 use bevy::{input::common_conditions::*, math::vec2, prelude::*, window::PrimaryWindow};
 use character::{spawn_character, CharacterSpawnEvent};
-use simulation::gamestate::{Action, SimCoords, SimId, SimState};
+use simulation::gamestate::{Action, SimCoords, SimId};
 use sprite::*;
 
-use crate::PlayState;
+use crate::{sim_wrapper::SimStateResource, PlayState};
 
 pub mod animation;
 pub mod character;
@@ -193,7 +193,7 @@ fn setup_ui(mut commands: Commands) {
 
 fn populate_action_buttons(
     mut commands: Commands,
-    sim: Res<SimState>,
+    sim: Res<SimStateResource>,
     selected: Res<SelectedModel>,
     mut query: Query<Entity, With<ActionButtonParent>>,
 ) {
@@ -206,7 +206,7 @@ fn populate_action_buttons(
 
     parent.with_children(|parent| {
         let mut actions = Vec::new();
-        sim.legal_actions(&mut actions);
+        sim.0.legal_actions(&mut actions);
         for (idx, action) in actions.into_iter().enumerate() {
             if matches!(action, Action::EndMovementPhase) {
                 spawn_action_button(parent, &action.to_string(), idx);
@@ -307,7 +307,7 @@ fn tile_highlight(mouse_coords: Res<MouseWorldCoords>, mut gizmos: Gizmos) {
 
 fn selection(
     mouse_coords: Res<MouseWorldCoords>,
-    sim: Res<SimState>,
+    sim: Res<SimStateResource>,
     mut selected: ResMut<SelectedModel>,
 ) {
     // convert mouse coords to sim coords
@@ -321,7 +321,7 @@ fn selection(
         mouse_coords.0
     );
 
-    let Some(new_selection) = sim.get_id(mouse_coords.to_sim()) else {
+    let Some(new_selection) = sim.0.get_id(mouse_coords.to_sim()) else {
         return;
     };
 
@@ -333,13 +333,13 @@ fn handle_right_click(
     mut ev_action: EventWriter<ActionEvent>,
     mouse_coords: Res<MouseWorldCoords>,
     selected: Res<SelectedModel>,
-    sim: Res<SimState>,
+    sim: Res<SimStateResource>,
 ) {
     debug!("handling right click");
 
     let mut legal_actions = Vec::new();
-    sim.legal_actions(&mut legal_actions);
-    let from = sim.get_loc(selected.0).unwrap();
+    sim.0.legal_actions(&mut legal_actions);
+    let from = sim.0.get_loc(selected.0).unwrap();
     let action = Action::Move {
         to: mouse_coords.to_sim(),
         id: selected.0,
@@ -355,7 +355,7 @@ fn handle_right_click(
 /// Outline the tiles a character can validally move within
 fn highlight_moves(
     mut commands: Commands,
-    sim: Res<SimState>,
+    sim: Res<SimStateResource>,
     selected: Res<SelectedModel>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
@@ -367,7 +367,7 @@ fn highlight_moves(
         .for_each(|e| commands.entity(e).despawn());
 
     let mut actions = Vec::new();
-    sim.legal_actions(&mut actions);
+    sim.0.legal_actions(&mut actions);
 
     let rect = Rectangle::new(TILE_SIZE as f32, TILE_SIZE as f32);
     for a in actions.iter() {
@@ -395,7 +395,7 @@ fn highlight_moves(
 
 fn highlight_incoherent_unit(
     mut commands: Commands,
-    sim: Res<SimState>,
+    sim: Res<SimStateResource>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
@@ -403,13 +403,14 @@ fn highlight_incoherent_unit(
     let rect = Rectangle::new(TILE_SIZE as f32, TILE_SIZE as f32);
 
     for incoherent_id in sim
+        .0
         .unit_coherency()
         .iter()
         .filter(|(_, is_coherent)| !is_coherent)
         .map(|x| x.0)
     {
         debug!("incoherent unit found");
-        let loc = sim.get_loc(incoherent_id).unwrap();
+        let loc = sim.0.get_loc(incoherent_id).unwrap();
         let wc = to_world(&loc);
         commands.spawn((
             Mesh2d(meshes.add(rect)),
@@ -424,10 +425,10 @@ fn highlight_incoherent_unit(
 fn action_button_action(
     interaction_query: Query<(&Interaction, &ActionButton), (Changed<Interaction>, With<Button>)>,
     mut ev_action: EventWriter<ActionEvent>,
-    sim: Res<SimState>,
+    sim: Res<SimStateResource>,
 ) {
     let mut legal_actions = Vec::new();
-    sim.legal_actions(&mut legal_actions);
+    sim.0.legal_actions(&mut legal_actions);
     for (interaction, action_id) in &interaction_query {
         if *interaction == Interaction::Pressed {
             ev_action.send(ActionEvent {

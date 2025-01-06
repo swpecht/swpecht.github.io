@@ -1,13 +1,9 @@
 use std::{
-    fmt::Debug,
-    fmt::Display,
+    collections::HashMap,
+    fmt::{Debug, Display},
     ops::{Add, Sub},
 };
 
-use bevy::{
-    prelude::{Component, Resource},
-    utils::hashbrown::HashMap,
-};
 use itertools::{Itertools, Product};
 use petgraph::algo::{has_path_connecting, DfsSpace};
 
@@ -42,7 +38,7 @@ pub enum ShootingPhase {
     MakeRangedAttacks,
 }
 
-#[derive(PartialEq, Clone, Resource)]
+#[derive(PartialEq, Clone)]
 pub struct SimState {
     generation: u16,
     next_id: usize,
@@ -131,7 +127,7 @@ struct Model {
     team: Team,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Component, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct SimId(usize);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
