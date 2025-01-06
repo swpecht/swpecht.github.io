@@ -1,7 +1,9 @@
+#![feature(test)]
 #![feature(let_chains)]
 
 use bevy::prelude::Component;
 
+pub mod ai;
 pub mod gamestate;
 pub mod info;
 

@@ -6,7 +6,8 @@ use std::{
 };
 
 use dashmap::DashMap;
-use simulation::gamestate::{Action, SimState, Team};
+
+use crate::gamestate::{Action, SimState, Team};
 
 const MAX_DEPTH: u8 = 6;
 

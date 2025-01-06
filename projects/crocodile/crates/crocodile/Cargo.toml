@@ -9,7 +9,6 @@ crocodile_proc = { path = "../crocodile_proc" }
 simulation = { path = "../simulation" }
 
 rand = "0.8"
-dashmap = "5.5.3"
 itertools = "0.13.0"
 json = "0.12.4"
 
