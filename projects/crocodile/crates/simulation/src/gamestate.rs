@@ -103,11 +103,23 @@ struct AppliedActionResult {
 impl Display for Action {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Action::EndPhase => f.write_str("End movement phase"),
+            Action::EndPhase => f.write_str("End phase"),
             Action::Move { id, from, to } => {
                 f.write_fmt(format_args!("Moving {:?}: from {:?} to {:?}", id, from, to))
             }
             Action::RemoveModel { id } => f.write_fmt(format_args!("Removing unit: {:?}", id)),
+        }
+    }
+}
+
+impl Display for Phase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Phase::Command => f.write_str("Command phase"),
+            Phase::Movement => f.write_str("Movement phase"),
+            Phase::Shooting(_) => f.write_str("Shooting phase"),
+            Phase::Charge => f.write_str("Charge phase"),
+            Phase::Fight => f.write_str("Fight phase"),
         }
     }
 }
@@ -414,6 +426,10 @@ impl SimState {
         }
 
         results
+    }
+
+    pub fn phase(&self) -> Phase {
+        self.phase.clone()
     }
 }
 

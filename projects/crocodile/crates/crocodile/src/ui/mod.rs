@@ -209,7 +209,7 @@ fn populate_action_buttons(
         sim.0.legal_actions(&mut actions);
         for (idx, action) in actions.into_iter().enumerate() {
             if matches!(action, Action::EndPhase) {
-                spawn_action_button(parent, &action.to_string(), idx);
+                spawn_action_button(parent, &format!("End {}", sim.0.phase()), idx);
             } else if matches!(action, Action::RemoveModel { id } if id == selected.0) {
                 spawn_action_button(parent, "Remove model", idx);
             }
