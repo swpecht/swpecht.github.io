@@ -5,7 +5,6 @@
 use bevy::prelude::*;
 
 pub mod ai;
-pub mod alloc;
 pub mod ui;
 
 pub struct StatePlugin;
