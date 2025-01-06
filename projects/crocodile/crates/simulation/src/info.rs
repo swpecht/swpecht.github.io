@@ -122,6 +122,7 @@ impl Display for RangedWeapon {
             Boltgun => "Boltgun",
             Flamer => "Flamer",
             MissleLauncherFrag => "Missle Launcher - Frag",
+            GaussFlayer => "Gauss Flayer",
         })
     }
 }

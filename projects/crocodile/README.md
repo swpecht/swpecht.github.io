@@ -1,24 +1,22 @@
 # Update sim to Warhammer 40k style rules
-    [ ] Implement unit coherency for movement
-        * Base entity for the gamestate should be a model -- some models (like Librarian, can be attached to units)
-        [*] Allow all entities on a team to move and act at once, makes keeping track or turn ordering easier
-        [*] Fix highlight to use z-layer rather than gizmos
-        [*] Only show movement highlight for the selected model
-        [*] Implement moving the first model in a unit
-        [*] Add highlight for unit coherence
-        [*] Implement movement constraints on unit -- don't constrain the legal moves, but constrain the moves models in that unit can take?
-            * Or don't worry about any of this -- but just desrtoy the units that aren't in unit coherence at the end of the turn
-        [*] Add game logic for removing incoherent units
-        [*] Add ui for removing units for lack of coherency at end of movement phase
-            [*] Fix bug where occupied is checking for a destroyed model, counting as hit
-            [*] Fix bug where sprite still showing up after the remove model action
-        [ ] Fix bug where two units with a single gap then another unit results in unit coherency
-            [ ] May want to refactor out the sim logic to a different crate for easier debugging
-        [ ] Fix bug where removing unit doesn't fix coherency issue -- need to add a test for this
+    [*] Implement unit coherency for movement
     [ ] Implement shooting phases
+        [ ] Implement all phase changes and cycling -- have an end phase action
+        [ ] Implement legal actions to depends on the phase
+        [ ] Select eligible unit
+        [ ] Select targets
+        [ ] Make ranged attacks
+        [ ] Repeat for next eligible unit
+        [ ] Implement advanced features
+            [ ] Implement visibility
+    [ ] Implement movement phase
+        [ ] models cannot move within engagement range of other models
+        [ ] implement Advance mode
+        [ ] implement fall back moves -- color code fall back move squares and regular squares? then still a single click where go
     [ ] Implement charge phase
     [ ] Implement fight phase
     [ ] Implement Command phase
+    [ ] Implement passives, like the necron regrowth
     
 [ ] Switch to hexes for world map instead of squares, details: https://www.redblobgames.com/grids/hexagons/
     * Likely want to model everything as a graph for many operations, e.g. path finding we get for free, each node could have a cost to traverse by team, terrain is tough for all, can pass through friends, not enemies
@@ -26,11 +24,13 @@
 # QoL:
 [ ] Implement highlight for the selected unit
 [ ] Add in a log of what actions were taken
+[ ] Implement the select unit loop for movement?
 
 # Game data
 [ ] Create space marine starter army
     * https://www.dakkadakka.com/wiki/en/Starter_Army_Lists_for_each_40k_Race_with_Costs%21#500_Pts._11
 [ ] Create necron starter army
+    * https://wahapedia.ru/wh40k10ed/factions/necrons/Necron-Warriors
 
 
 

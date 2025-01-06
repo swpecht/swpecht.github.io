@@ -56,13 +56,3 @@ fn monitor_processing(
 fn transition_to_waiting(mut app_state: ResMut<NextState<PlayState>>) {
     app_state.set(PlayState::Waiting);
 }
-
-// impl Component for ModelSprite {
-//     const STORAGE_TYPE: bevy::ecs::component::StorageType;
-// }
-
-// impl Resource for SimState {}
-
-// impl Component for SimId {
-//     const STORAGE_TYPE: bevy::ecs::component::StorageType;
-// }

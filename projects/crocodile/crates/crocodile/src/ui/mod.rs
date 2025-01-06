@@ -208,7 +208,7 @@ fn populate_action_buttons(
         let mut actions = Vec::new();
         sim.legal_actions(&mut actions);
         for (idx, action) in actions.into_iter().enumerate() {
-            if matches!(action, Action::EndTurn) {
+            if matches!(action, Action::EndMovementPhase) {
                 spawn_action_button(parent, &action.to_string(), idx);
             } else if matches!(action, Action::RemoveModel { id } if id == selected.0) {
                 spawn_action_button(parent, "Remove model", idx);

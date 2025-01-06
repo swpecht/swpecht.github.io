@@ -25,14 +25,21 @@ pub enum Team {
     NPCs,
 }
 
-#[derive(Default, PartialEq, Eq, Clone)]
+#[derive(Default, PartialEq, Eq, Clone, Debug)]
 pub enum Phase {
     #[default]
     Command,
     Movement,
-    Shooting,
+    Shooting(ShootingPhase),
     Charge,
     Fight,
+}
+
+#[derive(PartialEq, Eq, Clone, Debug)]
+pub enum ShootingPhase {
+    SelectUnit,
+    SelectTargets,
+    MakeRangedAttacks,
 }
 
 #[derive(PartialEq, Clone, Resource)]
@@ -53,7 +60,7 @@ pub struct SimState {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Action {
     #[default]
-    EndTurn,
+    EndMovementPhase,
     Move {
         id: SimId,
         from: SimCoords,
@@ -77,7 +84,7 @@ pub enum ActionResult {
     // Items for reseting at the end of a turn
     /// This only ends the turn, it doesn't do anything to reset, that must be
     /// done by using "restore actions"
-    EndTurn,
+    EndMovementPhase,
     /// Restore movement to an entity, often used at the end of a turn to return to full amounts
     RestoreMovement {
         id: SimId,
@@ -100,7 +107,7 @@ struct AppliedActionResult {
 impl Display for Action {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Action::EndTurn => f.write_str("End turn"),
+            Action::EndMovementPhase => f.write_str("End movement phase"),
             Action::Move { id, from, to } => {
                 f.write_fmt(format_args!("Moving {:?}: from {:?} to {:?}", id, from, to))
             }
@@ -205,7 +212,7 @@ impl SimState {
         }
 
         match action {
-            Action::EndTurn => self.generate_results_end_turn(),
+            Action::EndMovementPhase => self.generate_results_end_movement(),
             Action::Move { id, from, to } => self.generate_results_move_model(id, from, to),
             Action::RemoveModel { id } => self.generate_results_remove_model(id),
         }
@@ -227,7 +234,7 @@ impl SimState {
             .count()
             == 0
         {
-            actions.push(Action::EndTurn);
+            actions.push(Action::EndMovementPhase);
         }
 
         coherency
@@ -334,8 +341,9 @@ impl SimState {
                 ActionResult::SpendMovement { id, amount } => {
                     self.models[id.0].movement += amount;
                 }
-                ActionResult::EndTurn => {
+                ActionResult::EndMovementPhase => {
                     self.initiative.rotate_right(1);
+                    self.phase = Phase::Movement;
                 }
                 ActionResult::RestoreMovement { id, amount } => {
                     self.models[id.0].movement -= amount
@@ -455,8 +463,9 @@ impl SimState {
                 ActionResult::SpendMovement { id, amount } => {
                     self.models[id.0].movement -= amount;
                 }
-                ActionResult::EndTurn => {
+                ActionResult::EndMovementPhase => {
                     self.initiative.rotate_left(1);
+                    self.phase = Phase::Shooting(ShootingPhase::SelectUnit);
                 }
                 ActionResult::RestoreMovement { id, amount } => {
                     self.models[id.0].movement += amount;
@@ -517,7 +526,7 @@ impl SimState {
         self.queued_results.push(ActionResult::RemoveModel { id });
     }
 
-    fn generate_results_end_turn(&mut self) {
+    fn generate_results_end_movement(&mut self) {
         let cur_team = self.cur_team();
         for model in self.models.iter().filter(|m| m.team == cur_team) {
             let movement_restore = model.turn_movement - model.movement;
@@ -529,12 +538,7 @@ impl SimState {
             }
         }
 
-        // if !self.is_start_of_turn {
-        //     self.queued_results.push(ActionResult::NewTurn(true))
-        // }
-
-        // Needs to be the last item to process, changes the current player
-        self.queued_results.push(ActionResult::EndTurn);
+        self.queued_results.push(ActionResult::EndMovementPhase);
     }
 
     pub fn get_id(&self, coords: SimCoords) -> Option<SimId> {
@@ -642,6 +646,7 @@ impl std::hash::Hash for SimState {
 impl Debug for SimState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SimState")
+            .field("phase", &self.phase)
             .field("generation", &self.generation)
             .field("next_id", &self.next_id)
             .field("queued_results", &self.queued_results)
@@ -718,7 +723,7 @@ mod tests {
         let mut actions = Vec::new();
         gs.legal_actions(&mut actions);
         assert!(
-            !actions.contains(&Action::EndTurn),
+            !actions.contains(&Action::EndMovementPhase),
             "Can't end turn when not in unit coherency"
         );
 
