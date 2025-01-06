@@ -9,15 +9,9 @@ crocodile_proc = { path = "../crocodile_proc" }
 simulation = { path = "../simulation" }
 
 rand = "0.8"
-clone_from = "0.1.0"
 dashmap = "5.5.3"
 itertools = "0.13.0"
-tinyvec = "1.6.1"
-serde = "1.0.204"
-# serde_yaml = "0.9.34"
-anyhow = "1.0.86"
 json = "0.12.4"
-petgraph = "0.7.0"
 
 
 [dependencies.bevy]
