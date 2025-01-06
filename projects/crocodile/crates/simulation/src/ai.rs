@@ -77,11 +77,12 @@ struct AlphaBetaResult {
     remaining_depth: u8,
 }
 type TranspositionKey = (Team, u64);
+type NodeReference = Rc<RefCell<Vec<(i32, Action)>>>;
 /// Helper struct to speeding up alpha_beta search
 #[derive(Clone)]
 struct AlphaBetaCache {
     action_vec: Vec<Action>,
-    child_nodes: Vec<Rc<RefCell<Vec<(i32, Action)>>>>,
+    child_nodes: Vec<NodeReference>,
     transposition_table: Arc<DashMap<TranspositionKey, AlphaBetaResult>>,
     pv_moves: [Option<Action>; MAX_DEPTH as usize],
 }
