@@ -430,6 +430,12 @@ impl SimState {
     pub fn phase(&self) -> Phase {
         self.phase.clone()
     }
+
+    pub fn set_phase(&mut self, phase: Phase, team: Team) {
+        while !(self.phase() == phase && self.cur_team() == team) {
+            self.apply(Action::EndPhase);
+        }
+    }
 }
 
 impl SimState {
@@ -477,6 +483,17 @@ impl SimState {
     }
 
     fn legal_actions_shooting(&self, actions: &mut Vec<Action>) {
+        let cur_team = self.cur_team();
+
+        let units_on_team = self
+            .models
+            .iter()
+            .filter(|m| m.team == cur_team)
+            .map(|m| m.unit)
+            .unique();
+
+        for unit in units_on_team {}
+
         actions.push(Action::EndPhase);
     }
 
@@ -818,6 +835,14 @@ mod tests {
         assert_eq!(gs.cur_team(), Team::Players);
         gs.apply(Action::EndPhase);
         assert_eq!(gs.phase(), Phase::Command);
+        assert_eq!(gs.cur_team(), Team::NPCs);
+    }
+
+    #[test]
+    fn test_set_phase() {
+        let mut gs = SimState::new();
+        gs.set_phase(Phase::Fight, Team::NPCs);
+        assert_eq!(gs.phase(), Phase::Fight);
         assert_eq!(gs.cur_team(), Team::NPCs);
     }
 
