@@ -8,7 +8,9 @@ use itertools::{Itertools, Product};
 use petgraph::algo::{has_path_connecting, DfsSpace};
 
 use crate::{
-    info::{insert_necron_unit, insert_space_marine_unit, ModelStats, RangedWeapon},
+    info::{
+        insert_necron_unit, insert_space_marine_unit, ModelStats, RangedWeapon, RangedWeaponStats,
+    },
     ModelSprite,
 };
 
@@ -68,6 +70,11 @@ pub enum Action {
         from: SimCoords,
         to: SimCoords,
     },
+    Shoot {
+        from: UnitId,
+        to: UnitId,
+        ranged_weapon: RangedWeapon,
+    },
     /// Remove a model due to lack of unit coherency
     RemoveModel { id: SimId },
 }
@@ -114,6 +121,11 @@ impl Display for Action {
                 f.write_fmt(format_args!("Moving {:?}: from {:?} to {:?}", id, from, to))
             }
             Action::RemoveModel { id } => f.write_fmt(format_args!("Removing unit: {:?}", id)),
+            Action::Shoot {
+                from: _from,
+                to: _to,
+                ranged_weapon: _ranged_weapon,
+            } => todo!(),
         }
     }
 }
@@ -233,6 +245,11 @@ impl SimState {
             Action::EndPhase => self.generate_results_end_phase(),
             Action::Move { id, from, to } => self.generate_results_move_model(id, from, to),
             Action::RemoveModel { id } => self.generate_results_remove_model(id),
+            Action::Shoot {
+                from,
+                to,
+                ranged_weapon,
+            } => todo!(),
         }
 
         self.apply_queued_results();
@@ -495,15 +512,34 @@ impl SimState {
 
     fn legal_actions_shooting(&self, actions: &mut Vec<Action>) {
         let cur_team = self.cur_team();
+        let enemy_team = match cur_team {
+            Team::Players => Team::NPCs,
+            Team::NPCs => Team::Players,
+        };
 
-        let units_on_team = self
-            .models
-            .iter()
-            .filter(|m| m.team == cur_team)
-            .map(|m| m.unit)
-            .unique();
+        for model in self.live_models(cur_team) {
+            for weapon in &model.ranged_weapons {
+                let range = weapon.stats().range;
 
-        for unit in units_on_team {}
+                for enemy in self.live_models(enemy_team) {
+                    if self
+                        .get_loc(model.id)
+                        .unwrap()
+                        .dist(&self.get_loc(enemy.id).unwrap())
+                        <= range as usize
+                    {
+                        let action = Action::Shoot {
+                            from: model.unit,
+                            to: enemy.unit,
+                            ranged_weapon: *weapon,
+                        };
+                        if !actions.contains(&action) {
+                            actions.push(action);
+                        }
+                    }
+                }
+            }
+        }
 
         actions.push(Action::EndPhase);
     }
@@ -514,6 +550,12 @@ impl SimState {
 
     fn legal_actions_fight(&self, actions: &mut Vec<Action>) {
         actions.push(Action::EndPhase);
+    }
+
+    fn live_models(&self, team: Team) -> impl Iterator<Item = &Model> {
+        self.models
+            .iter()
+            .filter(move |m| m.team == team && !m.is_destroyed)
     }
 
     /// Apply all of the queued results
@@ -887,11 +929,57 @@ mod tests {
         gs.legal_actions(&mut actions);
         assert_eq!(actions, vec![Action::EndPhase]);
 
-        insert_necron_unit(&mut gs, vec![sc(3, 10)], Team::NPCs);
+        // single target in range
+        insert_necron_unit(&mut gs, vec![sc(3, 10), sc(4, 10)], Team::NPCs);
         gs.legal_actions(&mut actions);
-        todo!()
+        assert_eq!(
+            actions,
+            vec![
+                Action::Shoot {
+                    from: UnitId(1),
+                    to: UnitId(3),
+                    ranged_weapon: RangedWeapon::BoltPistol
+                },
+                Action::Shoot {
+                    from: UnitId(1),
+                    to: UnitId(3),
+                    ranged_weapon: RangedWeapon::Boltgun
+                },
+                Action::EndPhase
+            ]
+        );
 
         // add in when part of the unit is in range and part is out of range, on both the attacking a fired upon units
+        insert_necron_unit(
+            &mut gs,
+            vec![sc(
+                (1 + RangedWeapon::BoltPistol.stats().range + 1).into(),
+                10,
+            )],
+            Team::NPCs,
+        );
+        gs.legal_actions(&mut actions);
+        assert_eq!(
+            actions,
+            vec![
+                Action::Shoot {
+                    from: UnitId(1),
+                    to: UnitId(3),
+                    ranged_weapon: RangedWeapon::BoltPistol
+                },
+                Action::Shoot {
+                    from: UnitId(1),
+                    to: UnitId(3),
+                    ranged_weapon: RangedWeapon::Boltgun
+                },
+                Action::Shoot {
+                    from: UnitId(1),
+                    to: UnitId(4),
+                    ranged_weapon: RangedWeapon::Boltgun
+                },
+                Action::EndPhase
+            ]
+        );
     }
 
     #[test]

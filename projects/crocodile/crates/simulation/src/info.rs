@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use crate::{
-    gamestate::{sc, SimCoords, SimState, Team, UnitType},
+    gamestate::{SimCoords, SimState, Team, UnitType},
     ModelSprite,
 };
 
@@ -52,6 +52,7 @@ pub fn insert_necron_unit(gs: &mut SimState, locs: Vec<SimCoords>, team: Team) {
 
 // https://wahapedia.ru/wh40k10ed/factions/space-marines/datasheets.html#Tactical-Squad
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct RangedWeaponStats {
     pub range: u8,
     pub attack: AttackValue,
@@ -67,7 +68,9 @@ pub struct ModelStats {
     pub wound: u8,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AttackValue {
+    #[default]
     One,
     Two,
     Three,
@@ -76,7 +79,7 @@ pub enum AttackValue {
 }
 
 // https://wahapedia.ru/wh40k10ed/factions/space-marines/datasheets.html#Tactical-Squad
-#[derive(PartialEq, Debug, Default, Clone, Hash)]
+#[derive(PartialEq, Debug, Default, Clone, Hash, Eq, Copy)]
 pub enum RangedWeapon {
     #[default]
     BoltPistol,
