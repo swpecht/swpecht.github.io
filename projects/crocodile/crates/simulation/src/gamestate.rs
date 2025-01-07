@@ -803,6 +803,25 @@ mod tests {
     }
 
     #[test]
+    fn test_phase_change() {
+        let mut gs = SimState::new();
+        assert_eq!(gs.phase(), Phase::Movement); // for now starting in movement phase
+        assert_eq!(gs.cur_team(), Team::Players);
+        gs.apply(Action::EndPhase);
+        assert_eq!(gs.phase(), Phase::Shooting(ShootingPhase::SelectUnit));
+        assert_eq!(gs.cur_team(), Team::Players);
+        gs.apply(Action::EndPhase);
+        assert_eq!(gs.phase(), Phase::Charge);
+        assert_eq!(gs.cur_team(), Team::Players);
+        gs.apply(Action::EndPhase);
+        assert_eq!(gs.phase(), Phase::Fight);
+        assert_eq!(gs.cur_team(), Team::Players);
+        gs.apply(Action::EndPhase);
+        assert_eq!(gs.phase(), Phase::Command);
+        assert_eq!(gs.cur_team(), Team::NPCs);
+    }
+
+    #[test]
     fn test_undo() {
         let mut start_state = SimState::new();
         insert_space_marine_unit(&mut start_state, sc(1, 10), Team::Players, 0, 10);
