@@ -1,23 +1,23 @@
 use std::fmt::Display;
 
 use crate::{
-    gamestate::{sc, SimCoords, SimState, Team},
+    gamestate::{sc, SimCoords, SimState, Team, UnitType},
     ModelSprite,
 };
 
-pub fn insert_space_marine_unit(
-    gs: &mut SimState,
-    loc: SimCoords,
-    team: Team,
-    unit: u8,
-    num_models: usize,
-) {
-    for i in 0..num_models {
+pub fn insert_space_marine_unit(gs: &mut SimState, locs: Vec<SimCoords>, team: Team) {
+    for (i, l) in locs.into_iter().enumerate() {
+        let unit_type = if i == 0 {
+            UnitType::NewUnit
+        } else {
+            UnitType::LastUnit
+        };
+
         gs.insert_model(
             ModelSprite::Knight,
-            sc(loc.x + i, loc.y),
+            l,
             team,
-            unit,
+            unit_type,
             ModelStats {
                 movement: 6,
                 wound: 2,
@@ -27,20 +27,20 @@ pub fn insert_space_marine_unit(
     }
 }
 
-pub fn insert_necron_unit(
-    gs: &mut SimState,
-    loc: SimCoords,
-    team: Team,
-    unit: u8,
-    num_models: usize,
-) {
-    for i in 0..num_models {
+pub fn insert_necron_unit(gs: &mut SimState, locs: Vec<SimCoords>, team: Team) {
+    for (i, l) in locs.into_iter().enumerate() {
+        let unit_type = if i == 0 {
+            UnitType::NewUnit
+        } else {
+            UnitType::LastUnit
+        };
+
         // https://wahapedia.ru/wh40k10ed/factions/necrons/Necron-Warriors
         gs.insert_model(
             ModelSprite::Skeleton,
-            sc(loc.x + i, loc.y),
+            l,
             team,
-            unit,
+            unit_type,
             ModelStats {
                 movement: 5,
                 wound: 1,

@@ -21,12 +21,17 @@ pub enum Team {
     NPCs,
 }
 
+pub enum UnitType {
+    NewUnit,
+    LastUnit,
+}
+
 #[derive(Default, PartialEq, Eq, Clone, Debug)]
 pub enum Phase {
     #[default]
     Command,
     Movement,
-    Shooting(ShootingPhase),
+    Shooting,
     Charge,
     Fight,
 }
@@ -41,7 +46,8 @@ pub enum ShootingPhase {
 #[derive(PartialEq, Clone)]
 pub struct SimState {
     generation: u16,
-    next_id: usize,
+    next_model_id: usize,
+    next_unit_id: u8,
     queued_results: Vec<ActionResult>,
     applied_results: Vec<AppliedActionResult>,
     initiative: Vec<Team>,
@@ -117,7 +123,7 @@ impl Display for Phase {
         match self {
             Phase::Command => f.write_str("Command phase"),
             Phase::Movement => f.write_str("Movement phase"),
-            Phase::Shooting(_) => f.write_str("Shooting phase"),
+            Phase::Shooting => f.write_str("Shooting phase"),
             Phase::Charge => f.write_str("Charge phase"),
             Phase::Fight => f.write_str("Fight phase"),
         }
@@ -127,7 +133,7 @@ impl Display for Phase {
 /// Represents a 40k style model
 #[derive(Hash, Debug, PartialEq, Clone)]
 struct Model {
-    unit: u8,
+    unit: UnitId,
     id: SimId,
     is_destroyed: bool,
     pub sprite: ModelSprite,
@@ -140,6 +146,10 @@ struct Model {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct SimId(usize);
+
+/// Denotes the unit a model belongs to
+#[derive(Hash, Debug, PartialEq, Clone, Eq, Copy)]
+struct UnitId(u8);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct SimCoords {
@@ -182,7 +192,7 @@ pub fn sc(x: usize, y: usize) -> SimCoords {
 impl SimState {
     pub fn new() -> Self {
         Self {
-            next_id: 0,
+            next_model_id: 0,
             initiative: vec![Team::Players, Team::NPCs],
             is_start_of_turn: true,
             locations: Vec::new(),
@@ -191,6 +201,7 @@ impl SimState {
             applied_results: Vec::new(),
             generation: 0,
             phase: Phase::Movement,
+            next_unit_id: 0,
         }
     }
 }
@@ -199,13 +210,13 @@ impl Default for SimState {
     fn default() -> Self {
         let mut gs = SimState::new();
         // insert_space_marine_unit(&mut state, sc(5, 10), Team::Players, 0, 10);
-        insert_space_marine_unit(&mut gs, sc(1, 10), Team::Players, 0, 1);
-        insert_space_marine_unit(&mut gs, sc(2, 10), Team::Players, 0, 1);
-        insert_space_marine_unit(&mut gs, sc(3, 10), Team::Players, 0, 1);
+        insert_space_marine_unit(
+            &mut gs,
+            vec![sc(1, 10), sc(2, 10), sc(3, 10)],
+            Team::Players,
+        );
 
-        insert_necron_unit(&mut gs, sc(1, 15), Team::NPCs, 1, 1);
-        insert_necron_unit(&mut gs, sc(2, 15), Team::NPCs, 1, 1);
-        insert_necron_unit(&mut gs, sc(3, 15), Team::NPCs, 1, 1);
+        insert_necron_unit(&mut gs, vec![sc(1, 15), sc(2, 15), sc(3, 15)], Team::NPCs);
         gs
     }
 }
@@ -234,7 +245,7 @@ impl SimState {
         match &self.phase {
             Phase::Command => self.legal_actions_command(actions),
             Phase::Movement => self.legal_actions_movement(actions),
-            Phase::Shooting(_shooting_phase) => self.legal_actions_shooting(actions),
+            Phase::Shooting => self.legal_actions_shooting(actions),
             Phase::Charge => self.legal_actions_charge(actions),
             Phase::Fight => self.legal_actions_fight(actions),
         }
@@ -325,8 +336,8 @@ impl SimState {
                     self.phase = match self.phase {
                         Phase::Command => Phase::Fight,
                         Phase::Movement => Phase::Command,
-                        Phase::Shooting(_) => Phase::Movement,
-                        Phase::Charge => Phase::Shooting(ShootingPhase::SelectUnit),
+                        Phase::Shooting => Phase::Movement,
+                        Phase::Charge => Phase::Shooting,
                         Phase::Fight => Phase::Charge,
                     };
                 }
@@ -531,8 +542,8 @@ impl SimState {
 
                     self.phase = match self.phase {
                         Phase::Command => Phase::Movement,
-                        Phase::Movement => Phase::Shooting(ShootingPhase::SelectUnit),
-                        Phase::Shooting(_) => Phase::Charge,
+                        Phase::Movement => Phase::Shooting,
+                        Phase::Shooting => Phase::Charge,
                         Phase::Charge => Phase::Fight,
                         Phase::Fight => Phase::Command,
                     };
@@ -555,17 +566,21 @@ impl SimState {
         sprite: ModelSprite,
         loc: SimCoords,
         team: Team,
-        unit: u8,
+        unit_type: UnitType,
         model_stats: ModelStats,
         ranged_weapons: Vec<RangedWeapon>,
     ) {
+        if matches!(unit_type, UnitType::NewUnit) {
+            self.next_unit_id += 1;
+        }
+
         let entity = Model {
-            id: SimId(self.next_id),
+            id: SimId(self.next_model_id),
             cur_stats: model_stats.clone(),
             base_stats: model_stats,
             remaining_actions: 1,
             team,
-            unit,
+            unit: UnitId(self.next_unit_id),
             is_destroyed: false,
             sprite,
             ranged_weapons,
@@ -573,7 +588,7 @@ impl SimState {
 
         self.models.push(entity);
         self.locations.push(Some(loc));
-        self.next_id += 1;
+        self.next_model_id += 1;
     }
 
     pub fn cur_team(&self) -> Team {
@@ -706,7 +721,7 @@ impl Iterator for CoordIterator {
 
 impl std::hash::Hash for SimState {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.next_id.hash(state);
+        self.next_model_id.hash(state);
         self.initiative.hash(state);
         self.locations.hash(state);
         self.models.hash(state);
@@ -719,7 +734,7 @@ impl Debug for SimState {
         f.debug_struct("SimState")
             .field("phase", &self.phase)
             .field("generation", &self.generation)
-            .field("next_id", &self.next_id)
+            .field("next_id", &self.next_model_id)
             .field("queued_results", &self.queued_results)
             .field("initiative", &self.initiative)
             .field("locations", &self.locations)
@@ -740,23 +755,30 @@ mod tests {
     fn test_unit_coherency() {
         // Single model units are coherent
         let mut gs = SimState::new();
-        insert_space_marine_unit(&mut gs, sc(1, 10), Team::Players, 0, 1);
+        insert_space_marine_unit(&mut gs, vec![sc(1, 10)], Team::Players);
         assert!(gs.unit_coherency().iter().all(|x| x.1));
 
         // Models in a straight line don't have coherency as swarms
         let mut gs = SimState::new();
-        insert_space_marine_unit(&mut gs, sc(1, 10), Team::Players, 0, 10);
+        insert_space_marine_unit(
+            &mut gs,
+            (0..10).map(|x| sc(1 + x, 10)).collect_vec(),
+            Team::Players,
+        );
         assert!(!gs.unit_coherency().iter().all(|x| x.1));
 
         // But non-swarm units will
         let mut gs = SimState::new();
-        insert_space_marine_unit(&mut gs, sc(1, 10), Team::Players, 0, 5);
+        insert_space_marine_unit(
+            &mut gs,
+            (0..5).map(|i| sc(1 + i, 5)).collect_vec(),
+            Team::Players,
+        );
         assert!(gs.unit_coherency().iter().all(|x| x.1));
 
         // Non-swarm aren't coherent with a gap
         let mut gs = SimState::new();
-        insert_space_marine_unit(&mut gs, sc(1, 10), Team::Players, 0, 1);
-        insert_space_marine_unit(&mut gs, sc(3, 10), Team::Players, 0, 1);
+        insert_space_marine_unit(&mut gs, vec![sc(1, 10), sc(3, 10)], Team::Players);
         assert!(
             !gs.unit_coherency().iter().all(|x| x.1),
             "Non-swarm aren't coherent with a gap"
@@ -764,32 +786,32 @@ mod tests {
 
         // Swarm are coherent in a rectangle
         let mut gs = SimState::new();
-        for i in 0..2 {
-            insert_space_marine_unit(&mut gs, sc(1, 10 + i), Team::Players, 0, 1);
-            insert_space_marine_unit(&mut gs, sc(2, 10 + i), Team::Players, 0, 1);
-        }
+        insert_space_marine_unit(
+            &mut gs,
+            (0..20).map(|i| sc(1 + i % 10, 5 + i / 10)).collect_vec(),
+            Team::Players,
+        );
         assert!(gs.unit_coherency().iter().all(|x| x.1));
 
         // enemy units don't count for coherency
         let mut gs = SimState::new();
-        insert_space_marine_unit(&mut gs, sc(1, 10), Team::Players, 0, 1);
-        insert_space_marine_unit(&mut gs, sc(2, 10), Team::NPCs, 1, 1);
-        insert_space_marine_unit(&mut gs, sc(3, 10), Team::Players, 0, 1);
+        insert_space_marine_unit(&mut gs, vec![sc(1, 10), sc(3, 10)], Team::Players);
+        insert_space_marine_unit(&mut gs, vec![sc(2, 10)], Team::NPCs);
         assert_eq!(gs.unit_coherency().iter().filter(|x| !x.1).count(), 2);
 
         // player models but different units don't count for coherency
         let mut gs = SimState::new();
-        insert_space_marine_unit(&mut gs, sc(1, 10), Team::Players, 0, 1);
-        insert_space_marine_unit(&mut gs, sc(2, 10), Team::Players, 1, 1);
-        insert_space_marine_unit(&mut gs, sc(3, 10), Team::Players, 0, 1);
+        insert_space_marine_unit(&mut gs, vec![sc(1, 10), sc(3, 10)], Team::Players);
+        insert_space_marine_unit(&mut gs, vec![sc(2, 10)], Team::Players);
         assert_eq!(gs.unit_coherency().iter().filter(|x| !x.1).count(), 2);
 
         // All units in a unit must have a path between them, e.g. can't have two groups
         let mut gs = SimState::new();
-        insert_space_marine_unit(&mut gs, sc(1, 10), Team::Players, 0, 1);
-        insert_space_marine_unit(&mut gs, sc(2, 10), Team::Players, 0, 1);
-        insert_space_marine_unit(&mut gs, sc(1, 12), Team::Players, 0, 1);
-        insert_space_marine_unit(&mut gs, sc(2, 12), Team::Players, 0, 1);
+        insert_space_marine_unit(
+            &mut gs,
+            vec![sc(1, 10), sc(2, 10), sc(1, 12), sc(2, 12)],
+            Team::Players,
+        );
         assert!(!gs.unit_coherency().iter().all(|x| x.1));
         let mut actions = Vec::new();
         gs.legal_actions(&mut actions);
@@ -800,9 +822,12 @@ mod tests {
 
         // Removing a unit should fix unit coherency
         let mut gs = SimState::new();
-        insert_space_marine_unit(&mut gs, sc(1, 10), Team::Players, 0, 1);
-        insert_space_marine_unit(&mut gs, sc(2, 10), Team::Players, 0, 1);
-        insert_space_marine_unit(&mut gs, sc(4, 10), Team::Players, 0, 1);
+        insert_space_marine_unit(
+            &mut gs,
+            vec![sc(1, 10), sc(2, 10), sc(4, 10)],
+            Team::Players,
+        );
+
         assert!(!gs.unit_coherency().iter().all(|x| x.1));
         gs.apply(Action::RemoveModel { id: SimId(2) });
         assert!(gs.unit_coherency().iter().all(|x| x.1));
@@ -810,12 +835,12 @@ mod tests {
         // Coherency works with multiple units and teams
         let mut gs = SimState::new();
         // insert_space_marine_unit(&mut state, sc(5, 10), Team::Players, 0, 10);
-        insert_space_marine_unit(&mut gs, sc(1, 10), Team::Players, 0, 1);
-        insert_space_marine_unit(&mut gs, sc(2, 10), Team::Players, 0, 1);
-        insert_space_marine_unit(&mut gs, sc(3, 10), Team::Players, 0, 1);
-        insert_necron_unit(&mut gs, sc(1, 15), Team::NPCs, 1, 1);
-        insert_necron_unit(&mut gs, sc(2, 15), Team::NPCs, 1, 1);
-        insert_necron_unit(&mut gs, sc(3, 15), Team::NPCs, 1, 1);
+        insert_space_marine_unit(
+            &mut gs,
+            vec![sc(1, 10), sc(2, 10), sc(3, 10)],
+            Team::Players,
+        );
+        insert_necron_unit(&mut gs, vec![sc(1, 15), sc(2, 15), sc(3, 15)], Team::NPCs);
         assert!(gs.unit_coherency().iter().all(|x| x.1));
     }
 
@@ -825,7 +850,7 @@ mod tests {
         assert_eq!(gs.phase(), Phase::Movement); // for now starting in movement phase
         assert_eq!(gs.cur_team(), Team::Players);
         gs.apply(Action::EndPhase);
-        assert_eq!(gs.phase(), Phase::Shooting(ShootingPhase::SelectUnit));
+        assert_eq!(gs.phase(), Phase::Shooting);
         assert_eq!(gs.cur_team(), Team::Players);
         gs.apply(Action::EndPhase);
         assert_eq!(gs.phase(), Phase::Charge);
@@ -847,10 +872,41 @@ mod tests {
     }
 
     #[test]
+    fn test_shooting_legal_actions() {
+        let mut gs = SimState::new();
+        insert_space_marine_unit(&mut gs, vec![sc(1, 10)], Team::Players);
+        gs.set_phase(Phase::Shooting, Team::Players);
+        let mut actions = Vec::new();
+
+        // no targets
+        gs.legal_actions(&mut actions);
+        assert_eq!(actions, vec![Action::EndPhase]);
+
+        // single target out of range
+        insert_necron_unit(&mut gs, vec![sc(50, 50)], Team::NPCs);
+        gs.legal_actions(&mut actions);
+        assert_eq!(actions, vec![Action::EndPhase]);
+
+        insert_necron_unit(&mut gs, vec![sc(3, 10)], Team::NPCs);
+        gs.legal_actions(&mut actions);
+        todo!()
+
+        // add in when part of the unit is in range and part is out of range, on both the attacking a fired upon units
+    }
+
+    #[test]
     fn test_undo() {
         let mut start_state = SimState::new();
-        insert_space_marine_unit(&mut start_state, sc(1, 10), Team::Players, 0, 10);
-        insert_space_marine_unit(&mut start_state, sc(1, 15), Team::NPCs, 1, 10);
+        insert_space_marine_unit(
+            &mut start_state,
+            (0..10).map(|i| sc(1 + i, 10)).collect_vec(),
+            Team::Players,
+        );
+        insert_space_marine_unit(
+            &mut start_state,
+            (0..10).map(|i| sc(1 + i, 15)).collect_vec(),
+            Team::NPCs,
+        );
 
         let mut rng: StdRng = SeedableRng::seed_from_u64(42);
         let mut actions = Vec::new();
