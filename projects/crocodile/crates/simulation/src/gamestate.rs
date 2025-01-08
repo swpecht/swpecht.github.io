@@ -8,9 +8,8 @@ use itertools::{Itertools, Product};
 use petgraph::algo::{has_path_connecting, DfsSpace};
 
 use crate::{
-    info::{
-        insert_necron_unit, insert_space_marine_unit, ModelStats, RangedWeapon, RangedWeaponStats,
-    },
+    info::{insert_necron_unit, insert_space_marine_unit, ModelStats, RangedWeapon},
+    probability::{ChanceProbabilities, ChanceResult},
     ModelSprite,
 };
 
@@ -45,7 +44,7 @@ pub enum ShootingPhase {
     MakeRangedAttacks,
 }
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct SimState {
     generation: u16,
     next_model_id: usize,
@@ -59,6 +58,7 @@ pub struct SimState {
     phase: Phase,
     /// Track if start of an entities turn, used to optimize AI search caching
     is_start_of_turn: bool,
+    pending_chance_action: Option<Action>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -76,7 +76,12 @@ pub enum Action {
         ranged_weapon: RangedWeapon,
     },
     /// Remove a model due to lack of unit coherency
-    RemoveModel { id: SimId },
+    RemoveModel {
+        id: SimId,
+    },
+    RollResult {
+        result: ChanceResult,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -104,6 +109,11 @@ pub enum ActionResult {
     },
     // Items to control gamestate for optimizations
     NewTurn(bool),
+
+    /// Requires a chance resolution before the action can be resolved
+    QueueChanceNode {
+        action: Action,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -126,6 +136,7 @@ impl Display for Action {
                 to: _to,
                 ranged_weapon: _ranged_weapon,
             } => todo!(),
+            Action::RollResult { result } => f.write_fmt(format_args!("{:?}", result)),
         }
     }
 }
@@ -161,7 +172,7 @@ pub struct SimId(usize);
 
 /// Denotes the unit a model belongs to
 #[derive(Hash, Debug, PartialEq, Clone, Eq, Copy)]
-struct UnitId(u8);
+pub struct UnitId(u8);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct SimCoords {
@@ -214,6 +225,7 @@ impl SimState {
             generation: 0,
             phase: Phase::Movement,
             next_unit_id: 0,
+            pending_chance_action: None,
         }
     }
 }
@@ -246,10 +258,11 @@ impl SimState {
             Action::Move { id, from, to } => self.generate_results_move_model(id, from, to),
             Action::RemoveModel { id } => self.generate_results_remove_model(id),
             Action::Shoot {
-                from,
-                to,
-                ranged_weapon,
-            } => todo!(),
+                from: _,
+                to: _,
+                ranged_weapon: _,
+            } => self.generate_results_shoot(action),
+            Action::RollResult { result } => todo!(),
         }
 
         self.apply_queued_results();
@@ -265,6 +278,23 @@ impl SimState {
             Phase::Shooting => self.legal_actions_shooting(actions),
             Phase::Charge => self.legal_actions_charge(actions),
             Phase::Fight => self.legal_actions_fight(actions),
+        }
+    }
+
+    /// Return the probabilities for `ChanceOutcomes`
+    pub fn chance_outcomes(&self) -> ChanceProbabilities {
+        if !self.is_chance_node() {
+            panic!("called chance outcomes when not a chance node")
+        }
+
+        match self.pending_chance_action {
+            Some(Action::Shoot {
+                from,
+                to,
+                ranged_weapon,
+            }) => self.chance_outcomes_shoot(from, to, ranged_weapon),
+            Some(_) => todo!(),
+            None => panic!("no pending chance action"),
         }
     }
 
@@ -316,7 +346,7 @@ impl SimState {
     }
 
     pub fn is_chance_node(&self) -> bool {
-        false
+        self.pending_chance_action.is_some()
     }
 
     pub fn is_start_of_turn(&self) -> bool {
@@ -364,6 +394,9 @@ impl SimState {
 
                 ActionResult::NewTurn(x) => self.is_start_of_turn = !x,
                 ActionResult::RemoveModel { id } => self.models[id.0].is_destroyed = false,
+                ActionResult::QueueChanceNode { action: _ } => {
+                    self.pending_chance_action = None;
+                }
             }
 
             // actually remove the item from the list
@@ -558,6 +591,15 @@ impl SimState {
             .filter(move |m| m.team == team && !m.is_destroyed)
     }
 
+    fn chance_outcomes_shoot(
+        &self,
+        from: UnitId,
+        to: UnitId,
+        ranged_weapon: RangedWeapon,
+    ) -> ChanceProbabilities {
+        todo!()
+    }
+
     /// Apply all of the queued results
     fn apply_queued_results(&mut self) {
         let generation = self.generation;
@@ -596,6 +638,9 @@ impl SimState {
 
                 ActionResult::NewTurn(x) => self.is_start_of_turn = x,
                 ActionResult::RemoveModel { id } => self.models[id.0].is_destroyed = true,
+                ActionResult::QueueChanceNode { action } => {
+                    self.pending_chance_action = Some(action)
+                }
             }
 
             self.applied_results
@@ -667,6 +712,11 @@ impl SimState {
         }
 
         self.queued_results.push(ActionResult::EndPhase);
+    }
+
+    fn generate_results_shoot(&mut self, action: Action) {
+        self.queued_results
+            .push(ActionResult::QueueChanceNode { action });
     }
 
     pub fn get_id(&self, coords: SimCoords) -> Option<SimId> {
@@ -768,21 +818,6 @@ impl std::hash::Hash for SimState {
         self.locations.hash(state);
         self.models.hash(state);
         self.is_start_of_turn.hash(state);
-    }
-}
-
-impl Debug for SimState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SimState")
-            .field("phase", &self.phase)
-            .field("generation", &self.generation)
-            .field("next_id", &self.next_model_id)
-            .field("queued_results", &self.queued_results)
-            .field("initiative", &self.initiative)
-            .field("locations", &self.locations)
-            .field("entities", &self.models)
-            .field("is_start_of_turn", &self.is_start_of_turn)
-            .finish()
     }
 }
 
@@ -980,6 +1015,24 @@ mod tests {
                 Action::EndPhase
             ]
         );
+    }
+
+    #[test]
+    fn test_shoot_phase() {
+        let mut gs = SimState::new();
+        insert_space_marine_unit(&mut gs, vec![sc(1, 10)], Team::Players);
+        insert_necron_unit(&mut gs, vec![sc(3, 10), sc(4, 10)], Team::NPCs);
+        gs.set_phase(Phase::Shooting, Team::Players);
+        gs.apply(Action::Shoot {
+            from: UnitId(1),
+            to: UnitId(3),
+            ranged_weapon: RangedWeapon::Boltgun,
+        });
+
+        assert!(gs.is_chance_node());
+        let probs = gs.chance_outcomes();
+
+        todo!()
     }
 
     #[test]

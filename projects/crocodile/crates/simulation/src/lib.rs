@@ -4,6 +4,7 @@
 pub mod ai;
 pub mod gamestate;
 pub mod info;
+pub mod probability;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Copy)]
 pub enum ModelSprite {

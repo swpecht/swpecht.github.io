@@ -3,12 +3,18 @@
     [ ] Implement shooting phases
         [*] Implement all phase changes and cycling -- have an end phase action, incl. fix for active team
         [*] Implement legal actions to depends on the phase
-        [ ] Select eligible unit
-        [ ] Select targets
-        [ ] Make ranged attacks
+        [*] Implement legal actions for shoot
+        [ ] Implement apply action for shoot, including chance nodes
+            * Add field for chance node and for action to resolve
+            [*] Implement pending chance action
+            [ ] Implement resolution for pedning chance action
+            [ ] Implement test to go through the shoot phase, test going to chance node, etc.
+            [ ] Implement function to get probabilities for chance action -- see open spiel
+        [ ] Select eligible unit -> left click -- then shows the weapons actions
+        [ ] Select weapon in the UI -> filter actions to be just that unit and weapong
+        [ ] Select targets -> right click (action::target_unit(from_unit, to_unit, weapon))
+        [ ] Make ranged attacks (chance node) -> button, action::fire -- swtiches to select eligible unit
         [ ] Repeat for next eligible unit
-        [ ] Implement advanced features
-            [ ] Implement visibility
     [ ] Implement movement phase
         [ ] models cannot move within engagement range of other models
         [ ] implement Advance mode
@@ -18,10 +24,14 @@
     [ ] Implement Command phase
     [ ] Imlpement victory points, including the per round cards that are drawn or controlling areas. See some 40k in 40min videos
     [ ] Implement passives, like the necron regrowth
-    
 [ ] Switch to hexes for world map instead of squares, details: https://www.redblobgames.com/grids/hexagons/
     * Likely want to model everything as a graph for many operations, e.g. path finding we get for free, each node could have a cost to traverse by team, terrain is tough for all, can pass through friends, not enemies
     * Instead of storing coords, could store the index in the grpah, then can lookup by that
+[ ] Implement terrain / cover
+    [ ] Visiblity for shooting phase
+    [ ] Path finding
+[ ] Implement more complex shooting
+    [ ] Different models can target different units
 
 # QoL:
 [ ] Implement highlight for the selected unit
@@ -35,6 +45,8 @@
     * https://wahapedia.ru/wh40k10ed/factions/necrons/Necron-Warriors
 
 
+# Game mechanic ideas
+[ ] What if the ai stored moves from previous runs to better learn scores for it's moves and improve against players over time?
 
 
 ## thoughts on implementing undo
