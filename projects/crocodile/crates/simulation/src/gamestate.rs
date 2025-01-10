@@ -9,7 +9,7 @@ use petgraph::algo::{has_path_connecting, DfsSpace};
 
 use crate::{
     info::{insert_necron_unit, insert_space_marine_unit, ModelStats, RangedWeapon},
-    probability::{ChanceProbabilities, ChanceResult},
+    probability::ChanceProbabilities,
     ModelSprite,
 };
 
@@ -80,7 +80,7 @@ pub enum Action {
         id: SimId,
     },
     RollResult {
-        result: ChanceResult,
+        num_success: u8,
     },
 }
 
@@ -136,7 +136,9 @@ impl Display for Action {
                 to: _to,
                 ranged_weapon: _ranged_weapon,
             } => todo!(),
-            Action::RollResult { result } => f.write_fmt(format_args!("{:?}", result)),
+            Action::RollResult { num_success } => {
+                f.write_fmt(format_args!("Succeded {:?} times", num_success))
+            }
         }
     }
 }
@@ -262,7 +264,7 @@ impl SimState {
                 to: _,
                 ranged_weapon: _,
             } => self.generate_results_shoot(action),
-            Action::RollResult { result } => todo!(),
+            Action::RollResult { num_success } => todo!(),
         }
 
         self.apply_queued_results();
