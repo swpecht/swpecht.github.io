@@ -281,6 +281,9 @@ impl SimState {
 
     pub fn legal_actions(&self, actions: &mut Vec<Action>) {
         actions.clear();
+        if self.is_chance_node() {
+            return;
+        }
 
         match &self.phase {
             Phase::Command => self.legal_actions_command(actions),
@@ -925,8 +928,9 @@ impl std::hash::Hash for SimState {
 #[cfg(test)]
 mod tests {
 
-    use core::assert;
+    use core::{assert, assert_eq};
 
+    use itertools::assert_equal;
     use rand::{rngs::StdRng, SeedableRng};
 
     use super::*;
@@ -1140,6 +1144,10 @@ mod tests {
             ranged_weapon: RangedWeapon::Boltgun,
         });
 
+        let mut actions = Vec::new();
+        gs.legal_actions(&mut actions);
+        assert_eq!(actions, vec![]);
+
         assert!(gs.is_chance_node());
         let probs = gs.chance_outcomes();
         let mut rng = SeedableRng::seed_from_u64(43);
@@ -1157,9 +1165,6 @@ mod tests {
                 .sum::<u8>(),
             1
         );
-
-        gs.undo();
-        assert!(gs.is_chance_node());
     }
 
     #[test]
@@ -1190,10 +1195,15 @@ mod tests {
                 }
 
                 let undo_state = state.clone();
-                state.legal_actions(&mut actions);
+                let a = if state.is_chance_node() {
+                    let probs = state.chance_outcomes();
+                    probs.sample(&mut rng)
+                } else {
+                    state.legal_actions(&mut actions);
 
-                use rand::prelude::SliceRandom;
-                let a = *actions.choose(&mut rng).unwrap();
+                    use rand::prelude::SliceRandom;
+                    *actions.choose(&mut rng).unwrap()
+                };
 
                 state.apply(a);
                 state.undo();

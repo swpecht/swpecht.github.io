@@ -13,6 +13,7 @@ macro_rules! access_test {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub(super) struct _DiffItem {
     pub name: String,
     pub left: String,
