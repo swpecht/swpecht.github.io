@@ -930,7 +930,6 @@ mod tests {
 
     use core::{assert, assert_eq};
 
-    use itertools::assert_equal;
     use rand::{rngs::StdRng, SeedableRng};
 
     use super::*;
