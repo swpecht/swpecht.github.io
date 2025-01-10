@@ -1,3 +1,4 @@
+use core::{option::Option::None, todo};
 use std::{
     collections::HashMap,
     fmt::{Debug, Display},
@@ -8,8 +9,8 @@ use itertools::{Itertools, Product};
 use petgraph::algo::{has_path_connecting, DfsSpace};
 
 use crate::{
-    info::{insert_necron_unit, insert_space_marine_unit, ModelStats, RangedWeapon},
-    probability::ChanceProbabilities,
+    info::{insert_necron_unit, insert_space_marine_unit, AttackValue, ModelStats, RangedWeapon},
+    probability::{attack_success_probs, ChanceProbabilities},
     ModelSprite,
 };
 
@@ -46,19 +47,19 @@ pub enum ShootingPhase {
 
 #[derive(PartialEq, Clone, Debug)]
 pub struct SimState {
-    generation: u16,
-    next_model_id: usize,
-    next_unit_id: u8,
-    queued_results: Vec<ActionResult>,
-    applied_results: Vec<AppliedActionResult>,
-    initiative: Vec<Team>,
+    pub(super) generation: u16,
+    pub(super) next_model_id: usize,
+    pub(super) next_unit_id: u8,
+    pub(super) queued_results: Vec<ActionResult>,
+    pub(super) applied_results: Vec<AppliedActionResult>,
+    pub(super) initiative: Vec<Team>,
     /// Location of each entity, indexed by entity id
-    locations: Vec<Option<SimCoords>>,
-    models: Vec<Model>,
-    phase: Phase,
+    pub(super) locations: Vec<Option<SimCoords>>,
+    pub(super) models: Vec<Model>,
+    pub(super) phase: Phase,
     /// Track if start of an entities turn, used to optimize AI search caching
-    is_start_of_turn: bool,
-    pending_chance_action: Option<Action>,
+    pub(super) is_start_of_turn: bool,
+    pub(super) pending_chance_action: Option<Action>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -66,7 +67,7 @@ pub enum Action {
     #[default]
     EndPhase,
     Move {
-        id: SimId,
+        id: ModelId,
         from: SimCoords,
         to: SimCoords,
     },
@@ -77,7 +78,7 @@ pub enum Action {
     },
     /// Remove a model due to lack of unit coherency
     RemoveModel {
-        id: SimId,
+        id: ModelId,
     },
     RollResult {
         num_success: u8,
@@ -87,12 +88,12 @@ pub enum Action {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ActionResult {
     Move {
-        id: SimId,
+        id: ModelId,
         from: SimCoords,
         to: SimCoords,
     },
     SpendMovement {
-        id: SimId,
+        id: ModelId,
         amount: u8,
     },
     // Items for reseting at the end of a turn
@@ -101,11 +102,11 @@ pub enum ActionResult {
     EndPhase,
     /// Restore movement to an entity, often used at the end of a turn to return to full amounts
     RestoreMovement {
-        id: SimId,
+        id: ModelId,
         amount: u8,
     },
     RemoveModel {
-        id: SimId,
+        id: ModelId,
     },
     // Items to control gamestate for optimizations
     NewTurn(bool),
@@ -114,10 +115,17 @@ pub enum ActionResult {
     QueueChanceNode {
         action: Action,
     },
+    ResolveChanceNode {
+        action: Action,
+    },
+    ApplyWound {
+        id: ModelId,
+        num_wounds: u8,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct AppliedActionResult {
+pub(super) struct AppliedActionResult {
     result: ActionResult,
     /// Track the turn when the result was applied
     generation: u16,
@@ -157,9 +165,9 @@ impl Display for Phase {
 
 /// Represents a 40k style model
 #[derive(Hash, Debug, PartialEq, Clone)]
-struct Model {
+pub(super) struct Model {
     unit: UnitId,
-    id: SimId,
+    id: ModelId,
     is_destroyed: bool,
     pub sprite: ModelSprite,
     cur_stats: ModelStats,
@@ -170,7 +178,7 @@ struct Model {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct SimId(usize);
+pub struct ModelId(usize);
 
 /// Denotes the unit a model belongs to
 #[derive(Hash, Debug, PartialEq, Clone, Eq, Copy)]
@@ -264,7 +272,7 @@ impl SimState {
                 to: _,
                 ranged_weapon: _,
             } => self.generate_results_shoot(action),
-            Action::RollResult { num_success } => todo!(),
+            Action::RollResult { num_success } => self.generate_results_roll_result(num_success),
         }
 
         self.apply_queued_results();
@@ -399,6 +407,12 @@ impl SimState {
                 ActionResult::QueueChanceNode { action: _ } => {
                     self.pending_chance_action = None;
                 }
+                ActionResult::ApplyWound { id, num_wounds } => {
+                    self.get_model_mut(id).cur_stats.wound += num_wounds
+                }
+                ActionResult::ResolveChanceNode { action } => {
+                    self.pending_chance_action = Some(action)
+                }
             }
 
             // actually remove the item from the list
@@ -408,7 +422,7 @@ impl SimState {
     }
 
     /// Returns a list for every non-destroyed unit if it is in unit coherency or not
-    pub fn unit_coherency(&self) -> Vec<(SimId, bool)> {
+    pub fn unit_coherency(&self) -> Vec<(ModelId, bool)> {
         const SWARM_MODEL_COUNT: usize = 7;
         const NEIGHBORS_NORMAL: usize = 1;
         const NEIGHBORS_SWARM: usize = 2;
@@ -421,7 +435,7 @@ impl SimState {
             let mut unit_size = 0;
 
             // We create a graph to represent the models in a unit
-            let mut g = petgraph::graph::UnGraph::<SimId, ()>::new_undirected();
+            let mut g = petgraph::graph::UnGraph::<ModelId, ()>::new_undirected();
             let mut node_lookup = HashMap::new();
 
             self.models
@@ -552,11 +566,11 @@ impl SimState {
             Team::NPCs => Team::Players,
         };
 
-        for model in self.live_models(cur_team) {
+        for model in self.team_models(cur_team) {
             for weapon in &model.ranged_weapons {
                 let range = weapon.stats().range;
 
-                for enemy in self.live_models(enemy_team) {
+                for enemy in self.team_models(enemy_team) {
                     if self
                         .get_loc(model.id)
                         .unwrap()
@@ -587,10 +601,18 @@ impl SimState {
         actions.push(Action::EndPhase);
     }
 
-    fn live_models(&self, team: Team) -> impl Iterator<Item = &Model> {
+    /// Return an iterator over the live models of a team
+    fn team_models(&self, team: Team) -> impl Iterator<Item = &Model> {
         self.models
             .iter()
             .filter(move |m| m.team == team && !m.is_destroyed)
+    }
+
+    /// Return an iterator over the live models of a unit
+    fn unit_models(&self, unit: UnitId) -> impl Iterator<Item = &Model> {
+        self.models
+            .iter()
+            .filter(move |m| m.unit == unit && !m.is_destroyed)
     }
 
     fn chance_outcomes_shoot(
@@ -599,7 +621,21 @@ impl SimState {
         to: UnitId,
         ranged_weapon: RangedWeapon,
     ) -> ChanceProbabilities {
-        todo!()
+        // We only count attacks from models that have the weapon in question
+        let num_attacks = self
+            .unit_models(from)
+            .filter(|m| m.ranged_weapons.contains(&ranged_weapon))
+            .count();
+        let target = self.unit_models(to).next().unwrap();
+
+        attack_success_probs(
+            num_attacks.try_into().unwrap(),
+            ranged_weapon.stats().ballistic_skill,
+            ranged_weapon.stats().strength,
+            target.cur_stats.toughness,
+            ranged_weapon.stats().armor_penetration,
+            target.cur_stats.save,
+        )
     }
 
     /// Apply all of the queued results
@@ -643,6 +679,10 @@ impl SimState {
                 ActionResult::QueueChanceNode { action } => {
                     self.pending_chance_action = Some(action)
                 }
+                ActionResult::ApplyWound { num_wounds, id } => {
+                    self.get_model_mut(id).cur_stats.wound -= num_wounds;
+                }
+                ActionResult::ResolveChanceNode { action: _ } => self.pending_chance_action = None,
             }
 
             self.applied_results
@@ -664,7 +704,7 @@ impl SimState {
         }
 
         let entity = Model {
-            id: SimId(self.next_model_id),
+            id: ModelId(self.next_model_id),
             cur_stats: model_stats.clone(),
             base_stats: model_stats,
             remaining_actions: 1,
@@ -684,7 +724,7 @@ impl SimState {
         self.initiative[0]
     }
 
-    fn generate_results_move_model(&mut self, id: SimId, from: SimCoords, to: SimCoords) {
+    fn generate_results_move_model(&mut self, id: ModelId, from: SimCoords, to: SimCoords) {
         let distance = to.dist(&from);
 
         self.queued_results
@@ -695,7 +735,7 @@ impl SimState {
         });
     }
 
-    fn generate_results_remove_model(&mut self, id: SimId) {
+    fn generate_results_remove_model(&mut self, id: ModelId) {
         self.queued_results.push(ActionResult::RemoveModel { id });
     }
 
@@ -721,20 +761,79 @@ impl SimState {
             .push(ActionResult::QueueChanceNode { action });
     }
 
-    pub fn get_id(&self, coords: SimCoords) -> Option<SimId> {
+    fn generate_results_roll_result(&mut self, num_success: u8) {
+        // start for just the shooting results
+
+        match self.pending_chance_action {
+            Some(Action::Shoot {
+                from: _,
+                to,
+                ranged_weapon,
+            }) => self.generate_shooting_results(num_success, ranged_weapon.stats().attack, to),
+            Some(_) => todo!(),
+            None => panic!("trying to apply a chance result when no pending chance action"),
+        }
+
+        self.queued_results.push(ActionResult::ResolveChanceNode {
+            action: self.pending_chance_action.unwrap(),
+        });
+    }
+
+    fn generate_shooting_results(&mut self, num_success: u8, attack: AttackValue, target: UnitId) {
+        let mut results = Vec::new();
+        let attack = match attack {
+            AttackValue::One => 1,
+            AttackValue::Two => 2,
+            AttackValue::Three => 3,
+            AttackValue::D6 => todo!(),
+            AttackValue::D3 => todo!(),
+        };
+        let mut remaining_attacks = num_success;
+        {
+            let mut models = self.unit_models(target);
+            while let Some(model) = models.next()
+                && remaining_attacks > 0
+            {
+                let mut accumulated_wound = 0;
+
+                while remaining_attacks > 0 && model.cur_stats.wound > accumulated_wound {
+                    accumulated_wound += attack.min(model.cur_stats.wound - accumulated_wound);
+                    remaining_attacks -= 1;
+                }
+
+                results.push(ActionResult::ApplyWound {
+                    id: model.id,
+                    num_wounds: accumulated_wound,
+                });
+
+                if accumulated_wound == model.cur_stats.wound {
+                    results.push(ActionResult::RemoveModel { id: model.id })
+                }
+
+                assert!(accumulated_wound <= model.cur_stats.wound);
+            }
+        }
+        self.queued_results.append(&mut results);
+    }
+
+    pub fn get_id(&self, coords: SimCoords) -> Option<ModelId> {
         self.locations
             .iter()
             .enumerate()
-            .filter(|(i, &c)| c == Some(coords) && !self.get_model(SimId(*i)).is_destroyed)
-            .map(|(id, _)| SimId(id))
+            .filter(|(i, &c)| c == Some(coords) && !self.get_model(ModelId(*i)).is_destroyed)
+            .map(|(id, _)| ModelId(id))
             .next()
     }
 
-    fn get_model(&self, id: SimId) -> &Model {
+    fn get_model(&self, id: ModelId) -> &Model {
         &self.models[id.0]
     }
 
-    pub fn sprites(&self) -> Vec<(SimId, SimCoords, ModelSprite)> {
+    fn get_model_mut(&mut self, id: ModelId) -> &mut Model {
+        &mut self.models[id.0]
+    }
+
+    pub fn sprites(&self) -> Vec<(ModelId, SimCoords, ModelSprite)> {
         self.models
             .iter()
             .zip(self.locations.iter())
@@ -743,7 +842,7 @@ impl SimState {
             .collect_vec()
     }
 
-    pub fn get_loc(&self, id: SimId) -> Option<SimCoords> {
+    pub fn get_loc(&self, id: ModelId) -> Option<SimCoords> {
         self.locations[id.0]
     }
 
@@ -751,14 +850,14 @@ impl SimState {
         self.locations
             .iter()
             .enumerate()
-            .any(|x| x.1 == &Some(*target) && !self.get_model(SimId(x.0)).is_destroyed)
+            .any(|x| x.1 == &Some(*target) && !self.get_model(ModelId(x.0)).is_destroyed)
     }
 
-    pub fn health(&self, id: &SimId) -> Option<u8> {
+    pub fn health(&self, id: &ModelId) -> Option<u8> {
         self.models.get(id.0).map(|x| x.cur_stats.wound)
     }
 
-    pub fn max_health(&self, id: &SimId) -> Option<u8> {
+    pub fn max_health(&self, id: &ModelId) -> Option<u8> {
         self.models.get(id.0).map(|x| x.base_stats.wound)
     }
 
@@ -825,6 +924,8 @@ impl std::hash::Hash for SimState {
 
 #[cfg(test)]
 mod tests {
+
+    use core::assert;
 
     use rand::{rngs::StdRng, SeedableRng};
 
@@ -908,7 +1009,7 @@ mod tests {
         );
 
         assert!(!gs.unit_coherency().iter().all(|x| x.1));
-        gs.apply(Action::RemoveModel { id: SimId(2) });
+        gs.apply(Action::RemoveModel { id: ModelId(2) });
         assert!(gs.unit_coherency().iter().all(|x| x.1));
 
         // Coherency works with multiple units and teams
@@ -1024,17 +1125,41 @@ mod tests {
         let mut gs = SimState::new();
         insert_space_marine_unit(&mut gs, vec![sc(1, 10)], Team::Players);
         insert_necron_unit(&mut gs, vec![sc(3, 10), sc(4, 10)], Team::NPCs);
+
+        assert_eq!(
+            gs.unit_models(UnitId(2))
+                .map(|m| m.cur_stats.wound)
+                .sum::<u8>(),
+            2
+        );
+
         gs.set_phase(Phase::Shooting, Team::Players);
         gs.apply(Action::Shoot {
             from: UnitId(1),
-            to: UnitId(3),
+            to: UnitId(2),
             ranged_weapon: RangedWeapon::Boltgun,
         });
 
         assert!(gs.is_chance_node());
         let probs = gs.chance_outcomes();
+        let mut rng = SeedableRng::seed_from_u64(43);
+        let a = probs.sample(&mut rng);
+        // should be one success from seeded rng
+        assert!(matches!(a, Action::RollResult { num_success: 1 }));
+        gs.apply(a);
 
-        todo!()
+        assert!(!gs.is_chance_node());
+
+        // Should have 1 wound, the extra damage from the boltrifle doesn't spill over
+        assert_eq!(
+            gs.unit_models(UnitId(2))
+                .map(|m| m.cur_stats.wound)
+                .sum::<u8>(),
+            1
+        );
+
+        gs.undo();
+        assert!(gs.is_chance_node());
     }
 
     #[test]
@@ -1071,15 +1196,14 @@ mod tests {
                 let a = *actions.choose(&mut rng).unwrap();
 
                 state.apply(a);
-                let diff_state = state.clone();
                 state.undo();
                 assert_eq!(
                     state,
                     undo_state,
-                    "failed to undo index {}: {:?}\n{:?}",
+                    "failed to undo index {}: {:?}\n{:#?}",
                     index,
                     a,
-                    diff_state.diff()
+                    state._diff_between(&undo_state)
                 );
                 state.apply(a);
                 index += 1;

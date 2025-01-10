@@ -13,6 +13,7 @@ pub fn insert_space_marine_unit(gs: &mut SimState, locs: Vec<SimCoords>, team: T
             UnitType::LastUnit
         };
 
+        // https://wahapedia.ru/wh40k10ed/factions/space-marines/datasheets.html#Tactical-Squad
         gs.insert_model(
             ModelSprite::Knight,
             l,
@@ -21,6 +22,8 @@ pub fn insert_space_marine_unit(gs: &mut SimState, locs: Vec<SimCoords>, team: T
             ModelStats {
                 movement: 6,
                 wound: 2,
+                toughness: 4,
+                save: 3,
             },
             vec![RangedWeapon::BoltPistol, RangedWeapon::Boltgun],
         );
@@ -44,6 +47,8 @@ pub fn insert_necron_unit(gs: &mut SimState, locs: Vec<SimCoords>, team: Team) {
             ModelStats {
                 movement: 5,
                 wound: 1,
+                toughness: 4,
+                save: 4,
             },
             vec![RangedWeapon::GaussFlayer],
         );
@@ -66,6 +71,8 @@ pub struct RangedWeaponStats {
 pub struct ModelStats {
     pub movement: u8,
     pub wound: u8,
+    pub toughness: u8,
+    pub save: u8,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

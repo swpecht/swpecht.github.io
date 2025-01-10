@@ -1,7 +1,8 @@
-use core::todo;
-
 use itertools::Itertools;
+use rand::prelude::*;
 use rand::rngs::StdRng;
+
+use crate::gamestate::Action;
 
 const MAX_NUM_ATTACKS: usize = 10;
 
@@ -12,8 +13,13 @@ pub struct ChanceProbabilities {
 }
 
 impl ChanceProbabilities {
-    pub fn sample(&self, rng: StdRng) -> Self {
-        todo!()
+    pub fn sample(&self, rng: &mut StdRng) -> Action {
+        Action::RollResult {
+            num_success: *(0..MAX_NUM_ATTACKS + 1)
+                .collect_vec()
+                .choose_weighted(rng, |i| &self.probs[*i])
+                .unwrap() as u8,
+        }
     }
 
     /// Returns the probability of a given chance result
@@ -82,7 +88,7 @@ pub fn attack_success_probs(
 
 /// Returns the probability a d6 rolls greater than or equal to x
 fn p_d6(x: u8) -> f32 {
-    ((6.0 - x as f32 + 1.0) / 6.0)
+    (6.0 - x as f32 + 1.0) / 6.0
 }
 
 fn prob_num_success(n: u8, k: u8, p: f32) -> f32 {

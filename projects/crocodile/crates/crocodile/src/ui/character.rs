@@ -1,7 +1,7 @@
 use std::fs;
 
 use bevy::{math::vec3, prelude::*};
-use simulation::{gamestate::SimId, ModelSprite};
+use simulation::{gamestate::ModelId, ModelSprite};
 
 use crate::sim_wrapper::SimIdComponent;
 
@@ -9,7 +9,7 @@ use super::{animation::AnimationConfig, Health, CHAR_LAYER};
 
 #[derive(Event)]
 pub struct CharacterSpawnEvent {
-    pub(super) id: SimId,
+    pub(super) id: ModelId,
     pub(super) sprite: ModelSprite,
     pub(super) animation: CharacterAnimation,
     pub(super) loc: Vec2,

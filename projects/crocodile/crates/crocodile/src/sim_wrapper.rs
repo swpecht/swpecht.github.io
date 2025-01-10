@@ -1,13 +1,13 @@
 use bevy::prelude::{Component, Resource};
-use simulation::gamestate::{SimId, SimState};
+use simulation::gamestate::{ModelId, SimState};
 
 #[derive(Component)]
-pub struct SimIdComponent(pub SimId);
+pub struct SimIdComponent(pub ModelId);
 
 #[derive(Resource, Default)]
 pub struct SimStateResource(pub SimState);
 
-impl From<SimIdComponent> for SimId {
+impl From<SimIdComponent> for ModelId {
     fn from(value: SimIdComponent) -> Self {
         value.0
     }

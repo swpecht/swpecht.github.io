@@ -3,6 +3,7 @@
 
 pub mod ai;
 pub mod gamestate;
+mod gs_debug;
 pub mod info;
 pub mod probability;
 

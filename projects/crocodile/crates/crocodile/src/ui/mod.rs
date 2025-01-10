@@ -1,7 +1,7 @@
 use animation::animate_sprite;
 use bevy::{input::common_conditions::*, math::vec2, prelude::*, window::PrimaryWindow};
 use character::{spawn_character, CharacterSpawnEvent};
-use simulation::gamestate::{Action, SimCoords, SimId};
+use simulation::gamestate::{Action, SimCoords, ModelId};
 use sprite::*;
 
 use crate::{sim_wrapper::SimStateResource, PlayState};
@@ -79,11 +79,11 @@ impl Plugin for UIPlugin {
 }
 
 #[derive(Resource, Default)]
-struct SelectedModel(SimId);
+struct SelectedModel(ModelId);
 
 /// Track which character is currently up to go
 #[derive(Resource, Default)]
-pub struct CurrentCharacter(pub SimId);
+pub struct CurrentCharacter(pub ModelId);
 #[derive(Event, Debug)]
 pub struct ActionEvent {
     pub action: Action,

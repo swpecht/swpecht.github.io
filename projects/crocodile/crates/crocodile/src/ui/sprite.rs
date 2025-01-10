@@ -6,7 +6,7 @@ use bevy::{
     render::camera::ScalingMode,
     time::Stopwatch,
 };
-use simulation::gamestate::{ActionResult, SimCoords, SimId};
+use simulation::gamestate::{ActionResult, ModelId, SimCoords};
 
 use crate::{
     sim_wrapper::{SimIdComponent, SimStateResource},
@@ -189,7 +189,7 @@ pub(super) fn handle_move(
     commands: &mut Commands,
     target: SimCoords,
     query: &Query<(Entity, &SimIdComponent, &Transform)>,
-    cur: SimId,
+    cur: ModelId,
 ) {
     query
         .iter()
@@ -211,7 +211,7 @@ fn _handle_melee(
     commands: &mut Commands,
     target: SimCoords,
     query: &Query<(Entity, &SimIdComponent, &Transform)>,
-    cur: SimId,
+    cur: ModelId,
 ) {
     query
         .iter()
