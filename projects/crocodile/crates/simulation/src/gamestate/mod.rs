@@ -1,4 +1,4 @@
-use core::{option::Option::None, todo};
+use core::{num, option::Option::None, todo};
 use std::{
     collections::{HashMap, HashSet},
     fmt::{Debug, Display},
@@ -8,7 +8,7 @@ use std::{
 use itertools::{Itertools, Product};
 use macros::{team_models, unit_models};
 use petgraph::algo::{has_path_connecting, DfsSpace};
-use probability::{attack_success_probs, ChanceProbabilities};
+use probability::{attack_success_probs, charge_success_probs, ChanceProbabilities};
 
 use crate::{
     info::{insert_necron_unit, insert_space_marine_unit, AttackValue, ModelStats, RangedWeapon},
@@ -18,6 +18,8 @@ use crate::{
 mod gs_debug;
 mod macros;
 mod probability;
+#[cfg(test)]
+mod tests;
 
 const WORLD_SIZE: usize = 20;
 
@@ -76,6 +78,11 @@ pub enum Action {
         from: SimCoords,
         to: SimCoords,
     },
+    Charge {
+        id: ModelId,
+        from: SimCoords,
+        to: SimCoords,
+    },
     Shoot {
         from: UnitId,
         to: UnitId,
@@ -87,6 +94,9 @@ pub enum Action {
     },
     RollResult {
         num_success: u8,
+    },
+    GainChargeDistance {
+        unit: UnitId,
     },
 }
 
@@ -135,6 +145,14 @@ pub enum ActionResult {
         id: ModelId,
         weapon: RangedWeapon,
     },
+    RestoreCharge {
+        id: ModelId,
+        amount: u8,
+    },
+    SpendCharge {
+        id: ModelId,
+        amount: u8,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -160,6 +178,11 @@ impl Display for Action {
             Action::RollResult { num_success } => {
                 f.write_fmt(format_args!("Succeded {:?} times", num_success))
             }
+            Action::GainChargeDistance { unit: _ } => todo!(),
+            Action::Charge { id, from, to } => f.write_fmt(format_args!(
+                "Charging {:?}: from {:?} to {:?}",
+                id, from, to
+            )),
         }
     }
 }
@@ -186,6 +209,7 @@ pub(super) struct Model {
     cur_stats: ModelStats,
     base_stats: ModelStats,
     remaining_actions: usize,
+    charge_movement: u8,
     team: Team,
     available_ranged_weapons: HashSet<RangedWeapon>,
     ranged_weapons: HashSet<RangedWeapon>,
@@ -288,6 +312,10 @@ impl SimState {
                 ranged_weapon: _,
             } => self.generate_results_shoot(action),
             Action::RollResult { num_success } => self.generate_results_roll_result(num_success),
+            Action::GainChargeDistance { unit } => {
+                panic!("this action should never be applied directly")
+            }
+            Action::Charge { id, from, to } => todo!(),
         }
 
         self.apply_queued_results();
@@ -321,6 +349,7 @@ impl SimState {
                 to,
                 ranged_weapon,
             }) => self.chance_outcomes_shoot(*from, *to, *ranged_weapon),
+            Some(Action::GainChargeDistance { unit: _ }) => charge_success_probs(),
             Some(_) => todo!(),
             None => panic!("no pending chance action"),
         }
@@ -440,6 +469,12 @@ impl SimState {
                     self.get_model_mut(id)
                         .available_ranged_weapons
                         .remove(&weapon);
+                }
+                ActionResult::RestoreCharge { id, amount } => {
+                    self.get_model_mut(id).charge_movement -= amount
+                }
+                ActionResult::SpendCharge { id, amount } => {
+                    self.get_model_mut(id).charge_movement += amount
                 }
             }
 
@@ -586,7 +621,7 @@ impl SimState {
         };
 
         for model in team_models!(self, cur_team) {
-            for weapon in &model.available_ranged_weapons {
+            for weapon in model.available_ranged_weapons.iter().sorted() {
                 let range = weapon.stats().range;
 
                 for enemy in team_models!(self, enemy_team) {
@@ -613,7 +648,43 @@ impl SimState {
     }
 
     fn legal_actions_charge(&self, actions: &mut Vec<Action>) {
-        actions.push(Action::EndPhase);
+        use Action::*;
+        let coherency = self.unit_coherency();
+        if coherency
+            .iter()
+            .filter(|(id, _)| self.get_model(*id).team == self.cur_team())
+            .filter(|x| !x.1)
+            .count()
+            == 0
+        {
+            actions.push(EndPhase);
+        }
+
+        coherency
+            .into_iter()
+            .filter(|x| !x.1)
+            .for_each(|x| actions.push(RemoveModel { id: x.0 }));
+
+        let cur_team = self.cur_team();
+        for model in team_models!(self, cur_team) {
+            if model.charge_movement > 0 {
+                let model_loc = self.get_loc(model.id).unwrap();
+                for l in CoordIterator::new(model_loc, model.charge_movement, 1) {
+                    // need to check if in engagement range of enemy square
+                    if !self.is_populated(&l)
+                        && (self.is_adjacent_enemy(&l, self.cur_team())
+                            || self.is_adjacent_unit(&l, model.unit))
+                    {
+                        // todo: should only be legal if adjacent unit model is adjacent to an enemy
+                        actions.push(Charge {
+                            id: model.id,
+                            from: model_loc,
+                            to: l,
+                        });
+                    }
+                }
+            }
+        }
     }
 
     fn legal_actions_fight(&self, actions: &mut Vec<Action>) {
@@ -697,6 +768,12 @@ impl SimState {
                         .available_ranged_weapons
                         .insert(weapon);
                 }
+                ActionResult::RestoreCharge { id, amount } => {
+                    self.get_model_mut(id).charge_movement += amount
+                }
+                ActionResult::SpendCharge { id, amount } => {
+                    self.get_model_mut(id).charge_movement -= amount
+                }
             }
 
             self.applied_results
@@ -728,6 +805,7 @@ impl SimState {
             sprite,
             available_ranged_weapons: HashSet::from_iter(ranged_weapons.iter().cloned()),
             ranged_weapons: HashSet::from_iter(ranged_weapons.iter().cloned()),
+            charge_movement: 0,
         };
 
         self.models.push(entity);
@@ -767,6 +845,7 @@ impl SimState {
                 }
             }
         } else if self.phase == Phase::Shooting {
+            // reload weapons
             let cur_team = self.cur_team();
             for model in team_models!(self, cur_team) {
                 for weapon in &model.ranged_weapons {
@@ -776,6 +855,29 @@ impl SimState {
                             weapon: *weapon,
                         })
                     }
+                }
+            }
+
+            // queue up chance nodes
+            let mut units = HashSet::new();
+            for m in team_models!(self, cur_team) {
+                units.insert(m.unit);
+            }
+
+            for u in units {
+                self.queued_results.push(ActionResult::QueueChanceNode {
+                    action: Action::GainChargeDistance { unit: u },
+                });
+            }
+        } else if self.phase == Phase::Charge {
+            // zero out all charge
+            let cur_team = self.cur_team();
+            for model in team_models!(self, cur_team) {
+                if model.charge_movement > 0 {
+                    self.queued_results.push(ActionResult::SpendCharge {
+                        id: model.id,
+                        amount: model.charge_movement,
+                    })
                 }
             }
         }
@@ -811,6 +913,9 @@ impl SimState {
                 to,
                 ranged_weapon,
             }) => self.generate_shooting_results(num_success, ranged_weapon.stats().attack, *to),
+            Some(Action::GainChargeDistance { unit }) => {
+                self.generate_gain_charge_results(num_success, *unit)
+            }
             Some(_) => todo!(),
             None => panic!("trying to apply a chance result when no pending chance action"),
         }
@@ -818,6 +923,15 @@ impl SimState {
         self.queued_results.push(ActionResult::ResolveChanceNode {
             action: *self.pending_chance_action.last().unwrap(),
         });
+    }
+
+    fn generate_gain_charge_results(&mut self, num_success: u8, unit: UnitId) {
+        for model in unit_models!(self, unit) {
+            self.queued_results.push(ActionResult::RestoreCharge {
+                id: model.id,
+                amount: num_success,
+            })
+        }
     }
 
     fn generate_shooting_results(&mut self, num_success: u8, attack: AttackValue, target: UnitId) {
@@ -906,6 +1020,26 @@ impl SimState {
             .any(|x| x.1 == &Some(*target) && !self.get_model(ModelId(x.0)).is_destroyed)
     }
 
+    fn is_adjacent_enemy(&self, target: &SimCoords, team: Team) -> bool {
+        CoordIterator::new(*target, 1, 1).any(|adjacent| {
+            self.locations.iter().enumerate().any(|x| {
+                x.1 == &Some(adjacent)
+                    && self.get_model(ModelId(x.0)).team != team
+                    && !self.get_model(ModelId(x.0)).is_destroyed
+            })
+        })
+    }
+
+    fn is_adjacent_unit(&self, target: &SimCoords, unit: UnitId) -> bool {
+        CoordIterator::new(*target, 1, 1).any(|adjacent| {
+            self.locations.iter().enumerate().any(|x| {
+                x.1 == &Some(adjacent)
+                    && self.get_model(ModelId(x.0)).unit == unit
+                    && !self.get_model(ModelId(x.0)).is_destroyed
+            })
+        })
+    }
+
     pub fn health(&self, id: &ModelId) -> Option<u8> {
         self.models.get(id.0).map(|x| x.cur_stats.wound)
     }
@@ -973,300 +1107,5 @@ impl std::hash::Hash for SimState {
         // self.models.hash(state);
         self.is_start_of_turn.hash(state);
         todo!()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-
-    use core::{assert, assert_eq};
-
-    use rand::{rngs::StdRng, SeedableRng};
-
-    use super::*;
-
-    #[test]
-    fn test_unit_coherency() {
-        // Single model units are coherent
-        let mut gs = SimState::new();
-        insert_space_marine_unit(&mut gs, vec![sc(1, 10)], Team::Players);
-        assert!(gs.unit_coherency().iter().all(|x| x.1));
-
-        // Models in a straight line don't have coherency as swarms
-        let mut gs = SimState::new();
-        insert_space_marine_unit(
-            &mut gs,
-            (0..10).map(|x| sc(1 + x, 10)).collect_vec(),
-            Team::Players,
-        );
-        assert!(!gs.unit_coherency().iter().all(|x| x.1));
-
-        // But non-swarm units will
-        let mut gs = SimState::new();
-        insert_space_marine_unit(
-            &mut gs,
-            (0..5).map(|i| sc(1 + i, 5)).collect_vec(),
-            Team::Players,
-        );
-        assert!(gs.unit_coherency().iter().all(|x| x.1));
-
-        // Non-swarm aren't coherent with a gap
-        let mut gs = SimState::new();
-        insert_space_marine_unit(&mut gs, vec![sc(1, 10), sc(3, 10)], Team::Players);
-        assert!(
-            !gs.unit_coherency().iter().all(|x| x.1),
-            "Non-swarm aren't coherent with a gap"
-        );
-
-        // Swarm are coherent in a rectangle
-        let mut gs = SimState::new();
-        insert_space_marine_unit(
-            &mut gs,
-            (0..20).map(|i| sc(1 + i % 10, 5 + i / 10)).collect_vec(),
-            Team::Players,
-        );
-        assert!(gs.unit_coherency().iter().all(|x| x.1));
-
-        // enemy units don't count for coherency
-        let mut gs = SimState::new();
-        insert_space_marine_unit(&mut gs, vec![sc(1, 10), sc(3, 10)], Team::Players);
-        insert_space_marine_unit(&mut gs, vec![sc(2, 10)], Team::NPCs);
-        assert_eq!(gs.unit_coherency().iter().filter(|x| !x.1).count(), 2);
-
-        // player models but different units don't count for coherency
-        let mut gs = SimState::new();
-        insert_space_marine_unit(&mut gs, vec![sc(1, 10), sc(3, 10)], Team::Players);
-        insert_space_marine_unit(&mut gs, vec![sc(2, 10)], Team::Players);
-        assert_eq!(gs.unit_coherency().iter().filter(|x| !x.1).count(), 2);
-
-        // All units in a unit must have a path between them, e.g. can't have two groups
-        let mut gs = SimState::new();
-        insert_space_marine_unit(
-            &mut gs,
-            vec![sc(1, 10), sc(2, 10), sc(1, 12), sc(2, 12)],
-            Team::Players,
-        );
-        assert!(!gs.unit_coherency().iter().all(|x| x.1));
-        let mut actions = Vec::new();
-        gs.legal_actions(&mut actions);
-        assert!(
-            !actions.contains(&Action::EndPhase),
-            "Can't end turn when not in unit coherency"
-        );
-
-        // Removing a unit should fix unit coherency
-        let mut gs = SimState::new();
-        insert_space_marine_unit(
-            &mut gs,
-            vec![sc(1, 10), sc(2, 10), sc(4, 10)],
-            Team::Players,
-        );
-
-        assert!(!gs.unit_coherency().iter().all(|x| x.1));
-        gs.apply(Action::RemoveModel { id: ModelId(2) });
-        assert!(gs.unit_coherency().iter().all(|x| x.1));
-
-        // Coherency works with multiple units and teams
-        let mut gs = SimState::new();
-        // insert_space_marine_unit(&mut state, sc(5, 10), Team::Players, 0, 10);
-        insert_space_marine_unit(
-            &mut gs,
-            vec![sc(1, 10), sc(2, 10), sc(3, 10)],
-            Team::Players,
-        );
-        insert_necron_unit(&mut gs, vec![sc(1, 15), sc(2, 15), sc(3, 15)], Team::NPCs);
-        assert!(gs.unit_coherency().iter().all(|x| x.1));
-    }
-
-    #[test]
-    fn test_phase_change() {
-        let mut gs = SimState::new();
-        assert_eq!(gs.phase(), Phase::Movement); // for now starting in movement phase
-        assert_eq!(gs.cur_team(), Team::Players);
-        gs.apply(Action::EndPhase);
-        assert_eq!(gs.phase(), Phase::Shooting);
-        assert_eq!(gs.cur_team(), Team::Players);
-        gs.apply(Action::EndPhase);
-        assert_eq!(gs.phase(), Phase::Charge);
-        assert_eq!(gs.cur_team(), Team::Players);
-        gs.apply(Action::EndPhase);
-        assert_eq!(gs.phase(), Phase::Fight);
-        assert_eq!(gs.cur_team(), Team::Players);
-        gs.apply(Action::EndPhase);
-        assert_eq!(gs.phase(), Phase::Command);
-        assert_eq!(gs.cur_team(), Team::NPCs);
-    }
-
-    #[test]
-    fn test_set_phase() {
-        let mut gs = SimState::new();
-        gs.set_phase(Phase::Fight, Team::NPCs);
-        assert_eq!(gs.phase(), Phase::Fight);
-        assert_eq!(gs.cur_team(), Team::NPCs);
-    }
-
-    #[test]
-    fn test_shooting_legal_actions() {
-        let mut gs = SimState::new();
-        insert_space_marine_unit(&mut gs, vec![sc(1, 10)], Team::Players);
-        gs.set_phase(Phase::Shooting, Team::Players);
-        let mut actions = Vec::new();
-
-        // no targets
-        gs.legal_actions(&mut actions);
-        assert_eq!(actions, vec![Action::EndPhase]);
-
-        // single target out of range
-        insert_necron_unit(&mut gs, vec![sc(50, 50)], Team::NPCs);
-        gs.legal_actions(&mut actions);
-        assert_eq!(actions, vec![Action::EndPhase]);
-
-        // single target in range
-        insert_necron_unit(&mut gs, vec![sc(3, 10), sc(4, 10)], Team::NPCs);
-        gs.legal_actions(&mut actions);
-        assert_eq!(
-            actions,
-            vec![
-                Action::Shoot {
-                    from: UnitId(1),
-                    to: UnitId(3),
-                    ranged_weapon: RangedWeapon::BoltPistol
-                },
-                Action::Shoot {
-                    from: UnitId(1),
-                    to: UnitId(3),
-                    ranged_weapon: RangedWeapon::Boltgun
-                },
-                Action::EndPhase
-            ]
-        );
-
-        // add in when part of the unit is in range and part is out of range, on both the attacking a fired upon units
-        insert_necron_unit(
-            &mut gs,
-            vec![sc(
-                (1 + RangedWeapon::BoltPistol.stats().range + 1).into(),
-                10,
-            )],
-            Team::NPCs,
-        );
-        gs.legal_actions(&mut actions);
-        assert_eq!(
-            actions,
-            vec![
-                Action::Shoot {
-                    from: UnitId(1),
-                    to: UnitId(3),
-                    ranged_weapon: RangedWeapon::BoltPistol
-                },
-                Action::Shoot {
-                    from: UnitId(1),
-                    to: UnitId(3),
-                    ranged_weapon: RangedWeapon::Boltgun
-                },
-                Action::Shoot {
-                    from: UnitId(1),
-                    to: UnitId(4),
-                    ranged_weapon: RangedWeapon::Boltgun
-                },
-                Action::EndPhase
-            ]
-        );
-    }
-
-    #[test]
-    fn test_shoot_phase() {
-        let mut gs = SimState::new();
-        insert_space_marine_unit(&mut gs, vec![sc(1, 10)], Team::Players);
-        insert_necron_unit(&mut gs, vec![sc(3, 10), sc(4, 10)], Team::NPCs);
-
-        assert_eq!(
-            unit_models!(gs, UnitId(2))
-                .map(|m| m.cur_stats.wound)
-                .sum::<u8>(),
-            2
-        );
-
-        gs.set_phase(Phase::Shooting, Team::Players);
-        gs.apply(Action::Shoot {
-            from: UnitId(1),
-            to: UnitId(2),
-            ranged_weapon: RangedWeapon::Boltgun,
-        });
-
-        let mut actions = Vec::new();
-        gs.legal_actions(&mut actions);
-        assert_eq!(actions, vec![]);
-
-        assert!(gs.is_chance_node());
-        let probs = gs.chance_outcomes();
-        let mut rng: StdRng = SeedableRng::seed_from_u64(43);
-        let a = probs.sample(&mut rng);
-        // should be one success from seeded rng
-        assert!(matches!(a, Action::RollResult { num_success: 1 }));
-        gs.apply(a);
-
-        assert!(!gs.is_chance_node());
-
-        // Should have 1 wound, the extra damage from the boltrifle doesn't spill over
-        assert_eq!(
-            unit_models!(gs, UnitId(2))
-                .map(|m| m.cur_stats.wound)
-                .sum::<u8>(),
-            1
-        );
-    }
-
-    #[test]
-    fn test_undo() {
-        let mut start_state = SimState::new();
-        insert_space_marine_unit(
-            &mut start_state,
-            (0..10).map(|i| sc(1 + i, 10)).collect_vec(),
-            Team::Players,
-        );
-        insert_space_marine_unit(
-            &mut start_state,
-            (0..10).map(|i| sc(1 + i, 15)).collect_vec(),
-            Team::NPCs,
-        );
-
-        let mut rng: StdRng = SeedableRng::seed_from_u64(42);
-        let mut actions = Vec::new();
-        let mut index = 0;
-
-        for _ in 0..1000 {
-            // times to run the test
-            let mut state = start_state.clone();
-            for _ in 0..100 {
-                // max number of generations
-                if state.is_terminal() {
-                    break;
-                }
-
-                let undo_state = state.clone();
-                let a = if state.is_chance_node() {
-                    let probs = state.chance_outcomes();
-                    probs.sample(&mut rng)
-                } else {
-                    state.legal_actions(&mut actions);
-                    use rand::prelude::SliceRandom;
-                    *actions.choose(&mut rng).unwrap()
-                };
-
-                state.apply(a);
-                state.undo();
-                assert_eq!(
-                    state,
-                    undo_state,
-                    "failed to undo index {}: {:?}\n{:#?}",
-                    index,
-                    a,
-                    state._diff_between(&undo_state)
-                );
-                state.apply(a);
-                index += 1;
-            }
-        }
     }
 }

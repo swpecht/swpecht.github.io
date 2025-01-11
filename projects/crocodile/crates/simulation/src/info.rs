@@ -86,7 +86,7 @@ pub enum AttackValue {
 }
 
 // https://wahapedia.ru/wh40k10ed/factions/space-marines/datasheets.html#Tactical-Squad
-#[derive(PartialEq, Debug, Default, Clone, Hash, Eq, Copy)]
+#[derive(PartialEq, Debug, Default, Clone, Hash, Eq, Copy, Ord, PartialOrd)]
 pub enum RangedWeapon {
     #[default]
     BoltPistol,
