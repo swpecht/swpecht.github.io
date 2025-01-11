@@ -6,14 +6,18 @@ use std::{
 };
 
 use itertools::{Itertools, Product};
+use macros::{team_models, unit_models};
 use petgraph::algo::{has_path_connecting, DfsSpace};
+use probability::{attack_success_probs, ChanceProbabilities};
 
 use crate::{
     info::{insert_necron_unit, insert_space_marine_unit, AttackValue, ModelStats, RangedWeapon},
-    macros::{team_models, unit_models},
-    probability::{attack_success_probs, ChanceProbabilities},
     ModelSprite,
 };
+
+mod gs_debug;
+mod macros;
+mod probability;
 
 const WORLD_SIZE: usize = 20;
 

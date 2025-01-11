@@ -112,8 +112,6 @@ mod tests {
 
     use core::{assert, assert_eq};
 
-    use crate::probability::n_choose_k;
-
     use super::*;
 
     #[test]

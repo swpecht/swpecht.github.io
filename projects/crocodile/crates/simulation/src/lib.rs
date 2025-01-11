@@ -3,10 +3,7 @@
 
 pub mod ai;
 pub mod gamestate;
-mod gs_debug;
 pub mod info;
-pub mod macros;
-pub mod probability;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Copy)]
 pub enum ModelSprite {
