@@ -93,7 +93,7 @@ pub struct ActionEvent {
 struct ActionButtonParent;
 
 #[derive(Component)]
-struct ActionButton(usize);
+struct ActionButton(Action);
 
 #[derive(Component)]
 struct MovementHighlight;
@@ -210,25 +210,25 @@ fn populate_action_buttons(
         for (idx, action) in actions.into_iter().enumerate() {
             match action {
                 Action::EndPhase => {
-                    spawn_action_button(parent, &format!("End {}", sim.0.phase()), idx)
+                    spawn_action_button(parent, &format!("End {}", sim.0.phase()), action)
                 }
                 Action::Shoot {
                     from,
                     to,
                     ranged_weapon,
-                } => {
-                    if sim.0.get_model_unit(selected.0) == from {
-                        spawn_action_button(parent, &format!("{}", ranged_weapon), idx);
-                    }
+                } if sim.0.get_model_unit(selected.0) == from => {
+                    spawn_action_button(parent, &format!("{}", ranged_weapon), action);
                 }
-                Action::RemoveModel { id: _ } => spawn_action_button(parent, "Remove model", idx),
+                Action::RemoveModel { id } if id == selected.0 => {
+                    spawn_action_button(parent, "Remove model", action)
+                }
                 _ => {}
             }
         }
     });
 }
 
-fn spawn_action_button(parent: &mut ChildBuilder, text: &str, idx: usize) {
+fn spawn_action_button(parent: &mut ChildBuilder, text: &str, action: Action) {
     parent
         .spawn((
             Button,
@@ -244,7 +244,7 @@ fn spawn_action_button(parent: &mut ChildBuilder, text: &str, idx: usize) {
             },
             BackgroundColor(NORMAL_BUTTON),
             BorderColor(Color::BLACK),
-            ActionButton(idx),
+            ActionButton(action),
         ))
         .with_children(|parent| {
             parent.spawn((
@@ -440,11 +440,12 @@ fn action_button_action(
 ) {
     let mut legal_actions = Vec::new();
     sim.0.legal_actions(&mut legal_actions);
-    for (interaction, action_id) in &interaction_query {
+
+    for (interaction, action) in &interaction_query {
         if *interaction == Interaction::Pressed {
-            ev_action.send(ActionEvent {
-                action: legal_actions[action_id.0],
-            });
+            let a = action.0;
+            assert!(legal_actions.contains(&a));
+            ev_action.send(ActionEvent { action: a });
         }
     }
 }
