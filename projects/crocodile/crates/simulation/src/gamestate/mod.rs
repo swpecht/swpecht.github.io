@@ -1040,16 +1040,6 @@ impl SimState {
         })
     }
 
-    fn is_adjacent_unit(&self, target: &SimCoords, unit: UnitId) -> bool {
-        CoordIterator::new(*target, 1, 1).any(|adjacent| {
-            self.locations.iter().enumerate().any(|x| {
-                x.1 == &Some(adjacent)
-                    && self.get_model(ModelId(x.0)).unit == unit
-                    && !self.get_model(ModelId(x.0)).is_destroyed
-            })
-        })
-    }
-
     fn is_legal_charge_space(&self, target: &SimCoords, team: Team, unit: UnitId) -> bool {
         if self.is_adjacent_enemy(target, team) {
             return true;

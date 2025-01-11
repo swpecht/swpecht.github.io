@@ -1,7 +1,7 @@
 use animation::animate_sprite;
 use bevy::{input::common_conditions::*, math::vec2, prelude::*, window::PrimaryWindow};
 use character::{spawn_character, CharacterSpawnEvent};
-use simulation::gamestate::{Action, ModelId, SimCoords};
+use simulation::gamestate::{Action, ModelId, Phase, SimCoords};
 use sprite::*;
 
 use crate::{sim_wrapper::SimStateResource, PlayState};
@@ -355,11 +355,22 @@ fn handle_right_click(
     let mut legal_actions = Vec::new();
     sim.0.legal_actions(&mut legal_actions);
     let from = sim.0.get_loc(selected.0).unwrap();
-    let action = Action::Move {
-        to: mouse_coords.to_sim(),
-        id: selected.0,
-        from,
+    let action = match sim.0.phase() {
+        Phase::Movement => Action::Move {
+            to: mouse_coords.to_sim(),
+            id: selected.0,
+            from,
+        },
+        Phase::Charge => Action::Charge {
+            to: mouse_coords.to_sim(),
+            id: selected.0,
+            from,
+        },
+        _ => {
+            return;
+        }
     };
+
     if legal_actions.contains(&action) {
         ev_action.send(ActionEvent { action });
     } else {
@@ -387,6 +398,26 @@ fn highlight_moves(
     let rect = Rectangle::new(TILE_SIZE as f32, TILE_SIZE as f32);
     for a in actions.iter() {
         if let Action::Move {
+            id,
+            from: _from,
+            to,
+        } = a
+        {
+            if id != &selected.0 {
+                continue; // only show moves for the selected character
+            }
+
+            let wc = to_world(to);
+            commands.spawn((
+                Mesh2d(meshes.add(rect)),
+                MeshMaterial2d(materials.add(VALID_MOVE)),
+                Transform::from_xyz(wc.x, wc.y, UI_LAYER),
+                StateScoped(PlayState::Waiting), // automatically unspawn when leave waiting
+                MovementHighlight,
+            ));
+        }
+
+        if let Action::Charge {
             id,
             from: _from,
             to,
