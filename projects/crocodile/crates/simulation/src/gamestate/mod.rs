@@ -64,7 +64,7 @@ pub struct SimState {
     pub(super) phase: Phase,
     /// Track if start of an entities turn, used to optimize AI search caching
     pub(super) is_start_of_turn: bool,
-    pub(super) pending_chance_action: Option<Action>,
+    pub(super) pending_chance_action: Vec<Action>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -249,7 +249,7 @@ impl SimState {
             generation: 0,
             phase: Phase::Movement,
             next_unit_id: 0,
-            pending_chance_action: None,
+            pending_chance_action: Vec::new(),
         }
     }
 }
@@ -315,12 +315,12 @@ impl SimState {
             panic!("called chance outcomes when not a chance node")
         }
 
-        match self.pending_chance_action {
+        match self.pending_chance_action.last() {
             Some(Action::Shoot {
                 from,
                 to,
                 ranged_weapon,
-            }) => self.chance_outcomes_shoot(from, to, ranged_weapon),
+            }) => self.chance_outcomes_shoot(*from, *to, *ranged_weapon),
             Some(_) => todo!(),
             None => panic!("no pending chance action"),
         }
@@ -374,7 +374,7 @@ impl SimState {
     }
 
     pub fn is_chance_node(&self) -> bool {
-        self.pending_chance_action.is_some()
+        !self.pending_chance_action.is_empty()
     }
 
     pub fn is_start_of_turn(&self) -> bool {
@@ -423,13 +423,13 @@ impl SimState {
                 ActionResult::NewTurn(x) => self.is_start_of_turn = !x,
                 ActionResult::RemoveModel { id } => self.models[id.0].is_destroyed = false,
                 ActionResult::QueueChanceNode { action: _ } => {
-                    self.pending_chance_action = None;
+                    self.pending_chance_action.pop();
                 }
                 ActionResult::ApplyWound { id, num_wounds } => {
                     self.get_model_mut(id).cur_stats.wound += num_wounds
                 }
                 ActionResult::ResolveChanceNode { action } => {
-                    self.pending_chance_action = Some(action)
+                    self.pending_chance_action.push(action)
                 }
                 ActionResult::UseWeapon { id, weapon } => {
                     self.get_model_mut(id)
@@ -680,13 +680,13 @@ impl SimState {
 
                 ActionResult::NewTurn(x) => self.is_start_of_turn = x,
                 ActionResult::RemoveModel { id } => self.models[id.0].is_destroyed = true,
-                ActionResult::QueueChanceNode { action } => {
-                    self.pending_chance_action = Some(action)
-                }
+                ActionResult::QueueChanceNode { action } => self.pending_chance_action.push(action),
                 ActionResult::ApplyWound { num_wounds, id } => {
                     self.get_model_mut(id).cur_stats.wound -= num_wounds;
                 }
-                ActionResult::ResolveChanceNode { action: _ } => self.pending_chance_action = None,
+                ActionResult::ResolveChanceNode { action: _ } => {
+                    self.pending_chance_action.pop();
+                }
                 ActionResult::UseWeapon { id, weapon } => {
                     self.get_model_mut(id)
                         .available_ranged_weapons
@@ -805,18 +805,18 @@ impl SimState {
     fn generate_results_roll_result(&mut self, num_success: u8) {
         // start for just the shooting results
 
-        match self.pending_chance_action {
+        match self.pending_chance_action.last() {
             Some(Action::Shoot {
                 from: _,
                 to,
                 ranged_weapon,
-            }) => self.generate_shooting_results(num_success, ranged_weapon.stats().attack, to),
+            }) => self.generate_shooting_results(num_success, ranged_weapon.stats().attack, *to),
             Some(_) => todo!(),
             None => panic!("trying to apply a chance result when no pending chance action"),
         }
 
         self.queued_results.push(ActionResult::ResolveChanceNode {
-            action: self.pending_chance_action.unwrap(),
+            action: *self.pending_chance_action.last().unwrap(),
         });
     }
 
