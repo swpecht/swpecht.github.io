@@ -32,14 +32,18 @@ impl Plugin for UIPlugin {
         app.add_systems(Startup, (setup_camera, sync_sim, setup_tiles))
             // Only process actions if we're actually waiting for action input
             .add_systems(Update, action_system.run_if(in_state(PlayState::Waiting)))
-            .add_systems(OnExit(PlayState::Processing), (sync_sim, game_over, ai));
+            .add_systems(
+                OnExit(PlayState::Processing),
+                (sync_sim, game_over, non_player_game_loop),
+            );
 
         app.add_systems(Startup, setup_ui)
             .add_systems(
                 Update,
                 (
                     button_system,
-                    action_button_action,
+                    action_button_click,
+                    action_button_hover,
                     cursor_locator,
                     tile_highlight,
                     animate_sprite,
@@ -433,7 +437,7 @@ fn highlight_incoherent_unit(
 }
 
 #[allow(clippy::type_complexity)]
-fn action_button_action(
+fn action_button_click(
     interaction_query: Query<(&Interaction, &ActionButton), (Changed<Interaction>, With<Button>)>,
     mut ev_action: EventWriter<ActionEvent>,
     sim: Res<SimStateResource>,
@@ -444,8 +448,54 @@ fn action_button_action(
     for (interaction, action) in &interaction_query {
         if *interaction == Interaction::Pressed {
             let a = action.0;
-            assert!(legal_actions.contains(&a));
+            assert!(
+                legal_actions.contains(&a),
+                "Attempting to play an illegal action"
+            );
             ev_action.send(ActionEvent { action: a });
+        }
+    }
+}
+
+#[derive(Component)]
+struct ActionButtonHoverHighlight {}
+
+#[allow(clippy::type_complexity)]
+fn action_button_hover(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    previous_hovers: Query<Entity, With<ActionButtonHoverHighlight>>,
+    interaction_query: Query<(&Interaction, &ActionButton), (Changed<Interaction>, With<Button>)>,
+    sim: Res<SimStateResource>,
+) {
+    for (interaction, action) in &interaction_query {
+        match interaction {
+            Interaction::Hovered => {
+                if let Action::Shoot {
+                    from: _,
+                    to,
+                    ranged_weapon: _,
+                } = action.0
+                {
+                    for (_, loc, _) in sim.0.unit_sprites(to) {
+                        let rect = Rectangle::new(TILE_SIZE as f32, TILE_SIZE as f32);
+                        let wc = to_world(&loc);
+                        commands.spawn((
+                            Mesh2d(meshes.add(rect)),
+                            MeshMaterial2d(materials.add(INCOHERENT_UNIT)),
+                            Transform::from_xyz(wc.x, wc.y, UI_LAYER),
+                            ActionButtonHoverHighlight {},
+                        ));
+                    }
+                }
+            }
+            Interaction::None => {
+                for entity in &previous_hovers {
+                    commands.entity(entity).despawn();
+                }
+            }
+            _ => {}
         }
     }
 }

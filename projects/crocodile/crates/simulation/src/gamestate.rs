@@ -849,6 +849,15 @@ impl SimState {
             .collect_vec()
     }
 
+    pub fn unit_sprites(&self, unit: UnitId) -> Vec<(ModelId, SimCoords, ModelSprite)> {
+        self.models
+            .iter()
+            .zip(self.locations.iter())
+            .filter(|(m, l)| l.is_some() && !m.is_destroyed && m.unit == unit)
+            .map(|(e, l)| (e.id, l.unwrap(), e.sprite))
+            .collect_vec()
+    }
+
     pub fn get_loc(&self, id: ModelId) -> Option<SimCoords> {
         self.locations[id.0]
     }

@@ -13,7 +13,7 @@ pub struct ChanceProbabilities {
 }
 
 impl ChanceProbabilities {
-    pub fn sample(&self, rng: &mut StdRng) -> Action {
+    pub fn sample<T: Rng>(&self, rng: &mut T) -> Action {
         Action::RollResult {
             num_success: *(0..MAX_NUM_ATTACKS + 1)
                 .collect_vec()

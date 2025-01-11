@@ -176,12 +176,11 @@ pub(super) fn action_system(
                 } => handle_move(&mut commands, end, &query, id),
                 // Reset the ui
                 ActionResult::EndPhase => next_state.set(PlayState::Processing),
-                ActionResult::RemoveModel { id: _id } => {
-                    next_state.set(PlayState::Processing);
-                }
+                ActionResult::RemoveModel { id: _id } => {}
                 _ => {} // no ui impact for most actions
             }
         }
+        next_state.set(PlayState::Processing);
     }
 }
 
@@ -311,7 +310,20 @@ pub(super) fn game_over(
     // }
 }
 
-pub(super) fn ai(_sim: Res<SimStateResource>, mut _ev_action: EventWriter<ActionEvent>) {
+pub(super) fn non_player_game_loop(
+    sim: Res<SimStateResource>,
+    mut ev_action: EventWriter<ActionEvent>,
+) {
+    debug!("entering non player game loop");
+    let gs = &sim.0;
+    if gs.is_chance_node() {
+        let probs = gs.chance_outcomes();
+        let mut rng = rand::thread_rng();
+        let action = probs.sample(&mut rng);
+        debug!("Resolved a chance node: {:?}", action);
+        ev_action.send(ActionEvent { action });
+    }
+
     // disable the ai for now
     // if matches!(sim.cur_team(), Team::NPCs | Team::Players) {
     //     debug!("finding best move for: {:?}", sim.cur_char());
