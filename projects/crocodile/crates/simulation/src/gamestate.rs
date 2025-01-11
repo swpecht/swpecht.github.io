@@ -836,6 +836,10 @@ impl SimState {
         &mut self.models[id.0]
     }
 
+    pub fn get_model_unit(&self, id: ModelId) -> UnitId {
+        self.get_model(id).unit
+    }
+
     pub fn sprites(&self) -> Vec<(ModelId, SimCoords, ModelSprite)> {
         self.models
             .iter()

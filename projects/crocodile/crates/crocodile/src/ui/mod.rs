@@ -1,7 +1,7 @@
 use animation::animate_sprite;
 use bevy::{input::common_conditions::*, math::vec2, prelude::*, window::PrimaryWindow};
 use character::{spawn_character, CharacterSpawnEvent};
-use simulation::gamestate::{Action, SimCoords, ModelId};
+use simulation::gamestate::{Action, ModelId, SimCoords};
 use sprite::*;
 
 use crate::{sim_wrapper::SimStateResource, PlayState};
@@ -208,10 +208,21 @@ fn populate_action_buttons(
         let mut actions = Vec::new();
         sim.0.legal_actions(&mut actions);
         for (idx, action) in actions.into_iter().enumerate() {
-            if matches!(action, Action::EndPhase) {
-                spawn_action_button(parent, &format!("End {}", sim.0.phase()), idx);
-            } else if matches!(action, Action::RemoveModel { id } if id == selected.0) {
-                spawn_action_button(parent, "Remove model", idx);
+            match action {
+                Action::EndPhase => {
+                    spawn_action_button(parent, &format!("End {}", sim.0.phase()), idx)
+                }
+                Action::Shoot {
+                    from,
+                    to,
+                    ranged_weapon,
+                } => {
+                    if sim.0.get_model_unit(selected.0) == from {
+                        spawn_action_button(parent, &format!("{}", ranged_weapon), idx);
+                    }
+                }
+                Action::RemoveModel { id: _ } => spawn_action_button(parent, "Remove model", idx),
+                _ => {}
             }
         }
     });

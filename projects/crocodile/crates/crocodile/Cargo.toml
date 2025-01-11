@@ -5,7 +5,6 @@ edition = "2021"
 
 
 [dependencies]
-crocodile_proc = { path = "../crocodile_proc" }
 simulation = { path = "../simulation" }
 
 rand = "0.8"
