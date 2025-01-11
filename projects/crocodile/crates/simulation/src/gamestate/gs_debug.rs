@@ -5,8 +5,8 @@ macro_rules! access_test {
         if $x.$item != $y.$item {
             $c.push(_DiffItem {
                 name: stringify!($item).to_string(),
-                left: format!("{:?}", $x.$item),
-                right: format!("{:?}", $y.$item),
+                l: format!("{:?}", $x.$item),
+                r: format!("{:?}", $y.$item),
             })
         }
     }};
@@ -16,8 +16,8 @@ macro_rules! access_test {
 #[allow(dead_code)]
 pub(super) struct _DiffItem {
     pub name: String,
-    pub left: String,
-    pub right: String,
+    pub l: String,
+    pub r: String,
 }
 
 impl SimState {
@@ -32,10 +32,21 @@ impl SimState {
         access_test!(self, other, differences, applied_results);
         access_test!(self, other, differences, initiative);
         access_test!(self, other, differences, locations);
-        access_test!(self, other, differences, models);
         access_test!(self, other, differences, phase);
         access_test!(self, other, differences, is_start_of_turn);
         access_test!(self, other, differences, pending_chance_action);
+
+        if self.models != other.models {
+            for (l, r) in self.models.iter().zip(other.models.iter()) {
+                if l != r {
+                    differences.push(_DiffItem {
+                        name: "Model difference".to_string(),
+                        l: format!("{:?}", l),
+                        r: format!("{:?}", r),
+                    })
+                }
+            }
+        }
 
         differences
     }

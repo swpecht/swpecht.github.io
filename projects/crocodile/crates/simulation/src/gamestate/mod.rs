@@ -1,6 +1,6 @@
 use core::{option::Option::None, todo};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt::{Debug, Display},
     ops::{Add, Sub},
 };
@@ -177,7 +177,7 @@ impl Display for Phase {
 }
 
 /// Represents a 40k style model
-#[derive(Hash, Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub(super) struct Model {
     unit: UnitId,
     id: ModelId,
@@ -187,8 +187,8 @@ pub(super) struct Model {
     base_stats: ModelStats,
     remaining_actions: usize,
     team: Team,
-    available_ranged_weapons: Vec<RangedWeapon>,
-    ranged_weapons: Vec<RangedWeapon>,
+    available_ranged_weapons: HashSet<RangedWeapon>,
+    ranged_weapons: HashSet<RangedWeapon>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -430,12 +430,15 @@ impl SimState {
                 ActionResult::ResolveChanceNode { action } => {
                     self.pending_chance_action = Some(action)
                 }
-                ActionResult::UseWeapon { id, weapon } => self
-                    .get_model_mut(id)
-                    .available_ranged_weapons
-                    .retain(|x| *x != weapon),
+                ActionResult::UseWeapon { id, weapon } => {
+                    self.get_model_mut(id)
+                        .available_ranged_weapons
+                        .insert(weapon);
+                }
                 ActionResult::ReloadWeapon { id, weapon } => {
-                    self.get_model_mut(id).available_ranged_weapons.push(weapon)
+                    self.get_model_mut(id)
+                        .available_ranged_weapons
+                        .remove(&weapon);
                 }
             }
 
@@ -558,11 +561,7 @@ impl SimState {
             .for_each(|x| actions.push(Action::RemoveModel { id: x.0 }));
 
         let cur_team = self.cur_team();
-        for model in self
-            .models
-            .iter()
-            .filter(|m| m.team == cur_team && !m.is_destroyed)
-        {
+        for model in team_models!(self, cur_team) {
             if model.cur_stats.movement > 0 {
                 let model_loc = self.get_loc(model.id).unwrap();
                 for l in CoordIterator::new(model_loc, model.cur_stats.movement, 1) {
@@ -586,7 +585,7 @@ impl SimState {
         };
 
         for model in team_models!(self, cur_team) {
-            for weapon in &model.ranged_weapons {
+            for weapon in &model.available_ranged_weapons {
                 let range = weapon.stats().range;
 
                 for enemy in team_models!(self, enemy_team) {
@@ -690,10 +689,12 @@ impl SimState {
                 ActionResult::UseWeapon { id, weapon } => {
                     self.get_model_mut(id)
                         .available_ranged_weapons
-                        .retain(|x| *x != weapon);
+                        .remove(&weapon);
                 }
                 ActionResult::ReloadWeapon { id, weapon } => {
-                    self.get_model_mut(id).available_ranged_weapons.push(weapon)
+                    self.get_model_mut(id)
+                        .available_ranged_weapons
+                        .insert(weapon);
                 }
             }
 
@@ -724,8 +725,8 @@ impl SimState {
             unit: UnitId(self.next_unit_id),
             is_destroyed: false,
             sprite,
-            available_ranged_weapons: ranged_weapons.clone(),
-            ranged_weapons,
+            available_ranged_weapons: HashSet::from_iter(ranged_weapons.iter().cloned()),
+            ranged_weapons: HashSet::from_iter(ranged_weapons.iter().cloned()),
         };
 
         self.models.push(entity);
@@ -968,8 +969,9 @@ impl std::hash::Hash for SimState {
         self.next_model_id.hash(state);
         self.initiative.hash(state);
         self.locations.hash(state);
-        self.models.hash(state);
+        // self.models.hash(state);
         self.is_start_of_turn.hash(state);
+        todo!()
     }
 }
 
@@ -1247,7 +1249,6 @@ mod tests {
                     probs.sample(&mut rng)
                 } else {
                     state.legal_actions(&mut actions);
-
                     use rand::prelude::SliceRandom;
                     *actions.choose(&mut rng).unwrap()
                 };
