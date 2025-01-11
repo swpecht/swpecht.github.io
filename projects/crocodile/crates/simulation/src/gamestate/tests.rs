@@ -13,14 +13,50 @@ fn test_charge_phase() {
     gs.set_phase(Phase::Charge, Team::Players);
     assert!(gs.is_chance_node());
 
-    gs.apply(Action::RollResult { num_success: 1 });
-    gs.apply(Action::RollResult { num_success: 1 });
+    gs.apply(Action::RollResult { num_success: 4 });
+    gs.apply(Action::RollResult { num_success: 4 });
 
     let mut actions = Vec::new();
     gs.legal_actions(&mut actions);
-    assert_eq!(actions, vec![Action::EndPhase]);
+    use Action::*;
+    assert_eq!(
+        actions,
+        vec![
+            EndPhase,
+            Charge {
+                id: ModelId(0),
+                from: SimCoords { x: 1, y: 10 },
+                to: SimCoords { x: 1, y: 14 }
+            },
+        ]
+    );
 
-    todo!()
+    gs.apply(Charge {
+        id: ModelId(0),
+        from: SimCoords { x: 1, y: 10 },
+        to: SimCoords { x: 1, y: 14 },
+    });
+
+    gs.legal_actions(&mut actions);
+
+    // todo: fix this
+    assert_eq!(
+        actions,
+        vec![
+            RemoveModel { id: ModelId(0) },
+            RemoveModel { id: ModelId(1) },
+            Charge {
+                id: ModelId(1),
+                from: SimCoords { x: 2, y: 10 },
+                to: SimCoords { x: 1, y: 13 }
+            },
+            Charge {
+                id: ModelId(1),
+                from: SimCoords { x: 2, y: 10 },
+                to: SimCoords { x: 2, y: 14 }
+            }
+        ]
+    );
 }
 
 #[test]

@@ -315,7 +315,7 @@ impl SimState {
             Action::GainChargeDistance { unit } => {
                 panic!("this action should never be applied directly")
             }
-            Action::Charge { id, from, to } => todo!(),
+            Action::Charge { id, from, to } => self.generate_results_charge(id, from, to),
         }
 
         self.apply_queued_results();
@@ -672,8 +672,7 @@ impl SimState {
                 for l in CoordIterator::new(model_loc, model.charge_movement, 1) {
                     // need to check if in engagement range of enemy square
                     if !self.is_populated(&l)
-                        && (self.is_adjacent_enemy(&l, self.cur_team())
-                            || self.is_adjacent_unit(&l, model.unit))
+                        && self.is_legal_charge_space(&l, cur_team, model.unit)
                     {
                         // todo: should only be legal if adjacent unit model is adjacent to an enemy
                         actions.push(Charge {
@@ -815,6 +814,17 @@ impl SimState {
 
     pub fn cur_team(&self) -> Team {
         self.initiative[0]
+    }
+
+    fn generate_results_charge(&mut self, id: ModelId, from: SimCoords, to: SimCoords) {
+        let distance = to.dist(&from);
+
+        self.queued_results
+            .push(ActionResult::Move { from, to, id });
+        self.queued_results.push(ActionResult::SpendCharge {
+            id,
+            amount: distance as u8,
+        });
     }
 
     fn generate_results_move_model(&mut self, id: ModelId, from: SimCoords, to: SimCoords) {
@@ -1038,6 +1048,17 @@ impl SimState {
                     && !self.get_model(ModelId(x.0)).is_destroyed
             })
         })
+    }
+
+    fn is_legal_charge_space(&self, target: &SimCoords, team: Team, unit: UnitId) -> bool {
+        if self.is_adjacent_enemy(target, team) {
+            return true;
+        }
+
+        CoordIterator::new(*target, 1, 1)
+            .filter(|x| self.is_populated(x))
+            .filter(|x| self.get_model(self.get_id(*x).unwrap()).unit == unit)
+            .any(|x| self.is_adjacent_enemy(&x, team))
     }
 
     pub fn health(&self, id: &ModelId) -> Option<u8> {

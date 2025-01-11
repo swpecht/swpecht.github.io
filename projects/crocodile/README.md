@@ -1,25 +1,27 @@
 # Update sim to Warhammer 40k style rules
     [*] Implement unit coherency for movement
-    [ ] Implement shooting phases
+    [*] Implement shooting phases
         [*] Implement all phase changes and cycling -- have an end phase action, incl. fix for active team
         [*] Implement legal actions to depends on the phase
         [*] Implement legal actions for shoot
-        [ ] Implement apply action for shoot, including chance nodes
+        [*] Implement apply action for shoot, including chance nodes
             * Add field for chance node and for action to resolve
             [*] Implement pending chance action
-            [ ] Implement resolution for pedning chance action
-            [ ] Implement test to go through the shoot phase, test going to chance node, etc.
-            [ ] Implement function to get probabilities for chance action -- see open spiel
-        [ ] Select eligible unit -> left click -- then shows the weapons actions
-        [ ] Select weapon in the UI -> filter actions to be just that unit and weapong
-        [ ] Select targets -> right click (action::target_unit(from_unit, to_unit, weapon))
-        [ ] Make ranged attacks (chance node) -> button, action::fire -- swtiches to select eligible unit
-        [ ] Repeat for next eligible unit
+            [*] Implement resolution for pedning chance action
+            [*] Implement test to go through the shoot phase, test going to chance node, etc.
+            [*] Implement function to get probabilities for chance action -- see open spiel
+        [*] When hovering over weapon action button, highlight the unit that will be hit
+        [*] Implement tracking in game state to allow each unit to use each weapon only one time
+    [ ] Implement charge phase
+        [ ] Make the charge rolls for each unit on the players team
+            [ ] Do each unit individually, need a way to track the progress of the chance, each one queues up the next chance action?
+            [ ] Or better to just support a list of chance actions that need to be resolved?, then just keep going through all of those
+        [ ] Then use the same rules for moving units as for charge, don't need to move every model in a unit all at once
+        [ ] Implement UI for charge
     [ ] Implement movement phase
         [ ] models cannot move within engagement range of other models
         [ ] implement Advance mode
         [ ] implement fall back moves -- color code fall back move squares and regular squares? then still a single click where go
-    [ ] Implement charge phase
     [ ] Implement fight phase
     [ ] Implement Command phase
     [ ] Imlpement victory points, including the per round cards that are drawn or controlling areas. See some 40k in 40min videos
@@ -31,9 +33,14 @@
     [ ] Visiblity for shooting phase
     [ ] Path finding
 [ ] Implement more complex shooting
+    [ ] Player can choose which model takes damage
     [ ] Different models can target different units
+    [ ] Don't allow shooting for things other than pistols in engagement range of another enemy
+    [ ] Implement weapon abilities
 
 # QoL:
+[ ] Refactor the apply and undo methods for ActionResults to be children of that enum, take in gs as paramter? Or better to just have an opposite function
+    * then apply all the opposites?
 [ ] Implement highlight for the selected unit
 [ ] Add in a log of what actions were taken
 [ ] Implement the select unit loop for movement?
