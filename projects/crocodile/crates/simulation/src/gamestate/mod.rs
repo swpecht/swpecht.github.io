@@ -265,6 +265,7 @@ impl Default for SimState {
         );
 
         insert_necron_unit(&mut gs, vec![sc(1, 15), sc(2, 15), sc(3, 15)], Team::NPCs);
+        insert_necron_unit(&mut gs, vec![sc(1, 16), sc(2, 16), sc(3, 16)], Team::NPCs);
         gs
     }
 }

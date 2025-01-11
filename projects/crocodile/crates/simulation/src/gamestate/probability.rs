@@ -4,18 +4,18 @@ use rand::rngs::StdRng;
 
 use crate::gamestate::Action;
 
-const MAX_NUM_ATTACKS: usize = 10;
+const MAX_NUM_SUCCESS: usize = 12;
 
 /// Probabilities for chance outcomes
 #[derive(Default)]
 pub struct ChanceProbabilities {
-    probs: [f32; MAX_NUM_ATTACKS + 1],
+    probs: [f32; MAX_NUM_SUCCESS + 1],
 }
 
 impl ChanceProbabilities {
     pub fn sample<T: Rng>(&self, rng: &mut T) -> Action {
         Action::RollResult {
-            num_success: *(0..MAX_NUM_ATTACKS + 1)
+            num_success: *(0..MAX_NUM_SUCCESS + 1)
                 .collect_vec()
                 .choose_weighted(rng, |i| &self.probs[*i])
                 .unwrap() as u8,
@@ -34,7 +34,7 @@ impl ChanceProbabilities {
 
 /// Returns a vector of length num_attacks with the probability for that many
 /// successful wounds
-pub fn attack_success_probs(
+pub(super) fn attack_success_probs(
     num_attacks: u8,
     attack_skill: u8,
     attack_strength: u8,
@@ -42,7 +42,7 @@ pub fn attack_success_probs(
     attack_ap: u8,
     target_save: u8,
 ) -> ChanceProbabilities {
-    if num_attacks as usize > MAX_NUM_ATTACKS {
+    if num_attacks as usize > MAX_NUM_SUCCESS {
         panic!("attempting to calculate probabilities on too many attacks")
     }
 
@@ -84,6 +84,17 @@ pub fn attack_success_probs(
     }
 
     probs
+}
+
+/// Results of 2d6
+pub(super) fn charge_success_probs() -> ChanceProbabilities {
+    // https://www.thedarkfortress.co.uk/tech_reports/2_dice_rolls.php
+    ChanceProbabilities {
+        probs: [
+            0.0, 0.0, 0.0277, 0.0555, 0.0833, 0.1111, 0.1388, 0.1666, 0.1388, 0.1111, 0.0833,
+            0.0555, 0.0277,
+        ],
+    }
 }
 
 /// Returns the probability a d6 rolls greater than or equal to x
