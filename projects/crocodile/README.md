@@ -12,17 +12,13 @@
             [*] Implement function to get probabilities for chance action -- see open spiel
         [*] When hovering over weapon action button, highlight the unit that will be hit
         [*] Implement tracking in game state to allow each unit to use each weapon only one time
-    [ ] Implement charge phase
-        [ ] Make the charge rolls for each unit on the players team
-            [ ] Do each unit individually, need a way to track the progress of the chance, each one queues up the next chance action?
-            [ ] Or better to just support a list of chance actions that need to be resolved?, then just keep going through all of those
-        [ ] Then use the same rules for moving units as for charge, don't need to move every model in a unit all at once
-        [ ] Implement UI for charge
+    [*] Implement charge phase
+    [ ] Implement fight phase
     [ ] Implement movement phase
         [ ] models cannot move within engagement range of other models
         [ ] implement Advance mode
         [ ] implement fall back moves -- color code fall back move squares and regular squares? then still a single click where go
-    [ ] Implement fight phase
+    
     [ ] Implement Command phase
     [ ] Imlpement victory points, including the per round cards that are drawn or controlling areas. See some 40k in 40min videos
     [ ] Implement passives, like the necron regrowth
