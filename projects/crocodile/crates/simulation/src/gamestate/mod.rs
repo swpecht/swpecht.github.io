@@ -11,7 +11,7 @@ use petgraph::algo::{has_path_connecting, DfsSpace};
 use probability::{attack_success_probs, charge_success_probs, ChanceProbabilities};
 
 use crate::{
-    info::{insert_necron_unit, insert_space_marine_unit, AttackValue, ModelStats, RangedWeapon},
+    info::{insert_necron_unit, insert_space_marine_unit, ModelStats, RangedWeapon, RollableValue},
     ModelSprite,
 };
 
@@ -697,13 +697,14 @@ impl SimState {
         ranged_weapon: RangedWeapon,
     ) -> ChanceProbabilities {
         // We only count attacks from models that have the weapon in question
-        let num_attacks = unit_models!(self, from)
+        let num_modesl = unit_models!(self, from)
             .filter(|m| m.ranged_weapons.contains(&ranged_weapon))
             .count();
         let target = unit_models!(self, to).next().unwrap();
+        let num_attacks = ranged_weapon.stats().num_attacks.value();
 
         attack_success_probs(
-            num_attacks.try_into().unwrap(),
+            num_modesl as u8 * num_attacks,
             ranged_weapon.stats().ballistic_skill,
             ranged_weapon.stats().strength,
             target.cur_stats.toughness,
@@ -922,7 +923,9 @@ impl SimState {
                 from: _,
                 to,
                 ranged_weapon,
-            }) => self.generate_shooting_results(num_success, ranged_weapon.stats().attack, *to),
+            }) => {
+                self.generate_shooting_results(num_success, ranged_weapon.stats().num_attacks, *to)
+            }
             Some(Action::GainChargeDistance { unit }) => {
                 self.generate_gain_charge_results(num_success, *unit)
             }
@@ -944,13 +947,18 @@ impl SimState {
         }
     }
 
-    fn generate_shooting_results(&mut self, num_success: u8, attack: AttackValue, target: UnitId) {
+    fn generate_shooting_results(
+        &mut self,
+        num_success: u8,
+        attack: RollableValue,
+        target: UnitId,
+    ) {
         let attack = match attack {
-            AttackValue::One => 1,
-            AttackValue::Two => 2,
-            AttackValue::Three => 3,
-            AttackValue::D6 => todo!(),
-            AttackValue::D3 => todo!(),
+            RollableValue::One => 1,
+            RollableValue::Two => 2,
+            RollableValue::Three => 3,
+            RollableValue::D6 => todo!(),
+            RollableValue::D3 => todo!(),
         };
         let mut remaining_attacks = num_success;
         {

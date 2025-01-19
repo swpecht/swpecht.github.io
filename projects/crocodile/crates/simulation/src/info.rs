@@ -60,7 +60,7 @@ pub fn insert_necron_unit(gs: &mut SimState, locs: Vec<SimCoords>, team: Team) {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct RangedWeaponStats {
     pub range: u8,
-    pub attack: AttackValue,
+    pub num_attacks: RollableValue,
     pub ballistic_skill: u8,
     pub strength: u8,
     pub armor_penetration: u8,
@@ -76,13 +76,25 @@ pub struct ModelStats {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum AttackValue {
+pub enum RollableValue {
     #[default]
     One,
     Two,
     Three,
     D6,
     D3,
+}
+
+impl RollableValue {
+    pub fn value(&self) -> u8 {
+        match self {
+            RollableValue::One => 1,
+            RollableValue::Two => 2,
+            RollableValue::Three => 3,
+            RollableValue::D6 => todo!(),
+            RollableValue::D3 => todo!(),
+        }
+    }
 }
 
 // https://wahapedia.ru/wh40k10ed/factions/space-marines/datasheets.html#Tactical-Squad
@@ -101,7 +113,7 @@ impl RangedWeapon {
         match self {
             RangedWeapon::BoltPistol => RangedWeaponStats {
                 range: 12,
-                attack: AttackValue::One,
+                num_attacks: RollableValue::One,
                 ballistic_skill: 3,
                 strength: 4,
                 armor_penetration: 0,
@@ -109,7 +121,7 @@ impl RangedWeapon {
             },
             RangedWeapon::Boltgun => RangedWeaponStats {
                 range: 24,
-                attack: AttackValue::Two,
+                num_attacks: RollableValue::Two,
                 ballistic_skill: 3,
                 strength: 4,
                 armor_penetration: 0,
@@ -117,7 +129,7 @@ impl RangedWeapon {
             },
             RangedWeapon::Flamer => RangedWeaponStats {
                 range: 12,
-                attack: AttackValue::D6,
+                num_attacks: RollableValue::D6,
                 ballistic_skill: 0, // torrent weapon so always hits
                 strength: 4,
                 armor_penetration: 0,
@@ -125,7 +137,7 @@ impl RangedWeapon {
             },
             RangedWeapon::MissleLauncherFrag => RangedWeaponStats {
                 range: 48,
-                attack: AttackValue::D6,
+                num_attacks: RollableValue::D6,
                 ballistic_skill: 4,
                 strength: 4,
                 armor_penetration: 0,
@@ -133,7 +145,7 @@ impl RangedWeapon {
             },
             RangedWeapon::GaussFlayer => RangedWeaponStats {
                 range: 24,
-                attack: AttackValue::One,
+                num_attacks: RollableValue::One,
                 ballistic_skill: 4,
                 strength: 4,
                 armor_penetration: 0,
