@@ -250,12 +250,33 @@ fn test_shoot_phase() {
     let mut gs = SimState::new();
     insert_space_marine_unit(&mut gs, vec![sc(1, 10)], Team::Players);
     insert_necron_unit(&mut gs, vec![sc(3, 10), sc(4, 10)], Team::NPCs);
+    gs.set_phase(Phase::Shooting, Team::Players);
 
     assert_eq!(
         unit_models!(gs, UnitId(2))
             .map(|m| m.cur_stats.wound)
             .sum::<u8>(),
         2
+    );
+
+    let mut actions = Vec::new();
+    gs.legal_actions(&mut actions);
+    // Can't use melee weapons in shooting phase
+    assert_eq!(
+        actions,
+        vec![
+            Action::Shoot {
+                from: UnitId(1),
+                to: UnitId(2),
+                ranged_weapon: Weapon::BoltPistol,
+            },
+            Action::Shoot {
+                from: UnitId(1),
+                to: UnitId(2),
+                ranged_weapon: Weapon::Boltgun,
+            },
+            Action::EndPhase,
+        ]
     );
 
     gs.set_phase(Phase::Shooting, Team::Players);

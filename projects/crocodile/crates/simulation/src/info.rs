@@ -25,7 +25,11 @@ pub fn insert_space_marine_unit(gs: &mut SimState, locs: Vec<SimCoords>, team: T
                 toughness: 4,
                 save: 3,
             },
-            vec![Weapon::BoltPistol, Weapon::Boltgun],
+            vec![
+                Weapon::BoltPistol,
+                Weapon::Boltgun,
+                Weapon::CloseCombatWeapon,
+            ],
         );
     }
 }
@@ -58,7 +62,7 @@ pub fn insert_necron_unit(gs: &mut SimState, locs: Vec<SimCoords>, team: Team) {
 // https://wahapedia.ru/wh40k10ed/factions/space-marines/datasheets.html#Tactical-Squad
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub struct RangedWeaponStats {
+pub struct WeaponStats {
     pub range: u8,
     pub num_attacks: RollableValue,
     pub skill: u8,
@@ -106,12 +110,13 @@ pub enum Weapon {
     Flamer,
     MissleLauncherFrag,
     GaussFlayer,
+    CloseCombatWeapon,
 }
 
 impl Weapon {
-    pub fn stats(&self) -> RangedWeaponStats {
+    pub fn stats(&self) -> WeaponStats {
         match self {
-            Weapon::BoltPistol => RangedWeaponStats {
+            Weapon::BoltPistol => WeaponStats {
                 range: 12,
                 num_attacks: RollableValue::One,
                 skill: 3,
@@ -119,7 +124,7 @@ impl Weapon {
                 armor_penetration: 0,
                 damage: 1,
             },
-            Weapon::Boltgun => RangedWeaponStats {
+            Weapon::Boltgun => WeaponStats {
                 range: 24,
                 num_attacks: RollableValue::Two,
                 skill: 3,
@@ -127,7 +132,7 @@ impl Weapon {
                 armor_penetration: 0,
                 damage: 1,
             },
-            Weapon::Flamer => RangedWeaponStats {
+            Weapon::Flamer => WeaponStats {
                 range: 12,
                 num_attacks: RollableValue::D6,
                 skill: 0, // torrent weapon so always hits
@@ -135,7 +140,7 @@ impl Weapon {
                 armor_penetration: 0,
                 damage: 1,
             },
-            Weapon::MissleLauncherFrag => RangedWeaponStats {
+            Weapon::MissleLauncherFrag => WeaponStats {
                 range: 48,
                 num_attacks: RollableValue::D6,
                 skill: 4,
@@ -143,10 +148,18 @@ impl Weapon {
                 armor_penetration: 0,
                 damage: 1,
             },
-            Weapon::GaussFlayer => RangedWeaponStats {
+            Weapon::GaussFlayer => WeaponStats {
                 range: 24,
                 num_attacks: RollableValue::One,
                 skill: 4,
+                strength: 4,
+                armor_penetration: 0,
+                damage: 1,
+            },
+            Weapon::CloseCombatWeapon => WeaponStats {
+                range: 0,
+                num_attacks: RollableValue::Two,
+                skill: 3,
                 strength: 4,
                 armor_penetration: 0,
                 damage: 1,
@@ -164,6 +177,7 @@ impl Display for Weapon {
             Flamer => "Flamer",
             MissleLauncherFrag => "Missle Launcher - Frag",
             GaussFlayer => "Gauss Flayer",
+            CloseCombatWeapon => "Close Combat Weapon",
         })
     }
 }

@@ -633,6 +633,10 @@ impl SimState {
         for model in team_models!(self, cur_team) {
             for weapon in model.ranged_weapons.available() {
                 let range = weapon.stats().range;
+                // skip melee weapons
+                if range == 0 {
+                    continue;
+                }
 
                 for enemy in team_models!(self, enemy_team) {
                     if self
