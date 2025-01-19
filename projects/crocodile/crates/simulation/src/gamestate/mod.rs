@@ -923,9 +923,7 @@ impl SimState {
                 from: _,
                 to,
                 ranged_weapon,
-            }) => {
-                self.generate_shooting_results(num_success, ranged_weapon.stats().num_attacks, *to)
-            }
+            }) => self.generate_shooting_results(num_success, ranged_weapon.stats().damage, *to),
             Some(Action::GainChargeDistance { unit }) => {
                 self.generate_gain_charge_results(num_success, *unit)
             }
@@ -947,19 +945,7 @@ impl SimState {
         }
     }
 
-    fn generate_shooting_results(
-        &mut self,
-        num_success: u8,
-        attack: RollableValue,
-        target: UnitId,
-    ) {
-        let attack = match attack {
-            RollableValue::One => 1,
-            RollableValue::Two => 2,
-            RollableValue::Three => 3,
-            RollableValue::D6 => todo!(),
-            RollableValue::D3 => todo!(),
-        };
+    fn generate_shooting_results(&mut self, num_success: u8, damage: u8, target: UnitId) {
         let mut remaining_attacks = num_success;
         {
             let mut models = unit_models!(self, target);
@@ -969,7 +955,7 @@ impl SimState {
                 let mut accumulated_wound = 0;
 
                 while remaining_attacks > 0 && model.cur_stats.wound > accumulated_wound {
-                    accumulated_wound += attack.min(model.cur_stats.wound - accumulated_wound);
+                    accumulated_wound += damage.min(model.cur_stats.wound - accumulated_wound);
                     remaining_attacks -= 1;
                 }
 
