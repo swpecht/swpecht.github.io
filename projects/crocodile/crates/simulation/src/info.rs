@@ -25,7 +25,7 @@ pub fn insert_space_marine_unit(gs: &mut SimState, locs: Vec<SimCoords>, team: T
                 toughness: 4,
                 save: 3,
             },
-            vec![RangedWeapon::BoltPistol, RangedWeapon::Boltgun],
+            vec![Weapon::BoltPistol, Weapon::Boltgun],
         );
     }
 }
@@ -50,7 +50,7 @@ pub fn insert_necron_unit(gs: &mut SimState, locs: Vec<SimCoords>, team: Team) {
                 toughness: 4,
                 save: 4,
             },
-            vec![RangedWeapon::GaussFlayer],
+            vec![Weapon::GaussFlayer],
         );
     }
 }
@@ -61,7 +61,7 @@ pub fn insert_necron_unit(gs: &mut SimState, locs: Vec<SimCoords>, team: Team) {
 pub struct RangedWeaponStats {
     pub range: u8,
     pub num_attacks: RollableValue,
-    pub ballistic_skill: u8,
+    pub skill: u8,
     pub strength: u8,
     pub armor_penetration: u8,
     pub damage: u8,
@@ -99,7 +99,7 @@ impl RollableValue {
 
 // https://wahapedia.ru/wh40k10ed/factions/space-marines/datasheets.html#Tactical-Squad
 #[derive(PartialEq, Debug, Default, Clone, Hash, Eq, Copy, Ord, PartialOrd)]
-pub enum RangedWeapon {
+pub enum Weapon {
     #[default]
     BoltPistol,
     Boltgun,
@@ -108,45 +108,45 @@ pub enum RangedWeapon {
     GaussFlayer,
 }
 
-impl RangedWeapon {
+impl Weapon {
     pub fn stats(&self) -> RangedWeaponStats {
         match self {
-            RangedWeapon::BoltPistol => RangedWeaponStats {
+            Weapon::BoltPistol => RangedWeaponStats {
                 range: 12,
                 num_attacks: RollableValue::One,
-                ballistic_skill: 3,
+                skill: 3,
                 strength: 4,
                 armor_penetration: 0,
                 damage: 1,
             },
-            RangedWeapon::Boltgun => RangedWeaponStats {
+            Weapon::Boltgun => RangedWeaponStats {
                 range: 24,
                 num_attacks: RollableValue::Two,
-                ballistic_skill: 3,
+                skill: 3,
                 strength: 4,
                 armor_penetration: 0,
                 damage: 1,
             },
-            RangedWeapon::Flamer => RangedWeaponStats {
+            Weapon::Flamer => RangedWeaponStats {
                 range: 12,
                 num_attacks: RollableValue::D6,
-                ballistic_skill: 0, // torrent weapon so always hits
+                skill: 0, // torrent weapon so always hits
                 strength: 4,
                 armor_penetration: 0,
                 damage: 1,
             },
-            RangedWeapon::MissleLauncherFrag => RangedWeaponStats {
+            Weapon::MissleLauncherFrag => RangedWeaponStats {
                 range: 48,
                 num_attacks: RollableValue::D6,
-                ballistic_skill: 4,
+                skill: 4,
                 strength: 4,
                 armor_penetration: 0,
                 damage: 1,
             },
-            RangedWeapon::GaussFlayer => RangedWeaponStats {
+            Weapon::GaussFlayer => RangedWeaponStats {
                 range: 24,
                 num_attacks: RollableValue::One,
-                ballistic_skill: 4,
+                skill: 4,
                 strength: 4,
                 armor_penetration: 0,
                 damage: 1,
@@ -155,9 +155,9 @@ impl RangedWeapon {
     }
 }
 
-impl Display for RangedWeapon {
+impl Display for Weapon {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use RangedWeapon::*;
+        use Weapon::*;
         f.write_str(match self {
             BoltPistol => "Bolt pistol",
             Boltgun => "Boltgun",
@@ -166,10 +166,4 @@ impl Display for RangedWeapon {
             GaussFlayer => "Gauss Flayer",
         })
     }
-}
-
-#[derive(PartialEq, Debug, Default, Clone, Hash, Eq, Copy, Ord, PartialOrd)]
-pub enum MeleeWeapon {
-    #[default]
-    CloseCombatWeapon,
 }

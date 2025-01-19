@@ -12,7 +12,7 @@ use probability::{attack_success_probs, charge_success_probs, ChanceProbabilitie
 use weapons::Arsenal;
 
 use crate::{
-    info::{insert_necron_unit, insert_space_marine_unit, MeleeWeapon, ModelStats, RangedWeapon},
+    info::{insert_necron_unit, insert_space_marine_unit, ModelStats, Weapon},
     ModelSprite,
 };
 
@@ -97,12 +97,12 @@ pub enum Action {
     Shoot {
         from: UnitId,
         to: UnitId,
-        ranged_weapon: RangedWeapon,
+        ranged_weapon: Weapon,
     },
     Fight {
         from: UnitId,
         to: UnitId,
-        melee_weapon: MeleeWeapon,
+        weapon: Weapon,
     },
     /// Remove a model due to lack of unit coherency
     RemoveModel {
@@ -155,11 +155,11 @@ pub enum ActionResult {
     },
     UseWeapon {
         id: ModelId,
-        weapon: RangedWeapon,
+        weapon: Weapon,
     },
     ReloadWeapon {
         id: ModelId,
-        weapon: RangedWeapon,
+        weapon: Weapon,
     },
     RestoreCharge {
         id: ModelId,
@@ -199,11 +199,7 @@ impl Display for Action {
                 "Charging {:?}: from {:?} to {:?}",
                 id, from, to
             )),
-            Action::Fight {
-                from,
-                to,
-                melee_weapon,
-            } => todo!(),
+            Action::Fight { from, to, weapon } => todo!(),
         }
     }
 }
@@ -232,7 +228,7 @@ pub(super) struct Model {
     remaining_actions: usize,
     charge_movement: u8,
     team: Team,
-    ranged_weapons: Arsenal<RangedWeapon>,
+    ranged_weapons: Arsenal<Weapon>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -336,11 +332,7 @@ impl SimState {
                 panic!("this action should never be applied directly")
             }
             Action::Charge { id, from, to } => self.generate_results_charge(id, from, to),
-            Action::Fight {
-                from,
-                to,
-                melee_weapon,
-            } => todo!(),
+            Action::Fight { from, to, weapon } => todo!(),
         }
 
         self.apply_queued_results();
@@ -739,7 +731,7 @@ impl SimState {
         &self,
         from: UnitId,
         to: UnitId,
-        ranged_weapon: RangedWeapon,
+        ranged_weapon: Weapon,
     ) -> ChanceProbabilities {
         // We only count attacks from models that have the weapon in question
         let num_modesl = unit_models!(self, from)
@@ -750,7 +742,7 @@ impl SimState {
 
         attack_success_probs(
             num_modesl as u8 * num_attacks,
-            ranged_weapon.stats().ballistic_skill,
+            ranged_weapon.stats().skill,
             ranged_weapon.stats().strength,
             target.cur_stats.toughness,
             ranged_weapon.stats().armor_penetration,
@@ -829,7 +821,7 @@ impl SimState {
         team: Team,
         unit_type: UnitType,
         model_stats: ModelStats,
-        ranged_weapons: Vec<RangedWeapon>,
+        ranged_weapons: Vec<Weapon>,
     ) {
         if matches!(unit_type, UnitType::NewUnit) {
             self.next_unit_id += 1;
@@ -976,7 +968,7 @@ impl SimState {
         &mut self,
         from: UnitId,
         to: UnitId,
-        weapon: RangedWeapon,
+        weapon: Weapon,
         num_success: u8,
     ) {
         let mut remaining_attacks = num_success;

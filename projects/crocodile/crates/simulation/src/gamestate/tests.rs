@@ -204,12 +204,12 @@ fn test_shooting_legal_actions() {
             Action::Shoot {
                 from: UnitId(1),
                 to: UnitId(3),
-                ranged_weapon: RangedWeapon::BoltPistol
+                ranged_weapon: Weapon::BoltPistol
             },
             Action::Shoot {
                 from: UnitId(1),
                 to: UnitId(3),
-                ranged_weapon: RangedWeapon::Boltgun
+                ranged_weapon: Weapon::Boltgun
             },
             Action::EndPhase
         ]
@@ -218,10 +218,7 @@ fn test_shooting_legal_actions() {
     // add in when part of the unit is in range and part is out of range, on both the attacking a fired upon units
     insert_necron_unit(
         &mut gs,
-        vec![sc(
-            (1 + RangedWeapon::BoltPistol.stats().range + 1).into(),
-            10,
-        )],
+        vec![sc((1 + Weapon::BoltPistol.stats().range + 1).into(), 10)],
         Team::NPCs,
     );
     gs.legal_actions(&mut actions);
@@ -231,17 +228,17 @@ fn test_shooting_legal_actions() {
             Action::Shoot {
                 from: UnitId(1),
                 to: UnitId(3),
-                ranged_weapon: RangedWeapon::BoltPistol
+                ranged_weapon: Weapon::BoltPistol
             },
             Action::Shoot {
                 from: UnitId(1),
                 to: UnitId(3),
-                ranged_weapon: RangedWeapon::Boltgun
+                ranged_weapon: Weapon::Boltgun
             },
             Action::Shoot {
                 from: UnitId(1),
                 to: UnitId(4),
-                ranged_weapon: RangedWeapon::Boltgun
+                ranged_weapon: Weapon::Boltgun
             },
             Action::EndPhase
         ]
@@ -265,7 +262,7 @@ fn test_shoot_phase() {
     gs.apply(Action::Shoot {
         from: UnitId(1),
         to: UnitId(2),
-        ranged_weapon: RangedWeapon::Boltgun,
+        ranged_weapon: Weapon::Boltgun,
     });
 
     let mut actions = Vec::new();
