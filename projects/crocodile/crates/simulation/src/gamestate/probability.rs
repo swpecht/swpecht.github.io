@@ -1,6 +1,5 @@
 use itertools::Itertools;
 use rand::prelude::*;
-use rand::rngs::StdRng;
 
 use crate::gamestate::Action;
 

@@ -28,7 +28,7 @@ pub fn insert_space_marine_unit(gs: &mut SimState, locs: Vec<SimCoords>, team: T
             vec![
                 Weapon::BoltPistol,
                 Weapon::Boltgun,
-                Weapon::CloseCombatWeapon,
+                Weapon::SpaceMarineCloseCombatWeapon,
             ],
         );
     }
@@ -54,7 +54,7 @@ pub fn insert_necron_unit(gs: &mut SimState, locs: Vec<SimCoords>, team: Team) {
                 toughness: 4,
                 save: 4,
             },
-            vec![Weapon::GaussFlayer],
+            vec![Weapon::GaussFlayer, Weapon::NecronCloseCombatWeapon],
         );
     }
 }
@@ -110,7 +110,8 @@ pub enum Weapon {
     Flamer,
     MissleLauncherFrag,
     GaussFlayer,
-    CloseCombatWeapon,
+    SpaceMarineCloseCombatWeapon,
+    NecronCloseCombatWeapon,
 }
 
 impl Weapon {
@@ -156,10 +157,18 @@ impl Weapon {
                 armor_penetration: 0,
                 damage: 1,
             },
-            Weapon::CloseCombatWeapon => WeaponStats {
+            Weapon::SpaceMarineCloseCombatWeapon => WeaponStats {
                 range: 0,
                 num_attacks: RollableValue::Two,
                 skill: 3,
+                strength: 4,
+                armor_penetration: 0,
+                damage: 1,
+            },
+            Weapon::NecronCloseCombatWeapon => WeaponStats {
+                range: 0,
+                num_attacks: RollableValue::One,
+                skill: 4,
                 strength: 4,
                 armor_penetration: 0,
                 damage: 1,
@@ -177,7 +186,7 @@ impl Display for Weapon {
             Flamer => "Flamer",
             MissleLauncherFrag => "Missle Launcher - Frag",
             GaussFlayer => "Gauss Flayer",
-            CloseCombatWeapon => "Close Combat Weapon",
+            SpaceMarineCloseCombatWeapon | NecronCloseCombatWeapon => "Close Combat Weapon",
         })
     }
 }

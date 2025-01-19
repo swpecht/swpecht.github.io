@@ -211,15 +211,15 @@ fn populate_action_buttons(
     parent.with_children(|parent| {
         let mut actions = Vec::new();
         sim.0.legal_actions(&mut actions);
-        for (idx, action) in actions.into_iter().enumerate() {
+        for action in actions.into_iter() {
             match action {
                 Action::EndPhase => {
                     spawn_action_button(parent, &format!("End {}", sim.0.phase()), action)
                 }
-                Action::Shoot {
+                Action::UseWeapon {
                     from,
-                    to,
-                    ranged_weapon,
+                    to: _,
+                    weapon: ranged_weapon,
                 } if sim.0.get_model_unit(selected.0) == from => {
                     spawn_action_button(parent, &format!("{}", ranged_weapon), action);
                 }
@@ -503,10 +503,10 @@ fn action_button_hover(
     for (interaction, action) in &interaction_query {
         match interaction {
             Interaction::Hovered => {
-                if let Action::Shoot {
+                if let Action::UseWeapon {
                     from: _,
                     to,
-                    ranged_weapon: _,
+                    weapon: _,
                 } = action.0
                 {
                     for (_, loc, _) in sim.0.unit_sprites(to) {

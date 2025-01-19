@@ -1,4 +1,4 @@
-use core::{num, option::Option::None, todo};
+use core::{option::Option::None, todo};
 use std::{
     collections::{HashMap, HashSet},
     fmt::{Debug, Display},
@@ -94,12 +94,7 @@ pub enum Action {
         from: SimCoords,
         to: SimCoords,
     },
-    Shoot {
-        from: UnitId,
-        to: UnitId,
-        ranged_weapon: Weapon,
-    },
-    Fight {
+    UseWeapon {
         from: UnitId,
         to: UnitId,
         weapon: Weapon,
@@ -186,10 +181,10 @@ impl Display for Action {
                 f.write_fmt(format_args!("Moving {:?}: from {:?} to {:?}", id, from, to))
             }
             Action::RemoveModel { id } => f.write_fmt(format_args!("Removing unit: {:?}", id)),
-            Action::Shoot {
+            Action::UseWeapon {
                 from: _from,
                 to: _to,
-                ranged_weapon: _ranged_weapon,
+                weapon: _ranged_weapon,
             } => todo!(),
             Action::RollResult { num_success } => {
                 f.write_fmt(format_args!("Succeded {:?} times", num_success))
@@ -199,7 +194,6 @@ impl Display for Action {
                 "Charging {:?}: from {:?} to {:?}",
                 id, from, to
             )),
-            Action::Fight { from, to, weapon } => todo!(),
         }
     }
 }
@@ -228,7 +222,7 @@ pub(super) struct Model {
     remaining_actions: usize,
     charge_movement: u8,
     team: Team,
-    ranged_weapons: Arsenal<Weapon>,
+    weapons: Arsenal,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -322,17 +316,16 @@ impl SimState {
             Action::EndPhase => self.generate_results_end_phase(),
             Action::Move { id, from, to } => self.generate_results_move_model(id, from, to),
             Action::RemoveModel { id } => self.generate_results_remove_model(id),
-            Action::Shoot {
+            Action::UseWeapon {
                 from: _,
                 to: _,
-                ranged_weapon: _,
+                weapon: _,
             } => self.generate_results_shoot(action),
             Action::RollResult { num_success } => self.generate_results_roll_result(num_success),
             Action::GainChargeDistance { unit } => {
                 panic!("this action should never be applied directly")
             }
             Action::Charge { id, from, to } => self.generate_results_charge(id, from, to),
-            Action::Fight { from, to, weapon } => todo!(),
         }
 
         self.apply_queued_results();
@@ -361,10 +354,10 @@ impl SimState {
         }
 
         match self.pending_chance_action.last() {
-            Some(Action::Shoot {
+            Some(Action::UseWeapon {
                 from,
                 to,
-                ranged_weapon,
+                weapon: ranged_weapon,
             }) => self.chance_outcomes_shoot(*from, *to, *ranged_weapon),
             Some(Action::GainChargeDistance { unit: _ }) => charge_success_probs(),
             Some(_) => todo!(),
@@ -478,10 +471,10 @@ impl SimState {
                     self.pending_chance_action.push(action)
                 }
                 ActionResult::UseWeapon { id, weapon } => {
-                    self.get_model_mut(id).ranged_weapons.enable(weapon);
+                    self.get_model_mut(id).weapons.enable(weapon);
                 }
                 ActionResult::ReloadWeapon { id, weapon } => {
-                    self.get_model_mut(id).ranged_weapons.disable(&weapon);
+                    self.get_model_mut(id).weapons.disable(&weapon);
                 }
                 ActionResult::RestoreCharge { id, amount } => {
                     self.get_model_mut(id).charge_movement -= amount
@@ -631,12 +624,8 @@ impl SimState {
         let enemy_team = cur_team.enemy();
 
         for model in team_models!(self, cur_team) {
-            for weapon in model.ranged_weapons.available() {
+            for weapon in model.weapons.available_ranged() {
                 let range = weapon.stats().range;
-                // skip melee weapons
-                if range == 0 {
-                    continue;
-                }
 
                 for enemy in team_models!(self, enemy_team) {
                     if self
@@ -645,10 +634,10 @@ impl SimState {
                         .dist(&self.get_loc(enemy.id).unwrap())
                         <= range as usize
                     {
-                        let action = Action::Shoot {
+                        let action = Action::UseWeapon {
                             from: model.unit,
                             to: enemy.unit,
-                            ranged_weapon: *weapon,
+                            weapon: *weapon,
                         };
                         if !actions.contains(&action) {
                             actions.push(action);
@@ -705,7 +694,7 @@ impl SimState {
         let enemy_team = cur_team.enemy();
 
         for model in team_models!(self, cur_team) {
-            for weapon in model.ranged_weapons.available() {
+            for weapon in model.weapons.available_melee() {
                 let range = 1;
 
                 for enemy in team_models!(self, enemy_team) {
@@ -715,10 +704,10 @@ impl SimState {
                         .dist(&self.get_loc(enemy.id).unwrap())
                         <= range as usize
                     {
-                        let action = Action::Shoot {
+                        let action = Action::UseWeapon {
                             from: model.unit,
                             to: enemy.unit,
-                            ranged_weapon: *weapon,
+                            weapon: *weapon,
                         };
                         if !actions.contains(&action) {
                             actions.push(action);
@@ -739,7 +728,7 @@ impl SimState {
     ) -> ChanceProbabilities {
         // We only count attacks from models that have the weapon in question
         let num_modesl = unit_models!(self, from)
-            .filter(|m| m.ranged_weapons.is_available(&ranged_weapon))
+            .filter(|m| m.weapons.is_available(&ranged_weapon))
             .count();
         let target = unit_models!(self, to).next().unwrap();
         let num_attacks = ranged_weapon.stats().num_attacks.value();
@@ -800,10 +789,10 @@ impl SimState {
                     self.pending_chance_action.pop();
                 }
                 ActionResult::UseWeapon { id, weapon } => {
-                    self.get_model_mut(id).ranged_weapons.disable(&weapon);
+                    self.get_model_mut(id).weapons.disable(&weapon);
                 }
                 ActionResult::ReloadWeapon { id, weapon } => {
-                    self.get_model_mut(id).ranged_weapons.enable(weapon);
+                    self.get_model_mut(id).weapons.enable(weapon);
                 }
                 ActionResult::RestoreCharge { id, amount } => {
                     self.get_model_mut(id).charge_movement += amount
@@ -840,7 +829,7 @@ impl SimState {
             unit: UnitId(self.next_unit_id),
             is_destroyed: false,
             sprite,
-            ranged_weapons: Arsenal::from_vec(ranged_weapons),
+            weapons: Arsenal::from_vec(ranged_weapons),
             charge_movement: 0,
         };
 
@@ -895,8 +884,8 @@ impl SimState {
             // reload weapons
             let cur_team = self.cur_team();
             for model in team_models!(self, cur_team) {
-                for weapon in model.ranged_weapons.all() {
-                    if !model.ranged_weapons.is_available(weapon) {
+                for weapon in model.weapons.all() {
+                    if !model.weapons.is_available(weapon) {
                         self.queued_results.push(ActionResult::ReloadWeapon {
                             id: model.id,
                             weapon: *weapon,
@@ -929,6 +918,14 @@ impl SimState {
             }
         }
 
+        // if there are any pending chance nodes, skip them. This shouldn't come up
+        // in normal play, but is a convience when using the `set_phase` function.
+        for pedning_chance in &self.pending_chance_action {
+            self.queued_results.push(ActionResult::ResolveChanceNode {
+                action: *pedning_chance,
+            });
+        }
+
         self.queued_results.push(ActionResult::EndPhase);
     }
 
@@ -941,10 +938,10 @@ impl SimState {
         // start for just the shooting results
 
         match self.pending_chance_action.last() {
-            Some(Action::Shoot {
+            Some(Action::UseWeapon {
                 from,
                 to,
-                ranged_weapon,
+                weapon: ranged_weapon,
             }) => self.generate_shooting_results(*from, *to, *ranged_weapon, num_success),
             Some(Action::GainChargeDistance { unit }) => {
                 self.generate_gain_charge_results(num_success, *unit)

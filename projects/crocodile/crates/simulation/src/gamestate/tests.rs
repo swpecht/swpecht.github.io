@@ -201,15 +201,15 @@ fn test_shooting_legal_actions() {
     assert_eq!(
         actions,
         vec![
-            Action::Shoot {
+            Action::UseWeapon {
                 from: UnitId(1),
                 to: UnitId(3),
-                ranged_weapon: Weapon::BoltPistol
+                weapon: Weapon::BoltPistol
             },
-            Action::Shoot {
+            Action::UseWeapon {
                 from: UnitId(1),
                 to: UnitId(3),
-                ranged_weapon: Weapon::Boltgun
+                weapon: Weapon::Boltgun
             },
             Action::EndPhase
         ]
@@ -225,20 +225,20 @@ fn test_shooting_legal_actions() {
     assert_eq!(
         actions,
         vec![
-            Action::Shoot {
+            Action::UseWeapon {
                 from: UnitId(1),
                 to: UnitId(3),
-                ranged_weapon: Weapon::BoltPistol
+                weapon: Weapon::BoltPistol
             },
-            Action::Shoot {
+            Action::UseWeapon {
                 from: UnitId(1),
                 to: UnitId(3),
-                ranged_weapon: Weapon::Boltgun
+                weapon: Weapon::Boltgun
             },
-            Action::Shoot {
+            Action::UseWeapon {
                 from: UnitId(1),
                 to: UnitId(4),
-                ranged_weapon: Weapon::Boltgun
+                weapon: Weapon::Boltgun
             },
             Action::EndPhase
         ]
@@ -265,25 +265,24 @@ fn test_shoot_phase() {
     assert_eq!(
         actions,
         vec![
-            Action::Shoot {
+            Action::UseWeapon {
                 from: UnitId(1),
                 to: UnitId(2),
-                ranged_weapon: Weapon::BoltPistol,
+                weapon: Weapon::BoltPistol,
             },
-            Action::Shoot {
+            Action::UseWeapon {
                 from: UnitId(1),
                 to: UnitId(2),
-                ranged_weapon: Weapon::Boltgun,
+                weapon: Weapon::Boltgun,
             },
             Action::EndPhase,
         ]
     );
 
-    gs.set_phase(Phase::Shooting, Team::Players);
-    gs.apply(Action::Shoot {
+    gs.apply(Action::UseWeapon {
         from: UnitId(1),
         to: UnitId(2),
-        ranged_weapon: Weapon::Boltgun,
+        weapon: Weapon::Boltgun,
     });
 
     let mut actions = Vec::new();
@@ -307,6 +306,66 @@ fn test_shoot_phase() {
             .sum::<u8>(),
         1
     );
+}
+
+#[test]
+fn test_fight_phase() {
+    let mut gs = SimState::new();
+    insert_space_marine_unit(&mut gs, vec![sc(1, 10)], Team::Players);
+    insert_necron_unit(&mut gs, vec![sc(2, 10), sc(3, 10)], Team::NPCs);
+    gs.set_phase(Phase::Fight, Team::Players);
+
+    assert_eq!(
+        unit_models!(gs, UnitId(2))
+            .map(|m| m.cur_stats.wound)
+            .sum::<u8>(),
+        2
+    );
+
+    let mut actions = Vec::new();
+    gs.legal_actions(&mut actions);
+    // Can't use melee weapons in shooting phase
+    assert_eq!(
+        actions,
+        vec![
+            Action::UseWeapon {
+                from: UnitId(1),
+                to: UnitId(2),
+                weapon: Weapon::SpaceMarineCloseCombatWeapon,
+            },
+            Action::EndPhase,
+        ]
+    );
+
+    gs.apply(Action::UseWeapon {
+        from: UnitId(1),
+        to: UnitId(2),
+        weapon: Weapon::SpaceMarineCloseCombatWeapon,
+    });
+
+    gs.legal_actions(&mut actions);
+    assert_eq!(actions, vec![]);
+
+    assert!(gs.is_chance_node());
+    let probs = gs.chance_outcomes();
+    let mut rng: StdRng = SeedableRng::seed_from_u64(43);
+    let a = probs.sample(&mut rng);
+    // should be one success from seeded rng
+    assert!(matches!(a, Action::RollResult { num_success: 1 }));
+    gs.apply(a);
+
+    assert!(!gs.is_chance_node());
+
+    // Should have 1 wound, the extra damage doesn't spill over
+    assert_eq!(
+        unit_models!(gs, UnitId(2))
+            .map(|m| m.cur_stats.wound)
+            .sum::<u8>(),
+        1
+    );
+
+    // switch teams as now the enemy team gets to respond
+    assert_eq!(gs.cur_team(), Team::NPCs);
 }
 
 #[test]

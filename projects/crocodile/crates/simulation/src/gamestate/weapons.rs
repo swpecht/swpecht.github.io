@@ -2,25 +2,24 @@ use std::{collections::HashSet, fmt::Debug};
 
 use itertools::Itertools;
 
+use crate::info::Weapon;
+
 /// Collection of weapons
 #[derive(PartialEq, Debug, Clone)]
-pub(super) struct Arsenal<T: Clone + Debug + PartialEq + Eq + std::hash::Hash> {
-    available: HashSet<T>,
-    all: HashSet<T>,
+pub(super) struct Arsenal {
+    available: HashSet<Weapon>,
+    all: HashSet<Weapon>,
 }
 
-impl<T> Arsenal<T>
-where
-    T: Clone + Debug + PartialEq + Eq + std::hash::Hash + Ord,
-{
-    pub fn from_vec(weapons: Vec<T>) -> Self {
+impl Arsenal {
+    pub fn from_vec(weapons: Vec<Weapon>) -> Self {
         Arsenal {
             available: HashSet::from_iter(weapons.iter().cloned()),
             all: HashSet::from_iter(weapons.iter().cloned()),
         }
     }
 
-    pub fn enable(&mut self, weapon: T) {
+    pub fn enable(&mut self, weapon: Weapon) {
         if !self.all.contains(&weapon) {
             panic!("trying to reset a weapon that's not in arsenal");
         }
@@ -28,7 +27,7 @@ where
         self.available.insert(weapon);
     }
 
-    pub fn disable(&mut self, weapon: &T) {
+    pub fn disable(&mut self, weapon: &Weapon) {
         if !self.all.contains(weapon) {
             panic!("trying to disable a weapon that's not in arsenal");
         }
@@ -36,15 +35,29 @@ where
         self.available.remove(weapon);
     }
 
-    pub fn is_available(&self, weapon: &T) -> bool {
+    pub fn is_available(&self, weapon: &Weapon) -> bool {
         self.available.contains(weapon)
     }
 
-    pub fn available(&self) -> impl Iterator<Item = &T> {
+    pub fn available(&self) -> impl Iterator<Item = &Weapon> {
         self.available.iter().sorted()
     }
 
-    pub fn all(&self) -> impl Iterator<Item = &T> {
+    pub fn available_melee(&self) -> impl Iterator<Item = &Weapon> {
+        self.available
+            .iter()
+            .filter(|x| x.stats().range == 0)
+            .sorted()
+    }
+
+    pub fn available_ranged(&self) -> impl Iterator<Item = &Weapon> {
+        self.available
+            .iter()
+            .filter(|x| x.stats().range != 0)
+            .sorted()
+    }
+
+    pub fn all(&self) -> impl Iterator<Item = &Weapon> {
         self.all.iter().sorted()
     }
 }
