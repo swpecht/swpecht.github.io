@@ -167,3 +167,9 @@ impl Display for RangedWeapon {
         })
     }
 }
+
+#[derive(PartialEq, Debug, Default, Clone, Hash, Eq, Copy, Ord, PartialOrd)]
+pub enum MeleeWeapon {
+    #[default]
+    CloseCombatWeapon,
+}

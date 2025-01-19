@@ -9,9 +9,10 @@ use itertools::{Itertools, Product};
 use macros::{team_models, unit_models};
 use petgraph::algo::{has_path_connecting, DfsSpace};
 use probability::{attack_success_probs, charge_success_probs, ChanceProbabilities};
+use weapons::Arsenal;
 
 use crate::{
-    info::{insert_necron_unit, insert_space_marine_unit, ModelStats, RangedWeapon, RollableValue},
+    info::{insert_necron_unit, insert_space_marine_unit, MeleeWeapon, ModelStats, RangedWeapon},
     ModelSprite,
 };
 
@@ -20,6 +21,7 @@ mod macros;
 mod probability;
 #[cfg(test)]
 mod tests;
+mod weapons;
 
 const WORLD_SIZE: usize = 20;
 
@@ -28,6 +30,15 @@ pub enum Team {
     Players,
     #[default]
     NPCs,
+}
+
+impl Team {
+    pub fn enemy(&self) -> Team {
+        match self {
+            Team::Players => Team::NPCs,
+            Team::NPCs => Team::Players,
+        }
+    }
 }
 
 pub enum UnitType {
@@ -87,6 +98,11 @@ pub enum Action {
         from: UnitId,
         to: UnitId,
         ranged_weapon: RangedWeapon,
+    },
+    Fight {
+        from: UnitId,
+        to: UnitId,
+        melee_weapon: MeleeWeapon,
     },
     /// Remove a model due to lack of unit coherency
     RemoveModel {
@@ -183,6 +199,11 @@ impl Display for Action {
                 "Charging {:?}: from {:?} to {:?}",
                 id, from, to
             )),
+            Action::Fight {
+                from,
+                to,
+                melee_weapon,
+            } => todo!(),
         }
     }
 }
@@ -211,8 +232,7 @@ pub(super) struct Model {
     remaining_actions: usize,
     charge_movement: u8,
     team: Team,
-    available_ranged_weapons: HashSet<RangedWeapon>,
-    ranged_weapons: HashSet<RangedWeapon>,
+    ranged_weapons: Arsenal<RangedWeapon>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -316,6 +336,11 @@ impl SimState {
                 panic!("this action should never be applied directly")
             }
             Action::Charge { id, from, to } => self.generate_results_charge(id, from, to),
+            Action::Fight {
+                from,
+                to,
+                melee_weapon,
+            } => todo!(),
         }
 
         self.apply_queued_results();
@@ -461,14 +486,10 @@ impl SimState {
                     self.pending_chance_action.push(action)
                 }
                 ActionResult::UseWeapon { id, weapon } => {
-                    self.get_model_mut(id)
-                        .available_ranged_weapons
-                        .insert(weapon);
+                    self.get_model_mut(id).ranged_weapons.enable(weapon);
                 }
                 ActionResult::ReloadWeapon { id, weapon } => {
-                    self.get_model_mut(id)
-                        .available_ranged_weapons
-                        .remove(&weapon);
+                    self.get_model_mut(id).ranged_weapons.disable(&weapon);
                 }
                 ActionResult::RestoreCharge { id, amount } => {
                     self.get_model_mut(id).charge_movement -= amount
@@ -615,13 +636,10 @@ impl SimState {
 
     fn legal_actions_shooting(&self, actions: &mut Vec<Action>) {
         let cur_team = self.cur_team();
-        let enemy_team = match cur_team {
-            Team::Players => Team::NPCs,
-            Team::NPCs => Team::Players,
-        };
+        let enemy_team = cur_team.enemy();
 
         for model in team_models!(self, cur_team) {
-            for weapon in model.available_ranged_weapons.iter().sorted() {
+            for weapon in model.ranged_weapons.available() {
                 let range = weapon.stats().range;
 
                 for enemy in team_models!(self, enemy_team) {
@@ -687,6 +705,33 @@ impl SimState {
     }
 
     fn legal_actions_fight(&self, actions: &mut Vec<Action>) {
+        let cur_team = self.cur_team();
+        let enemy_team = cur_team.enemy();
+
+        for model in team_models!(self, cur_team) {
+            for weapon in model.ranged_weapons.available() {
+                let range = 1;
+
+                for enemy in team_models!(self, enemy_team) {
+                    if self
+                        .get_loc(model.id)
+                        .unwrap()
+                        .dist(&self.get_loc(enemy.id).unwrap())
+                        <= range as usize
+                    {
+                        let action = Action::Shoot {
+                            from: model.unit,
+                            to: enemy.unit,
+                            ranged_weapon: *weapon,
+                        };
+                        if !actions.contains(&action) {
+                            actions.push(action);
+                        }
+                    }
+                }
+            }
+        }
+
         actions.push(Action::EndPhase);
     }
 
@@ -698,7 +743,7 @@ impl SimState {
     ) -> ChanceProbabilities {
         // We only count attacks from models that have the weapon in question
         let num_modesl = unit_models!(self, from)
-            .filter(|m| m.ranged_weapons.contains(&ranged_weapon))
+            .filter(|m| m.ranged_weapons.is_available(&ranged_weapon))
             .count();
         let target = unit_models!(self, to).next().unwrap();
         let num_attacks = ranged_weapon.stats().num_attacks.value();
@@ -759,14 +804,10 @@ impl SimState {
                     self.pending_chance_action.pop();
                 }
                 ActionResult::UseWeapon { id, weapon } => {
-                    self.get_model_mut(id)
-                        .available_ranged_weapons
-                        .remove(&weapon);
+                    self.get_model_mut(id).ranged_weapons.disable(&weapon);
                 }
                 ActionResult::ReloadWeapon { id, weapon } => {
-                    self.get_model_mut(id)
-                        .available_ranged_weapons
-                        .insert(weapon);
+                    self.get_model_mut(id).ranged_weapons.enable(weapon);
                 }
                 ActionResult::RestoreCharge { id, amount } => {
                     self.get_model_mut(id).charge_movement += amount
@@ -803,8 +844,7 @@ impl SimState {
             unit: UnitId(self.next_unit_id),
             is_destroyed: false,
             sprite,
-            available_ranged_weapons: HashSet::from_iter(ranged_weapons.iter().cloned()),
-            ranged_weapons: HashSet::from_iter(ranged_weapons.iter().cloned()),
+            ranged_weapons: Arsenal::from_vec(ranged_weapons),
             charge_movement: 0,
         };
 
@@ -859,8 +899,8 @@ impl SimState {
             // reload weapons
             let cur_team = self.cur_team();
             for model in team_models!(self, cur_team) {
-                for weapon in &model.ranged_weapons {
-                    if !model.available_ranged_weapons.contains(weapon) {
+                for weapon in model.ranged_weapons.all() {
+                    if !model.ranged_weapons.is_available(weapon) {
                         self.queued_results.push(ActionResult::ReloadWeapon {
                             id: model.id,
                             weapon: *weapon,
@@ -899,20 +939,6 @@ impl SimState {
     fn generate_results_shoot(&mut self, action: Action) {
         self.queued_results
             .push(ActionResult::QueueChanceNode { action });
-
-        if let Action::Shoot {
-            from,
-            to: _,
-            ranged_weapon,
-        } = action
-        {
-            for model in unit_models!(self, from) {
-                self.queued_results.push(ActionResult::UseWeapon {
-                    id: model.id,
-                    weapon: ranged_weapon,
-                });
-            }
-        }
     }
 
     fn generate_results_roll_result(&mut self, num_success: u8) {
@@ -920,10 +946,10 @@ impl SimState {
 
         match self.pending_chance_action.last() {
             Some(Action::Shoot {
-                from: _,
+                from,
                 to,
                 ranged_weapon,
-            }) => self.generate_shooting_results(num_success, ranged_weapon.stats().damage, *to),
+            }) => self.generate_shooting_results(*from, *to, *ranged_weapon, num_success),
             Some(Action::GainChargeDistance { unit }) => {
                 self.generate_gain_charge_results(num_success, *unit)
             }
@@ -945,32 +971,46 @@ impl SimState {
         }
     }
 
-    fn generate_shooting_results(&mut self, num_success: u8, damage: u8, target: UnitId) {
+    /// Calculate damage and use up weapons
+    fn generate_shooting_results(
+        &mut self,
+        from: UnitId,
+        to: UnitId,
+        weapon: RangedWeapon,
+        num_success: u8,
+    ) {
         let mut remaining_attacks = num_success;
+        let damage = weapon.stats().damage;
+
+        let mut models = unit_models!(self, to);
+        while let Some(model) = models.next()
+            && remaining_attacks > 0
         {
-            let mut models = unit_models!(self, target);
-            while let Some(model) = models.next()
-                && remaining_attacks > 0
-            {
-                let mut accumulated_wound = 0;
+            let mut accumulated_wound = 0;
 
-                while remaining_attacks > 0 && model.cur_stats.wound > accumulated_wound {
-                    accumulated_wound += damage.min(model.cur_stats.wound - accumulated_wound);
-                    remaining_attacks -= 1;
-                }
-
-                self.queued_results.push(ActionResult::ApplyWound {
-                    id: model.id,
-                    num_wounds: accumulated_wound,
-                });
-
-                if accumulated_wound == model.cur_stats.wound {
-                    self.queued_results
-                        .push(ActionResult::RemoveModel { id: model.id })
-                }
-
-                assert!(accumulated_wound <= model.cur_stats.wound);
+            while remaining_attacks > 0 && model.cur_stats.wound > accumulated_wound {
+                accumulated_wound += damage.min(model.cur_stats.wound - accumulated_wound);
+                remaining_attacks -= 1;
             }
+
+            self.queued_results.push(ActionResult::ApplyWound {
+                id: model.id,
+                num_wounds: accumulated_wound,
+            });
+
+            if accumulated_wound == model.cur_stats.wound {
+                self.queued_results
+                    .push(ActionResult::RemoveModel { id: model.id })
+            }
+
+            assert!(accumulated_wound <= model.cur_stats.wound);
+        }
+
+        for model in unit_models!(self, from) {
+            self.queued_results.push(ActionResult::UseWeapon {
+                id: model.id,
+                weapon,
+            });
         }
     }
 
