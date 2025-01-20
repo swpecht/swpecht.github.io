@@ -167,6 +167,11 @@ fn test_phase_change() {
     assert_eq!(gs.phase(), Phase::Fight);
     assert_eq!(gs.cur_team(), Team::Players);
     gs.apply(Action::EndPhase);
+    // both teams need to end the fight phase
+    assert_eq!(gs.phase(), Phase::Fight);
+    assert_eq!(gs.cur_team(), Team::NPCs);
+    gs.apply(Action::EndPhase);
+    // Only then can we move to new command phase
     assert_eq!(gs.phase(), Phase::Command);
     assert_eq!(gs.cur_team(), Team::NPCs);
 }
@@ -312,19 +317,13 @@ fn test_shoot_phase() {
 fn test_fight_phase() {
     let mut gs = SimState::new();
     insert_space_marine_unit(&mut gs, vec![sc(1, 10)], Team::Players);
-    insert_necron_unit(&mut gs, vec![sc(2, 10), sc(3, 10)], Team::NPCs);
+    insert_necron_unit(&mut gs, vec![sc(2, 10)], Team::NPCs);
+    insert_necron_unit(&mut gs, vec![sc(1, 11)], Team::NPCs);
     gs.set_phase(Phase::Fight, Team::Players);
-
-    assert_eq!(
-        unit_models!(gs, UnitId(2))
-            .map(|m| m.cur_stats.wound)
-            .sum::<u8>(),
-        2
-    );
 
     let mut actions = Vec::new();
     gs.legal_actions(&mut actions);
-    // Can't use melee weapons in shooting phase
+    // Can't end phase is fight action possible
     assert_eq!(
         actions,
         vec![
@@ -333,7 +332,11 @@ fn test_fight_phase() {
                 to: UnitId(2),
                 weapon: Weapon::SpaceMarineCloseCombatWeapon,
             },
-            Action::EndPhase,
+            Action::UseWeapon {
+                from: UnitId(1),
+                to: UnitId(3),
+                weapon: Weapon::SpaceMarineCloseCombatWeapon,
+            },
         ]
     );
 
@@ -343,28 +346,79 @@ fn test_fight_phase() {
         weapon: Weapon::SpaceMarineCloseCombatWeapon,
     });
 
-    gs.legal_actions(&mut actions);
-    assert_eq!(actions, vec![]);
-
     assert!(gs.is_chance_node());
-    let probs = gs.chance_outcomes();
-    let mut rng: StdRng = SeedableRng::seed_from_u64(43);
-    let a = probs.sample(&mut rng);
-    // should be one success from seeded rng
-    assert!(matches!(a, Action::RollResult { num_success: 1 }));
-    gs.apply(a);
+    gs.apply(Action::RollResult { num_success: 0 });
 
     assert!(!gs.is_chance_node());
 
-    // Should have 1 wound, the extra damage doesn't spill over
+    // switch teams as now the enemy team gets to respond
+    assert_eq!(gs.cur_team(), Team::NPCs);
+    gs.legal_actions(&mut actions);
     assert_eq!(
-        unit_models!(gs, UnitId(2))
-            .map(|m| m.cur_stats.wound)
-            .sum::<u8>(),
-        1
+        actions,
+        vec![
+            Action::UseWeapon {
+                from: UnitId(2),
+                to: UnitId(1),
+                weapon: Weapon::NecronCloseCombatWeapon,
+            },
+            Action::UseWeapon {
+                from: UnitId(3),
+                to: UnitId(1),
+                weapon: Weapon::NecronCloseCombatWeapon,
+            }
+        ]
     );
 
-    // switch teams as now the enemy team gets to respond
+    gs.apply(Action::UseWeapon {
+        from: UnitId(2),
+        to: UnitId(1),
+        weapon: Weapon::NecronCloseCombatWeapon,
+    });
+    gs.apply(Action::RollResult { num_success: 0 });
+
+    // Space marines go again
+    gs.legal_actions(&mut actions);
+    assert_eq!(gs.phase(), Phase::Fight);
+    assert_eq!(gs.cur_team(), Team::Players);
+    assert_eq!(actions, vec![Action::EndPhase]);
+    gs.apply(Action::EndPhase);
+
+    // Necrons go again
+    gs.legal_actions(&mut actions);
+    assert_eq!(gs.phase(), Phase::Fight);
+    assert_eq!(gs.cur_team(), Team::NPCs);
+    assert_eq!(
+        actions,
+        vec![Action::UseWeapon {
+            from: UnitId(3),
+            to: UnitId(1),
+            weapon: Weapon::NecronCloseCombatWeapon,
+        }]
+    );
+    gs.apply(Action::UseWeapon {
+        from: UnitId(3),
+        to: UnitId(1),
+        weapon: Weapon::NecronCloseCombatWeapon,
+    });
+    gs.apply(Action::RollResult { num_success: 0 });
+
+    // Space marines go again
+    gs.legal_actions(&mut actions);
+    assert_eq!(gs.phase(), Phase::Fight);
+    assert_eq!(gs.cur_team(), Team::Players);
+    assert_eq!(actions, vec![Action::EndPhase]);
+    gs.apply(Action::EndPhase);
+
+    // Necrons go again
+    gs.legal_actions(&mut actions);
+    assert_eq!(gs.phase(), Phase::Fight);
+    assert_eq!(gs.cur_team(), Team::NPCs);
+    assert_eq!(actions, vec![Action::EndPhase]);
+    gs.apply(Action::EndPhase);
+
+    // Now that both have ended their turn should be on to the actual command phase
+    assert_eq!(gs.phase(), Phase::Command);
     assert_eq!(gs.cur_team(), Team::NPCs);
 }
 

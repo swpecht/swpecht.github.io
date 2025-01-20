@@ -6,9 +6,9 @@ use std::{
 };
 
 use itertools::{Itertools, Product};
-use macros::{team_models, unit_models};
 use petgraph::algo::{has_path_connecting, DfsSpace};
 use probability::{attack_success_probs, charge_success_probs, ChanceProbabilities};
+use utils::{team_models, unit_models, TeamFlags};
 use weapons::Arsenal;
 
 use crate::{
@@ -17,10 +17,10 @@ use crate::{
 };
 
 mod gs_debug;
-mod macros;
 mod probability;
 #[cfg(test)]
 mod tests;
+mod utils;
 mod weapons;
 
 const WORLD_SIZE: usize = 20;
@@ -78,6 +78,9 @@ pub struct SimState {
     /// Track if start of an entities turn, used to optimize AI search caching
     pub(super) is_start_of_turn: bool,
     pub(super) pending_chance_action: Vec<Action>,
+    // fight phase state
+    ended_fight_phase: TeamFlags,
+    active_fight_team: Team,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -126,6 +129,8 @@ pub enum ActionResult {
     /// This only ends the turn, it doesn't do anything to reset, that must be
     /// done by using "restore actions"
     EndPhase,
+    /// Change the acting team in the fight phase
+    SetActiveFightTeam(Team),
     /// Restore movement to an entity, often used at the end of a turn to return to full amounts
     RestoreMovement {
         id: ModelId,
@@ -163,6 +168,10 @@ pub enum ActionResult {
     SpendCharge {
         id: ModelId,
         amount: u8,
+    },
+    SetFinishedFight {
+        team: Team,
+        value: bool,
     },
 }
 
@@ -284,6 +293,8 @@ impl SimState {
             phase: Phase::Movement,
             next_unit_id: 0,
             pending_chance_action: Vec::new(),
+            ended_fight_phase: TeamFlags::new_false(),
+            active_fight_team: Team::Players,
         }
     }
 }
@@ -320,7 +331,7 @@ impl SimState {
                 from: _,
                 to: _,
                 weapon: _,
-            } => self.generate_results_shoot(action),
+            } => self.generate_results_use_weapon(action),
             Action::RollResult { num_success } => self.generate_results_roll_result(num_success),
             Action::GainChargeDistance { unit } => {
                 panic!("this action should never be applied directly")
@@ -343,7 +354,7 @@ impl SimState {
             Phase::Movement => self.legal_actions_movement(actions),
             Phase::Shooting => self.legal_actions_shooting(actions),
             Phase::Charge => self.legal_actions_charge(actions),
-            Phase::Fight => self.legal_actions_fight(actions),
+            Phase::Fight => self.legal_actions_fight(actions, self.cur_team()),
         }
     }
 
@@ -482,6 +493,11 @@ impl SimState {
                 ActionResult::SpendCharge { id, amount } => {
                     self.get_model_mut(id).charge_movement += amount
                 }
+
+                ActionResult::SetFinishedFight { team, value } => {
+                    self.ended_fight_phase.set(team, !value)
+                }
+                ActionResult::SetActiveFightTeam(team) => self.active_fight_team = team.enemy(),
             }
 
             // actually remove the item from the list
@@ -689,11 +705,10 @@ impl SimState {
         }
     }
 
-    fn legal_actions_fight(&self, actions: &mut Vec<Action>) {
-        let cur_team = self.cur_team();
-        let enemy_team = cur_team.enemy();
+    fn legal_actions_fight(&self, actions: &mut Vec<Action>, team: Team) {
+        let enemy_team = team.enemy();
 
-        for model in team_models!(self, cur_team) {
+        for model in team_models!(self, team) {
             for weapon in model.weapons.available_melee() {
                 let range = 1;
 
@@ -717,7 +732,9 @@ impl SimState {
             }
         }
 
-        actions.push(Action::EndPhase);
+        if actions.is_empty() {
+            actions.push(Action::EndPhase);
+        }
     }
 
     fn chance_outcomes_shoot(
@@ -800,6 +817,11 @@ impl SimState {
                 ActionResult::SpendCharge { id, amount } => {
                     self.get_model_mut(id).charge_movement -= amount
                 }
+
+                ActionResult::SetFinishedFight { team, value } => {
+                    self.ended_fight_phase.set(team, value)
+                }
+                ActionResult::SetActiveFightTeam(team) => self.active_fight_team = team,
             }
 
             self.applied_results
@@ -839,7 +861,11 @@ impl SimState {
     }
 
     pub fn cur_team(&self) -> Team {
-        self.initiative[0]
+        if self.phase() != Phase::Fight {
+            self.initiative[0]
+        } else {
+            self.active_fight_team
+        }
     }
 
     fn generate_results_charge(&mut self, id: ModelId, from: SimCoords, to: SimCoords) {
@@ -869,6 +895,9 @@ impl SimState {
     }
 
     fn generate_results_end_phase(&mut self) {
+        let ending_fight_phase =
+            self.phase() == Phase::Fight && self.ended_fight_phase.get(self.cur_team().enemy());
+
         if self.phase == Phase::Movement {
             let cur_team = self.cur_team();
             for model in team_models!(self, cur_team) {
@@ -884,7 +913,7 @@ impl SimState {
             // reload weapons
             let cur_team = self.cur_team();
             for model in team_models!(self, cur_team) {
-                for weapon in model.weapons.all() {
+                for weapon in model.weapons.all_ranged() {
                     if !model.weapons.is_available(weapon) {
                         self.queued_results.push(ActionResult::ReloadWeapon {
                             id: model.id,
@@ -916,6 +945,18 @@ impl SimState {
                     })
                 }
             }
+        } else if ending_fight_phase {
+            // reload weapons for both teams
+            for model in &self.models {
+                for weapon in model.weapons.all_melee() {
+                    if !model.weapons.is_available(weapon) {
+                        self.queued_results.push(ActionResult::ReloadWeapon {
+                            id: model.id,
+                            weapon: *weapon,
+                        })
+                    }
+                }
+            }
         }
 
         // if there are any pending chance nodes, skip them. This shouldn't come up
@@ -926,10 +967,22 @@ impl SimState {
             });
         }
 
-        self.queued_results.push(ActionResult::EndPhase);
+        // Only end the actual phase if it's not the fight phase, or
+        // the other player has already ended their phase, in this situation
+        // it means both players are ending their phase
+        if self.phase() != Phase::Fight || ending_fight_phase {
+            self.queued_results.push(ActionResult::EndPhase);
+        } else {
+            self.queued_results.push(ActionResult::SetFinishedFight {
+                team: self.cur_team(),
+                value: true,
+            });
+            self.queued_results
+                .push(ActionResult::SetActiveFightTeam(self.cur_team().enemy()));
+        }
     }
 
-    fn generate_results_shoot(&mut self, action: Action) {
+    fn generate_results_use_weapon(&mut self, action: Action) {
         self.queued_results
             .push(ActionResult::QueueChanceNode { action });
     }
@@ -942,9 +995,9 @@ impl SimState {
                 from,
                 to,
                 weapon: ranged_weapon,
-            }) => self.generate_shooting_results(*from, *to, *ranged_weapon, num_success),
+            }) => self.generate_weapon_resolution_results(*from, *to, *ranged_weapon, num_success),
             Some(Action::GainChargeDistance { unit }) => {
-                self.generate_gain_charge_results(num_success, *unit)
+                self.generate_gain_charge_resolution_results(num_success, *unit)
             }
             Some(_) => todo!(),
             None => panic!("trying to apply a chance result when no pending chance action"),
@@ -955,7 +1008,7 @@ impl SimState {
         });
     }
 
-    fn generate_gain_charge_results(&mut self, num_success: u8, unit: UnitId) {
+    fn generate_gain_charge_resolution_results(&mut self, num_success: u8, unit: UnitId) {
         for model in unit_models!(self, unit) {
             self.queued_results.push(ActionResult::RestoreCharge {
                 id: model.id,
@@ -965,7 +1018,7 @@ impl SimState {
     }
 
     /// Calculate damage and use up weapons
-    fn generate_shooting_results(
+    fn generate_weapon_resolution_results(
         &mut self,
         from: UnitId,
         to: UnitId,
@@ -1004,6 +1057,12 @@ impl SimState {
                 id: model.id,
                 weapon,
             });
+        }
+
+        // Special case fo fight phase, where we alternate who is going
+        if self.phase() == Phase::Fight {
+            self.queued_results
+                .push(ActionResult::SetActiveFightTeam(self.cur_team().enemy()));
         }
     }
 

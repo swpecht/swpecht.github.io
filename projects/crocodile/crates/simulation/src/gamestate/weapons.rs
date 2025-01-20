@@ -60,4 +60,12 @@ impl Arsenal {
     pub fn all(&self) -> impl Iterator<Item = &Weapon> {
         self.all.iter().sorted()
     }
+
+    pub fn all_ranged(&self) -> impl Iterator<Item = &Weapon> {
+        self.all.iter().filter(|x| x.stats().range != 0).sorted()
+    }
+
+    pub fn all_melee(&self) -> impl Iterator<Item = &Weapon> {
+        self.all.iter().filter(|x| x.stats().range == 0).sorted()
+    }
 }
