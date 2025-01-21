@@ -1,4 +1,4 @@
-# Update sim to Warhammer 40k style rules
+# MVP
     [*] Implement unit coherency for movement
     [*] Implement shooting phases
         [*] Implement all phase changes and cycling -- have an end phase action, incl. fix for active team
@@ -12,34 +12,43 @@
             [*] Implement function to get probabilities for chance action -- see open spiel
         [*] When hovering over weapon action button, highlight the unit that will be hit
         [*] Implement tracking in game state to allow each unit to use each weapon only one time
-    [*] Implement charge phase
-    [ ] Implement fight phase
+    [*] Implement charge phase    
     [ ] Implement movement phase
         [ ] models cannot move within engagement range of other models
-        [ ] implement Advance mode
-        [ ] implement fall back moves -- color code fall back move squares and regular squares? then still a single click where go
+    [ ] Don't allow shooting for things other than pistols in engagement range of another enemy
     
-    [ ] Implement Command phase
-    [ ] Imlpement victory points, including the per round cards that are drawn or controlling areas. See some 40k in 40min videos
-    [ ] Implement passives, like the necron regrowth
+# AI:
+[ ] Add support for chance nodes
+
+
+# QoL:
+[ ] Add undo button to UI
+[ ] Refactor the apply and undo methods for ActionResults to be children of that enum, take in gs as paramter? Or better to just have an opposite function
+    * then apply all the opposites?
+[ ] Implement highlight for the selected unit
+[ ] Add in a log of what actions were taken
+[ ] Implement the select unit loop for movement?
 [ ] Switch to hexes for world map instead of squares, details: https://www.redblobgames.com/grids/hexagons/
     * Likely want to model everything as a graph for many operations, e.g. path finding we get for free, each node could have a cost to traverse by team, terrain is tough for all, can pass through friends, not enemies
     * Instead of storing coords, could store the index in the grpah, then can lookup by that
+
+
+# Gaps in Warhammer rules
+[ ] Implement Command phase
 [ ] Implement terrain / cover
     [ ] Visiblity for shooting phase
     [ ] Path finding
 [ ] Implement more complex shooting
     [ ] Player can choose which model takes damage
     [ ] Different models can target different units
-    [ ] Don't allow shooting for things other than pistols in engagement range of another enemy
     [ ] Implement weapon abilities
-
-# QoL:
-[ ] Refactor the apply and undo methods for ActionResults to be children of that enum, take in gs as paramter? Or better to just have an opposite function
-    * then apply all the opposites?
-[ ] Implement highlight for the selected unit
-[ ] Add in a log of what actions were taken
-[ ] Implement the select unit loop for movement?
+[ ] Implement passives, like the necron regrowth
+[ ] Implement more complex fight phase
+    [ ] Implement fight first phase
+[ ] Implement more complex movement
+    [ ] implement Advance mode
+    [ ] implement fall back moves -- color code fall back move squares and regular squares? then still a single click where go
+[ ] Imlpement victory points, including the per round cards that are drawn or controlling areas. See some 40k in 40min videos
 
 # Game data
 [ ] Create space marine starter army

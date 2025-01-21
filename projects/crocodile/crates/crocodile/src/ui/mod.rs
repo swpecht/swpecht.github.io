@@ -1,5 +1,12 @@
 use animation::animate_sprite;
-use bevy::{input::common_conditions::*, math::vec2, prelude::*, window::PrimaryWindow};
+use bevy::{
+    ecs::{system::RunSystemOnce, world},
+    input::common_conditions::*,
+    math::vec2,
+    prelude::*,
+    state::commands,
+    window::PrimaryWindow,
+};
 use character::{spawn_character, CharacterSpawnEvent};
 use simulation::gamestate::{Action, ModelId, Phase, SimCoords};
 use sprite::*;
@@ -44,6 +51,7 @@ impl Plugin for UIPlugin {
                     button_system,
                     action_button_click,
                     action_button_hover,
+                    undo_button_click,
                     cursor_locator,
                     tile_highlight,
                     animate_sprite,
@@ -100,6 +108,10 @@ struct ActionButtonParent;
 struct ActionButton(Action);
 
 #[derive(Component)]
+#[require(Button)]
+struct UndoButton;
+
+#[derive(Component)]
 struct MovementHighlight;
 
 #[allow(clippy::type_complexity)]
@@ -145,53 +157,70 @@ fn setup_ui(mut commands: Commands) {
             parent
                 .spawn((
                     Node {
-                        width: Val::Percent(100.),
+                        width: Val::Px(400.),
+                        flex_direction: FlexDirection::Column,
                         ..default()
                     },
                     BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.0)),
                 ))
                 .with_children(|parent| {
-                    // text
+                    // push things to bottom
                     parent.spawn((
-                        Text("Text Example".to_string()),
-                        TextFont {
-                            font_size: 30.0,
+                        Node {
+                            height: Val::Percent(100.0),
+
                             ..default()
                         },
-                        // Because this is a distinct label widget and
-                        // not button/list item text, this is necessary
-                        // for accessibility to treat the text accordingly.
-                        Label,
+                        BorderColor(RED.into()),
                     ));
+                    parent
+                        .spawn((
+                            UndoButton,
+                            Node {
+                                border: UiRect::all(Val::Px(5.0)),
+                                // horizontally center child text
+                                justify_content: JustifyContent::Center,
+                                // vertically center child text
+                                align_items: AlignItems::Center,
+                                ..default()
+                            },
+                            BackgroundColor(NORMAL_BUTTON),
+                            BorderColor(Color::BLACK),
+                        ))
+                        .with_children(|parent| {
+                            parent.spawn((
+                                Text("Undo".to_string()),
+                                TextFont {
+                                    font: Default::default(),
+                                    font_size: 25.0,
+                                    ..default()
+                                },
+                                TextColor(Color::srgb(0.9, 0.9, 0.9)),
+                            ));
+                        });
                 });
+
+            // middle area as a spacer
+            parent.spawn((Node {
+                width: Val::Percent(100.),
+                ..default()
+            },));
 
             // right vertical fill
             use bevy::color::palettes::css::*;
-            parent
-                .spawn((
-                    Node {
-                        flex_direction: FlexDirection::Column,
-                        justify_content: JustifyContent::Start,
-                        align_items: AlignItems::Start,
-                        width: Val::Px(400.),
-                        border: UiRect::all(Val::Px(2.)),
-                        ..default()
-                    },
-                    BorderColor(GREEN.into()),
-                    BackgroundColor(Color::srgb(0.15, 0.15, 0.15)),
-                    ActionButtonParent,
-                ))
-                .with_children(|parent| {
-                    // Title
-                    parent.spawn((
-                        Text("Right bar".to_string()),
-                        TextFont {
-                            font_size: 25.,
-                            ..default()
-                        },
-                        Label,
-                    ));
-                });
+            parent.spawn((
+                Node {
+                    flex_direction: FlexDirection::Column,
+                    justify_content: JustifyContent::Start,
+                    align_items: AlignItems::Start,
+                    width: Val::Px(400.),
+                    border: UiRect::all(Val::Px(2.)),
+                    ..default()
+                },
+                BorderColor(GREEN.into()),
+                BackgroundColor(Color::srgb(0.15, 0.15, 0.15)),
+                ActionButtonParent,
+            ));
         });
 }
 
@@ -469,7 +498,7 @@ fn highlight_incoherent_unit(
 
 #[allow(clippy::type_complexity)]
 fn action_button_click(
-    interaction_query: Query<(&Interaction, &ActionButton), (Changed<Interaction>, With<Button>)>,
+    interaction_query: Query<(&Interaction, &ActionButton), (Changed<Interaction>)>,
     mut ev_action: EventWriter<ActionEvent>,
     sim: Res<SimStateResource>,
 ) {
@@ -484,6 +513,20 @@ fn action_button_click(
                 "Attempting to play an illegal action"
             );
             ev_action.send(ActionEvent { action: a });
+        }
+    }
+}
+
+fn undo_button_click(
+    interaction_query: Query<&Interaction, (Changed<Interaction>, With<UndoButton>)>,
+    mut next_state: ResMut<NextState<PlayState>>,
+    mut sim: ResMut<SimStateResource>,
+) {
+    for interaction in &interaction_query {
+        if *interaction == Interaction::Pressed {
+            debug!("undoing last action");
+            sim.0.undo();
+            next_state.set(PlayState::Processing);
         }
     }
 }
