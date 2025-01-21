@@ -1,12 +1,5 @@
 use animation::animate_sprite;
-use bevy::{
-    ecs::{system::RunSystemOnce, world},
-    input::common_conditions::*,
-    math::vec2,
-    prelude::*,
-    state::commands,
-    window::PrimaryWindow,
-};
+use bevy::{input::common_conditions::*, math::vec2, prelude::*, window::PrimaryWindow};
 use character::{spawn_character, CharacterSpawnEvent};
 use simulation::gamestate::{Action, ModelId, Phase, SimCoords};
 use sprite::*;
@@ -36,13 +29,21 @@ impl Plugin for UIPlugin {
         app.add_event::<SpawnProjectileEvent>();
         app.add_event::<CharacterSpawnEvent>();
 
-        app.add_systems(Startup, (setup_camera, sync_sim, setup_tiles))
-            // Only process actions if we're actually waiting for action input
-            .add_systems(Update, action_system.run_if(in_state(PlayState::Waiting)))
-            .add_systems(
-                OnExit(PlayState::Processing),
-                (sync_sim, game_over, non_player_game_loop),
-            );
+        app.add_systems(
+            Startup,
+            (setup_camera, sync_sim, setup_tiles, update_team_tracker),
+        )
+        // Only process actions if we're actually waiting for action input
+        .add_systems(Update, action_system.run_if(in_state(PlayState::Waiting)))
+        .add_systems(
+            OnExit(PlayState::Processing),
+            (
+                sync_sim,
+                game_over,
+                non_player_game_loop,
+                update_team_tracker,
+            ),
+        );
 
         app.add_systems(Startup, setup_ui)
             .add_systems(
@@ -113,6 +114,9 @@ struct UndoButton;
 
 #[derive(Component)]
 struct MovementHighlight;
+
+#[derive(Component)]
+struct TeamTracker;
 
 #[allow(clippy::type_complexity)]
 fn button_system(
@@ -208,19 +212,40 @@ fn setup_ui(mut commands: Commands) {
 
             // right vertical fill
             use bevy::color::palettes::css::*;
-            parent.spawn((
-                Node {
-                    flex_direction: FlexDirection::Column,
-                    justify_content: JustifyContent::Start,
-                    align_items: AlignItems::Start,
-                    width: Val::Px(400.),
-                    border: UiRect::all(Val::Px(2.)),
-                    ..default()
-                },
-                BorderColor(GREEN.into()),
-                BackgroundColor(Color::srgb(0.15, 0.15, 0.15)),
-                ActionButtonParent,
-            ));
+            parent
+                .spawn((
+                    Node {
+                        flex_direction: FlexDirection::Column,
+                        width: Val::Px(400.),
+                        border: UiRect::all(Val::Px(2.)),
+                        ..default()
+                    },
+                    BorderColor(GREEN.into()),
+                ))
+                .with_children(|parent| {
+                    parent.spawn((
+                        Text("Team: Players".to_string()),
+                        TextFont {
+                            font: Default::default(),
+                            font_size: 25.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.9, 0.9, 0.9)),
+                        TeamTracker,
+                    ));
+
+                    // Action button area
+                    parent.spawn((
+                        ActionButtonParent,
+                        Node {
+                            flex_direction: FlexDirection::Column,
+                            justify_content: JustifyContent::Start,
+                            align_items: AlignItems::Start,
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgb(0.15, 0.15, 0.15)),
+                    ));
+                });
         });
 }
 
@@ -266,8 +291,9 @@ fn spawn_action_button(parent: &mut ChildBuilder, text: &str, action: Action) {
         .spawn((
             Button,
             Node {
-                width: Val::Px(300.0),
-                height: Val::Px(30.0),
+                width: Val::Percent(100.),
+                // width: Val::Px(300.0),
+                // height: Val::Px(30.0),
                 border: UiRect::all(Val::Px(5.0)),
                 // horizontally center child text
                 justify_content: JustifyContent::Center,
@@ -498,7 +524,7 @@ fn highlight_incoherent_unit(
 
 #[allow(clippy::type_complexity)]
 fn action_button_click(
-    interaction_query: Query<(&Interaction, &ActionButton), (Changed<Interaction>)>,
+    interaction_query: Query<(&Interaction, &ActionButton), Changed<Interaction>>,
     mut ev_action: EventWriter<ActionEvent>,
     sim: Res<SimStateResource>,
 ) {
@@ -571,5 +597,11 @@ fn action_button_hover(
             }
             _ => {}
         }
+    }
+}
+
+fn update_team_tracker(mut query: Query<&mut Text, With<TeamTracker>>, sim: Res<SimStateResource>) {
+    for mut text in query.iter_mut() {
+        text.0 = format!("Team: {}", sim.0.cur_team());
     }
 }

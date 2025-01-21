@@ -1,4 +1,4 @@
-use core::{option::Option::None, todo};
+use core::{option::Option::None, todo, write};
 use std::{
     collections::{HashMap, HashSet},
     fmt::{Debug, Display},
@@ -38,6 +38,19 @@ impl Team {
             Team::Players => Team::NPCs,
             Team::NPCs => Team::Players,
         }
+    }
+}
+
+impl Display for Team {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Team::Players => "Players",
+                Team::NPCs => "NPCs",
+            }
+        )
     }
 }
 
