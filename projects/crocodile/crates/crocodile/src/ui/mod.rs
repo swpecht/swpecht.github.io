@@ -4,6 +4,7 @@ use character::{
     cleanup_resolution_text, spawn_character, weapon_resolution, CharacterSpawnEvent,
     WeaponResolutionEvent,
 };
+use left_panel::LeftPanelPlugin;
 use simulation::gamestate::{Action, ModelId, Phase, SimCoords};
 use sprite::*;
 
@@ -14,6 +15,7 @@ use crate::{
 
 pub mod animation;
 pub mod character;
+pub mod left_panel;
 pub mod sprite;
 
 pub struct UIPlugin;
@@ -24,6 +26,8 @@ impl Plugin for UIPlugin {
         app.add_event::<SpawnProjectileEvent>();
         app.add_event::<CharacterSpawnEvent>();
         app.add_event::<WeaponResolutionEvent>();
+
+        app.add_plugins(LeftPanelPlugin);
 
         app.add_systems(
             Startup,
@@ -53,7 +57,6 @@ impl Plugin for UIPlugin {
                     button_system,
                     action_button_click,
                     action_button_hover,
-                    undo_button_click,
                     cursor_locator,
                     tile_highlight,
                     animate_sprite,
@@ -115,10 +118,6 @@ struct ActionInfoParent;
 struct ActionButton(Action);
 
 #[derive(Component)]
-#[require(Button)]
-struct UndoButton;
-
-#[derive(Component)]
 struct MovementHighlight;
 
 #[derive(Component)]
@@ -164,51 +163,7 @@ fn setup_ui(mut commands: Commands) {
         })
         .with_children(|parent| {
             // left vertical fill (content)
-            parent
-                .spawn((
-                    Node {
-                        width: Val::Px(400.),
-                        flex_direction: FlexDirection::Column,
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.0)),
-                ))
-                .with_children(|parent| {
-                    // push things to bottom
-                    parent.spawn((
-                        Node {
-                            height: Val::Percent(100.0),
-
-                            ..default()
-                        },
-                        BorderColor(RED.into()),
-                    ));
-                    parent
-                        .spawn((
-                            UndoButton,
-                            Node {
-                                border: UiRect::all(Val::Px(5.0)),
-                                // horizontally center child text
-                                justify_content: JustifyContent::Center,
-                                // vertically center child text
-                                align_items: AlignItems::Center,
-                                ..default()
-                            },
-                            BackgroundColor(NORMAL_BUTTON),
-                            BorderColor(Color::BLACK),
-                        ))
-                        .with_children(|parent| {
-                            parent.spawn((
-                                Text("Undo".to_string()),
-                                TextFont {
-                                    font: Default::default(),
-                                    font_size: 25.0,
-                                    ..default()
-                                },
-                                TextColor(Color::srgb(0.9, 0.9, 0.9)),
-                            ));
-                        });
-                });
+            left_panel::setup_left_panel(parent);
 
             // middle area as a spacer
             parent.spawn((Node {
@@ -557,20 +512,6 @@ fn action_button_click(
                 "Attempting to play an illegal action"
             );
             ev_action.send(ActionEvent { action: a });
-        }
-    }
-}
-
-fn undo_button_click(
-    interaction_query: Query<&Interaction, (Changed<Interaction>, With<UndoButton>)>,
-    mut next_state: ResMut<NextState<PlayState>>,
-    mut sim: ResMut<SimStateResource>,
-) {
-    for interaction in &interaction_query {
-        if *interaction == Interaction::Pressed {
-            debug!("undoing last action");
-            sim.0.undo();
-            next_state.set(PlayState::Processing);
         }
     }
 }

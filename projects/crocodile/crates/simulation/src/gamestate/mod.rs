@@ -1191,6 +1191,10 @@ impl SimState {
             .map(|x| x.result.clone())
             .collect_vec()
     }
+
+    pub fn stats(&self, id: &ModelId) -> ModelStats {
+        self.get_model(*id).cur_stats.clone()
+    }
 }
 
 /// Iterator over all world coords within distance d
