@@ -1,8 +1,9 @@
-use core::{option::Option::None, todo, write};
+use core::{num, option::Option::None, todo, write};
 use std::{
     collections::{HashMap, HashSet},
     fmt::{Debug, Display},
     ops::{Add, Sub},
+    process::id,
 };
 
 use itertools::{Itertools, Product};
@@ -186,6 +187,14 @@ pub enum ActionResult {
         team: Team,
         value: bool,
     },
+
+    // UI only results
+    Hit {
+        id: ModelId,
+    },
+    Miss {
+        id: ModelId,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -346,7 +355,7 @@ impl SimState {
                 weapon: _,
             } => self.generate_results_use_weapon(action),
             Action::RollResult { num_success } => self.generate_results_roll_result(num_success),
-            Action::GainChargeDistance { unit } => {
+            Action::GainChargeDistance { unit: _ } => {
                 panic!("this action should never be applied directly")
             }
             Action::Charge { id, from, to } => self.generate_results_charge(id, from, to),
@@ -511,6 +520,10 @@ impl SimState {
                     self.ended_fight_phase.set(team, !value)
                 }
                 ActionResult::SetActiveFightTeam(team) => self.active_fight_team = team.enemy(),
+
+                // UI only
+                ActionResult::Hit { id: _ } => {}
+                ActionResult::Miss { id: _ } => {}
             }
 
             // actually remove the item from the list
@@ -835,6 +848,10 @@ impl SimState {
                     self.ended_fight_phase.set(team, value)
                 }
                 ActionResult::SetActiveFightTeam(team) => self.active_fight_team = team,
+
+                // UI only results
+                ActionResult::Hit { id: _ } => {}
+                ActionResult::Miss { id: _ } => {}
             }
 
             self.applied_results
@@ -1065,11 +1082,19 @@ impl SimState {
             assert!(accumulated_wound <= model.cur_stats.wound);
         }
 
-        for model in unit_models!(self, from) {
+        for (i, model) in unit_models!(self, from).enumerate() {
             self.queued_results.push(ActionResult::UseWeapon {
                 id: model.id,
                 weapon,
             });
+
+            // Spawn the ui events for hits and misses
+            if i < num_success as usize {
+                self.queued_results.push(ActionResult::Hit { id: model.id });
+            } else {
+                self.queued_results
+                    .push(ActionResult::Miss { id: model.id });
+            }
         }
 
         // Special case fo fight phase, where we alternate who is going

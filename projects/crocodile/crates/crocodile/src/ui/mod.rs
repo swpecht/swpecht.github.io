@@ -1,25 +1,20 @@
 use animation::animate_sprite;
 use bevy::{input::common_conditions::*, math::vec2, prelude::*, window::PrimaryWindow};
-use character::{spawn_character, CharacterSpawnEvent};
+use character::{
+    cleanup_resolution_text, spawn_character, weapon_resolution, CharacterSpawnEvent,
+    WeaponResolutionEvent,
+};
 use simulation::gamestate::{Action, ModelId, Phase, SimCoords};
 use sprite::*;
 
-use crate::{sim_wrapper::SimStateResource, PlayState};
+use crate::{
+    sim_wrapper::SimStateResource, PlayState, HOVERED_BUTTON, INCOHERENT_UNIT, NORMAL_BUTTON,
+    PRESSED_BUTTON, TILE_SIZE, UI_LAYER, VALID_MOVE,
+};
 
 pub mod animation;
 pub mod character;
 pub mod sprite;
-
-pub(super) const TILE_LAYER: f32 = 0.0;
-pub(super) const CHAR_LAYER: f32 = 1.0;
-const PROJECTILE_LAYER: f32 = 2.0;
-const UI_LAYER: f32 = 3.0;
-
-const NORMAL_BUTTON: Color = Color::srgb(0.15, 0.15, 0.15);
-const HOVERED_BUTTON: Color = Color::srgb(0.25, 0.25, 0.25);
-const PRESSED_BUTTON: Color = Color::srgb(0.35, 0.75, 0.35);
-const VALID_MOVE: Color = Color::srgba(0.0, 0.5, 0.5, 0.5);
-const INCOHERENT_UNIT: Color = Color::srgba(0.7, 0.0, 0.0, 0.5);
 
 pub struct UIPlugin;
 
@@ -28,10 +23,16 @@ impl Plugin for UIPlugin {
         app.add_event::<ActionEvent>();
         app.add_event::<SpawnProjectileEvent>();
         app.add_event::<CharacterSpawnEvent>();
+        app.add_event::<WeaponResolutionEvent>();
 
         app.add_systems(
             Startup,
-            (setup_camera, sync_sim, setup_tiles, update_team_tracker),
+            (
+                setup_camera,
+                sync_sim,
+                crate::game_area::setup_tiles,
+                update_team_tracker,
+            ),
         )
         // Only process actions if we're actually waiting for action input
         .add_systems(Update, action_system.run_if(in_state(PlayState::Waiting)))
@@ -62,6 +63,8 @@ impl Plugin for UIPlugin {
                     spawn_projectile,
                     cleanup_projectiles,
                     spawn_character,
+                    weapon_resolution,
+                    cleanup_resolution_text,
                     // update_character_animation,
                 ),
             )

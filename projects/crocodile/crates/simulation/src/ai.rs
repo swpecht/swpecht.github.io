@@ -198,6 +198,7 @@ fn alpha_beta(
     }
 
     if gs.is_chance_node() {
+        let probs = gs.chance_outcomes();
         todo!("add support for chance nodes")
     }
 

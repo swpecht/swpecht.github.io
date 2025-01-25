@@ -1,11 +1,21 @@
 use std::fs;
 
-use bevy::{math::vec3, prelude::*};
-use simulation::{gamestate::ModelId, ModelSprite};
+use crate::ui::sprite::Curve;
+use crate::{
+    sim_wrapper::{SimIdComponent, SimStateResource},
+    ui::to_world,
+    CHAR_LAYER, TILE_SIZE, UI_LAYER,
+};
+use bevy::color::palettes::css::RED;
+use bevy::math::vec2;
+use bevy::time::Stopwatch;
+use bevy::{color::palettes::css::BLACK, math::vec3, prelude::*};
+use simulation::{
+    gamestate::{ActionResult, ModelId},
+    ModelSprite,
+};
 
-use crate::sim_wrapper::SimIdComponent;
-
-use super::{animation::AnimationConfig, Health, CHAR_LAYER};
+use super::{animation::AnimationConfig, Health};
 
 #[derive(Event)]
 pub struct CharacterSpawnEvent {
@@ -17,6 +27,12 @@ pub struct CharacterSpawnEvent {
 }
 
 #[derive(Event)]
+pub struct WeaponResolutionEvent {
+    pub id: ModelId,
+    pub result: ActionResult,
+}
+
+#[derive(Event)]
 pub struct CharacterAnimationUpdateEvent {}
 
 #[derive(Component)]
@@ -25,12 +41,62 @@ pub enum CharacterAnimation {
     RUN,
 }
 
+#[derive(Component)]
+pub(super) struct WeaponResolutionText;
+
 impl CharacterAnimation {
     fn location(&self) -> &str {
         match self {
             CharacterAnimation::IDLE => "/Idle/Idle",
             CharacterAnimation::RUN => "/Run/Run",
         }
+    }
+}
+
+pub(super) fn weapon_resolution(
+    mut commands: Commands,
+    mut event_reader: EventReader<WeaponResolutionEvent>,
+    sim: Res<SimStateResource>,
+) {
+    for event in event_reader.read() {
+        let loc = to_world(&sim.0.get_loc(event.id).unwrap());
+
+        let (text, color) = match event.result {
+            ActionResult::Miss { id: _ } => (Text2d::new("miss"), TextColor(Color::Srgba(RED))),
+            ActionResult::Hit { id: _ } => (Text2d::new("hit"), TextColor(Color::Srgba(BLACK))),
+            _ => panic!("invalid action result for weapon resolution"),
+        };
+
+        let start = vec2(loc.x, loc.y + (TILE_SIZE / 2) as f32);
+        let target = start + vec2(0., TILE_SIZE as f32);
+        commands.spawn((
+            WeaponResolutionText,
+            text,
+            color,
+            TextFont {
+                font_size: 20.0,
+                ..default()
+            },
+            Transform {
+                translation: vec3(start.x, start.y, UI_LAYER),
+                ..default()
+            },
+            Curve {
+                path: vec![start, target],
+                time: Stopwatch::new(),
+                speed: 64.0,
+            },
+        ));
+    }
+}
+
+/// Despawn projectiles that are no longer moving
+pub(super) fn cleanup_resolution_text(
+    mut commands: Commands,
+    query: Query<Entity, (With<WeaponResolutionText>, Without<Curve>)>,
+) {
+    for entity in &query {
+        commands.entity(entity).despawn_recursive();
     }
 }
 

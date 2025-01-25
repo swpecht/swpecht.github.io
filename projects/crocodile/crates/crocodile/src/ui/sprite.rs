@@ -13,26 +13,22 @@ use simulation::{
 
 use crate::{
     sim_wrapper::{SimIdComponent, SimStateResource},
-    ui::{ActionEvent, PROJECTILE_LAYER},
-    PlayState,
+    ui::ActionEvent,
+    PlayState, GRID_HEIGHT, GRID_WIDTH, PROJECTILE_LAYER, TILE_SIZE,
 };
 
 use super::{
-    character::{CharacterAnimation, CharacterSpawnEvent},
-    to_world, TILE_LAYER,
+    character::{CharacterAnimation, CharacterSpawnEvent, WeaponResolutionEvent},
+    to_world,
 };
-
-pub const TILE_SIZE: usize = 32;
-const GRID_WIDTH: usize = 20;
-const GRID_HEIGHT: usize = 20;
 
 const HEALTH_BAR_COLOR: Color = Color::srgb(1.0, 0.0, 0.0);
 
 #[derive(Component, Clone)]
 pub struct Curve {
-    path: Vec<Vec2>,
-    time: Stopwatch,
-    speed: f32,
+    pub path: Vec<Vec2>,
+    pub time: Stopwatch,
+    pub speed: f32,
 }
 
 #[derive(Event, Debug)]
@@ -129,40 +125,11 @@ pub(super) fn sync_sim(
     }
 }
 
-pub(super) fn setup_tiles(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
-) {
-    // let texture = asset_server.load("pixel-crawler/Environment/Green Woods/Assets/Tiles.png");
-    let texture = asset_server.load("tiles/grass.png");
-    let layout = TextureAtlasLayout::from_grid(UVec2::new(32, 32), 4, 4, None, None);
-    let texture_atlas_layout = texture_atlas_layouts.add(layout);
-
-    for r in 0..GRID_WIDTH + 1 {
-        for c in 0..GRID_HEIGHT + 1 {
-            commands.spawn((
-                Sprite::from_atlas_image(
-                    texture.clone(),
-                    TextureAtlas {
-                        layout: texture_atlas_layout.clone(),
-                        index: 5,
-                    },
-                ),
-                Transform::from_translation(vec3(
-                    (r * TILE_SIZE) as f32,
-                    (c * TILE_SIZE) as f32,
-                    TILE_LAYER,
-                )),
-            ));
-        }
-    }
-}
-
 /// Translate action events into the proper display within the game visualization
 pub(super) fn action_system(
     mut commands: Commands,
     mut ev_action: EventReader<ActionEvent>,
+    mut ev_weapon_resolution: EventWriter<WeaponResolutionEvent>,
     query: Query<(Entity, &SimIdComponent, &Transform)>,
     mut sim: ResMut<SimStateResource>,
     mut next_state: ResMut<NextState<PlayState>>,
@@ -181,6 +148,9 @@ pub(super) fn action_system(
                 // Reset the ui
                 ActionResult::EndPhase => next_state.set(PlayState::Processing),
                 ActionResult::RemoveModel { id: _id } => {}
+                ActionResult::Hit { id } | ActionResult::Miss { id } => {
+                    ev_weapon_resolution.send(WeaponResolutionEvent { id, result: ar });
+                }
                 _ => {} // no ui impact for most actions
             }
         }
