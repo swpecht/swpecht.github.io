@@ -329,11 +329,11 @@ pub(super) fn non_player_game_loop(
     }
 
     // disable the ai for now
-    if matches!(sim.0.cur_team(), Team::NPCs) {
-        debug!("finding best move for: {:?}", sim.0.cur_team());
-        let action = find_best_move(sim.0.clone()).expect("failed to find a best move");
-        ev_action.send(ActionEvent { action });
-    }
+    // if matches!(sim.0.cur_team(), Team::NPCs) {
+    //     debug!("finding best move for: {:?}", sim.0.cur_team());
+    //     let action = find_best_move(sim.0.clone()).expect("failed to find a best move");
+    //     ev_action.send(ActionEvent { action });
+    // }
 }
 
 pub(super) fn healthbars(mut gizmos: Gizmos, query: Query<(&Transform, &Health)>) {
