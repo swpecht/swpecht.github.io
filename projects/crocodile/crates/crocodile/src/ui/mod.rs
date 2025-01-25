@@ -109,6 +109,9 @@ pub struct ActionEvent {
 struct ActionButtonParent;
 
 #[derive(Component)]
+struct ActionInfoParent;
+
+#[derive(Component)]
 struct ActionButton(Action);
 
 #[derive(Component)]
@@ -240,6 +243,18 @@ fn setup_ui(mut commands: Commands) {
                     // Action button area
                     parent.spawn((
                         ActionButtonParent,
+                        Node {
+                            flex_direction: FlexDirection::Column,
+                            justify_content: JustifyContent::Start,
+                            align_items: AlignItems::Start,
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgb(0.15, 0.15, 0.15)),
+                    ));
+
+                    // Action information Area
+                    parent.spawn((
+                        ActionInfoParent,
                         Node {
                             flex_direction: FlexDirection::Column,
                             justify_content: JustifyContent::Start,
@@ -570,15 +585,18 @@ fn action_button_hover(
     mut materials: ResMut<Assets<ColorMaterial>>,
     previous_hovers: Query<Entity, With<ActionButtonHoverHighlight>>,
     interaction_query: Query<(&Interaction, &ActionButton), (Changed<Interaction>, With<Button>)>,
+    mut query_action_info_parent: Query<Entity, With<ActionInfoParent>>,
     sim: Res<SimStateResource>,
 ) {
+    //todo: switch to using an index system to show the weapsons stats. Will fix the stuttering
+
     for (interaction, action) in &interaction_query {
         match interaction {
             Interaction::Hovered => {
                 if let Action::UseWeapon {
                     from: _,
                     to,
-                    weapon: _,
+                    weapon,
                 } = action.0
                 {
                     for (_, loc, _) in sim.0.unit_sprites(to) {
@@ -590,12 +608,31 @@ fn action_button_hover(
                             Transform::from_xyz(wc.x, wc.y, UI_LAYER),
                             ActionButtonHoverHighlight {},
                         ));
+
+                        let mut parent = commands.entity(query_action_info_parent.single_mut());
+                        parent.despawn_descendants();
+                        parent.clear_children();
+                        parent.with_children(|parent| {
+                            parent.spawn(Text::new(format!("{}", weapon)));
+                            let stats = weapon.stats();
+                            parent.spawn(Text::new(format!("R: {}", stats.range)));
+                            parent.spawn(Text::new(format!("A: {}", stats.num_attacks)));
+                            parent.spawn(Text::new(format!("WS: {}", stats.skill)));
+                            parent.spawn(Text::new(format!("S: {}", stats.strength)));
+                            parent.spawn(Text::new(format!("AP: {}", stats.armor_penetration)));
+                            parent.spawn(Text::new(format!("D: {}", stats.damage)));
+                        });
                     }
                 }
             }
             Interaction::None => {
                 for entity in &previous_hovers {
                     commands.entity(entity).despawn();
+
+                    // need to both despawna and clear the children
+                    let mut parent = commands.entity(query_action_info_parent.single_mut());
+                    parent.despawn_descendants();
+                    parent.clear_children();
                 }
             }
             _ => {}

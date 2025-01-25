@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use core::{fmt::Display, write};
 
 use crate::{
     gamestate::{SimCoords, SimState, Team, UnitType},
@@ -97,6 +97,18 @@ impl RollableValue {
             RollableValue::Three => 3,
             RollableValue::D6 => todo!(),
             RollableValue::D3 => todo!(),
+        }
+    }
+}
+
+impl Display for RollableValue {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            RollableValue::One => write!(f, "1"),
+            RollableValue::Two => write!(f, "2"),
+            RollableValue::Three => write!(f, "3"),
+            RollableValue::D6 => write!(f, "1d6"),
+            RollableValue::D3 => write!(f, "1d3"),
         }
     }
 }
