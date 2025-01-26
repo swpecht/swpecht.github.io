@@ -39,10 +39,6 @@ impl Arsenal {
         self.available.contains(weapon)
     }
 
-    pub fn available(&self) -> impl Iterator<Item = &Weapon> {
-        self.available.iter().sorted()
-    }
-
     pub fn available_melee(&self) -> impl Iterator<Item = &Weapon> {
         self.available
             .iter()
@@ -55,10 +51,6 @@ impl Arsenal {
             .iter()
             .filter(|x| x.stats().range != 0)
             .sorted()
-    }
-
-    pub fn all(&self) -> impl Iterator<Item = &Weapon> {
-        self.all.iter().sorted()
     }
 
     pub fn all_ranged(&self) -> impl Iterator<Item = &Weapon> {

@@ -5,7 +5,7 @@ use crate::{
     sim_wrapper::SimStateResource, PlayState, INCOHERENT_UNIT, NORMAL_BUTTON, TILE_SIZE, UI_LAYER,
 };
 
-use super::{highlight_moves, selection, to_world, ActionEvent, SelectedModel};
+use super::{selection, to_world, ActionEvent, SelectedModel};
 
 pub(super) struct RightPanelPlugin;
 

@@ -474,3 +474,8 @@ fn test_undo() {
         }
     }
 }
+
+#[test]
+fn test_engagement_range_check() {
+    todo!()
+}

@@ -6,7 +6,7 @@ macro_rules! unit_models {
     }};
 }
 
-macro_rules! unit_models_mut {
+macro_rules! _unit_models_mut {
     (  $x: expr, $unit: expr ) => {{
         $x.models
             .iter_mut()
@@ -22,7 +22,7 @@ macro_rules! team_models {
     }};
 }
 
-macro_rules! team_models_mut {
+macro_rules! _team_models_mut {
     (  $x: expr, $team: expr ) => {{
         $x.models
             .iter_mut()
@@ -31,9 +31,7 @@ macro_rules! team_models_mut {
 }
 
 pub(super) use team_models;
-pub(super) use team_models_mut;
 pub(super) use unit_models;
-pub(super) use unit_models_mut;
 
 use super::Team;
 
