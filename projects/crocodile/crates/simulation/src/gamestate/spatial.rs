@@ -1,6 +1,8 @@
 use itertools::{Itertools, Product};
 
-use super::WORLD_SIZE;
+use crate::gamestate::utils::team_models;
+
+use super::{SimState, Team, WORLD_SIZE};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct SimCoords {
@@ -78,5 +80,36 @@ impl Iterator for CoordIterator {
                 return Some(coord);
             }
         }
+    }
+}
+
+impl SimState {
+    /// Returns if a given location is within engagement range of provided team
+    pub(super) fn is_engagement_range(&self, loc: &SimCoords, team: Team) -> bool {
+        const ENGAGEMENT_DISTANCE: usize = 1;
+        team_models!(self, team)
+            .any(|m| self.get_loc(m.id).unwrap().dist(loc) <= ENGAGEMENT_DISTANCE)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        gamestate::{SimState, Team},
+        info::{insert_necron_unit, insert_space_marine_unit},
+    };
+
+    #[test]
+    fn test_engagement_range_check() {
+        let mut gs = SimState::new();
+        insert_space_marine_unit(&mut gs, vec![sc(1, 10)], Team::Players);
+        insert_necron_unit(&mut gs, vec![sc(2, 10)], Team::NPCs);
+
+        assert!(!gs.is_engagement_range(&sc(1, 11), Team::NPCs));
+        assert!(gs.is_engagement_range(&sc(1, 11), Team::Players));
+
+        assert!(!gs.is_engagement_range(&sc(5, 5), Team::Players));
+        assert!(!gs.is_engagement_range(&sc(5, 5), Team::NPCs));
     }
 }

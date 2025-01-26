@@ -578,7 +578,7 @@ impl SimState {
             if model.cur_stats.movement > 0 {
                 let model_loc = self.get_loc(model.id).unwrap();
                 for l in CoordIterator::new(model_loc, model.cur_stats.movement, 1) {
-                    if !self.is_populated(&l) {
+                    if !self.is_populated(&l) && !self.is_engagement_range(&l, cur_team.enemy()) {
                         actions.push(Move {
                             id: model.id,
                             from: model_loc,
@@ -1083,25 +1083,15 @@ impl SimState {
             .any(|x| x.1 == &Some(*target) && !self.get_model(ModelId(x.0)).is_destroyed)
     }
 
-    fn is_adjacent_enemy(&self, target: &SimCoords, team: Team) -> bool {
-        CoordIterator::new(*target, 1, 1).any(|adjacent| {
-            self.locations.iter().enumerate().any(|x| {
-                x.1 == &Some(adjacent)
-                    && self.get_model(ModelId(x.0)).team != team
-                    && !self.get_model(ModelId(x.0)).is_destroyed
-            })
-        })
-    }
-
     fn is_legal_charge_space(&self, target: &SimCoords, team: Team, unit: UnitId) -> bool {
-        if self.is_adjacent_enemy(target, team) {
+        if self.is_engagement_range(target, team.enemy()) {
             return true;
         }
 
         CoordIterator::new(*target, 1, 1)
             .filter(|x| self.is_populated(x))
             .filter(|x| self.get_model(self.get_id(*x).unwrap()).unit == unit)
-            .any(|x| self.is_adjacent_enemy(&x, team))
+            .any(|x| self.is_engagement_range(&x, team.enemy()))
     }
 
     pub fn health(&self, id: &ModelId) -> Option<u8> {
