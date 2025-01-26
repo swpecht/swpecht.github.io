@@ -2,12 +2,12 @@ use core::{option::Option::None, todo, write};
 use std::{
     collections::{HashMap, HashSet},
     fmt::{Debug, Display},
-    ops::{Add, Sub},
 };
 
-use itertools::{Itertools, Product};
+use itertools::Itertools;
 use petgraph::algo::{has_path_connecting, DfsSpace};
 use probability::{attack_success_probs, charge_success_probs, ChanceProbabilities};
+use spatial::{sc, CoordIterator, SimCoords};
 use utils::{team_models, unit_models, TeamFlags};
 use weapons::Arsenal;
 
@@ -16,8 +16,10 @@ use crate::{
     ModelSprite,
 };
 
+pub mod ai_interface;
 mod gs_debug;
 mod probability;
+pub mod spatial;
 #[cfg(test)]
 mod tests;
 mod utils;
@@ -262,44 +264,6 @@ pub struct ModelId(usize);
 #[derive(Hash, Debug, PartialEq, Clone, Eq, Copy)]
 pub struct UnitId(u8);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct SimCoords {
-    pub x: usize,
-    pub y: usize,
-}
-
-impl Add for SimCoords {
-    type Output = SimCoords;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        let mut out = self;
-        out.x += rhs.x;
-        out.y += rhs.y;
-        out
-    }
-}
-
-impl Sub for SimCoords {
-    type Output = SimCoords;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        let mut out = self;
-        out.x -= rhs.x;
-        out.y -= rhs.y;
-        out
-    }
-}
-
-impl SimCoords {
-    fn dist(&self, other: &SimCoords) -> usize {
-        self.x.abs_diff(other.x) + self.y.abs_diff(other.y)
-    }
-}
-
-pub fn sc(x: usize, y: usize) -> SimCoords {
-    SimCoords { x, y }
-}
-
 impl SimState {
     pub fn new() -> Self {
         Self {
@@ -414,42 +378,8 @@ impl SimState {
         count_players == 0 || count_npcs == 0
     }
 
-    pub fn evaluate(&self, team: Team) -> i32 {
-        const WIN_VALUE: i32 = 0; //  1000.0;
-                                  // todo: add score component for entity count
-
-        // TODO: include wounds in this? Easier to differentiate
-        let mut player_models = 0;
-        let mut npc_models = 0;
-        for entity in self.models.iter().filter(|e| !e.is_destroyed) {
-            match entity.team {
-                Team::Players => player_models += 1,
-                Team::NPCs => npc_models += 1,
-            }
-        }
-
-        let model_score = match team {
-            Team::Players => player_models - npc_models,
-            Team::NPCs => npc_models - player_models,
-        };
-
-        let win_score = match (team, player_models, npc_models) {
-            (Team::Players, 0, _) => -WIN_VALUE,
-            (Team::Players, _, 0) => WIN_VALUE,
-            (Team::NPCs, 0, _) => WIN_VALUE,
-            (Team::NPCs, _, 0) => -WIN_VALUE,
-            (_, _, _) => 0,
-        };
-
-        model_score + win_score
-    }
-
     pub fn is_chance_node(&self) -> bool {
         !self.pending_chance_action.is_empty()
-    }
-
-    pub fn is_start_of_turn(&self) -> bool {
-        self.is_start_of_turn
     }
 
     /// undo the last action
@@ -1193,57 +1123,5 @@ impl SimState {
 
     pub fn stats(&self, id: &ModelId) -> ModelStats {
         self.get_model(*id).cur_stats.clone()
-    }
-}
-
-/// Iterator over all world coords within distance d
-struct CoordIterator {
-    max_range: usize,
-    min_range: usize,
-    middle: SimCoords,
-    raw_iterator: Product<std::ops::Range<usize>, std::ops::Range<usize>>,
-}
-
-impl CoordIterator {
-    fn new(middle: SimCoords, max_range: u8, min_range: u8) -> Self {
-        let min_x = middle.x.saturating_sub(max_range as usize);
-        let min_y = middle.y.saturating_sub(max_range as usize);
-        let max_x = (middle.x + max_range as usize).min(WORLD_SIZE);
-        let max_y = (middle.y + max_range as usize).min(WORLD_SIZE);
-
-        let raw_iterator = (min_x..max_x + 1).cartesian_product(min_y..max_y + 1);
-
-        Self {
-            max_range: max_range as usize,
-            middle,
-            raw_iterator,
-            min_range: min_range as usize,
-        }
-    }
-}
-
-impl Iterator for CoordIterator {
-    type Item = SimCoords;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let cp = self.raw_iterator.next()?;
-            let coord = sc(cp.0, cp.1);
-            let dist = coord.dist(&self.middle);
-            if dist <= self.max_range && dist >= self.min_range {
-                return Some(coord);
-            }
-        }
-    }
-}
-
-impl std::hash::Hash for SimState {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.next_model_id.hash(state);
-        self.initiative.hash(state);
-        self.locations.hash(state);
-        // self.models.hash(state);
-        self.is_start_of_turn.hash(state);
-        todo!()
     }
 }

@@ -1,7 +1,7 @@
 use core::{fmt::Display, write};
 
 use crate::{
-    gamestate::{SimCoords, SimState, Team, UnitType},
+    gamestate::{spatial::SimCoords, SimState, Team, UnitType},
     ModelSprite,
 };
 

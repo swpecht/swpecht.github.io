@@ -8,7 +8,7 @@ use bevy::{
 };
 use simulation::{
     ai::find_best_move,
-    gamestate::{ActionResult, ModelId, SimCoords, Team},
+    gamestate::{spatial::SimCoords, ActionResult, ModelId, Team},
 };
 
 use crate::{

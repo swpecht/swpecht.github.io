@@ -6,7 +6,7 @@ use character::{
 };
 use left_panel::LeftPanelPlugin;
 use right_panel::{setup_right_panel, RightPanelPlugin};
-use simulation::gamestate::{Action, ModelId, Phase, SimCoords};
+use simulation::gamestate::{spatial::SimCoords, Action, ModelId, Phase};
 use sprite::*;
 
 use crate::{
@@ -288,7 +288,7 @@ fn highlight_moves(
                 continue; // only show moves for the selected character
             }
 
-            let wc = to_world(to);
+            let wc = to_world(&to);
             commands.spawn((
                 Mesh2d(meshes.add(rect)),
                 MeshMaterial2d(materials.add(VALID_MOVE)),
@@ -308,7 +308,7 @@ fn highlight_moves(
                 continue; // only show moves for the selected character
             }
 
-            let wc = to_world(to);
+            let wc = to_world(&to);
             commands.spawn((
                 Mesh2d(meshes.add(rect)),
                 MeshMaterial2d(materials.add(VALID_MOVE)),
