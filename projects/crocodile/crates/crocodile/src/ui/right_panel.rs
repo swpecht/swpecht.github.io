@@ -39,6 +39,9 @@ struct ActionInfoParent;
 #[derive(Component)]
 struct ActionButton(Action);
 
+#[derive(Component)]
+struct SuccessInfoParent;
+
 pub(super) fn setup_right_panel(parent: &mut ChildBuilder) {
     use bevy::color::palettes::css::*;
     parent
@@ -78,6 +81,18 @@ pub(super) fn setup_right_panel(parent: &mut ChildBuilder) {
             // Action information Area
             parent.spawn((
                 ActionInfoParent,
+                Node {
+                    flex_direction: FlexDirection::Column,
+                    justify_content: JustifyContent::Start,
+                    align_items: AlignItems::Start,
+                    ..default()
+                },
+                BackgroundColor(Color::srgb(0.15, 0.15, 0.15)),
+            ));
+
+            // Succes information Area
+            parent.spawn((
+                SuccessInfoParent,
                 Node {
                     flex_direction: FlexDirection::Column,
                     justify_content: JustifyContent::Start,
@@ -171,7 +186,7 @@ fn update_team_tracker(mut query: Query<&mut Text, With<TeamTracker>>, sim: Res<
 #[derive(Component)]
 struct ActionButtonHoverHighlight {}
 
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn action_button_hover(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -179,6 +194,7 @@ fn action_button_hover(
     previous_hovers: Query<Entity, With<ActionButtonHoverHighlight>>,
     interaction_query: Query<(&Interaction, &ActionButton), (Changed<Interaction>, With<Button>)>,
     mut query_action_info_parent: Query<Entity, With<ActionInfoParent>>,
+    mut query_success_info_parent: Query<Entity, With<SuccessInfoParent>>,
     sim: Res<SimStateResource>,
 ) {
     //todo: switch to using an index system to show the weapsons stats. Will fix the stuttering
@@ -215,6 +231,23 @@ fn action_button_hover(
                             parent.spawn(Text::new(format!("AP: {}", stats.armor_penetration)));
                             parent.spawn(Text::new(format!("D: {}", stats.damage)));
                         });
+
+                        let mut parent = commands.entity(query_success_info_parent.single_mut());
+                        parent.despawn_descendants();
+                        parent.clear_children();
+                        let mut temp_sim = sim.0.clone();
+                        temp_sim.apply(action.0);
+                        let probs = temp_sim.chance_outcomes().to_vec();
+
+                        parent.with_children(|parent| {
+                            parent.spawn(Text::new("Success chances"));
+                            for (i, p) in probs.into_iter().enumerate() {
+                                if p == 0.0 {
+                                    break;
+                                }
+                                parent.spawn(Text::new(format!("{}: {:.1}%", i, p * 100.)));
+                            }
+                        });
                     }
                 }
             }
@@ -224,6 +257,10 @@ fn action_button_hover(
 
                     // need to both despawna and clear the children
                     let mut parent = commands.entity(query_action_info_parent.single_mut());
+                    parent.despawn_descendants();
+                    parent.clear_children();
+
+                    let mut parent = commands.entity(query_success_info_parent.single_mut());
                     parent.despawn_descendants();
                     parent.clear_children();
                 }
