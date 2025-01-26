@@ -916,6 +916,12 @@ impl SimState {
                     }
                 }
             }
+
+            // reset the finished fight tracker
+            self.queued_results.push(ActionResult::SetFinishedFight {
+                team: self.cur_team().enemy(),
+                value: false,
+            });
         }
 
         // if there are any pending chance nodes, skip them. This shouldn't come up
