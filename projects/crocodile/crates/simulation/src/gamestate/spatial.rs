@@ -97,14 +97,14 @@ mod tests {
     use super::*;
     use crate::{
         gamestate::{SimState, Team},
-        info::{insert_necron_unit, insert_space_marine_unit},
+        info::{insert_necron_warrior_unit, insert_space_marine_unit},
     };
 
     #[test]
     fn test_engagement_range_check() {
         let mut gs = SimState::new();
         insert_space_marine_unit(&mut gs, vec![sc(1, 10)], Team::Players);
-        insert_necron_unit(&mut gs, vec![sc(2, 10)], Team::NPCs);
+        insert_necron_warrior_unit(&mut gs, vec![sc(2, 10)], Team::NPCs);
 
         assert!(!gs.is_engagement_range(&sc(1, 11), Team::NPCs));
         assert!(gs.is_engagement_range(&sc(1, 11), Team::Players));

@@ -11,7 +11,6 @@ rand = "0.8"
 itertools = "0.13.0"
 json = "0.12.4"
 
-
 [dependencies.bevy]
 features = [
   "dynamic_linking", # Dynamic linking for faster compile-times

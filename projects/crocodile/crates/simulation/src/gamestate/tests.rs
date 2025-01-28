@@ -9,7 +9,7 @@ fn test_charge_phase() {
     let mut gs = SimState::new();
     insert_space_marine_unit(&mut gs, vec![sc(1, 10), sc(2, 10)], Team::Players);
     insert_space_marine_unit(&mut gs, vec![sc(1, 5)], Team::Players);
-    insert_necron_unit(&mut gs, vec![sc(1, 15), sc(1, 16), sc(2, 16)], Team::NPCs);
+    insert_necron_warrior_unit(&mut gs, vec![sc(1, 15), sc(1, 16), sc(2, 16)], Team::NPCs);
     gs.set_phase(Phase::Charge, Team::Players);
     assert!(gs.is_chance_node());
 
@@ -148,7 +148,7 @@ fn test_unit_coherency() {
         vec![sc(1, 10), sc(2, 10), sc(3, 10)],
         Team::Players,
     );
-    insert_necron_unit(&mut gs, vec![sc(1, 15), sc(2, 15), sc(3, 15)], Team::NPCs);
+    insert_necron_warrior_unit(&mut gs, vec![sc(1, 15), sc(2, 15), sc(3, 15)], Team::NPCs);
     assert!(gs.unit_coherency().iter().all(|x| x.1));
 }
 
@@ -196,12 +196,12 @@ fn test_shooting_legal_actions() {
     assert_eq!(actions, vec![Action::EndPhase]);
 
     // single target out of range
-    insert_necron_unit(&mut gs, vec![sc(50, 50)], Team::NPCs);
+    insert_necron_warrior_unit(&mut gs, vec![sc(50, 50)], Team::NPCs);
     gs.legal_actions(&mut actions);
     assert_eq!(actions, vec![Action::EndPhase]);
 
     // single target in range
-    insert_necron_unit(&mut gs, vec![sc(3, 10), sc(4, 10)], Team::NPCs);
+    insert_necron_warrior_unit(&mut gs, vec![sc(3, 10), sc(4, 10)], Team::NPCs);
     gs.legal_actions(&mut actions);
     assert_eq!(
         actions,
@@ -221,7 +221,7 @@ fn test_shooting_legal_actions() {
     );
 
     // add in when part of the unit is in range and part is out of range, on both the attacking a fired upon units
-    insert_necron_unit(
+    insert_necron_warrior_unit(
         &mut gs,
         vec![sc((1 + Weapon::BoltPistol.stats().range + 1).into(), 10)],
         Team::NPCs,
@@ -254,7 +254,7 @@ fn test_shooting_legal_actions() {
 fn test_shoot_phase() {
     let mut gs = SimState::new();
     insert_space_marine_unit(&mut gs, vec![sc(1, 10)], Team::Players);
-    insert_necron_unit(&mut gs, vec![sc(3, 10), sc(4, 10)], Team::NPCs);
+    insert_necron_warrior_unit(&mut gs, vec![sc(3, 10), sc(4, 10)], Team::NPCs);
     gs.set_phase(Phase::Shooting, Team::Players);
 
     assert_eq!(
@@ -317,8 +317,8 @@ fn test_shoot_phase() {
 fn test_fight_phase() {
     let mut gs = SimState::new();
     insert_space_marine_unit(&mut gs, vec![sc(1, 10)], Team::Players);
-    insert_necron_unit(&mut gs, vec![sc(2, 10)], Team::NPCs);
-    insert_necron_unit(&mut gs, vec![sc(1, 11)], Team::NPCs);
+    insert_necron_warrior_unit(&mut gs, vec![sc(2, 10)], Team::NPCs);
+    insert_necron_warrior_unit(&mut gs, vec![sc(1, 11)], Team::NPCs);
     gs.set_phase(Phase::Fight, Team::Players);
 
     let mut actions = Vec::new();

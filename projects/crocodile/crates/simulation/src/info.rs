@@ -34,7 +34,7 @@ pub fn insert_space_marine_unit(gs: &mut SimState, locs: Vec<SimCoords>, team: T
     }
 }
 
-pub fn insert_necron_unit(gs: &mut SimState, locs: Vec<SimCoords>, team: Team) {
+pub fn insert_necron_warrior_unit(gs: &mut SimState, locs: Vec<SimCoords>, team: Team) {
     for (i, l) in locs.into_iter().enumerate() {
         let unit_type = if i == 0 {
             UnitType::NewUnit

@@ -12,7 +12,7 @@ use utils::{team_models, unit_models, TeamFlags};
 use weapons::Arsenal;
 
 use crate::{
-    info::{insert_necron_unit, insert_space_marine_unit, ModelStats, Weapon},
+    info::{insert_necron_warrior_unit, insert_space_marine_unit, ModelStats, Weapon},
     ModelSprite,
 };
 
@@ -294,8 +294,8 @@ impl Default for SimState {
             Team::Players,
         );
 
-        insert_necron_unit(&mut gs, vec![sc(1, 15), sc(2, 15), sc(3, 15)], Team::NPCs);
-        insert_necron_unit(&mut gs, vec![sc(1, 16), sc(2, 16), sc(3, 16)], Team::NPCs);
+        insert_necron_warrior_unit(&mut gs, vec![sc(1, 15), sc(2, 15), sc(3, 15)], Team::NPCs);
+        insert_necron_warrior_unit(&mut gs, vec![sc(1, 16), sc(2, 16), sc(3, 16)], Team::NPCs);
         gs
     }
 }

@@ -1,11 +1,16 @@
+use core::todo;
+
 use bevy::{math::vec3, prelude::*};
+use bevy_ecs_tilemap::prelude::*;
 
 use super::{GRID_HEIGHT, GRID_WIDTH, TILE_LAYER, TILE_SIZE};
+
+const QUADRANT_SIDE_LENGTH: u32 = 80;
 
 #[derive(Component)]
 struct GameTile;
 
-pub fn setup_tiles(
+pub fn setup_tiles_square(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
@@ -34,4 +39,10 @@ pub fn setup_tiles(
             ));
         }
     }
+}
+
+pub fn setup_tiles(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let texture_handle: Handle<Image> = asset_server.load("tiles/mars_02.png");
+    // https://www.redblobgames.com/grids/hexagons/#coordinates
+    todo!("redo this by hand")
 }

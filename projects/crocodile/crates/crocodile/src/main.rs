@@ -3,6 +3,7 @@ use bevy::{
     prelude::*,
     DefaultPlugins,
 };
+use bevy_ecs_tilemap::TilemapPlugin;
 use crocodile::{sim_wrapper::SimStateResource, ui::UIPlugin, StatePlugin};
 
 pub enum TransitionState {
@@ -23,7 +24,7 @@ fn main() {
                 ..default()
             }),
         ) // prevents blurry sprites
-        .add_plugins((StatePlugin, UIPlugin))
+        .add_plugins((StatePlugin, UIPlugin, TilemapPlugin))
         .init_resource::<SimStateResource>()
         .run();
 }
