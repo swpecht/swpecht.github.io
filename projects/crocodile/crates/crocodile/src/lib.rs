@@ -5,6 +5,7 @@
 use bevy::prelude::*;
 
 pub mod game_area;
+pub mod hex;
 pub mod sim_wrapper;
 pub mod ui;
 

@@ -133,6 +133,7 @@ mod tests {
         assert_eq!(p_d6(5), 2.0 / 6.0);
         assert_eq!(p_d6(6), 1.0 / 6.0);
     }
+    const SQRT_3: f64 = 1.73205080756888;
 
     #[test]
     fn test_factorial() {
