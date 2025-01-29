@@ -209,10 +209,9 @@ fn action_button_hover(
                 } = action.0
                 {
                     for (_, loc, _) in sim.0.unit_sprites(to) {
-                        let rect = Rectangle::new(TILE_SIZE as f32, TILE_SIZE as f32);
                         let wc = to_world(&loc);
                         commands.spawn((
-                            Mesh2d(meshes.add(rect)),
+                            Mesh2d(meshes.add(RegularPolygon::new(TILE_SIZE as f32 / 2.0 - 1., 6))),
                             MeshMaterial2d(materials.add(INCOHERENT_UNIT)),
                             Transform::from_xyz(wc.x, wc.y, UI_LAYER),
                             ActionButtonHoverHighlight {},

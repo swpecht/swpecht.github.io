@@ -20,7 +20,7 @@ const PRESSED_BUTTON: Color = Color::srgb(0.35, 0.75, 0.35);
 const VALID_MOVE: Color = Color::srgba(0.0, 0.5, 0.5, 0.5);
 const INCOHERENT_UNIT: Color = Color::srgba(0.7, 0.0, 0.0, 0.5);
 
-pub const TILE_SIZE: usize = 32;
+pub const TILE_SIZE: usize = 20;
 const GRID_WIDTH: usize = 20;
 const GRID_HEIGHT: usize = 20;
 

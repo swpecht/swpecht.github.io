@@ -140,7 +140,7 @@ pub(super) fn spawn_character(
             },
             Transform {
                 translation: vec3(event.loc.x, event.loc.y, CHAR_LAYER),
-                scale: vec3(32.0 / w as f32, 32.0 / w as f32, 1.0),
+                scale: vec3(32.0 / w as f32 / 2.0, 32.0 / w as f32 / 2.0, 1.0),
                 ..default()
             },
             event.health.clone(),

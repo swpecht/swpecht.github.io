@@ -10,8 +10,10 @@ use simulation::gamestate::{spatial::SimCoords, Action, ModelId, Phase};
 use sprite::*;
 
 use crate::{
-    sim_wrapper::SimStateResource, PlayState, HOVERED_BUTTON, INCOHERENT_UNIT, NORMAL_BUTTON,
-    PRESSED_BUTTON, TILE_SIZE, UI_LAYER, VALID_MOVE,
+    hex::{coords_to_pixel, pixel_to_coords, vertices},
+    sim_wrapper::SimStateResource,
+    PlayState, HOVERED_BUTTON, INCOHERENT_UNIT, NORMAL_BUTTON, PRESSED_BUTTON, TILE_SIZE, UI_LAYER,
+    VALID_MOVE,
 };
 
 pub mod animation;
@@ -150,16 +152,22 @@ struct MouseWorldCoords(Vec2);
 
 impl MouseWorldCoords {
     fn to_sim(&self) -> SimCoords {
-        let offset = (TILE_SIZE / 2) as f32;
+        // let offset = (TILE_SIZE / 2) as f32;
+        // SimCoords {
+        //     x: (self.0.x + offset) as usize / TILE_SIZE,
+        //     y: (self.0.y + offset) as usize / TILE_SIZE,
+        // }
+        let coords = pixel_to_coords(self.0);
         SimCoords {
-            x: (self.0.x + offset) as usize / TILE_SIZE,
-            y: (self.0.y + offset) as usize / TILE_SIZE,
+            x: coords.x as usize,
+            y: coords.y as usize,
         }
     }
 }
 
 pub fn to_world(coords: &SimCoords) -> Vec2 {
-    vec2((coords.x * TILE_SIZE) as f32, (coords.y * TILE_SIZE) as f32)
+    // vec2((coords.x * TILE_SIZE) as f32, (coords.y * TILE_SIZE) as f32)
+    coords_to_pixel(coords.y, coords.x)
 }
 
 /// Stores the position of the mouse in terms of world coords
@@ -194,11 +202,23 @@ fn tile_highlight(mouse_coords: Res<MouseWorldCoords>, mut gizmos: Gizmos) {
     let offset = (TILE_SIZE / 2) as f32;
     let x = mouse_coords.0.x - (mouse_coords.0.x + offset) % TILE_SIZE as f32 + offset;
     let y = mouse_coords.0.y - (mouse_coords.0.y + offset) % TILE_SIZE as f32 + offset;
-    gizmos.rect_2d(
-        Isometry2d::from_translation(vec2(x, y)),
-        Vec2::splat(TILE_SIZE as f32),
-        Color::BLACK,
-    );
+
+    let mut verts = vertices(mouse_coords.0).into_iter();
+    let first = verts.next().unwrap();
+    let mut start = first;
+
+    for v in verts {
+        gizmos.line_2d(start, v, Color::WHITE);
+        start = v;
+    }
+
+    gizmos.line_2d(start, first, Color::WHITE);
+
+    // gizmos.rect_2d(
+    //     Isometry2d::from_translation(vec2(x, y)),
+    //     Vec2::splat(TILE_SIZE as f32),
+    //     Color::BLACK,
+    // );
 }
 
 fn selection(
@@ -276,7 +296,6 @@ fn highlight_moves(
     let mut actions = Vec::new();
     sim.0.legal_actions(&mut actions);
 
-    let rect = Rectangle::new(TILE_SIZE as f32, TILE_SIZE as f32);
     for a in actions.iter() {
         if let Action::Move {
             id,
@@ -290,7 +309,7 @@ fn highlight_moves(
 
             let wc = to_world(&to);
             commands.spawn((
-                Mesh2d(meshes.add(rect)),
+                Mesh2d(meshes.add(RegularPolygon::new(TILE_SIZE as f32 / 2.0 - 1., 6))),
                 MeshMaterial2d(materials.add(VALID_MOVE)),
                 Transform::from_xyz(wc.x, wc.y, UI_LAYER),
                 StateScoped(PlayState::Waiting), // automatically unspawn when leave waiting
@@ -310,7 +329,7 @@ fn highlight_moves(
 
             let wc = to_world(&to);
             commands.spawn((
-                Mesh2d(meshes.add(rect)),
+                Mesh2d(meshes.add(RegularPolygon::new(TILE_SIZE as f32 / 2.0 - 1., 6))),
                 MeshMaterial2d(materials.add(VALID_MOVE)),
                 Transform::from_xyz(wc.x, wc.y, UI_LAYER),
                 StateScoped(PlayState::Waiting), // automatically unspawn when leave waiting

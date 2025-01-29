@@ -7,7 +7,75 @@
 
 use std::cmp::max;
 use std::f64::consts::PI;
+
+use bevy::math::{vec2, Vec2};
+
+use crate::TILE_SIZE;
 const SQRT_3: f64 = 1.73205080756888;
+
+pub fn coords_to_pixel(row: usize, col: usize) -> Vec2 {
+    let layout = Layout {
+        orientation: layout_pointy,
+        size: Point {
+            x: TILE_SIZE as f64 / 2.0,
+            y: TILE_SIZE as f64 / 2.0,
+        },
+        origin: Point { x: 0.0, y: 0.0 },
+    };
+
+    let offset = OffsetCoord {
+        col: col as i32,
+        row: row as i32,
+    };
+    let hex = roffset_to_cube(ODD, offset);
+    // let hex = Hex::new(r, c);
+    let pixel = hex_to_pixel(layout, hex);
+    bevy::math::vec2(pixel.x as f32, pixel.y as f32)
+}
+
+pub fn pixel_to_coords(loc: Vec2) -> Vec2 {
+    let layout = Layout {
+        orientation: layout_pointy,
+        size: Point {
+            x: TILE_SIZE as f64 / 2.0,
+            y: TILE_SIZE as f64 / 2.0,
+        },
+        origin: Point { x: 0.0, y: 0.0 },
+    };
+    let hex = pixel_to_hex(
+        layout,
+        Point {
+            x: loc.x as f64,
+            y: loc.y as f64,
+        },
+    );
+    let hex = hex_round(hex);
+    let coords = roffset_from_cube(ODD, hex);
+    vec2(coords.col as f32, coords.row as f32)
+}
+
+pub fn vertices(loc: Vec2) -> Vec<Vec2> {
+    let layout = Layout {
+        orientation: layout_pointy,
+        size: Point {
+            x: TILE_SIZE as f64 / 2.0,
+            y: TILE_SIZE as f64 / 2.0,
+        },
+        origin: Point { x: 0.0, y: 0.0 },
+    };
+    let hex = pixel_to_hex(
+        layout,
+        Point {
+            x: loc.x as f64,
+            y: loc.y as f64,
+        },
+    );
+    let hex = hex_round(hex);
+    polygon_corners(layout, hex)
+        .into_iter()
+        .map(|p| vec2(p.x as f32, p.y as f32))
+        .collect()
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct Point {
@@ -196,8 +264,8 @@ pub fn hex_linedraw(a: Hex, b: Hex) -> Vec<Hex> {
     results
 }
 
-const EVEN: i32 = 1;
-const ODD: i32 = -1;
+pub const EVEN: i32 = 1;
+pub const ODD: i32 = -1;
 pub fn qoffset_from_cube(offset: i32, h: Hex) -> OffsetCoord {
     let mut col: i32 = h.q;
     let mut row: i32 = h.r + (h.q + offset * (h.q & 1)) / 2;

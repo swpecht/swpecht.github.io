@@ -1,12 +1,8 @@
-use core::todo;
-
 use bevy::{math::vec3, prelude::*};
 
-use crate::hex::{hex_to_pixel, layout_flat, layout_pointy, Hex, Layout, Point};
+use crate::hex::coords_to_pixel;
 
 use super::{GRID_HEIGHT, GRID_WIDTH, TILE_LAYER, TILE_SIZE};
-
-const QUADRANT_SIDE_LENGTH: u32 = 80;
 
 #[derive(Component)]
 struct GameTile;
@@ -42,33 +38,25 @@ pub fn setup_tiles_square(
     }
 }
 
-pub fn setup_tiles(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let tile: Handle<Image> = asset_server.load("tiles/mars_04.png");
+pub fn setup_tiles(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) {
     // https://www.redblobgames.com/grids/hexagons/#coordinates
 
-    let w = 120.0;
-    let h = 140.0;
-
-    let target_width = 64.;
+    let shape = meshes.add(RegularPolygon::new(TILE_SIZE as f32 / 2.0 - 1., 6));
+    let color = Color::srgb(0.0, 1.0, 0.0);
 
     for r in 0..GRID_WIDTH + 1 {
         for c in 0..GRID_HEIGHT + 1 {
-            let layout = Layout {
-                orientation: layout_pointy,
-                size: Point {
-                    x: w / 2.0,
-                    y: h / 2.0,
-                },
-                origin: Point { x: 0.0, y: 0.0 },
-            };
-
-            let hex = Hex::new(r, c);
-            let pixel = hex_to_pixel(layout, hex);
+            let pixel = coords_to_pixel(r, c);
             commands.spawn((
-                Sprite::from_image(tile.clone()),
+                Mesh2d(shape.clone()),
+                MeshMaterial2d(materials.add(color)),
+                // Text2d::new(format!("{}, {}", r, c)),
                 Transform {
                     translation: vec3(pixel.x as f32, pixel.y as f32, TILE_LAYER),
-                    scale: vec3((target_width / w) as f32, (target_width / h) as f32, 1.),
                     ..default()
                 },
             ));
