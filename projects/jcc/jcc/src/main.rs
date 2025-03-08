@@ -1,16 +1,23 @@
-//! This example tests the RP Pico 2 W onboard LED.
+//! This example tests the RP Pico 2 W onboard LED and detects Morse code from pin 0.
 //!
 //! It does not work with the RP Pico 2 board. See `blinky.rs`.
 
 #![no_std]
 #![no_main]
 
+/// Morse code timing constants (in milliseconds)
+mod morse {
+    use embassy_time::Duration;
+
+
+
+use cyw43::Control;
 use cyw43_pio::{PioSpi, DEFAULT_CLOCK_DIVIDER};
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_rp::bind_interrupts;
-use embassy_rp::gpio::{Level, Output};
-use embassy_rp::peripherals::{DMA_CH0, PIO0};
+use embassy_rp::gpio::{Input, Level, Output, Pull};
+use embassy_rp::peripherals::{DMA_CH0, PIN_0, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_time::{Duration, Timer};
 use static_cell::StaticCell;
@@ -41,11 +48,34 @@ async fn cyw43_task(
     runner.run().await
 }
 
+#[embassy_executor::task]
+async fn blinker(mut led_pin: Output<'static>, mut control: Control<'static>) {
+    let delay = Duration::from_millis(250);
+
+    loop {
+        info!("leds on!");
+        control.gpio_set(0, true).await;
+        led_pin.set_high();
+        Timer::after(delay).await;
+
+        info!("leds off!");
+        control.gpio_set(0, false).await;
+        led_pin.set_low();
+        Timer::after(delay).await;
+    }
+}
+
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
     let fw = include_bytes!("../cyw43-firmware/43439A0.bin");
     let clm = include_bytes!("../cyw43-firmware/43439A0_clm.bin");
+
+    // Initialize LED on pin 15
+    let led_pin = Output::new(p.PIN_15, Level::Low);
+
+    // Initialize morse code input on pin 0 with pull-up resistor
+    let morse_input = Input::new(p.PIN_0, Pull::Up);
 
     // To make flashing faster for development, you may want to flash the firmwares independently
     // at hardcoded addresses, instead of baking them into the program with `include_bytes!`:
@@ -77,15 +107,10 @@ async fn main(spawner: Spawner) {
     control
         .set_power_management(cyw43::PowerManagementMode::PowerSave)
         .await;
+    unwrap!(spawner.spawn(blinker(led_pin, control)));
 
-    let delay = Duration::from_millis(250);
     loop {
-        info!("led on!");
-        control.gpio_set(0, true).await;
-        Timer::after(delay).await;
-
-        info!("led off!");
-        control.gpio_set(0, false).await;
-        Timer::after(delay).await;
+        // loop to detect lenght of a tone
+        Timer::after(Duration::from_millis(10)).await;
     }
 }
