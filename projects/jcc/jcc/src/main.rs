@@ -11,13 +11,14 @@ use defmt::*;
 use embassy_executor::Spawner;
 use embassy_rp::adc::{Adc, Async, Channel, Config, InterruptHandler as AdcInterruptHandler};
 use embassy_rp::bind_interrupts;
-use embassy_rp::gpio::{Input, Level, Output, Pull};
+use embassy_rp::gpio::{Level, Output, Pull};
 use embassy_rp::peripherals::{DMA_CH0, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_time::Instant;
 // We'll use a simple GPIO pin for tone generation instead of PWM
 use embassy_time::{Duration, Timer};
 use static_cell::StaticCell;
+// We don't need these imports anymore
 use {defmt_rtt as _, panic_probe as _};
 
 // Program metadata for `picotool info`.
@@ -38,6 +39,8 @@ bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
     ADC_IRQ_FIFO => AdcInterruptHandler;
 });
+
+//
 
 #[embassy_executor::task]
 async fn cyw43_task(
@@ -106,6 +109,73 @@ async fn play_tone(pin: &mut Output<'_>, frequency: u32, duration: Duration) {
     pin.set_low();
 }
 
+// Define message buffer size (in bytes)
+const MESSAGE_BUFFER_SIZE: usize = 128;
+
+// Message structure using heapless to work in no_std environment
+struct BluetoothMessage {
+    buffer: heapless::String<MESSAGE_BUFFER_SIZE>,
+}
+
+impl BluetoothMessage {
+    fn new() -> Self {
+        Self {
+            buffer: heapless::String::new(),
+        }
+    }
+
+    fn clear(&mut self) {
+        self.buffer.clear();
+    }
+
+    fn set(&mut self, msg: &str) -> Result<(), ()> {
+        self.clear();
+        self.buffer.push_str(msg).map_err(|_| ())
+    }
+
+    fn append_str(&mut self, msg: &str) -> Result<(), ()> {
+        self.buffer.push_str(msg).map_err(|_| ())
+    }
+}
+
+// Helper struct for Bluetooth messages
+struct BtMessage {
+    buffer: heapless::String<128>,
+}
+
+impl BtMessage {
+    fn new() -> Self {
+        Self {
+            buffer: heapless::String::new(),
+        }
+    }
+
+    fn set(&mut self, message: &str) {
+        self.buffer.clear();
+        let _ = self.buffer.push_str(message);
+    }
+}
+
+// Bluetooth functionality placeholder
+// In a future update, we'll implement full Bluetooth support
+// For now, we'll leave this commented out as it requires more setup
+
+/*
+// Global shared data for communicating between tasks
+static TONE_ACTIVE: StaticCell<embassy_sync::mutex::Mutex<embassy_sync::blocking_mutex::raw::NoopRawMutex, bool>> = StaticCell::new();
+
+// Bluetooth task
+#[embassy_executor::task]
+async fn bluetooth_task() {
+    info!("Bluetooth placeholder - will be implemented in future update");
+
+    loop {
+        // Just a placeholder for now
+        Timer::after(Duration::from_millis(1000)).await;
+    }
+}
+*/
+
 #[embassy_executor::task]
 async fn tone_detector(mut adc: Adc<'static, Async>, mut adc_pin: Channel<'static>) {
     // Amplitude threshold for tone detection (value depends on ADC range)
@@ -149,6 +219,9 @@ async fn tone_detector(mut adc: Adc<'static, Async>, mut adc_pin: Channel<'stati
                 if let Some(prev_end) = last_tone_end {
                     let gap_duration = now - prev_end;
                     info!("Gap duration: {} ms", gap_duration.as_millis());
+
+                    // We could add BLE messaging for gap duration here
+                    // but we'll keep it simple for now
                 }
             } else {
                 // Tone ended
@@ -156,8 +229,13 @@ async fn tone_detector(mut adc: Adc<'static, Async>, mut adc_pin: Channel<'stati
                     let tone_duration = now - start;
                     info!("Tone ended. Duration: {} ms", tone_duration.as_millis());
                     last_tone_end = Some(now);
+
+                    // We'll add BLE notification in a different way
                 }
             }
+
+            // For Bluetooth notifications (to be implemented later)
+            // We'd share the tone state here
 
             prev_tone_active = tone_active;
         }
@@ -178,14 +256,6 @@ async fn main(spawner: Spawner) {
     // - Channel 3 = GPIO29
     let adc = Adc::new(p.ADC, Irqs, Config::default());
     let adc_pin = Channel::new_pin(p.PIN_26, Pull::None);
-    unwrap!(spawner.spawn(tone_detector(adc, adc_pin)));
-
-    // To make flashing faster for development, you may want to flash the firmwares independently
-    // at hardcoded addresses, instead of baking them into the program with `include_bytes!`:
-    //     probe-rs download ../../cyw43-firmware/43439A0.bin --binary-format bin --chip RP2040 --base-address 0x10100000
-    //     probe-rs download ../../cyw43-firmware/43439A0_clm.bin --binary-format bin --chip RP2040 --base-address 0x10140000
-    let fw = unsafe { core::slice::from_raw_parts(0x10100000 as *const u8, 230321) };
-    let clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 4752) };
 
     // Initialize LED on pin 15
     let led_pin = Output::new(p.PIN_15, Level::Low);
@@ -193,6 +263,19 @@ async fn main(spawner: Spawner) {
     // Initialize GPIO pin for tone generation
     let tone_pin = Output::new(p.PIN_16, Level::Low);
 
+    // To make flashing faster for development, you may want to flash the firmwares independently
+    // at hardcoded addresses, instead of baking them into the program with `include_bytes!`:
+    //     probe-rs download ../../cyw43-firmware/43439A0.bin --binary-format bin --chip RP2040 --base-address 0x10100000
+    //     probe-rs download ../../cyw43-firmware/43439A0_clm.bin --binary-format bin --chip RP2040 --base-address 0x10140000
+    //     probe-rs download ../../cyw43-firmware/43439A0_btfw.bin --binary-format bin --chip RP2040 --base-address 0x10180000
+
+    // Load firmware from hardcoded addresses for faster development
+    let fw = unsafe { core::slice::from_raw_parts(0x10100000 as *const u8, 230321) };
+    let clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 4752) };
+    // BT firmware will be used in future update
+    let _btfw = unsafe { core::slice::from_raw_parts(0x10180000 as *const u8, 245760) };
+
+    // Initialize CYW43 WiFi/BT chip
     let pwr = Output::new(p.PIN_23, Level::Low);
     let cs = Output::new(p.PIN_25, Level::High);
     let mut pio = Pio::new(p.PIO0, Irqs);
@@ -209,15 +292,24 @@ async fn main(spawner: Spawner) {
 
     static STATE: StaticCell<cyw43::State> = StaticCell::new();
     let state = STATE.init(cyw43::State::new());
+
+    // Create WiFi device - Bluetooth to be added in future update
     let (_net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw).await;
+
+    // Spawn the cyw43 task
     unwrap!(spawner.spawn(cyw43_task(runner)));
 
+    // Initialize the CYW43 firmware
     control.init(clm).await;
     control
         .set_power_management(cyw43::PowerManagementMode::PowerSave)
         .await;
-    unwrap!(spawner.spawn(blinker(led_pin, control)));
 
-    // Spawn the tone generator task
+    // Spawn other tasks
+    unwrap!(spawner.spawn(blinker(led_pin, control)));
     unwrap!(spawner.spawn(tone_generator(tone_pin)));
+    unwrap!(spawner.spawn(tone_detector(adc, adc_pin)));
+
+    // TODO: Add Bluetooth support in future update
+    // unwrap!(spawner.spawn(bluetooth_task()));
 }

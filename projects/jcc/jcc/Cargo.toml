@@ -16,7 +16,7 @@ embassy-net = { version = "0.7.0", features = ["defmt", "tcp", "udp", "raw", "dh
 embassy-net-wiznet = { version = "0.2.0", features = ["defmt"] }
 embassy-futures = { version = "0.1.0" }
 embassy-usb-logger = { version = "0.4.0" }
-cyw43 = { version = "0.3.0", features = ["defmt", "firmware-logs"] }
+cyw43 = { version = "0.3.0", features = ["defmt", "firmware-logs", "bluetooth"] }
 cyw43-pio = { version = "0.3.0", features = ["defmt"] }
 
 defmt = "0.3"
@@ -53,6 +53,9 @@ log = "0.4"
 rand = { version = "0.8.5", default-features = false }
 embedded-sdmmc = "0.7.0"
 
+# Bluetooth dependency - not fully working yet
+# bt-hci = "0.2.1"
+
 [patch.crates-io]
 embassy-embedded-hal = { git = "https://github.com/embassy-rs/embassy", rev = "7c49f482d71d594d7b48c3393cc98d03a9e7c9e2" }
 embassy-sync = { git = "https://github.com/embassy-rs/embassy", rev = "7c49f482d71d594d7b48c3393cc98d03a9e7c9e2" }
@@ -64,7 +67,7 @@ embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "7c49f482d7
 embassy-net-wiznet = { git = "https://github.com/embassy-rs/embassy", rev = "7c49f482d71d594d7b48c3393cc98d03a9e7c9e2" }
 embassy-futures = { git = "https://github.com/embassy-rs/embassy", rev = "7c49f482d71d594d7b48c3393cc98d03a9e7c9e2" }
 embassy-usb-logger = { git = "https://github.com/embassy-rs/embassy", rev = "7c49f482d71d594d7b48c3393cc98d03a9e7c9e2" }
-cyw43 = { git = "https://github.com/embassy-rs/embassy", rev = "7c49f482d71d594d7b48c3393cc98d03a9e7c9e2" }
+cyw43 = { git = "https://github.com/embassy-rs/embassy", rev = "7c49f482d71d594d7b48c3393cc98d03a9e7c9e2", features = ["bluetooth"] }
 cyw43-pio = { git = "https://github.com/embassy-rs/embassy", rev = "7c49f482d71d594d7b48c3393cc98d03a9e7c9e2" }
 
 
