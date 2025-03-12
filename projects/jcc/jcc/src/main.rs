@@ -169,8 +169,6 @@ async fn tone_detector(mut adc: Adc<'static, Async>, mut adc_pin: Channel<'stati
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
-    let fw = include_bytes!("../cyw43-firmware/43439A0.bin");
-    let clm = include_bytes!("../cyw43-firmware/43439A0_clm.bin");
 
     // Initialize ADC for tone detection on pin 26 (ADC0)
     // The RP2040 has 4 ADC channels:
@@ -186,8 +184,8 @@ async fn main(spawner: Spawner) {
     // at hardcoded addresses, instead of baking them into the program with `include_bytes!`:
     //     probe-rs download ../../cyw43-firmware/43439A0.bin --binary-format bin --chip RP2040 --base-address 0x10100000
     //     probe-rs download ../../cyw43-firmware/43439A0_clm.bin --binary-format bin --chip RP2040 --base-address 0x10140000
-    //let fw = unsafe { core::slice::from_raw_parts(0x10100000 as *const u8, 230321) };
-    //let clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 4752) };
+    let fw = unsafe { core::slice::from_raw_parts(0x10100000 as *const u8, 230321) };
+    let clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 4752) };
 
     // Initialize LED on pin 15
     let led_pin = Output::new(p.PIN_15, Level::Low);
