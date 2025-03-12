@@ -1,5 +1,12 @@
 # MVP
 [*] models cannot move within engagement range of other models
+[ ] Switch to hexes for world map instead of squares, details: https://www.redblobgames.com/grids/hexagons/
+    * Likely want to model everything as a graph for many operations, e.g. path finding we get for free, each node could have a cost to traverse by team, terrain is tough for all, can pass through friends, not enemies
+    * but may want to use the hex version for performance
+    * Instead of storing coords, could store the index in the grpah, then can lookup by that
+    [*] Visually switch to hexes
+    [ ] Switch neighbor logic for game to hexes
+[ ] Switch to letter to represent units instead of sprites -- easier to create many of, can procedurally generate things like muzzle flash
 [ ] Don't allow shooting for things other than pistols in engagement range of another enemy
 [ ] Don't allow targeting units for shooting that are in engagement range with allies
 [ ] Add in additional units -- could we just do a necors vs space marines?
