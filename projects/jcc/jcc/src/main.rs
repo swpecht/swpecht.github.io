@@ -5,20 +5,16 @@
 #![no_std]
 #![no_main]
 
-/// Morse code timing constants (in milliseconds)
-mod morse {
-    use embassy_time::Duration;
-
-
-
 use cyw43::Control;
 use cyw43_pio::{PioSpi, DEFAULT_CLOCK_DIVIDER};
 use defmt::*;
 use embassy_executor::Spawner;
+use embassy_rp::adc::{Adc, Channel, Config, InterruptHandler as AdcInterruptHandler};
 use embassy_rp::bind_interrupts;
-use embassy_rp::gpio::{Input, Level, Output, Pull};
-use embassy_rp::peripherals::{DMA_CH0, PIN_0, PIO0};
+use embassy_rp::gpio::{Level, Output, Pull};
+use embassy_rp::peripherals::{DMA_CH0, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
+// We'll use a simple GPIO pin for tone generation instead of PWM
 use embassy_time::{Duration, Timer};
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
@@ -39,6 +35,7 @@ pub static PICOTOOL_ENTRIES: [embassy_rp::binary_info::EntryAddr; 4] = [
 
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
+    ADC_IRQ_FIFO => AdcInterruptHandler;
 });
 
 #[embassy_executor::task]
@@ -50,7 +47,7 @@ async fn cyw43_task(
 
 #[embassy_executor::task]
 async fn blinker(mut led_pin: Output<'static>, mut control: Control<'static>) {
-    let delay = Duration::from_millis(250);
+    let delay = Duration::from_millis(2000);
 
     loop {
         info!("leds on!");
@@ -65,6 +62,48 @@ async fn blinker(mut led_pin: Output<'static>, mut control: Control<'static>) {
     }
 }
 
+#[embassy_executor::task]
+async fn tone_generator(mut tone_pin: Output<'static>) {
+    // Frequencies for different tones (in Hz)
+    const TONE_C4: u32 = 262; // C4 note
+    const TONE_E4: u32 = 330; // E4 note
+    const TONE_G4: u32 = 392; // G4 note
+    const TONE_C5: u32 = 523; // C5 note
+
+    info!("Tone generator ready on GPIO 16");
+
+    loop {
+        // Play a sequence of tones (C major chord arpeggio)
+        play_tone(&mut tone_pin, TONE_C4, Duration::from_millis(500)).await;
+        play_tone(&mut tone_pin, TONE_E4, Duration::from_millis(500)).await;
+        play_tone(&mut tone_pin, TONE_G4, Duration::from_millis(500)).await;
+        play_tone(&mut tone_pin, TONE_C5, Duration::from_millis(500)).await;
+
+        // Pause between sequences
+        Timer::after(Duration::from_millis(1000)).await;
+    }
+}
+
+// Helper function to play a tone of a specified frequency and duration
+async fn play_tone(pin: &mut Output<'_>, frequency: u32, duration: Duration) {
+    // Calculate period in microseconds
+    let period_us = 1_000_000 / frequency;
+    let half_period_us = period_us / 2;
+
+    // Play tone for the given duration
+    let end_time = embassy_time::Instant::now() + duration;
+
+    while embassy_time::Instant::now() < end_time {
+        pin.set_high();
+        Timer::after(Duration::from_micros(half_period_us as u64)).await;
+        pin.set_low();
+        Timer::after(Duration::from_micros(half_period_us as u64)).await;
+    }
+
+    // Ensure pin is low after playing
+    pin.set_low();
+}
+
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
@@ -74,8 +113,17 @@ async fn main(spawner: Spawner) {
     // Initialize LED on pin 15
     let led_pin = Output::new(p.PIN_15, Level::Low);
 
-    // Initialize morse code input on pin 0 with pull-up resistor
-    let morse_input = Input::new(p.PIN_0, Pull::Up);
+    // Initialize GPIO pin for tone generation
+    let tone_pin = Output::new(p.PIN_16, Level::Low);
+
+    // Initialize ADC for tone detection on pin 26 (ADC0)
+    // The RP2040 has 4 ADC channels:
+    // - Channel 0 = GPIO26
+    // - Channel 1 = GPIO27
+    // - Channel 2 = GPIO28
+    // - Channel 3 = GPIO29
+    let mut adc = Adc::new(p.ADC, Irqs, Config::default());
+    let mut adc_pin = Channel::new_pin(p.PIN_26, Pull::None);
 
     // To make flashing faster for development, you may want to flash the firmwares independently
     // at hardcoded addresses, instead of baking them into the program with `include_bytes!`:
@@ -109,8 +157,66 @@ async fn main(spawner: Spawner) {
         .await;
     unwrap!(spawner.spawn(blinker(led_pin, control)));
 
+    // Spawn the tone generator task
+    unwrap!(spawner.spawn(tone_generator(tone_pin)));
+
+    // Tone detection variables
+    use embassy_time::Instant;
+
+    // Amplitude threshold for tone detection (value depends on ADC range)
+    const TONE_THRESHOLD: u16 = 1000; // Adjust based on testing
+
+    let mut tone_start: Option<Instant> = None;
+    let mut last_tone_end: Option<Instant> = None;
+    let mut tone_active = false;
+    let mut prev_tone_active = false;
+
+    info!("Tone detector ready. Connect analog signal to PIN_26 (ADC0).");
+
     loop {
-        // loop to detect lenght of a tone
+        // Read the ADC value
+        let adc_result = adc.read(&mut adc_pin).await;
+        let now = Instant::now();
+
+        // Only process if ADC read was successful
+        if let Ok(adc_value) = adc_result {
+            // Detect if a tone is present based on the ADC reading
+            tone_active = adc_value > TONE_THRESHOLD;
+
+            // Debug output
+            if adc_value > 100 {
+                // Filter out noise/near-zero readings
+                // info!("ADC value: {}", adc_value);
+            }
+        } else {
+            // Log ADC read error
+            info!("ADC read error");
+        }
+
+        // Detect state transitions
+        if tone_active != prev_tone_active {
+            if tone_active {
+                // Tone started
+                info!("Tone started");
+                tone_start = Some(now);
+
+                // Calculate gap duration if we have a previous tone
+                if let Some(prev_end) = last_tone_end {
+                    let gap_duration = now - prev_end;
+                    info!("Gap duration: {} ms", gap_duration.as_millis());
+                }
+            } else {
+                // Tone ended
+                if let Some(start) = tone_start {
+                    let tone_duration = now - start;
+                    info!("Tone ended. Duration: {} ms", tone_duration.as_millis());
+                    last_tone_end = Some(now);
+                }
+            }
+
+            prev_tone_active = tone_active;
+        }
+
         Timer::after(Duration::from_millis(10)).await;
     }
 }

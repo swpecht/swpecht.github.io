@@ -12,6 +12,9 @@ Things to get:
 Make USB device available:
 
 usbipd attach --wsl --busid 8-2 -u --auto-attach
+usbipd attach --wsl --busid 8-3 -u --auto-attach # debug probe
+
+cannot run any probe-rs info commands, need to immediately run the actual program `cargo run` for probe-rs to work
 
 picotool uf2 convert ./target/thumbv8m.main-none-eabihf/release/blinky_wifi -t elf ./jcc.uf2
 
