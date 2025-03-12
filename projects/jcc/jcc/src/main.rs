@@ -9,11 +9,12 @@ use cyw43::Control;
 use cyw43_pio::{PioSpi, DEFAULT_CLOCK_DIVIDER};
 use defmt::*;
 use embassy_executor::Spawner;
-use embassy_rp::adc::{Adc, Channel, Config, InterruptHandler as AdcInterruptHandler};
+use embassy_rp::adc::{Adc, Async, Channel, Config, InterruptHandler as AdcInterruptHandler};
 use embassy_rp::bind_interrupts;
-use embassy_rp::gpio::{Level, Output, Pull};
+use embassy_rp::gpio::{Input, Level, Output, Pull};
 use embassy_rp::peripherals::{DMA_CH0, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
+use embassy_time::Instant;
 // We'll use a simple GPIO pin for tone generation instead of PWM
 use embassy_time::{Duration, Timer};
 use static_cell::StaticCell;
@@ -74,6 +75,7 @@ async fn tone_generator(mut tone_pin: Output<'static>) {
 
     loop {
         // Play a sequence of tones (C major chord arpeggio)
+
         play_tone(&mut tone_pin, TONE_C4, Duration::from_millis(500)).await;
         play_tone(&mut tone_pin, TONE_E4, Duration::from_millis(500)).await;
         play_tone(&mut tone_pin, TONE_G4, Duration::from_millis(500)).await;
@@ -104,65 +106,8 @@ async fn play_tone(pin: &mut Output<'_>, frequency: u32, duration: Duration) {
     pin.set_low();
 }
 
-#[embassy_executor::main]
-async fn main(spawner: Spawner) {
-    let p = embassy_rp::init(Default::default());
-    let fw = include_bytes!("../cyw43-firmware/43439A0.bin");
-    let clm = include_bytes!("../cyw43-firmware/43439A0_clm.bin");
-
-    // Initialize LED on pin 15
-    let led_pin = Output::new(p.PIN_15, Level::Low);
-
-    // Initialize GPIO pin for tone generation
-    let tone_pin = Output::new(p.PIN_16, Level::Low);
-
-    // Initialize ADC for tone detection on pin 26 (ADC0)
-    // The RP2040 has 4 ADC channels:
-    // - Channel 0 = GPIO26
-    // - Channel 1 = GPIO27
-    // - Channel 2 = GPIO28
-    // - Channel 3 = GPIO29
-    let mut adc = Adc::new(p.ADC, Irqs, Config::default());
-    let mut adc_pin = Channel::new_pin(p.PIN_26, Pull::None);
-
-    // To make flashing faster for development, you may want to flash the firmwares independently
-    // at hardcoded addresses, instead of baking them into the program with `include_bytes!`:
-    //     probe-rs download ../../cyw43-firmware/43439A0.bin --binary-format bin --chip RP2040 --base-address 0x10100000
-    //     probe-rs download ../../cyw43-firmware/43439A0_clm.bin --binary-format bin --chip RP2040 --base-address 0x10140000
-    //let fw = unsafe { core::slice::from_raw_parts(0x10100000 as *const u8, 230321) };
-    //let clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 4752) };
-
-    let pwr = Output::new(p.PIN_23, Level::Low);
-    let cs = Output::new(p.PIN_25, Level::High);
-    let mut pio = Pio::new(p.PIO0, Irqs);
-    let spi = PioSpi::new(
-        &mut pio.common,
-        pio.sm0,
-        DEFAULT_CLOCK_DIVIDER,
-        pio.irq0,
-        cs,
-        p.PIN_24,
-        p.PIN_29,
-        p.DMA_CH0,
-    );
-
-    static STATE: StaticCell<cyw43::State> = StaticCell::new();
-    let state = STATE.init(cyw43::State::new());
-    let (_net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw).await;
-    unwrap!(spawner.spawn(cyw43_task(runner)));
-
-    control.init(clm).await;
-    control
-        .set_power_management(cyw43::PowerManagementMode::PowerSave)
-        .await;
-    unwrap!(spawner.spawn(blinker(led_pin, control)));
-
-    // Spawn the tone generator task
-    unwrap!(spawner.spawn(tone_generator(tone_pin)));
-
-    // Tone detection variables
-    use embassy_time::Instant;
-
+#[embassy_executor::task]
+async fn tone_detector(mut adc: Adc<'static, Async>, mut adc_pin: Channel<'static>) {
     // Amplitude threshold for tone detection (value depends on ADC range)
     const TONE_THRESHOLD: u16 = 1000; // Adjust based on testing
 
@@ -219,4 +164,62 @@ async fn main(spawner: Spawner) {
 
         Timer::after(Duration::from_millis(10)).await;
     }
+}
+
+#[embassy_executor::main]
+async fn main(spawner: Spawner) {
+    let p = embassy_rp::init(Default::default());
+    let fw = include_bytes!("../cyw43-firmware/43439A0.bin");
+    let clm = include_bytes!("../cyw43-firmware/43439A0_clm.bin");
+
+    // Initialize ADC for tone detection on pin 26 (ADC0)
+    // The RP2040 has 4 ADC channels:
+    // - Channel 0 = GPIO26
+    // - Channel 1 = GPIO27
+    // - Channel 2 = GPIO28
+    // - Channel 3 = GPIO29
+    let adc = Adc::new(p.ADC, Irqs, Config::default());
+    let adc_pin = Channel::new_pin(p.PIN_26, Pull::None);
+    unwrap!(spawner.spawn(tone_detector(adc, adc_pin)));
+
+    // To make flashing faster for development, you may want to flash the firmwares independently
+    // at hardcoded addresses, instead of baking them into the program with `include_bytes!`:
+    //     probe-rs download ../../cyw43-firmware/43439A0.bin --binary-format bin --chip RP2040 --base-address 0x10100000
+    //     probe-rs download ../../cyw43-firmware/43439A0_clm.bin --binary-format bin --chip RP2040 --base-address 0x10140000
+    //let fw = unsafe { core::slice::from_raw_parts(0x10100000 as *const u8, 230321) };
+    //let clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 4752) };
+
+    // Initialize LED on pin 15
+    let led_pin = Output::new(p.PIN_15, Level::Low);
+
+    // Initialize GPIO pin for tone generation
+    let tone_pin = Output::new(p.PIN_16, Level::Low);
+
+    let pwr = Output::new(p.PIN_23, Level::Low);
+    let cs = Output::new(p.PIN_25, Level::High);
+    let mut pio = Pio::new(p.PIO0, Irqs);
+    let spi = PioSpi::new(
+        &mut pio.common,
+        pio.sm0,
+        DEFAULT_CLOCK_DIVIDER,
+        pio.irq0,
+        cs,
+        p.PIN_24,
+        p.PIN_29,
+        p.DMA_CH0,
+    );
+
+    static STATE: StaticCell<cyw43::State> = StaticCell::new();
+    let state = STATE.init(cyw43::State::new());
+    let (_net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw).await;
+    unwrap!(spawner.spawn(cyw43_task(runner)));
+
+    control.init(clm).await;
+    control
+        .set_power_management(cyw43::PowerManagementMode::PowerSave)
+        .await;
+    unwrap!(spawner.spawn(blinker(led_pin, control)));
+
+    // Spawn the tone generator task
+    unwrap!(spawner.spawn(tone_generator(tone_pin)));
 }
