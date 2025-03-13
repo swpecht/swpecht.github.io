@@ -23,6 +23,7 @@ use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
 mod bluetooth_app;
+mod fmt;
 
 // Program metadata for `picotool info`.
 // This isn't needed, but it's recommended to have these minimal entries.
@@ -111,73 +112,6 @@ async fn play_tone(pin: &mut Output<'_>, frequency: u32, duration: Duration) {
     // Ensure pin is low after playing
     pin.set_low();
 }
-
-// Define message buffer size (in bytes)
-const MESSAGE_BUFFER_SIZE: usize = 128;
-
-// Message structure using heapless to work in no_std environment
-struct BluetoothMessage {
-    buffer: heapless::String<MESSAGE_BUFFER_SIZE>,
-}
-
-impl BluetoothMessage {
-    fn new() -> Self {
-        Self {
-            buffer: heapless::String::new(),
-        }
-    }
-
-    fn clear(&mut self) {
-        self.buffer.clear();
-    }
-
-    fn set(&mut self, msg: &str) -> Result<(), ()> {
-        self.clear();
-        self.buffer.push_str(msg).map_err(|_| ())
-    }
-
-    fn append_str(&mut self, msg: &str) -> Result<(), ()> {
-        self.buffer.push_str(msg).map_err(|_| ())
-    }
-}
-
-// Helper struct for Bluetooth messages
-struct BtMessage {
-    buffer: heapless::String<128>,
-}
-
-impl BtMessage {
-    fn new() -> Self {
-        Self {
-            buffer: heapless::String::new(),
-        }
-    }
-
-    fn set(&mut self, message: &str) {
-        self.buffer.clear();
-        let _ = self.buffer.push_str(message);
-    }
-}
-
-// Bluetooth functionality placeholder
-// In a future update, we'll implement full Bluetooth support
-// For now, we'll leave this commented out as it requires more setup
-
-/*
-// Global shared data for communicating between tasks
-static TONE_ACTIVE: StaticCell<embassy_sync::mutex::Mutex<embassy_sync::blocking_mutex::raw::NoopRawMutex, bool>> = StaticCell::new();
-
-// Bluetooth task
-#[embassy_executor::task]
-async fn bluetooth_task() {
-    info!("Bluetooth placeholder - will be implemented in future update");
-
-    loop {
-        // Just a placeholder for now
-        Timer::after(Duration::from_millis(1000)).await;
-    }
-}
-*/
 
 #[embassy_executor::task]
 async fn tone_detector(mut adc: Adc<'static, Async>, mut adc_pin: Channel<'static>) {
@@ -317,7 +251,4 @@ async fn main(spawner: Spawner) {
 
     let controller: ExternalController<_, 10> = ExternalController::new(bt_device);
     bluetooth_app::run::<_, 128>(controller).await;
-
-    // TODO: Add Bluetooth support in future update
-    // unwrap!(spawner.spawn(bluetooth_task()));
 }
