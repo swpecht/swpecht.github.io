@@ -15,15 +15,19 @@ use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::{Level, Output, Pull};
 use embassy_rp::peripherals::{DMA_CH0, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
+use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
+use embassy_sync::signal::Signal;
 use embassy_time::Instant;
 // We'll use a simple GPIO pin for tone generation instead of PWM
 use embassy_time::{Duration, Timer};
+use globals::SHARED;
 use static_cell::StaticCell;
 // We don't need these imports anymore
 use {defmt_rtt as _, panic_probe as _};
 
 mod bluetooth_app;
 mod fmt;
+mod globals;
 
 // Program metadata for `picotool info`.
 // This isn't needed, but it's recommended to have these minimal entries.
@@ -61,11 +65,13 @@ async fn blinker(mut led_pin: Output<'static>, mut control: Control<'static>) {
         info!("leds on!");
         control.gpio_set(0, true).await;
         led_pin.set_high();
+        globals::SHARED.signal(1);
         Timer::after(delay).await;
 
         info!("leds off!");
         control.gpio_set(0, false).await;
         led_pin.set_low();
+        globals::SHARED.signal(0);
         Timer::after(delay).await;
     }
 }
@@ -249,6 +255,7 @@ async fn main(spawner: Spawner) {
     unwrap!(spawner.spawn(tone_generator(tone_pin)));
     unwrap!(spawner.spawn(tone_detector(adc, adc_pin)));
 
+    // Spawn bluetooth task
     let controller: ExternalController<_, 10> = ExternalController::new(bt_device);
     bluetooth_app::run::<_, 128>(controller).await;
 }

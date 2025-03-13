@@ -1,8 +1,11 @@
 use defmt::*;
 use embassy_futures::join::join;
 use embassy_futures::select::select;
+use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, signal::Signal};
 use embassy_time::Timer;
 use trouble_host::prelude::*;
+
+use crate::globals::SHARED;
 
 // We don't need these imports anymore
 use {defmt_rtt as _, panic_probe as _};
@@ -189,22 +192,23 @@ async fn custom_task<C: Controller>(
     conn: &GattConnection<'_, '_>,
     stack: &Stack<'_, C>,
 ) {
-    let mut tick: u8 = 0;
     let level = server.battery_service.level;
     loop {
-        tick = tick.wrapping_add(1);
-        info!("[custom_task] notifying connection of tick {}", tick);
-        if level.notify(conn, &tick).await.is_err() {
+        info!("waiting on new signal...");
+        let new_signal = SHARED.wait().await;
+
+        info!("[custom_task] notifying connection of tick {}", new_signal);
+        if level.notify(conn, &new_signal).await.is_err() {
             info!("[custom_task] error notifying connection");
             break;
         };
-        // read RSSI (Received Signal Strength Indicator) of the connection.
-        if let Ok(rssi) = conn.raw().rssi(stack).await {
-            info!("[custom_task] RSSI: {:?}", rssi);
-        } else {
-            info!("[custom_task] error getting RSSI");
-            break;
-        };
-        Timer::after_secs(2).await;
+        // // read RSSI (Received Signal Strength Indicator) of the connection.
+        // if let Ok(rssi) = conn.raw().rssi(stack).await {
+        //     info!("[custom_task] RSSI: {:?}", rssi);
+        // } else {
+        //     info!("[custom_task] error getting RSSI");
+        //     break;
+        // };
+        // Timer::after_secs(2).await;
     }
 }
