@@ -15,12 +15,9 @@ use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::{Level, Output, Pull};
 use embassy_rp::peripherals::{DMA_CH0, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
-use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
-use embassy_sync::signal::Signal;
 use embassy_time::Instant;
 // We'll use a simple GPIO pin for tone generation instead of PWM
 use embassy_time::{Duration, Timer};
-use globals::SHARED;
 use static_cell::StaticCell;
 // We don't need these imports anymore
 use {defmt_rtt as _, panic_probe as _};

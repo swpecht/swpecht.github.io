@@ -1,8 +1,6 @@
 use defmt::*;
 use embassy_futures::join::join;
 use embassy_futures::select::select;
-use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, signal::Signal};
-use embassy_time::Timer;
 use trouble_host::prelude::*;
 
 use crate::globals::SHARED;
