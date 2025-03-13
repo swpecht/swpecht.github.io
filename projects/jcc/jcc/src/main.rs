@@ -5,6 +5,7 @@
 #![no_std]
 #![no_main]
 
+use bt_hci::controller::ExternalController;
 use cyw43::Control;
 use cyw43_pio::{PioSpi, DEFAULT_CLOCK_DIVIDER};
 use defmt::*;
@@ -20,6 +21,8 @@ use embassy_time::{Duration, Timer};
 use static_cell::StaticCell;
 // We don't need these imports anymore
 use {defmt_rtt as _, panic_probe as _};
+
+mod bluetooth_app;
 
 // Program metadata for `picotool info`.
 // This isn't needed, but it's recommended to have these minimal entries.
@@ -273,7 +276,7 @@ async fn main(spawner: Spawner) {
     let fw = unsafe { core::slice::from_raw_parts(0x10100000 as *const u8, 230321) };
     let clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 4752) };
     // BT firmware will be used in future update
-    let _btfw = unsafe { core::slice::from_raw_parts(0x10180000 as *const u8, 245760) };
+    let btfw = unsafe { core::slice::from_raw_parts(0x10180000 as *const u8, 245760) };
 
     // Initialize CYW43 WiFi/BT chip
     let pwr = Output::new(p.PIN_23, Level::Low);
@@ -294,7 +297,9 @@ async fn main(spawner: Spawner) {
     let state = STATE.init(cyw43::State::new());
 
     // Create WiFi device - Bluetooth to be added in future update
-    let (_net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw).await;
+    // let (_net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw).await;
+    let (_net_device, bt_device, mut control, runner) =
+        cyw43::new_with_bluetooth(state, pwr, spi, fw, btfw).await;
 
     // Spawn the cyw43 task
     unwrap!(spawner.spawn(cyw43_task(runner)));
@@ -309,6 +314,9 @@ async fn main(spawner: Spawner) {
     unwrap!(spawner.spawn(blinker(led_pin, control)));
     unwrap!(spawner.spawn(tone_generator(tone_pin)));
     unwrap!(spawner.spawn(tone_detector(adc, adc_pin)));
+
+    let controller: ExternalController<_, 10> = ExternalController::new(bt_device);
+    bluetooth_app::run::<_, 128>(controller).await;
 
     // TODO: Add Bluetooth support in future update
     // unwrap!(spawner.spawn(bluetooth_task()));
