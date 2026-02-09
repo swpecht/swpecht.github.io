@@ -11,7 +11,7 @@ pub mod iterator;
 pub mod pool;
 pub mod resample;
 
-use rand::{rngs::StdRng, seq::SliceRandom};
+use rand::{rngs::StdRng, seq::IndexedRandom};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::istate::{IStateKey, IsomorphicHash};
@@ -125,7 +125,7 @@ macro_rules! actions {
 #[cfg(test)]
 mod tests {
     use itertools::Itertools;
-    use rand::{seq::SliceRandom, thread_rng};
+    use rand::{seq::IndexedRandom, rng};
 
     use crate::{
         gamestates::{
@@ -146,7 +146,7 @@ mod tests {
     /// Helper function to ensure games always return actions in a sorted order.
     /// This is necessary to ensure agents are deterministic
     fn _test_actions_sorted<G: GameState>(game: Game<G>) {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let mut actions = Vec::new();
         for _ in 0..100 {
             let mut gs = (game.new)();

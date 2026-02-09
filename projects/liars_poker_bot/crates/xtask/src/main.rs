@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use anyhow::Ok;
-use clap::{command, Parser, Subcommand};
+use clap::{Parser, Subcommand};
 use itertools::Itertools;
 use notify::{RecursiveMode, Watcher};
 

@@ -1,4 +1,4 @@
-use rand::{seq::SliceRandom, thread_rng};
+use rand::{seq::IndexedRandom, rng};
 
 use crate::{
     gamestates::euchre::{actions::EAction, EPhase, Euchre},
@@ -15,7 +15,7 @@ pub fn generate_face_up_deals(face_up: Card) -> EuchreGameState {
         gs.legal_actions(&mut actions);
         actions.retain(|&a| EAction::from(a).card() != face_up);
         let a = actions
-            .choose(&mut thread_rng())
+            .choose(&mut rng())
             .expect("error dealing cards");
         gs.apply_action(*a);
         actions.clear();

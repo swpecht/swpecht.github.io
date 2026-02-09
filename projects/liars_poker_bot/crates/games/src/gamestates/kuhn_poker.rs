@@ -320,7 +320,7 @@ mod tests {
         gamestates::kuhn_poker::{KPAction, KuhnPoker},
         GameState,
     };
-    use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
+    use rand::{rngs::StdRng, seq::IndexedRandom, SeedableRng};
 
     #[test]
     fn kuhn_poker_test_bb() {

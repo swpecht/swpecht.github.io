@@ -198,7 +198,7 @@ mod tests {
 
     use super::*;
     use dashmap::DashMap;
-    use rand::{rngs::StdRng, Rng, SeedableRng};
+    use rand::{rngs::StdRng, RngExt, SeedableRng};
 
     #[test]
     fn test_array_tree_basic() {
@@ -247,7 +247,7 @@ mod tests {
 
         let mut rng: StdRng = SeedableRng::seed_from_u64(42);
         (0..100).for_each(|x| {
-            let key = [Action(rng.gen_range(0..32))];
+            let key = [Action(rng.random_range(0..32))];
 
             d.insert(key, x + 1);
             t.insert(&key, x + 1);

@@ -7,13 +7,13 @@ edition = "2021"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
-rand = "0.8"
+rand = "0.10"
 log = "0.4"
-itertools = "0.11"
+itertools = "0.14"
 anyhow = "1.0"
 dyn-clone = "1.0"
 serde-big-array = "0.5"
 num-traits = "0.2"
 num-derive = "0.4"
-tinyvec = {version="1.6"}
-bytemuck = "1.14"
+tinyvec = {version="1.10"}
+bytemuck = "1.25"

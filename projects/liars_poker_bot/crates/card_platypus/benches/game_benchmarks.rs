@@ -4,7 +4,7 @@ use games::{
     gamestates::euchre::{Euchre, EuchreGameState},
     GameState,
 };
-use rand::{seq::SliceRandom, thread_rng};
+use rand::{seq::IndexedRandom, rng};
 
 /// Attempts to mimic the call structure of CFR without actually doing it
 fn traverse_game_tree(n: usize) {
@@ -13,7 +13,7 @@ fn traverse_game_tree(n: usize) {
 
     while gs.is_chance_node() {
         let actions = actions!(gs);
-        let a = *actions.choose(&mut thread_rng()).unwrap();
+        let a = *actions.choose(&mut rng()).unwrap();
         gs.apply_action(a);
     }
 

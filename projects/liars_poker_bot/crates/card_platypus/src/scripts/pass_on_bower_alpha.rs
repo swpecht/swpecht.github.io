@@ -20,27 +20,24 @@ use super::pass_on_bower::PassOnBowerIterator;
 pub fn benchmark_pass_on_bower(num_games: usize) {
     let mut agents: Vec<(&str, &mut dyn Agent<EuchreGameState>)> = Vec::new();
 
-    let policy_rng: StdRng = SeedableRng::seed_from_u64(56);
-    let agent_rng: StdRng = SeedableRng::seed_from_u64(57);
-
     let ra: &mut dyn Agent<EuchreGameState> = &mut RandomAgent::new();
     agents.push(("Random agent", ra));
 
     let a = &mut PolicyAgent::new(
-        PIMCTSBot::new(10, RandomRolloutEvaluator::new(10), policy_rng.clone()),
-        agent_rng.clone(),
+        PIMCTSBot::new(10, RandomRolloutEvaluator::new(10), StdRng::seed_from_u64(56)),
+        StdRng::seed_from_u64(57),
     );
     agents.push(("pimcts, 10 worlds, random", a));
 
     let a = &mut PolicyAgent::new(
-        PIMCTSBot::new(10, OpenHandSolver::new_euchre(), policy_rng.clone()),
-        agent_rng.clone(),
+        PIMCTSBot::new(10, OpenHandSolver::new_euchre(), StdRng::seed_from_u64(56)),
+        StdRng::seed_from_u64(57),
     );
     agents.push(("pimcts, 10 worlds, open hand", a));
 
     let a = &mut PolicyAgent::new(
-        PIMCTSBot::new(20, OpenHandSolver::new_euchre(), policy_rng.clone()),
-        agent_rng.clone(),
+        PIMCTSBot::new(20, OpenHandSolver::new_euchre(), StdRng::seed_from_u64(56)),
+        StdRng::seed_from_u64(57),
     );
     agents.push(("pimcts, 100 worlds, open hand", a));
 

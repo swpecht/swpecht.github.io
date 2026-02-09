@@ -9,7 +9,7 @@ use games::{
     gamestates::{bluff::Bluff, euchre::Euchre, kuhn_poker::KuhnPoker},
     get_games, GameState,
 };
-use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
+use rand::{rngs::StdRng, seq::IndexedRandom, rng, SeedableRng};
 use rayon::prelude::*;
 
 /// Confirm that the open hand solver with and without the cache gives the same results.
@@ -32,7 +32,7 @@ fn test_alg_open_hand_solver_euchre() {
             let no_c = no_cache.clone().evaluate_player(&gs, gs.cur_player());
             assert_eq!(c, no_c, "Different evaluations: {}: {}", i, gs);
             gs.legal_actions(&mut actions);
-            let a = actions.choose(&mut thread_rng()).unwrap();
+            let a = actions.choose(&mut rand::rng()).unwrap();
             gs.apply_action(*a);
         }
     });

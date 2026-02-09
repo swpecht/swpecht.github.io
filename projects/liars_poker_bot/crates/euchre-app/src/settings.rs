@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use log::debug;
-use rand::{thread_rng, Rng};
+use rand::Rng;
 
 const PLAYER_ID_KEY: &str = "PLAYER_ID";
 
@@ -17,7 +17,7 @@ pub fn register_settings<T>(cx: Scope<T>) {
         Ok(Some(Ok(x))) => x,
         _ => {
             debug!("failed to read previously saved id, generating a new one");
-            let id: usize = thread_rng().gen();
+            let id: usize = rand::rng().next_u64() as usize;
             local_storage
                 .set_item(PLAYER_ID_KEY, id.to_string().as_str())
                 .expect("error storing player id");

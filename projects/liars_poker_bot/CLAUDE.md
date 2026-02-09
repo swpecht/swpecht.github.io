@@ -6,7 +6,7 @@ Rust workspace for game-playing AI, focused on Euchre. Uses Counterfactual Regre
 
 ```bash
 cargo build                          # Build all crates
-cargo test                           # Run all tests
+cargo test --release                 # Run all tests (always use --release)
 cargo bench -p card_platypus         # Run benchmarks
 cargo build --profile wasm           # Build WASM frontend
 cargo xtask <subcommand>             # Build automation (deploy, serve, etc.)
@@ -27,8 +27,7 @@ crates/
   euchre_server/          # Actix-web backend with WebSocket support
   euchre-app/             # Dioxus WASM frontend (Tailwind CSS)
   client-server-messages/ # Shared serde message types
-  ml/                     # ML experiments (Burn framework)
-  xtask/                  # Build/deploy automation
+xtask/                  # Build/deploy automation
 ```
 
 ## Architecture

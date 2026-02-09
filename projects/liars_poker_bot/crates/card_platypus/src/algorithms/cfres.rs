@@ -22,7 +22,7 @@ use games::{
     Action, GameState, Player,
 };
 use itertools::Itertools;
-use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, Rng, SeedableRng};
+use rand::{rngs::StdRng, seq::IndexedRandom, rng, RngExt, SeedableRng};
 use rayon::prelude::*;
 
 use serde::{Deserialize, Serialize};
@@ -64,8 +64,10 @@ enum AverageType {
     Simple,
 }
 
-/// Number of actions we can store in a given "slot" of the database
-const MAX_ACTIONS_PER_SLOT: usize = 6;
+/// Number of actions we can store in a given "slot" of the database.
+/// Must be large enough for the game with the most actions at a single info state.
+/// Euchre needs 6, Bluff(1,1) needs up to 11 (10 bids + call).
+const MAX_ACTIONS_PER_SLOT: usize = 12;
 
 #[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct InfoState {
@@ -78,9 +80,6 @@ pub struct InfoState {
 unsafe impl Pod for InfoState {}
 unsafe impl Zeroable for InfoState {}
 
-/// TODO: Remove the generics, instead make it a run-time thing where we can set how many slots we need for games that have more than 6
-/// possible actions in a round -- lose some efficieny, but it should work well for the games we care about
-/// Or we can just use a different code path for bluff
 impl InfoState {
     pub fn new(normalized_actions: Vec<NormalizedAction>) -> Self {
         let n = normalized_actions.len();
@@ -167,7 +166,7 @@ impl CFRES<EuchreGameState> {
         normalizer: Box<dyn IStateNormalizer<EuchreGameState>>,
         path: Option<&Path>,
     ) -> Self {
-        let pimcts_seed = rng.gen();
+        let pimcts_seed = rng.random();
 
         Self {
             vector_pool: Pool::new(Vec::new),
@@ -176,7 +175,6 @@ impl CFRES<EuchreGameState> {
             infostates: Arc::new(Mutex::new(
                 NodeStore::new_euchre(path, max_cards_played).unwrap(),
             )),
-            // is_max_depth: post_discard_phase,
             depth_checker: Box::new(EuchreDepthChecker { max_cards_played }),
             play_bot: PIMCTSBot::new(
                 50,
@@ -197,7 +195,7 @@ impl CFRES<EuchreGameState> {
 impl CFRES<KPGameState> {
     pub fn new_kp() -> Self {
         let mut rng: StdRng = SeedableRng::seed_from_u64(43);
-        let pimcts_seed = rng.gen();
+        let pimcts_seed = rng.random();
         Self {
             vector_pool: Pool::new(Vec::new),
             game_generator: KuhnPoker::new_state,
@@ -216,11 +214,10 @@ impl CFRES<KPGameState> {
     }
 }
 
-/// Placeholder lenght for bluff for now
 impl CFRES<BluffGameState> {
     pub fn new_bluff_11() -> Self {
         let mut rng: StdRng = SeedableRng::seed_from_u64(43);
-        let pimcts_seed = rng.gen();
+        let pimcts_seed = rng.random();
         Self {
             vector_pool: Pool::new(Vec::new),
             game_generator: || Bluff::new_state(1, 1),
@@ -298,7 +295,7 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
             let mut actions = self.vector_pool.detach();
             gs.legal_actions(&mut actions);
             let outcome = *actions
-                .choose(&mut thread_rng())
+                .choose(&mut rng())
                 .expect("error choosing a random action for chance node");
             actions.clear();
             self.vector_pool.attach(actions);
@@ -363,7 +360,7 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
             // sample at opponent node
             let a = policy
                 .to_vec()
-                .choose_weighted(&mut thread_rng(), |a| a.1)
+                .choose_weighted(&mut rng(), |a| a.1)
                 .expect("error choosing weighted action")
                 .0;
             gs.apply_action(a);
@@ -453,7 +450,7 @@ impl<G> CFRES<G> {
 ///
 /// Returns:
 ///   probability of taking each action
-fn regret_matching(regrets: &Vec<(Action, Weight)>) -> ActionVec<Weight> {
+fn regret_matching(regrets: &[(Action, Weight)]) -> ActionVec<Weight> {
     let sum_pos_regrets: Weight = regrets.iter().map(|(_, b)| b.max(0.0)).sum();
 
     let actions = regrets.iter().map(|(a, _)| *a).collect_vec();
@@ -565,7 +562,7 @@ impl<G: GameState + ResampleFromInfoState + Send> Agent<G> for CFRES<G> {
     fn step(&mut self, s: &G) -> Action {
         let action_weights = self.action_probabilities(s).to_vec();
         action_weights
-            .choose_weighted(&mut thread_rng(), |item| item.1)
+            .choose_weighted(&mut rng(), |item| item.1)
             .unwrap()
             .0
     }

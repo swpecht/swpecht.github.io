@@ -20,7 +20,7 @@ use games::{
 use indicatif::{MultiProgress, ProgressBar};
 use itertools::Itertools;
 use log::info;
-use rand::{seq::SliceRandom, thread_rng, SeedableRng};
+use rand::{seq::IndexedRandom, rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 
 use super::benchmark::get_rng;
@@ -105,7 +105,7 @@ pub fn all_deal_cfr(args: PassOnBowerCFRArgs) {
             let mut gs = Euchre::new_state();
             while gs.is_chance_node() {
                 let actions = actions!(gs);
-                let a = actions.choose(&mut thread_rng()).unwrap();
+                let a = actions.choose(&mut rng()).unwrap();
                 gs.apply_action(*a);
             }
             gs
@@ -288,7 +288,7 @@ pub fn analyze_istate(num_games: usize) {
     let istate = EuchreGameState::from("9sTsQsKsAs|9cTcKcAcTd|JdQdKdAd9h|JcQcJhAh9d|Js");
     let mut rng = get_rng();
     let mut agent = CFRES::new_euchre(
-        rng.clone(),
+        get_rng(),
         0,
         Some(Path::new("/var/lib/card_platypus/infostate.baseline")),
     );

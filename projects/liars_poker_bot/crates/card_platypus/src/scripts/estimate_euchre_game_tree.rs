@@ -1,6 +1,6 @@
 use card_platypus::agents::{Agent, RandomAgent};
 use games::{actions, gamestates::euchre::Euchre, GameState};
-use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
+use rand::{rngs::StdRng, seq::IndexedRandom, SeedableRng};
 
 use crate::{Args, GameType};
 

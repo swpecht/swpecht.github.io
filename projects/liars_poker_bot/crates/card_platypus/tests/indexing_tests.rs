@@ -3,7 +3,7 @@ use games::{
     gamestates::euchre::{actions::EAction, ismorphic::normalize_euchre_istate, Euchre},
     translate_istate, GameState,
 };
-use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
+use rand::{rngs::StdRng, seq::IndexedRandom, SeedableRng};
 
 #[test]
 fn test_euchre_indexing() {

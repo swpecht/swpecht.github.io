@@ -20,7 +20,7 @@ use games::{
 };
 use itertools::Itertools;
 use memmap2::MmapMut;
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::{rngs::StdRng, RngExt, SeedableRng};
 use rayon::prelude::*;
 
 pub fn main() {
@@ -219,19 +219,19 @@ impl Iterator for DataGenerator {
         }
 
         // Minimum key length is 6 to reflect the 6 dealt cards in euchre
-        let key_length = self.rng.gen_range(6..20);
+        let key_length = self.rng.random_range(6..20);
         let mut key = IStateKey::default();
-        (0..key_length).for_each(|_| key.push(Action(self.rng.gen_range(0..32))));
+        (0..key_length).for_each(|_| key.push(Action(self.rng.random_range(0..32))));
 
         let data = InfoState {
             actions: ActionList::new(
                 &(0..5)
-                    .map(|_| NormalizedAction::new(Action(self.rng.gen_range(0..32))))
+                    .map(|_| NormalizedAction::new(Action(self.rng.random_range(0..32))))
                     .collect_vec(),
             ),
-            regrets: (0..5).map(|_| self.rng.gen()).collect(),
-            avg_strategy: (0..5).map(|_| self.rng.gen()).collect(),
-            last_iteration: self.rng.gen(),
+            regrets: (0..5).map(|_| self.rng.random()).collect(),
+            avg_strategy: (0..5).map(|_| self.rng.random()).collect(),
+            last_iteration: self.rng.random::<u64>() as usize,
         };
 
         self.count += 1;

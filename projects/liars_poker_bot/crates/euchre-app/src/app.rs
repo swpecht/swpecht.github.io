@@ -1,5 +1,4 @@
 use client_server_messages::{NewGameRequest, NewGameResponse};
-// import the prelude to get access to the `rsx!` macro and the `Scope` and `Element` types
 use dioxus::prelude::*;
 use dioxus_router::prelude::*;
 
@@ -32,10 +31,6 @@ pub fn App(cx: Scope) -> Element {
     hide_element("loading");
 
     register_settings(cx);
-
-    // set_up_ws(&cx);
-    // let send_task = use_coroutine_handle::<WsSendMessage>(cx).expect("error getting ws task");
-    // send_msg(send_task, "test message".to_string());
 
     render! { Router::<Route> {} }
 }

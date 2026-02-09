@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use games::{actions, resample::ResampleFromInfoState, Action, GameState, Player};
 use itertools::Itertools;
-use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
+use rand::{rngs::StdRng, seq::IndexedRandom, SeedableRng};
 
 use crate::{
     agents::{Agent, Seedable},
@@ -13,13 +13,24 @@ use rayon::prelude::*;
 
 use super::ismcts::Evaluator;
 
-#[derive(Clone)]
 pub struct PIMCTSBot<G, E> {
     n_rollouts: usize,
     rng: StdRng,
     solver: E,
     eval_count: usize,
     _phantom: PhantomData<G>,
+}
+
+impl<G, E: Clone> Clone for PIMCTSBot<G, E> {
+    fn clone(&self) -> Self {
+        Self {
+            n_rollouts: self.n_rollouts,
+            rng: StdRng::from_rng(&mut rand::rng()),
+            solver: self.solver.clone(),
+            eval_count: self.eval_count,
+            _phantom: PhantomData,
+        }
+    }
 }
 
 impl<G: GameState + ResampleFromInfoState + Send, E: Evaluator<G> + Clone + Sync> PIMCTSBot<G, E> {

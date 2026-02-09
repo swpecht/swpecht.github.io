@@ -89,7 +89,7 @@ pub fn calculate_open_hand_solver_convergence(_args: Args) {
     let rollouts: Vec<usize> = vec![1, 10, 100, 1000, 10000];
     let mut evaluators = rollouts
         .iter()
-        .map(|x| PIMCTSBot::new(*x, OpenHandSolver::new_euchre(), rng.clone()))
+        .map(|x| PIMCTSBot::new(*x, OpenHandSolver::new_euchre(), StdRng::from_rng(&mut rng)))
         .collect_vec();
     info!("rollouts: {:?}", rollouts);
 

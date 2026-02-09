@@ -2,8 +2,8 @@ use games::{Action, GameState};
 
 use rand::{
     rngs::{StdRng, ThreadRng},
-    seq::SliceRandom,
-    thread_rng,
+    seq::IndexedRandom,
+    rng,
 };
 
 use crate::policy::Policy;
@@ -27,7 +27,7 @@ impl Default for RandomAgent {
 
 impl RandomAgent {
     pub fn new() -> Self {
-        Self { rng: thread_rng() }
+        Self { rng: rng() }
     }
 }
 

@@ -1,15 +1,11 @@
 use std::fs::OpenOptions;
-use std::io::Read;
 use std::mem;
 use std::path::Path;
 
 use card_platypus::algorithms::cfres::{self, InfoState};
 
-use card_platypus::database::indexer::Indexer;
 use card_platypus::database::NodeStore;
-use clap::{command, Parser, Subcommand, ValueEnum};
-
-use dashmap::iter;
+use clap::{Parser, Subcommand, ValueEnum};
 use games::gamestates::bluff::BluffGameState;
 use games::gamestates::euchre::actions::EAction;
 use games::gamestates::euchre::iterator::EuchreIsomorphicIStateIterator;
@@ -60,7 +56,6 @@ enum Commands {
     PassOnBowerCFRAnalyzeIstate { num_games: usize },
 }
 
-/// Simple program to greet a person
 #[derive(Parser, Debug, Clone)]
 #[clap(author, version, about, long_about = None)]
 pub struct Args {
@@ -73,8 +68,7 @@ pub struct Args {
     #[clap(short)]
     file: Option<String>,
 
-    /// Allow module to log
-    #[structopt(long = "module")]
+    #[clap(long = "module")]
     modules: Vec<String>,
 
     #[command(subcommand)]
@@ -132,7 +126,6 @@ fn main() {
         Commands::Analyze => run_analyze(args),
         Commands::Play => run_play(args),
         Commands::Scratch => run_scratch(args),
-        // Mode::PassOnBowerOpenHand => calculate_open_hand_solver_convergence(args),
         Commands::PassOnBowerOpenHand => open_hand_score_pass_on_bower(args),
         Commands::Exploitability => calcualte_agent_exploitability(args),
         Commands::PassOnBowerAlpha { num_games } => benchmark_pass_on_bower(num_games),
@@ -153,19 +146,6 @@ fn run_scratch(_args: Args) {
     println!("cfres node {}", mem::size_of::<InfoState>());
     println!("istate key {}", mem::size_of::<IStateKey>());
 
-    // let a = cfres::CFRES::new_euchre(
-    //     scripts::benchmark::get_rng(),
-    //     3,
-    //     Some(Path::new(
-    //         "/var/lib/card_platypus/infostate.three_card_played_f32/",
-    //     )),
-    // );
-    // a.save().unwrap();
-    // println!(
-    //     "index size: {}, infostates: {}",
-    //     a.indexer_size(),
-    //     a.num_info_states()
-    // );
     let database = NodeStore::new_euchre(
         Some(Path::new(
             "/var/lib/card_platypus/infostate.three_card_played_f32/",
@@ -191,11 +171,6 @@ fn run_scratch(_args: Args) {
             break;
         }
     }
-
-    // for i in 0..5 {
-    //     let n = EuchreIsomorphicIStateIterator::with_face_up(i, &[EAction::NS]).count();
-    //     println!("istates {}: {}", i, n);
-    // }
 }
 
 fn run_analyze(args: Args) {
@@ -210,49 +185,6 @@ fn run_analyze(args: Args) {
 
 fn run(_args: Args) {
     todo!();
-    // let _storage = match args.file.unwrap_or("".to_string()).as_str() {
-    //     "" => Storage::Temp,
-    //     _ => panic!("need to add support to create named files"), // Storage::Named(args.file),
-    // };
-
-    // println!("running for: {:?} with {:?}", args.game, args.alg);
-    // match args.game {
-    //     GameType::KuhnPoker => {
-    //         train_cfr_agent(CFRAgent::new(
-    //             KuhnPoker::game(),
-    //             1,
-    //             MemoryNodeStore::default(),
-    //             args.alg,
-    //         ));
-    //     }
-    //     GameType::Euchre => {
-    //         CFRAgent::new(Euchre::game(), 1, MemoryNodeStore::default(), args.alg).train(10);
-    //     }
-    //     GameType::Bluff11 => {
-    //         train_cfr_agent(CFRAgent::new(
-    //             Bluff::game(1, 1),
-    //             1,
-    //             MemoryNodeStore::default(),
-    //             args.alg,
-    //         ));
-    //     }
-    //     GameType::Bluff21 => {
-    //         train_cfr_agent(CFRAgent::new(
-    //             Bluff::game(2, 1),
-    //             1,
-    //             MemoryNodeStore::default(),
-    //             args.alg,
-    //         ));
-    //     }
-    //     GameType::Bluff22 => {
-    //         train_cfr_agent(CFRAgent::new(
-    //             Bluff::game(2, 2),
-    //             1,
-    //             MemoryNodeStore::default(),
-    //             args.alg,
-    //         ));
-    //     }
-    // };
 }
 
 fn run_play(_args: Args) {

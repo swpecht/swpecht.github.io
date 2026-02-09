@@ -1031,10 +1031,10 @@ pub(super) fn suit_mask(suit: Suit, trump: Option<Suit>) -> Hand {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashSet, os::unix::thread, vec};
+    use std::{collections::HashSet, vec};
 
     use itertools::Itertools;
-    use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, SeedableRng};
+    use rand::{rngs::StdRng, seq::IndexedRandom, rng, SeedableRng};
 
     use crate::{
         actions,
@@ -1266,14 +1266,14 @@ mod tests {
             while s.is_chance_node() {
                 actions.clear();
                 s.legal_actions(&mut actions);
-                let a = actions.choose(&mut thread_rng()).unwrap();
+                let a = actions.choose(&mut rng()).unwrap();
                 s.apply_action(*a);
             }
 
             istates.insert(s.istate_string(s.cur_player));
             while !s.is_terminal() {
                 s.legal_actions(&mut actions);
-                let a = actions.choose(&mut thread_rng()).unwrap();
+                let a = actions.choose(&mut rng()).unwrap();
                 s.apply_action(*a);
                 let istate = s.istate_string(s.cur_player);
                 assert!(!istates.contains(&istate));
@@ -1284,7 +1284,7 @@ mod tests {
 
     #[test]
     fn euchre_test_resample_from_istate() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let mut actions = Vec::new();
 
         for _ in 0..100 {
@@ -1316,11 +1316,11 @@ mod tests {
             // this is a hard case where the dealer discards a card and doesn't follow suit because of it
             let gs =
         EuchreGameState::from("AcTsThTdJd|QcJs9hKh9d|Kc9sAsQdAd|9cTcJcQsJh|Ks|PPPT|Tc|Td9dAdJh|QdJcJdKh|QsTsJs9s|9hAs9cTh|KcKs");
-            gs.resample_from_istate(2, &mut thread_rng());
+            gs.resample_from_istate(2, &mut rand::rng());
 
             let gs =
         EuchreGameState::from("9cTcAc9s9d|Jc9hJhTdKd|TsQsKsJdQd|QcKcAsQhAd|Js|PPPT|Qh|9dKdJdAd|QcAcJcQd|9hTsJs9c|As9sJhQs|KcTc");
-            gs.resample_from_istate(2, &mut thread_rng());
+            gs.resample_from_istate(2, &mut rand::rng());
         }
     }
 
@@ -1346,12 +1346,11 @@ mod tests {
     #[test]
     fn test_euchre_resample_from_istate_deterministic() {
         let gs = EuchreGameState::from("9cJcQcTsTd|KcKsQhKh9d|TcAcQsAsTh|Js9hAhQdAd|Kd|PT|Js|");
-        let rng: StdRng = SeedableRng::seed_from_u64(42);
-        let sampled = gs.resample_from_istate(gs.cur_player(), &mut rng.clone());
+        let sampled = gs.resample_from_istate(gs.cur_player(), &mut StdRng::seed_from_u64(42));
 
         for _ in 0..100 {
             assert_eq!(
-                gs.resample_from_istate(gs.cur_player(), &mut rng.clone()),
+                gs.resample_from_istate(gs.cur_player(), &mut StdRng::seed_from_u64(42)),
                 sampled
             )
         }

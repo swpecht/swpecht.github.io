@@ -1,13 +1,11 @@
 use dyn_clone::DynClone;
 use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;
-use tinyvec::ArrayVec;
 
 use std::{
     fmt::Debug,
     hash::Hash,
     ops::{Deref, DerefMut},
-    usize,
 };
 
 use crate::Action;

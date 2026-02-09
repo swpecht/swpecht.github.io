@@ -9,7 +9,7 @@ use games::{
     gamestates::euchre::{Euchre, EuchreGameState},
     GameState,
 };
-use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
+use rand::{rngs::StdRng, seq::IndexedRandom, SeedableRng};
 
 pub fn criterion_benchmark(c: &mut Criterion) {
     let mut evaluator = PIMCTSBot::new(

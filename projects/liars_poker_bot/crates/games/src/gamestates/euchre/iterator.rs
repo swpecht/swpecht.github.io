@@ -366,7 +366,7 @@ impl EuchreIState {
 #[cfg(test)]
 mod tests {
 
-    use rand::{seq::IteratorRandom, thread_rng};
+    use rand::{seq::IteratorRandom, rng};
 
     use crate::translate_istate;
 
@@ -376,7 +376,7 @@ mod tests {
     fn test_euchre_istate_iterator() {
         let iterator = EuchreIsomorphicIStateIterator::with_face_up(1, &[EAction::NS]);
 
-        for state in iterator.clone().choose_multiple(&mut thread_rng(), 100) {
+        for state in iterator.clone().choose_multiple(&mut rng(), 100) {
             println!("{:?}", translate_istate!(state, EAction))
         }
 

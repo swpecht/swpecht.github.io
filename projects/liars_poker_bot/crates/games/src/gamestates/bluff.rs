@@ -4,7 +4,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use rand::seq::SliceRandom;
+use rand::seq::IndexedRandom;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -520,7 +520,7 @@ impl Display for BluffGameState {
 mod tests {
     use std::{collections::HashSet, vec};
 
-    use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
+    use rand::{rngs::StdRng, seq::IndexedRandom, SeedableRng};
 
     use crate::{
         actions,

@@ -19,7 +19,7 @@ use games::{
 use indicatif::ProgressBar;
 use itertools::Itertools;
 use log::{debug, info, warn};
-use rand::{rngs::StdRng, thread_rng, SeedableRng};
+use rand::{rngs::StdRng, rng, SeedableRng};
 
 use crate::GameType;
 
@@ -366,5 +366,5 @@ fn get_jack_of_spades_games(n: usize) -> Vec<EuchreGameState> {
 }
 
 pub fn get_rng() -> StdRng {
-    StdRng::from_rng(thread_rng()).unwrap()
+    StdRng::from_rng(&mut rng())
 }

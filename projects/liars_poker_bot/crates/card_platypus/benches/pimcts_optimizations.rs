@@ -11,7 +11,7 @@ use games::{
     gamestates::euchre::{processors::euchre_early_terminate, Euchre, EuchreGameState},
     Action, GameState,
 };
-use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
+use rand::{rngs::StdRng, seq::IndexedRandom, SeedableRng};
 
 pub fn criterion_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("pimcts-optimizations");

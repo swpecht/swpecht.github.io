@@ -26,7 +26,7 @@ use games::{
     Action, GameState,
 };
 use log::{info, set_max_level, LevelFilter};
-use rand::{rngs::StdRng, seq::SliceRandom, thread_rng, Rng, SeedableRng};
+use rand::{rngs::StdRng, seq::IndexedRandom, rng, RngExt, SeedableRng};
 use simplelog::{
     ColorChoice, CombinedLogger, ConfigBuilder, TermLogger, TerminalMode, WriteLogger,
 };
@@ -40,7 +40,7 @@ struct AppState {
 impl Default for AppState {
     fn default() -> Self {
         let bot = CFRES::new_euchre(
-            StdRng::from_rng(thread_rng()).unwrap(),
+            StdRng::from_rng(&mut rng()),
             3,
             Some(Path::new(
                 "/var/lib/card_platypus/infostate.three_card_played",
@@ -79,7 +79,7 @@ async fn api_index(json: Json<NewGameRequest>, data: web::Data<AppState>) -> imp
 
     let mut game_data = GameData::new(gs, json.0.player_id, json.0.min_players);
     // randomize who starts with deal
-    game_data.players.rotate_right(thread_rng().gen_range(0..4));
+    game_data.players.rotate_right(rng().random_range(0..4));
     progress_game(&mut game_data, &data.bot, &game_id);
     data.games.lock().unwrap().insert(game_id, game_data);
 
@@ -393,7 +393,7 @@ fn new_game() -> EuchreGameState {
     let mut actions = Vec::new();
     while gs.is_chance_node() {
         gs.legal_actions(&mut actions);
-        let a = actions.choose(&mut thread_rng()).unwrap();
+        let a = actions.choose(&mut rng()).unwrap();
         gs.apply_action(*a);
     }
 
@@ -421,84 +421,9 @@ async fn handle_euchre_ws(
     req: HttpRequest,
     stream: web::Payload,
 ) -> Result<HttpResponse, actix_web::Error> {
-    // req: web::Json<ActionRequest>,
-    // path: web::Path<String>,
-    // data: web::Data<AppState>,
-
     info!("websocket message received: {:?}", req);
-    let resp = ws::start(EuchreGameWs {}, &req, stream);
-    resp
+    ws::start(EuchreGameWs {}, &req, stream)
 }
 
 #[cfg(test)]
-mod tests {
-    use actix_web::{dev::ServiceResponse, test};
-
-    use serde::de::DeserializeOwned;
-
-    use super::*;
-
-    async fn deserialize_body<T: DeserializeOwned>(resp: ServiceResponse) -> T {
-        let body = test::read_body(resp).await;
-        serde_json::from_str(std::str::from_utf8(body.as_ref()).unwrap()).unwrap()
-    }
-
-    // #[actix_web::test]
-    // async fn test_index_get() {
-    //     let app_state = web::Data::new(AppState::default());
-
-    //     let app = test::init_service(
-    //         App::new()
-    //             .app_data(app_state)
-    //             .service(api_index)
-    //             .service(get_game)
-    //             .service(post_game),
-    //     )
-    //     .await;
-
-    //     let game_request = NewGameRequest { player_id: 42 };
-    //     let req = test::TestRequest::post()
-    //         .uri("/")
-    //         .set_json(game_request)
-    //         .to_request();
-    //     let resp = test::call_service(&app, req).await;
-
-    //     let new_game: NewGameResponse = deserialize_body(resp).await;
-
-    //     let req = test::TestRequest::default()
-    //         .uri(format!("/{}", new_game.id).as_str())
-    //         .to_request();
-    //     let resp = test::call_service(&app, req).await;
-
-    //     assert!(resp.status().is_success());
-
-    //     let game_data: GameData = deserialize_body(resp).await;
-
-    //     // try applying an action
-    //     let gs = EuchreGameState::from(game_data.gs.as_str());
-    //     let action = actions!(gs)[0];
-
-    //     let req = test::TestRequest::post()
-    //         .uri(format!("/{}", new_game.id).as_str())
-    //         .set_json(ActionRequest {
-    //             player_id: 42,
-    //             action: GameAction::TakeAction(action),
-    //         })
-    //         .to_request();
-
-    //     let resp = test::call_service(&app, req).await;
-    //     assert!(resp.status().is_success());
-
-    //     let _game_data: GameData = deserialize_body(resp).await;
-
-    //     // check that get works as well
-    //     let req = test::TestRequest::default()
-    //         .uri(format!("/{}", new_game.id).as_str())
-    //         .to_request();
-
-    //     let resp = test::call_service(&app, req).await;
-    //     assert!(resp.status().is_success());
-
-    //     let _game_data: GameData = deserialize_body(resp).await;
-    // }
-}
+mod tests {}
