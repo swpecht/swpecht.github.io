@@ -2,6 +2,7 @@ use std::{
     fs::OpenOptions,
     io::{Read, Write},
     path::{Path, PathBuf},
+    sync::atomic::{AtomicUsize, Ordering},
 };
 
 use anyhow::{bail, Context};
@@ -26,6 +27,7 @@ pub struct NodeStore {
     indexer: Indexer,
     mmap: MmapMut,
     path: Option<PathBuf>,
+    populated_count: AtomicUsize,
 }
 
 impl NodeStore {
@@ -34,20 +36,25 @@ impl NodeStore {
         let mmap = get_mmap(path, 20_000_000).context("failed to create mmap")?;
 
         let path = path.map(|x| x.to_path_buf());
+        let indexer = load_indexer(path.as_deref()).unwrap_or_else(|x| {
+            warn!("failed to load indexer {}", x);
+            Indexer::euchre(max_cards_played)
+        });
+
+        // Count existing populated entries when loading from disk
+        let populated_count = count_populated(&mmap, &indexer);
+
         Ok(Self {
-            indexer: load_indexer(path.as_deref()).unwrap_or_else(|x| {
-                warn!("failed to load indexer {}", x);
-                Indexer::euchre(max_cards_played)
-            }),
+            indexer,
             mmap,
             path,
+            populated_count: AtomicUsize::new(populated_count),
         })
     }
 
     pub fn new_kp(path: Option<&Path>) -> anyhow::Result<Self> {
-        // let (phf, n) = generate_phf(KuhnPoker::new_state)?;
         if path.is_some() {
-            panic!("serialization not supported for this game type")
+            bail!("serialization not supported for this game type")
         }
 
         let mmap = get_mmap(path, 1_000)?;
@@ -57,12 +64,13 @@ impl NodeStore {
             indexer: Indexer::kuhn_poker(),
             mmap,
             path,
+            populated_count: AtomicUsize::new(0),
         })
     }
 
     pub fn new_bluff_11(path: Option<&Path>) -> anyhow::Result<Self> {
         if path.is_some() {
-            panic!("serialization not supported for this game type")
+            bail!("serialization not supported for this game type")
         }
         let mmap = get_mmap(path, 10_000)?;
 
@@ -71,6 +79,7 @@ impl NodeStore {
             indexer: Indexer::bluff_11(),
             mmap,
             path,
+            populated_count: AtomicUsize::new(0),
         })
     }
 
@@ -115,10 +124,17 @@ impl NodeStore {
             debug!("resized mmap");
         }
 
+        // Track new entries for O(1) len()
+        let was_empty = self.mmap[start..start + BUCKET_SIZE].iter().all(|&x| x == 0);
+
         let value = [*value];
         let data = bytemuck::cast_slice::<InfoState, u8>(&value);
         assert!(data.len() <= BUCKET_SIZE); // if this is false, we're overflowing into another bucket
         self.mmap[start..start + data.len()].copy_from_slice(data);
+
+        if was_empty {
+            self.populated_count.fetch_add(1, Ordering::Relaxed);
+        }
     }
 
     pub fn commit(&mut self) -> anyhow::Result<()> {
@@ -141,15 +157,7 @@ impl NodeStore {
 
     /// Returns the number of populated items in the database. Not the total number of items
     pub fn len(&self) -> usize {
-        let mut items = 0;
-
-        for i in 0..self.indexer.len() {
-            if self.get_index(i).is_some() {
-                items += 1;
-            }
-        }
-
-        items
+        self.populated_count.load(Ordering::Relaxed)
     }
 
     #[must_use]
@@ -176,7 +184,7 @@ fn get_mmap(dir: Option<&Path>, len: usize) -> anyhow::Result<MmapMut> {
 
         // Don't change file size unless it is less than the target size
         let target_size = (len * BUCKET_SIZE) as u64;
-        if file.metadata().unwrap().len() < target_size {
+        if file.metadata().context("failed to read file metadata")?.len() < target_size {
             file.set_len(target_size).context("failed to set length")?;
         }
 
@@ -190,6 +198,21 @@ fn get_mmap(dir: Option<&Path>, len: usize) -> anyhow::Result<MmapMut> {
     // Inform that re-ahead may not be useful
     mmap.advise(memmap2::Advice::Random)?;
     Ok(mmap)
+}
+
+/// Count the number of populated entries in an mmap
+fn count_populated(mmap: &MmapMut, indexer: &Indexer) -> usize {
+    let mut count = 0;
+    for i in 0..indexer.len() {
+        let start = i * BUCKET_SIZE;
+        if start + BUCKET_SIZE <= mmap.len() {
+            let data = &mmap[start..start + BUCKET_SIZE];
+            if !data.iter().all(|&x| x == 0) {
+                count += 1;
+            }
+        }
+    }
+    count
 }
 
 fn load_indexer(path: Option<&Path>) -> anyhow::Result<Indexer> {

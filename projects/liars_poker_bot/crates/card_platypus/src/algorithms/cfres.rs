@@ -189,14 +189,19 @@ impl CFRES<EuchreGameState> {
     }
 }
 
-impl CFRES<KPGameState> {
-    pub fn new_kp() -> Self {
+impl<G: GameState + ResampleFromInfoState> CFRES<G> {
+    /// Creates a CFRES instance for simple (non-Euchre) games that don't need
+    /// depth checking or state normalization.
+    fn new_simple(
+        game_generator: fn() -> G,
+        node_store: NodeStore,
+    ) -> Self {
         let mut rng: StdRng = SeedableRng::seed_from_u64(43);
         let pimcts_seed = rng.random();
         Self {
             vector_pool: Pool::new(Vec::new),
-            game_generator: KuhnPoker::new_state,
-            infostates: Arc::new(Mutex::new(NodeStore::new_kp(None).unwrap())),
+            game_generator,
+            infostates: Arc::new(Mutex::new(node_store)),
             depth_checker: Box::new(NoOpDepthChecker {}),
             play_bot: PIMCTSBot::new(
                 50,
@@ -210,24 +215,18 @@ impl CFRES<KPGameState> {
     }
 }
 
+impl CFRES<KPGameState> {
+    pub fn new_kp() -> Self {
+        Self::new_simple(KuhnPoker::new_state, NodeStore::new_kp(None).unwrap())
+    }
+}
+
 impl CFRES<BluffGameState> {
     pub fn new_bluff_11() -> Self {
-        let mut rng: StdRng = SeedableRng::seed_from_u64(43);
-        let pimcts_seed = rng.random();
-        Self {
-            vector_pool: Pool::new(Vec::new),
-            game_generator: || Bluff::new_state(1, 1),
-            infostates: Arc::new(Mutex::new(NodeStore::new_bluff_11(None).unwrap())),
-            depth_checker: Box::new(NoOpDepthChecker {}),
-            play_bot: PIMCTSBot::new(
-                50,
-                OpenHandSolver::default(),
-                SeedableRng::seed_from_u64(pimcts_seed),
-            ),
-            evaluator: OpenHandSolver::default(),
-            normalizer: Box::<NoOpNormalizer>::default(),
-            iteration: Arc::new(AtomicUsize::new(0)),
-        }
+        Self::new_simple(
+            || Bluff::new_state(1, 1),
+            NodeStore::new_bluff_11(None).unwrap(),
+        )
     }
 }
 

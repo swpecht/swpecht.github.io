@@ -133,12 +133,12 @@ macro_rules! actions {
 #[cfg(test)]
 mod tests {
     use itertools::Itertools;
-    use rand::{seq::IndexedRandom, rng};
+    use rand::{rngs::StdRng, seq::IndexedRandom, rng, SeedableRng};
 
     use crate::{
         gamestates::{
             bluff::Bluff,
-            euchre::{actions::EAction, Euchre},
+            euchre::{actions::EAction, isomorphic::normalize_euchre_istate, Euchre},
             kuhn_poker::KuhnPoker,
         },
         Game, GameState,
@@ -175,6 +175,109 @@ mod tests {
                 );
                 let a = actions.choose(&mut rng).unwrap();
                 gs.apply_action(*a);
+            }
+        }
+    }
+
+    /// Invariant: undo is the inverse of apply_action for all games.
+    /// After apply_action followed by undo, the state should be identical.
+    #[test]
+    fn test_undo_is_inverse_of_apply_all_games() {
+        _test_undo_is_inverse(Euchre::game());
+        _test_undo_is_inverse(KuhnPoker::game());
+        _test_undo_is_inverse(Bluff::game(1, 1));
+        _test_undo_is_inverse(Bluff::game(2, 1));
+        _test_undo_is_inverse(Bluff::game(2, 2));
+    }
+
+    fn _test_undo_is_inverse<G: GameState + PartialEq>(game: Game<G>) {
+        let mut rng: StdRng = SeedableRng::seed_from_u64(42);
+        let mut actions = Vec::new();
+        for _ in 0..200 {
+            let mut gs = (game.new)();
+            while !gs.is_terminal() {
+                gs.legal_actions(&mut actions);
+                let a = *actions.choose(&mut rng).unwrap();
+                let before = gs.clone();
+                gs.apply_action(a);
+                gs.undo();
+                assert_eq!(
+                    gs, before,
+                    "undo did not restore state after applying action {:?}",
+                    a
+                );
+                gs.apply_action(a);
+            }
+        }
+    }
+
+    /// Invariant: terminal states have no legal actions.
+    /// Note: Euchre's legal_actions does not guard against terminal states (it relies
+    /// on callers checking is_terminal() first), so it is excluded from this test.
+    #[test]
+    fn test_terminal_states_have_no_legal_actions() {
+        _test_terminal_no_actions(KuhnPoker::game());
+        _test_terminal_no_actions(Bluff::game(1, 1));
+        _test_terminal_no_actions(Bluff::game(2, 1));
+        _test_terminal_no_actions(Bluff::game(2, 2));
+    }
+
+    fn _test_terminal_no_actions<G: GameState>(game: Game<G>) {
+        let mut rng: StdRng = SeedableRng::seed_from_u64(99);
+        let mut actions = Vec::new();
+        for _ in 0..200 {
+            let mut gs = (game.new)();
+            while !gs.is_terminal() {
+                gs.legal_actions(&mut actions);
+                assert!(
+                    !actions.is_empty(),
+                    "non-terminal state returned empty legal actions"
+                );
+                let a = *actions.choose(&mut rng).unwrap();
+                gs.apply_action(a);
+            }
+            // Now gs is terminal -- legal_actions should return empty
+            gs.legal_actions(&mut actions);
+            assert!(
+                actions.is_empty(),
+                "terminal state returned non-empty legal actions: {:?}",
+                actions
+            );
+        }
+    }
+
+    /// Invariant: normalizing an already-normalized Euchre istate gives the same result.
+    /// (Isomorphic normalization is idempotent.)
+    #[test]
+    fn test_isomorphic_normalization_is_idempotent() {
+        let mut rng: StdRng = SeedableRng::seed_from_u64(77);
+        let mut actions = Vec::new();
+        for _ in 0..200 {
+            let mut gs = (Euchre::game().new)();
+            while !gs.is_terminal() {
+                gs.legal_actions(&mut actions);
+                let a = *actions.choose(&mut rng).unwrap();
+                gs.apply_action(a);
+
+                // Only test normalization after the face up card has been dealt
+                // (normalization requires at least 6 actions in the istate)
+                if gs.is_chance_node() {
+                    continue;
+                }
+
+                for p in 0..gs.num_players() {
+                    let istate = gs.istate_key(p);
+                    if istate.len() < 6 {
+                        continue;
+                    }
+                    let normalized_once = normalize_euchre_istate(&istate);
+                    let normalized_twice = normalize_euchre_istate(&normalized_once);
+                    assert_eq!(
+                        normalized_once, normalized_twice,
+                        "normalization is not idempotent for player {} istate {:?}",
+                        p, istate
+                    );
+                }
             }
         }
     }

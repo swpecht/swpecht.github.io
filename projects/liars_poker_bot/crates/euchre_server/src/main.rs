@@ -32,6 +32,20 @@ use simplelog::{
 };
 use uuid::Uuid;
 
+const DEFAULT_WEIGHTS_PATH: &str = "/var/lib/card_platypus/infostate.three_card_played";
+const MAX_CARDS_PLAYED: usize = 3;
+const SERVER_HOST: &str = "localhost";
+const SERVER_PORT: u16 = 4000;
+const WIN_SCORE: usize = 10;
+const INDEX_FILE: &str = "./static/index.html";
+const LOG_FILE: &str = "euchre_server.log";
+
+/// Shared application state protected by mutexes.
+///
+/// Note on `.lock().unwrap()`: We intentionally unwrap mutex locks throughout this module.
+/// A poisoned mutex indicates a prior panic while the lock was held, which means the
+/// application state may be corrupt. In that case, panicking is the correct behavior
+/// rather than attempting to recover from potentially inconsistent state.
 struct AppState {
     games: Mutex<HashMap<Uuid, GameData>>,
     bot: Mutex<CFRES<EuchreGameState>>,
@@ -41,14 +55,14 @@ impl Default for AppState {
     fn default() -> Self {
         let bot = CFRES::new_euchre(
             StdRng::from_rng(&mut rng()),
-            3,
-            Some(Path::new(
-                "/var/lib/card_platypus/infostate.three_card_played",
-            )),
+            MAX_CARDS_PLAYED,
+            Some(Path::new(DEFAULT_WEIGHTS_PATH)),
         );
 
         let n = bot.num_info_states();
-        info!("loaded bot with {n} infostates and 3 max cards played");
+        info!(
+            "loaded bot with {n} infostates and {MAX_CARDS_PLAYED} max cards played"
+        );
 
         let games: Mutex<HashMap<Uuid, GameData>> = Default::default();
         let pick_suit_game = GameData {
@@ -218,11 +232,13 @@ fn handle_register_player(game_data: &mut GameData, player_id: usize) -> Result<
         return Err(HttpResponse::Forbidden().body("game already has 2 human players"));
     }
 
-    let cur_player_index = game_data
-        .players
-        .iter()
-        .position(|x| x.is_some())
-        .expect("error finding current player");
+    let cur_player_index = match game_data.players.iter().position(|x| x.is_some()) {
+        Some(idx) => idx,
+        None => {
+            return Err(HttpResponse::InternalServerError()
+                .body("error finding current player: no human player registered"))
+        }
+    };
     game_data.players[(cur_player_index + 2) % 4] = Some(player_id);
 
     Ok(())
@@ -267,14 +283,18 @@ fn progress_game(game_data: &mut GameData, bot: &Mutex<CFRES<EuchreGameState>>, 
             WaitingTrickClear { ready_players } | WaitingBidClear { ready_players } => {
                 if ready_players.len() == num_humans {
                     if gs.is_terminal() {
-                        let human_team = game_data
-                            .players
-                            .iter()
-                            .position(|x| x.is_some())
-                            .expect("couldn't find human player");
-                        game_data.human_score += gs.evaluate(human_team).max(0.0) as usize;
-                        game_data.computer_score +=
-                            gs.evaluate((human_team + 1) % 4).max(0.0) as usize;
+                        if let Some(human_team) =
+                            game_data.players.iter().position(|x| x.is_some())
+                        {
+                            game_data.human_score +=
+                                gs.evaluate(human_team).max(0.0) as usize;
+                            game_data.computer_score +=
+                                gs.evaluate((human_team + 1) % 4).max(0.0) as usize;
+                        } else {
+                            log::warn!(
+                                "no human player found for game {game_id}, skipping score update"
+                            );
+                        }
                         info!(
                             "hand ended|id|{}|human:|{}|game:|{}|human players:|{}|player ids|{:?}",
                             game_id,
@@ -288,7 +308,7 @@ fn progress_game(game_data: &mut GameData, bot: &Mutex<CFRES<EuchreGameState>>, 
                         game_data.players.rotate_left(1);
                     }
 
-                    if game_data.human_score >= 10 || game_data.computer_score >= 10 {
+                    if game_data.human_score >= WIN_SCORE || game_data.computer_score >= WIN_SCORE {
                         info!(
                             "game over|id|{}|human:|{}|computer|{}|player ids|{:?}",
                             game_id,
@@ -339,7 +359,7 @@ fn parse_game_id(game_id: &str) -> Result<Uuid, HttpResponse> {
 ///
 /// Necessary for dioxus to work
 async fn not_found() -> actix_web::Result<NamedFile> {
-    let path: PathBuf = "./static/index.html".parse().unwrap();
+    let path: PathBuf = PathBuf::from(INDEX_FILE);
     Ok(NamedFile::open(path)?)
 }
 
@@ -361,11 +381,11 @@ async fn main() -> std::io::Result<()> {
             OpenOptions::new()
                 .append(true)
                 .create(true)
-                .open("euchre_server.log")
-                .unwrap(),
+                .open(LOG_FILE)
+                .expect("failed to open log file for writing"),
         ),
     ])
-    .unwrap();
+    .expect("failed to initialize logger");
 
     info!("starting load of initial app state...");
     let app_state = web::Data::new(AppState::default());
@@ -382,7 +402,7 @@ async fn main() -> std::io::Result<()> {
             .service(actix_files::Files::new("/", "./static").index_file("index.html"))
             .default_service(web::get().to(not_found))
     })
-    .bind(("localhost", 4000))?
+    .bind((SERVER_HOST, SERVER_PORT))?
     .run()
     .await
 }

@@ -18,13 +18,6 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         SeedableRng::seed_from_u64(100),
     );
 
-    let mut array = [1; 7];
-    let mut v = 1;
-
-    c.bench_function("shift rotate", |b| b.iter(|| rotate_array(&mut array)));
-
-    c.bench_function("shift bitshift", |b| b.iter(|| bit_shift(&mut v)));
-
     let mut group = c.benchmark_group("open-hand");
     let mut rng: StdRng = SeedableRng::seed_from_u64(101);
     group.throughput(criterion::Throughput::Elements(1));
@@ -34,20 +27,6 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         b.iter(|| evaluate_games(&mut evaluator, &mut rng))
     });
     group.finish();
-
-    let mut group = c.benchmark_group("agents");
-    group.sample_size(10);
-}
-
-fn rotate_array(array: &mut [u8]) {
-    array[1..].rotate_left(1);
-}
-
-fn bit_shift(v: &mut u32) {
-    let x = *v & 0b1111;
-    *v >>= 4;
-    *v &= !(0b1111);
-    *v |= x;
 }
 
 fn evaluate_games(

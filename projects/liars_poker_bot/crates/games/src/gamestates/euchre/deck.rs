@@ -366,4 +366,22 @@ mod tests {
 
         assert_eq!(hand.cards(), vec![JS, TD])
     }
+
+    #[test]
+    fn test_play_rejects_multiple_cards() {
+        use super::{CardLocation, Deck};
+
+        let mut deck = Deck::default();
+        // Deal two cards to player 0
+        deck.set(NS, CardLocation::Player0);
+        deck.set(TS, CardLocation::Player0);
+
+        // Playing the first card should succeed
+        assert!(deck.play(NS, 0).is_ok());
+
+        // Playing a second card for the same player should fail because
+        // there is already a card in the Played(0) location
+        let result = deck.play(TS, 0);
+        assert!(result.is_err(), "Expected error when playing multiple cards simultaneously, but got Ok");
+    }
 }

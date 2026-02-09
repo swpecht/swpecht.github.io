@@ -51,6 +51,3 @@ harness = false
 name = "pimcts_optimizations"
 harness = false
 
-[[bench]]
-name = "node_storage_benchmark"
-harness = false
