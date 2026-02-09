@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs, ops::Deref, path::Path};
+use std::{collections::HashMap, path::Path};
 
 use card_platypus::{
     agents::{Agent, Seedable},
@@ -10,7 +10,7 @@ use games::{
     actions,
     gamestates::euchre::{
         actions::{Card, EAction},
-        ismorphic::LossyEuchreNormalizer,
+        isomorphic::LossyEuchreNormalizer,
         util::generate_face_up_deals,
         Euchre, EuchreGameState,
     },
@@ -21,7 +21,7 @@ use indicatif::{MultiProgress, ProgressBar};
 use itertools::Itertools;
 use log::info;
 use rand::{seq::IndexedRandom, rng, SeedableRng};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use super::benchmark::get_rng;
 
@@ -220,68 +220,6 @@ fn score_vs_defender<A: Agent<EuchreGameState> + Seedable>(
         running_score += w.evaluate(target_team);
     }
     running_score / worlds.len() as f64
-}
-
-#[derive(Serialize)]
-struct JSONRow {
-    infostate: String,
-    hand: Vec<String>,
-    policy: HashMap<String, f64>,
-}
-
-pub fn parse_weights(infostate_path: &str) {
-    let alg = CFRES::new_euchre(get_rng(), 0, Some(Path::new(infostate_path)));
-
-    let loaded_states = alg.num_info_states();
-    println!(
-        "loaded {} info states from {}",
-        loaded_states, infostate_path
-    );
-
-    let infostates = alg.get_infostates();
-    let mut json_infostates = Vec::new();
-
-    let pb = ProgressBar::new(infostates.len() as u64);
-    for entry in infostates.deref() {
-        let k = entry.key();
-        let v = entry.value();
-        // filter for the istate keys that end in the right actions
-        // if k[k.len() - 1] != EAction::DiscardMarker.into() {
-        let istate = k
-            .iter()
-            .map(|&x| EAction::from(x).to_string())
-            .collect_vec();
-
-        let policy_sum: f64 = v
-            .avg_strategy()
-            .to_vec()
-            .iter()
-            .map(|(_, v)| *v as f64)
-            .sum();
-        let mut policy = HashMap::new();
-
-        for (a, w) in v.avg_strategy() {
-            // we can undo the normalization here
-            let action = EAction::from(a.get()).to_string();
-            policy.insert(action, w as f64 / policy_sum);
-        }
-
-        json_infostates.push(JSONRow {
-            infostate: istate.join(""),
-            hand: istate[..5].to_vec(),
-            policy,
-        });
-        // }
-        pb.inc(1);
-    }
-    pb.finish_and_clear();
-
-    // Save a csv file
-    let json_data = serde_json::to_string(&json_infostates).unwrap();
-    let mut json_path = infostate_path.to_string();
-    json_path.push_str(".json");
-    fs::write(json_path.clone(), json_data).unwrap();
-    println!("json weights written to: {json_path}");
 }
 
 pub fn analyze_istate(num_games: usize) {

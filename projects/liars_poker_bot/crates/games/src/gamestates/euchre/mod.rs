@@ -16,14 +16,14 @@ use crate::{
 use self::{
     actions::{Card, EAction, Suit, CLUBS_MASK, DIAMONDS_MASK, HEART_MASK, SPADES_MASK},
     deck::{CardLocation, Deck, Hand},
-    ismorphic::iso_deck,
+    isomorphic::iso_deck,
 };
 
 pub(super) const CARDS_PER_HAND: usize = 5;
 
 pub mod actions;
 mod deck;
-pub mod ismorphic;
+pub mod isomorphic;
 pub mod iterator;
 mod parser;
 pub mod processors;

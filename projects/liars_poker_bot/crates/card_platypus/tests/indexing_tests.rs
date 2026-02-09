@@ -1,6 +1,6 @@
 use card_platypus::algorithms::cfres::{DepthChecker, EuchreDepthChecker};
 use games::{
-    gamestates::euchre::{actions::EAction, ismorphic::normalize_euchre_istate, Euchre},
+    gamestates::euchre::{actions::EAction, isomorphic::normalize_euchre_istate, Euchre},
     translate_istate, GameState,
 };
 use rand::{rngs::StdRng, seq::IndexedRandom, SeedableRng};

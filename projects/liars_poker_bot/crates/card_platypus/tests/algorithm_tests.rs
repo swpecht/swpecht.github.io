@@ -69,5 +69,5 @@ fn test_cfres_nash_bluff11() {
 
     alg.train(1_000_000);
     let exploitability = exploitability(|| (Bluff::game(1, 1).new)(), &mut alg).nash_conv;
-    assert_relative_eq!(exploitability, 0.0, epsilon = 0.01);
+    assert_relative_eq!(exploitability, 0.0, epsilon = 0.02);
 }

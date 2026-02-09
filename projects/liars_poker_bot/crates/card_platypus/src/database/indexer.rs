@@ -3,7 +3,7 @@ use games::{
     gamestates::{
         bluff::Bluff,
         euchre::{
-            actions::EAction, ismorphic::normalize_euchre_istate,
+            actions::EAction, isomorphic::normalize_euchre_istate,
             iterator::EuchreIsomorphicIStateIterator,
         },
         kuhn_poker::KuhnPoker,

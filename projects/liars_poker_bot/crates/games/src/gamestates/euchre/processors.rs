@@ -4,7 +4,7 @@ use crate::{
     gamestates::euchre::{
         actions::EAction,
         deck::{self},
-        ismorphic::get_cards,
+        isomorphic::get_cards,
         EuchreGameState,
     },
     Action, GameState, Player,

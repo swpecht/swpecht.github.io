@@ -11,12 +11,19 @@ use std::{
 use crate::Action;
 
 #[derive(Clone, Copy, Serialize, Deserialize, PartialOrd, Ord)]
+#[repr(C)]
 pub struct IStateKey {
     len: usize,
     #[serde(with = "BigArray")]
     actions: [Action; 64],
 }
 
+// SAFETY: IStateKey is #[repr(C)] with fields:
+//   - len: usize, which is Pod/Zeroable.
+//   - actions: [Action; 64], where Action is #[repr(transparent)] over u8 and is Pod/Zeroable.
+// The struct has no padding (usize is 8 bytes on 64-bit, [u8; 64] is 64 bytes, total 72 bytes
+// with #[repr(C)] guaranteeing a predictable layout). Every bit pattern is valid for all fields.
+// The all-zeros pattern (len=0, all actions=Action(0)) is a valid IStateKey.
 unsafe impl bytemuck::Pod for IStateKey {}
 unsafe impl bytemuck::Zeroable for IStateKey {}
 
@@ -104,13 +111,17 @@ impl IStateKey {
     }
 
     pub fn as_bytes(&self) -> &[u8] {
+        // Safe: Action is #[repr(transparent)] over u8 and implements Pod, so casting
+        // a &[Action] to &[u8] is safe via bytemuck. Both types have size 1 and no padding.
         let action_slice: &[Action] = self;
-        unsafe { std::slice::from_raw_parts(action_slice.as_ptr() as *const u8, self.len()) }
+        bytemuck::cast_slice(action_slice)
     }
 
     pub fn as_bytes_mut(&mut self) -> &mut [u8] {
+        // Safe: Action is #[repr(transparent)] over u8 and implements Pod, so casting
+        // a &mut [Action] to &mut [u8] is safe via bytemuck. Both types have size 1 and no padding.
         let action_slice: &mut [Action] = self;
-        unsafe { std::slice::from_raw_parts_mut(action_slice.as_mut_ptr() as *mut u8, self.len()) }
+        bytemuck::cast_slice_mut(action_slice)
     }
 
     pub fn copy_from_slice(actions: &[Action]) -> Self {

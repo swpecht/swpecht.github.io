@@ -115,7 +115,6 @@ impl NodeStore {
             debug!("resized mmap");
         }
 
-        // let data = rmp_serde::to_vec(value).unwrap();
         let value = [*value];
         let data = bytemuck::cast_slice::<InfoState, u8>(&value);
         assert!(data.len() <= BUCKET_SIZE); // if this is false, we're overflowing into another bucket

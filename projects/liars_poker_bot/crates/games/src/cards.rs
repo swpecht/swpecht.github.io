@@ -11,7 +11,10 @@ impl Card {
 
 impl From<[u16; 4]> for Card {
     fn from(value: [u16; 4]) -> Self {
-        unsafe { std::mem::transmute(value) }
+        // Safe conversion: [u16; 4] and u64 are both 8 bytes. We use bytemuck::cast which
+        // requires both types to be the same size and have no alignment issues (both are Copy
+        // and have no padding). This replaces the previous unsafe transmute.
+        Card(bytemuck::cast(value))
     }
 }
 

@@ -196,7 +196,7 @@ fn deploy() -> anyhow::Result<()> {
 
     cmd!(
         sh,
-        "ssh root@{REMOTE_ADDR} systemctl restart eucher-server.service"
+        "ssh root@{REMOTE_ADDR} systemctl restart euchre-server.service"
     )
     .run()?;
 

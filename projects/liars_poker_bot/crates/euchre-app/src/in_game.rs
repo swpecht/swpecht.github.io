@@ -120,7 +120,7 @@ pub fn InGame(cx: Scope, game_id: String) -> Element<'a> {
             let client = reqwest::Client::new();
 
             while let Some(action) = rx.next().await {
-                info!("sending actiond: {:?}", action);
+                info!("sending action: {:?}", action);
                 let req = ActionRequest::new(player_id, action);
 
                 let new_state = make_game_request(client.post(target.clone()).json(&req)).await;

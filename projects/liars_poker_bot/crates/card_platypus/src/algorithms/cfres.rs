@@ -7,17 +7,16 @@ use std::{
 };
 
 use bytemuck::{Pod, Zeroable};
-use dashmap::DashMap;
 use dyn_clone::DynClone;
 use games::{
     gamestates::{
         bluff::{Bluff, BluffGameState},
         euchre::{
-            ismorphic::EuchreNormalizer, processors::post_cards_played, Euchre, EuchreGameState,
+            isomorphic::EuchreNormalizer, processors::post_cards_played, Euchre, EuchreGameState,
         },
         kuhn_poker::{KPGameState, KuhnPoker},
     },
-    istate::{IStateKey, IStateNormalizer, NoOpNormalizer, NormalizedAction, NormalizedIstate},
+    istate::{IStateNormalizer, NoOpNormalizer, NormalizedAction, NormalizedIstate},
     resample::ResampleFromInfoState,
     Action, GameState, Player,
 };
@@ -57,12 +56,6 @@ features! {
     }
 }
 
-#[derive(Default, Clone)]
-enum AverageType {
-    _Full,
-    #[default]
-    Simple,
-}
 
 /// Number of actions we can store in a given "slot" of the database.
 /// Must be large enough for the game with the most actions at a single info state.
@@ -77,6 +70,17 @@ pub struct InfoState {
     pub last_iteration: usize,
 }
 
+// SAFETY: InfoState is composed of:
+//   - ActionList(u32): a plain u32 bitmask, trivially Pod/Zeroable.
+//   - ArrayVec<[f32; 12]> (x2): tinyvec's ArrayVec is internally a length field + a fixed-size
+//     array. All bytes patterns are valid for its fields (u16 len + [f32; N]). The all-zeros
+//     pattern produces a valid ArrayVec with len=0.
+//   - last_iteration: usize, trivially Pod/Zeroable.
+//
+// All fields are Copy and contain no padding that would be uninitialized, making the struct
+// safe to reinterpret as bytes. The all-zeros bit pattern is valid (empty ActionList, empty
+// ArrayVecs with len=0, last_iteration=0). We cannot use #[derive(Pod, Zeroable)] because
+// tinyvec::ArrayVec does not itself implement Pod or Zeroable.
 unsafe impl Pod for InfoState {}
 unsafe impl Zeroable for InfoState {}
 
@@ -124,7 +128,6 @@ impl InfoState {
 pub struct CFRES<G> {
     vector_pool: Pool<Vec<Action>>,
     game_generator: fn() -> G,
-    average_type: AverageType,
     iteration: Arc<AtomicUsize>,
     infostates: Arc<Mutex<NodeStore>>,
     /// determine if we are at the max depth and should use the rollout
@@ -135,11 +138,6 @@ pub struct CFRES<G> {
 }
 
 impl<G> CFRES<G> {
-    /// Gets the infostates of the agent for external analysis
-    pub fn get_infostates(&self) -> Arc<DashMap<IStateKey, InfoState>> {
-        todo!("update to array tree");
-    }
-
     pub fn iterations(&self) -> usize {
         self.iteration.load(Ordering::Relaxed)
     }
@@ -171,7 +169,6 @@ impl CFRES<EuchreGameState> {
         Self {
             vector_pool: Pool::new(Vec::new),
             game_generator: Euchre::new_state,
-            average_type: AverageType::default(),
             infostates: Arc::new(Mutex::new(
                 NodeStore::new_euchre(path, max_cards_played).unwrap(),
             )),
@@ -199,7 +196,6 @@ impl CFRES<KPGameState> {
         Self {
             vector_pool: Pool::new(Vec::new),
             game_generator: KuhnPoker::new_state,
-            average_type: AverageType::default(),
             infostates: Arc::new(Mutex::new(NodeStore::new_kp(None).unwrap())),
             depth_checker: Box::new(NoOpDepthChecker {}),
             play_bot: PIMCTSBot::new(
@@ -221,7 +217,6 @@ impl CFRES<BluffGameState> {
         Self {
             vector_pool: Pool::new(Vec::new),
             game_generator: || Bluff::new_state(1, 1),
-            average_type: AverageType::default(),
             infostates: Arc::new(Mutex::new(NodeStore::new_bluff_11(None).unwrap())),
             depth_checker: Box::new(NoOpDepthChecker {}),
             play_bot: PIMCTSBot::new(
@@ -269,10 +264,6 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
         let num_players = (self.game_generator)().num_players();
         for player in 0..num_players {
             self.update_regrets(&mut (self.game_generator)(), player, 0);
-        }
-        if matches!(self.average_type, AverageType::_Full) {
-            let reach_probs = vec![1.0; num_players];
-            self.full_update_average(&mut (self.game_generator)(), &reach_probs);
         }
     }
 
@@ -402,7 +393,7 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
         // We adapt this slightly for euchre where it alternates what team the players are on
         let cur_team = cur_player % 2;
         let player_team = player % 2;
-        if matches!(self.average_type, AverageType::Simple) && cur_team != player_team {
+        if cur_team != player_team {
             let normalizer = self.normalizer.clone();
             let mut infostate_info = self
                 .lookup_entry(&info_state_key)
@@ -419,11 +410,6 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
         self.vector_pool.attach(actions);
 
         value
-    }
-
-    fn full_update_average(&mut self, _gs: &mut G, _reach_probs: &[f64]) {
-        // deleted implementation as too slow to use in practice
-        todo!("not supported")
     }
 
     pub fn num_info_states(&self) -> usize {

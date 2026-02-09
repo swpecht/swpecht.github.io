@@ -67,7 +67,12 @@ pub(super) const UNSUITED_ACTION_MASK: u32 =
 
 impl EAction {
     pub fn card(&self) -> Card {
-        unsafe { std::mem::transmute(*self) }
+        // SAFETY: EAction and Card are both #[repr(u32)] enums. The first 24 variants of EAction
+        // share the same discriminant values as Card (each card is a single-bit bitmask in its
+        // suit's byte). This method must only be called on card-valued EAction variants (not on
+        // Spades, Clubs, Hearts, Diamonds, DiscardMarker, Pickup, or Pass).
+        // We use FromPrimitive to safely convert with a runtime check instead of transmute.
+        Card::from_u32(*self as u32).expect("card() called on a non-card EAction variant")
     }
 
     /// Changes the color of an action if applicable
@@ -94,7 +99,11 @@ impl EAction {
         let mut color_blocks: [u8; 4] = suited_actions.to_ne_bytes();
         color_blocks.swap(a, b);
         let suited_actions: u32 = u32::from_ne_bytes(color_blocks);
-        unsafe { std::mem::transmute(suited_actions | suit_agnostic_actions) }
+        // Use safe FromPrimitive conversion instead of transmute. The result is guaranteed to be
+        // a valid EAction discriminant because we only permute suit bytes within the suited portion
+        // and OR back the unchanged suit-agnostic bits.
+        EAction::from_u32(suited_actions | suit_agnostic_actions)
+            .expect("swap_suit produced an invalid EAction discriminant")
     }
 }
 
@@ -114,14 +123,18 @@ impl From<&EAction> for Action {
 
 impl From<Action> for EAction {
     fn from(value: Action) -> Self {
-        let repr = 1 << value.0;
-        unsafe { std::mem::transmute(repr) }
+        let repr: u32 = 1 << value.0;
+        // Use safe FromPrimitive conversion. Action.0 is the bit index (trailing_zeros of the
+        // EAction discriminant), so 1 << value.0 reconstructs a valid EAction discriminant.
+        EAction::from_u32(repr).expect("Action does not correspond to a valid EAction")
     }
 }
 
 impl From<Card> for EAction {
     fn from(value: Card) -> Self {
-        unsafe { std::mem::transmute(value) }
+        // Card and EAction are both #[repr(u32)], and every Card discriminant value is also a
+        // valid EAction discriminant (the first 24 EAction variants mirror Card exactly).
+        EAction::from_u32(value as u32).expect("Card value does not map to a valid EAction")
     }
 }
 
@@ -138,7 +151,9 @@ impl From<Suit> for EAction {
 
 impl From<u32> for EAction {
     fn from(value: u32) -> Self {
-        unsafe { std::mem::transmute(value) }
+        // Use safe FromPrimitive conversion instead of transmute. Panics if the u32 does not
+        // match any EAction discriminant, which is preferable to undefined behavior.
+        EAction::from_u32(value).expect("u32 does not correspond to a valid EAction discriminant")
     }
 }
 

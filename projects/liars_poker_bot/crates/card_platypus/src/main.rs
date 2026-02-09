@@ -17,11 +17,10 @@ use log::{set_max_level, LevelFilter};
 
 use scripts::agent_exploitability::calcualte_agent_exploitability;
 use scripts::benchmark::{run_benchmark, BenchmarkArgs};
-use scripts::estimate_euchre_game_tree::estimate_euchre_game_tree;
 use scripts::pass_on_bower::open_hand_score_pass_on_bower;
 use scripts::pass_on_bower_alpha::benchmark_pass_on_bower;
 use scripts::pass_on_bower_cfr::{
-    analyze_istate, parse_weights, run_pass_on_bower_cfr, PassOnBowerCFRArgs,
+    analyze_istate, run_pass_on_bower_cfr, PassOnBowerCFRArgs,
 };
 use simplelog::{
     ColorChoice, CombinedLogger, ConfigBuilder, TermLogger, TerminalMode, WriteLogger,
@@ -42,17 +41,13 @@ enum GameType {
 
 #[derive(Debug, Subcommand, Clone)]
 enum Commands {
-    Run,
     Benchmark(BenchmarkArgs),
-    Analyze,
-    Play,
     Scratch,
     Exploitability,
     PassOnBowerOpenHand,
     PassOnBowerAlpha { num_games: usize },
     EuchreCFRTrain { profile: String },
     PassOnBowerCFRTrain(PassOnBowerCFRArgs),
-    PassOnBowerCFRParseWeights { infostate_path: String },
     PassOnBowerCFRAnalyzeIstate { num_games: usize },
 }
 
@@ -121,18 +116,12 @@ fn main() {
     .unwrap();
 
     match args.command {
-        Commands::Run => run(args),
         Commands::Benchmark(bench) => run_benchmark(bench),
-        Commands::Analyze => run_analyze(args),
-        Commands::Play => run_play(args),
         Commands::Scratch => run_scratch(args),
         Commands::PassOnBowerOpenHand => open_hand_score_pass_on_bower(args),
         Commands::Exploitability => calcualte_agent_exploitability(args),
         Commands::PassOnBowerAlpha { num_games } => benchmark_pass_on_bower(num_games),
         Commands::PassOnBowerCFRTrain(bower_cfr) => run_pass_on_bower_cfr(bower_cfr),
-        Commands::PassOnBowerCFRParseWeights { infostate_path } => {
-            parse_weights(infostate_path.as_str())
-        }
         Commands::PassOnBowerCFRAnalyzeIstate { num_games } => analyze_istate(num_games),
         Commands::EuchreCFRTrain { profile } => train_cfr_from_config(profile.as_str()).unwrap(),
     }
@@ -173,20 +162,3 @@ fn run_scratch(_args: Args) {
     }
 }
 
-fn run_analyze(args: Args) {
-    match args.game {
-        GameType::KuhnPoker => todo!(),
-        GameType::Euchre => estimate_euchre_game_tree(args),
-        GameType::Bluff11 => todo!(),
-        GameType::Bluff21 => todo!(),
-        GameType::Bluff22 => todo!(),
-    }
-}
-
-fn run(_args: Args) {
-    todo!();
-}
-
-fn run_play(_args: Args) {
-    todo!()
-}

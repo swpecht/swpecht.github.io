@@ -5,7 +5,7 @@ use crate::istate::IStateKey;
 
 use super::{
     actions::{EAction, Suit, ALL_CARDS},
-    ismorphic::normalize_euchre_istate,
+    isomorphic::normalize_euchre_istate,
     EPhase,
 };
 

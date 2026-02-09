@@ -63,7 +63,7 @@ impl Default for AppState {
             pick_suit_game,
         );
 
-        info!("loaded debuging gamestates: {:?}", games.lock().unwrap());
+        info!("loaded debugging gamestates: {:?}", games.lock().unwrap());
 
         Self {
             games,

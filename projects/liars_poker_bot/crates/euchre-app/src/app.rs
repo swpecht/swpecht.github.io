@@ -94,7 +94,7 @@ fn NewGame(cx: Scope) -> Element {
             .json(&new_game_req)
             .send()
             .await
-            .expect("error unwraping response")
+            .expect("error unwrapping response")
             .json::<NewGameResponse>()
             .await
     });

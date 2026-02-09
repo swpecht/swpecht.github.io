@@ -196,7 +196,7 @@ impl Deck {
         let played_hand = &mut self.locations[CardLocation::Played(player).idx()];
         played_hand.add(card);
 
-        if !played_hand.len() == 1 {
+        if played_hand.len() != 1 {
             bail!("Attempted to play more than one card");
         }
 
@@ -273,7 +273,7 @@ impl Hand {
     }
 
     /// Returns the highest card, this should only be called if there is a single
-    /// suit in the hand otherwise behavior is underfined
+    /// suit in the hand otherwise behavior is undefined
     pub fn highest(&self) -> anyhow::Result<Card> {
         let bit_index = self.mask.leading_zeros();
         let card_rep = 0b10000000000000000000000000000000 >> bit_index;

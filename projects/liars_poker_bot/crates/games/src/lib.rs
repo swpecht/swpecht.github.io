@@ -18,7 +18,15 @@ use crate::istate::{IStateKey, IsomorphicHash};
 
 // pub type Action = usize;
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord, Default)]
+#[repr(transparent)]
 pub struct Action(pub u8);
+
+// SAFETY: Action is a #[repr(transparent)] newtype over u8, which is Pod.
+// Every bit pattern is valid for u8, so every bit pattern is valid for Action.
+// There is no padding, no interior references, and the type is Copy.
+unsafe impl bytemuck::Pod for Action {}
+// SAFETY: The all-zeros bit pattern (Action(0)) is a valid value.
+unsafe impl bytemuck::Zeroable for Action {}
 
 impl From<Action> for u8 {
     fn from(value: Action) -> Self {

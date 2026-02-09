@@ -308,7 +308,7 @@ mod tests {
         gamestates::euchre::{
             actions::{Card, EAction, Suit},
             deck::{CardLocation, Deck},
-            ismorphic::{iso_deck, swap_loc, LossyEuchreNormalizer},
+            isomorphic::{iso_deck, swap_loc, LossyEuchreNormalizer},
             EuchreGameState,
         },
         istate::{IStateKey, IStateNormalizer},
