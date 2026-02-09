@@ -9,7 +9,7 @@ use games::{
     gamestates::{bluff::Bluff, euchre::Euchre, kuhn_poker::KuhnPoker},
     get_games, GameState,
 };
-use rand::{rngs::StdRng, seq::IndexedRandom, rng, SeedableRng};
+use rand::{rngs::StdRng, seq::IndexedRandom, SeedableRng};
 use rayon::prelude::*;
 
 /// Confirm that the open hand solver with and without the cache gives the same results.

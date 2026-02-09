@@ -222,14 +222,6 @@ impl Default for EuchreIState {
 }
 
 impl EuchreIState {
-    pub fn new(history: &[EAction]) -> Self {
-        let mut istate = Self::default();
-        for &a in history.iter() {
-            istate.apply_action(a);
-        }
-        istate
-    }
-
     /// Uses the resampling logic to check if the current istate is valid -- or only return actions which can be valid, tbd
     /// the istate logic will be more robust and avoid some extra invalid states, tbd if perf tradeoff is worth it
     fn is_valid(&self) -> bool {
@@ -376,7 +368,7 @@ mod tests {
     fn test_euchre_istate_iterator() {
         let iterator = EuchreIsomorphicIStateIterator::with_face_up(1, &[EAction::NS]);
 
-        for state in iterator.clone().choose_multiple(&mut rng(), 100) {
+        for state in iterator.clone().sample(&mut rng(), 100) {
             println!("{:?}", translate_istate!(state, EAction))
         }
 

@@ -93,7 +93,7 @@ impl EAction {
 
         let mut color_blocks: [u8; 4] = suited_actions.to_ne_bytes();
         color_blocks.swap(a, b);
-        let suited_actions: u32 = unsafe { std::mem::transmute(color_blocks) };
+        let suited_actions: u32 = u32::from_ne_bytes(color_blocks);
         unsafe { std::mem::transmute(suited_actions | suit_agnostic_actions) }
     }
 }

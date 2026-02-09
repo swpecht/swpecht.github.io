@@ -27,6 +27,7 @@ pub enum Route {
     NotFound { segments: Vec<String> },
 }
 
+#[allow(non_snake_case)]
 pub fn App(cx: Scope) -> Element {
     hide_element("loading");
 
@@ -36,7 +37,7 @@ pub fn App(cx: Scope) -> Element {
 }
 
 #[component]
-fn NotFound(cx: Scope, segments: Vec<String>) -> Element {
+fn NotFound(cx: Scope, segments: Vec<String>) -> Element<'a> {
     hide_element("intro");
     render! {
         div { format!("Error: page not found: {:?}", segments) }

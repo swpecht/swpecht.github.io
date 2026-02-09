@@ -72,7 +72,7 @@ pub enum InGameState {
 }
 
 #[component]
-pub fn InGame(cx: Scope, game_id: String) -> Element {
+pub fn InGame(cx: Scope, game_id: String) -> Element<'a> {
     hide_element("intro");
 
     let player_id = get_player_id(cx).unwrap();

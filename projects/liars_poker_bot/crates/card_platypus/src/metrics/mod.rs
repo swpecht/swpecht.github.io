@@ -5,18 +5,16 @@ macro_rules! counter {
     // The `ident` designator is used for variable/function names.
     ($name:ident) => {
         pub mod $name {
-            use std::sync::atomic::AtomicUsize;
+            use std::sync::atomic::{AtomicUsize, Ordering};
 
-            static mut COUNTER: AtomicUsize = AtomicUsize::new(0);
+            static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
             pub fn increment() {
-                unsafe {
-                    COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                }
+                COUNTER.fetch_add(1, Ordering::Relaxed);
             }
 
             pub fn read() -> usize {
-                unsafe { COUNTER.load(std::sync::atomic::Ordering::Relaxed) }
+                COUNTER.load(Ordering::Relaxed)
             }
         }
     };
