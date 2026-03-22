@@ -2,58 +2,58 @@
 
 # A fast to run config for testing
 [train.test]
-weight_file = "/var/lib/card_platypus/infostate.testing"
+weight_file = "/home/steven/card_platypus/infostate.testing"
 training_iterations = 100000
 scoring_iterations = 10
 max_cards_played = 0
 
 [train.baseline]
-weight_file = "/var/lib/card_platypus/infostate.baseline"
+weight_file = "/home/steven/card_platypus/infostate.baseline"
 training_iterations = 50000000
 scoring_iterations = 1000
 max_cards_played = 0
 
 [train.one_card_played]
-weight_file = "/var/lib/card_platypus/infostate.one_card_played"
+weight_file = "/home/steven/card_platypus/infostate.one_card_played"
 training_iterations = 100000000
 scoring_iterations = 1000
 max_cards_played = 1
 
 [train.two_card_played]
-weight_file = "/var/lib/card_platypus/infostate.two_card_played"
+weight_file = "/home/steven/card_platypus/infostate.two_card_played"
 training_iterations = 100000000
 scoring_iterations = 1000
 max_cards_played = 2
 
 [train.three_card_played]
-weight_file = "/var/lib/card_platypus/infostate.three_card_played_f32"
+weight_file = "/home/steven/card_platypus/infostate.three_card_played_f32"
 training_iterations = 600000000
 scoring_iterations = 1000
 max_cards_played = 3
 
 [train.three_card_played_lossy]
-weight_file = "/var/lib/card_platypus/infostate.three_card_played_lossy"
+weight_file = "/home/steven/card_platypus/infostate.three_card_played_lossy"
 training_iterations = 300000000
 scoring_iterations = 1000
 max_cards_played = 3
 normalizer = "Lossy"
 
 [train.first_trick_lossy]
-weight_file = "/var/lib/card_platypus/infostate.first_trick_lossy"
+weight_file = "/home/steven/card_platypus/infostate.first_trick_lossy"
 training_iterations = 200000000
 scoring_iterations = 1000
 max_cards_played = 4
 normalizer = "Lossy"
 
 [train.one_card_lossy]
-weight_file = "/var/lib/card_platypus/infostate.one_card_lossy"
+weight_file = "/home/steven/card_platypus/infostate.one_card_lossy"
 training_iterations = 200000000
 scoring_iterations = 1000
 max_cards_played = 1
 normalizer = "Lossy"
 
 [train.first_trick]
-weight_file = "/var/lib/card_platypus/infostate.first_trick"
+weight_file = "/home/steven/card_platypus/infostate.first_trick"
 training_iterations = 200000000
 scoring_iterations = 1000
 max_cards_played = 4
