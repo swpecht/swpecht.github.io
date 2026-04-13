@@ -1,43 +1,35 @@
 use std::{
     collections::HashMap,
     fs::OpenOptions,
-    path::{Path, PathBuf},
+    path::Path,
     str::FromStr,
     sync::Mutex,
 };
 
-use actix::StreamHandler;
-use actix_files::NamedFile;
-use actix_web::{
-    get,
-    middleware::Logger,
-    post,
-    web::{self, Json},
-    App, HttpRequest, HttpResponse, HttpServer, Responder,
-};
-use actix_web_actors::ws;
+use actix_web::{middleware::Logger, web, App, HttpResponse, HttpServer};
 use card_platypus::{agents::Agent, algorithms::cfres::CFRES};
-use client_server_messages::{
-    ActionRequest, GameData, GameProcessingState, NewGameRequest, NewGameResponse,
-};
 use games::{
     actions,
     gamestates::euchre::{Euchre, EuchreGameState},
     Action, GameState,
 };
 use log::{info, set_max_level, LevelFilter};
-use rand::{rngs::StdRng, seq::IndexedRandom, rng, RngExt, SeedableRng};
+use rand::{rng, rngs::StdRng, seq::IndexedRandom, SeedableRng};
 use simplelog::{
     ColorChoice, CombinedLogger, ConfigBuilder, TermLogger, TerminalMode, WriteLogger,
 };
 use uuid::Uuid;
 
+mod game_data;
+mod html;
+
+pub(crate) use game_data::{GameData, GameProcessingState};
+
 const DEFAULT_WEIGHTS_PATH: &str = "/var/lib/card_platypus/infostate.three_card_played";
 const MAX_CARDS_PLAYED: usize = 3;
 const SERVER_HOST: &str = "localhost";
 const SERVER_PORT: u16 = 4000;
-const WIN_SCORE: usize = 10;
-const INDEX_FILE: &str = "./static/index.html";
+pub(crate) const WIN_SCORE: usize = 10;
 const LOG_FILE: &str = "euchre_server.log";
 
 /// Shared application state protected by mutexes.
@@ -46,9 +38,9 @@ const LOG_FILE: &str = "euchre_server.log";
 /// A poisoned mutex indicates a prior panic while the lock was held, which means the
 /// application state may be corrupt. In that case, panicking is the correct behavior
 /// rather than attempting to recover from potentially inconsistent state.
-struct AppState {
-    games: Mutex<HashMap<Uuid, GameData>>,
-    bot: Mutex<CFRES<EuchreGameState>>,
+pub(crate) struct AppState {
+    pub(crate) games: Mutex<HashMap<Uuid, GameData>>,
+    pub(crate) bot: Mutex<CFRES<EuchreGameState>>,
 }
 
 impl Default for AppState {
@@ -86,82 +78,10 @@ impl Default for AppState {
     }
 }
 
-#[post("/api")]
-async fn api_index(json: Json<NewGameRequest>, data: web::Data<AppState>) -> impl Responder {
-    let game_id = Uuid::new_v4();
-    let gs = new_game();
-
-    let mut game_data = GameData::new(gs, json.0.player_id, json.0.min_players);
-    // randomize who starts with deal
-    game_data.players.rotate_right(rng().random_range(0..4));
-    progress_game(&mut game_data, &data.bot, &game_id);
-    data.games.lock().unwrap().insert(game_id, game_data);
-
-    info!("new game created");
-
-    let response = NewGameResponse::new(game_id);
-
-    HttpResponse::Ok().json(response)
-}
-
-#[get("/api/{game_id}")]
-async fn get_game(path: web::Path<String>, data: web::Data<AppState>) -> impl Responder {
-    let game_id_parse = Uuid::parse_str(path.into_inner().as_str());
-
-    if game_id_parse.is_err() {
-        return HttpResponse::BadRequest().finish();
-    }
-
-    let game_id = game_id_parse.unwrap();
-
-    let games = data.games.lock().unwrap();
-    if !games.contains_key(&game_id) {
-        return HttpResponse::NotFound().finish();
-    }
-
-    let game_data = games.get(&game_id).unwrap();
-
-    HttpResponse::Ok().json(game_data)
-}
-
-#[post("/api/{game_id}")]
-async fn post_game(
-    req: web::Json<ActionRequest>,
-    path: web::Path<String>,
-    data: web::Data<AppState>,
-) -> impl Responder {
-    info!("received request: {:?}", req);
-
-    let game_id = match parse_game_id(path.into_inner().as_str()) {
-        Ok(x) => x,
-        Err(x) => return x,
-    };
-
-    let mut games = data.games.lock().unwrap();
-    let game_data = match games.get_mut(&game_id) {
-        Some(x) => x,
-        None => return HttpResponse::NotFound().finish(),
-    };
-
-    // redo this to move the progress game call to the end of this call? Have functions all return results with the error
-    use client_server_messages::GameAction::*;
-    let result = match req.action {
-        TakeAction(a) => handle_take_action(game_data, a, req.player_id),
-        ReadyTrickClear | ReadyBidClear => handle_ready_clear(game_data, req.player_id),
-
-        RegisterPlayer => handle_register_player(game_data, req.player_id),
-    };
-
-    if let Err(x) = result {
-        return x;
-    }
-
-    progress_game(game_data, &data.bot, &game_id);
-
-    HttpResponse::Ok().json(&game_data)
-}
-
-fn handle_ready_clear(game_data: &mut GameData, player_id: usize) -> Result<(), HttpResponse> {
+pub(crate) fn handle_ready_clear(
+    game_data: &mut GameData,
+    player_id: usize,
+) -> Result<(), HttpResponse> {
     match &mut game_data.display_state {
         GameProcessingState::WaitingTrickClear { ready_players }
         | GameProcessingState::WaitingBidClear { ready_players } => {
@@ -178,7 +98,7 @@ fn handle_ready_clear(game_data: &mut GameData, player_id: usize) -> Result<(), 
     }
 }
 
-fn handle_take_action(
+pub(crate) fn handle_take_action(
     game_data: &mut GameData,
     a: Action,
     player_id: usize,
@@ -226,7 +146,10 @@ fn handle_take_action(
     Ok(())
 }
 
-fn handle_register_player(game_data: &mut GameData, player_id: usize) -> Result<(), HttpResponse> {
+pub(crate) fn handle_register_player(
+    game_data: &mut GameData,
+    player_id: usize,
+) -> Result<(), HttpResponse> {
     let num_humans = game_data.players.iter().flatten().count();
     if num_humans >= 2 {
         return Err(HttpResponse::Forbidden().body("game already has 2 human players"));
@@ -244,7 +167,11 @@ fn handle_register_player(game_data: &mut GameData, player_id: usize) -> Result<
     Ok(())
 }
 
-fn progress_game(game_data: &mut GameData, bot: &Mutex<CFRES<EuchreGameState>>, game_id: &Uuid) {
+pub(crate) fn progress_game(
+    game_data: &mut GameData,
+    bot: &Mutex<CFRES<EuchreGameState>>,
+    game_id: &Uuid,
+) {
     let mut gs = EuchreGameState::from(game_data.gs.as_str());
 
     use GameProcessingState::*;
@@ -345,24 +272,6 @@ fn progress_game(game_data: &mut GameData, bot: &Mutex<CFRES<EuchreGameState>>, 
     game_data.gs = gs.to_string();
 }
 
-fn parse_game_id(game_id: &str) -> Result<Uuid, HttpResponse> {
-    let game_id_parse = Uuid::parse_str(game_id);
-
-    if let Ok(uuid) = game_id_parse {
-        Ok(uuid)
-    } else {
-        Err(HttpResponse::BadRequest().body("couldn't parse game id"))
-    }
-}
-
-/// Returns the index page on not found
-///
-/// Necessary for dioxus to work
-async fn not_found() -> actix_web::Result<NamedFile> {
-    let path: PathBuf = PathBuf::from(INDEX_FILE);
-    Ok(NamedFile::open(path)?)
-}
-
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     set_max_level(LevelFilter::Trace);
@@ -394,20 +303,14 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .app_data(app_state.clone())
             .wrap(Logger::default())
-            .service(api_index)
-            .service(get_game)
-            .service(post_game)
-            .route("/ws/", web::get().to(handle_euchre_ws))
-            // Need to register this last so other services are accessible
-            .service(actix_files::Files::new("/", "./static").index_file("index.html"))
-            .default_service(web::get().to(not_found))
+            .configure(html::configure)
     })
     .bind((SERVER_HOST, SERVER_PORT))?
     .run()
     .await
 }
 
-fn new_game() -> EuchreGameState {
+pub(crate) fn new_game() -> EuchreGameState {
     let mut gs = Euchre::new_state();
 
     let mut actions = Vec::new();
@@ -418,31 +321,6 @@ fn new_game() -> EuchreGameState {
     }
 
     gs
-}
-
-struct EuchreGameWs {}
-impl actix::Actor for EuchreGameWs {
-    type Context = actix_web_actors::ws::WebsocketContext<Self>;
-}
-
-/// Handler for ws::Message message
-impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for EuchreGameWs {
-    fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
-        match msg {
-            Ok(ws::Message::Ping(msg)) => ctx.pong(&msg),
-            Ok(ws::Message::Text(text)) => ctx.text(text),
-            Ok(ws::Message::Binary(bin)) => ctx.binary(bin),
-            _ => (),
-        }
-    }
-}
-
-async fn handle_euchre_ws(
-    req: HttpRequest,
-    stream: web::Payload,
-) -> Result<HttpResponse, actix_web::Error> {
-    info!("websocket message received: {:?}", req);
-    ws::start(EuchreGameWs {}, &req, stream)
 }
 
 #[cfg(test)]

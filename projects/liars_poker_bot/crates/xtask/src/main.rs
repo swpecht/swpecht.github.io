@@ -1,11 +1,8 @@
 #![allow(unexpected_cfgs)]
 
-use std::path::Path;
-
 use anyhow::Ok;
 use clap::{Parser, Subcommand};
 use itertools::Itertools;
-use notify::{RecursiveMode, Watcher};
 
 use xshell::{cmd, Shell};
 
@@ -111,35 +108,8 @@ fn get_server_logs() -> anyhow::Result<()> {
 }
 
 fn serve() -> anyhow::Result<()> {
-    // Automatically select the best implementation for your platform.
-    let mut watcher =
-        notify::recommended_watcher(|res: Result<notify::Event, notify::Error>| match res {
-            std::result::Result::Ok(event) => {
-                if event
-                    .paths
-                    .iter()
-                    .any(|x| x.extension().map_or(false, |x| x == "html" || x == "rs"))
-                {
-                    println!("{:?}", event);
-                    build_and_deploy_app()
-                }
-            }
-            Err(e) => println!("watch error: {:?}", e),
-        })?;
-
-    build_and_deploy_app();
-    // Add a path to be watched. All files and directories at that path and
-    // below will be monitored for changes.
-    watcher.watch(
-        Path::new("./crates/euchre-app/src"),
-        RecursiveMode::Recursive,
-    )?;
-
-    watcher.watch(
-        Path::new("./crates/euchre-app/index.html"),
-        RecursiveMode::Recursive,
-    )?;
-
+    // Server now renders HTML directly (Maud + htmx), so we just run
+    // the server with `cargo watch` and rely on its own file watch.
     let sh = Shell::new()?;
     sh.change_dir("crates/euchre_server");
     cmd!(sh, "cargo watch --ignore euchre_server.log -x run").run()?;
@@ -147,36 +117,9 @@ fn serve() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn build_and_deploy_app() {
-    let sh = Shell::new().unwrap();
-    sh.change_dir("crates/euchre-app");
-
-    let result = cmd!(sh, "dx build").run();
-    if let Err(e) = result {
-        println!("Error: {:?}", e);
-    }
-
-    cmd!(sh, "npx tailwindcss -i ./input.css -o ./dist/tailwind.css")
-        .run()
-        .unwrap();
-
-    sh.change_dir("..");
-    cmd!(sh, "rsync -r ./euchre-app/dist/. ./euchre_server/static")
-        .run()
-        .unwrap();
-}
-
 fn deploy() -> anyhow::Result<()> {
     let sh = Shell::new()?;
-    sh.change_dir("crates/euchre-app");
-
-    cmd!(sh, "dx build --profile wasm").run()?;
-
-    cmd!(sh, "npx tailwindcss -i ./input.css -o ./dist/tailwind.css").run()?;
-
-    cmd!(sh, "rsync -r ./dist/. root@{REMOTE_ADDR}:~/deploy/static").run()?;
-
-    sh.change_dir("../euchre_server");
+    sh.change_dir("crates/euchre_server");
 
     cmd!(sh, "cargo build --release").run()?;
     cmd!(
