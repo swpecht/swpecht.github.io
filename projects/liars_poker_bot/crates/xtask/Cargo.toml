@@ -9,5 +9,4 @@ edition = "2021"
 xshell = "0.2"
 clap = { workspace = true }
 anyhow = { workspace = true }
-notify = "7.0"
 itertools = { workspace = true }

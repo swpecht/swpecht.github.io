@@ -8,7 +8,6 @@ Rust workspace for game-playing AI, focused on Euchre. Uses Counterfactual Regre
 cargo build                          # Build all crates
 cargo test --release                 # Run all tests (always use --release)
 cargo bench -p card_platypus         # Run benchmarks
-cargo build --profile wasm           # Build WASM frontend
 cargo xtask <subcommand>             # Build automation (deploy, serve, etc.)
 ```
 
@@ -24,9 +23,7 @@ Training profiles are defined in `Train.toml`. Trained weights are stored in `/v
 crates/
   games/                  # Core game logic: GameState trait, Euchre, Kuhn Poker, Bluff
   card_platypus/          # AI algorithms: CFR, PIMCTS, ISMCTS, open hand solver
-  euchre_server/          # Actix-web backend with WebSocket support
-  euchre-app/             # Dioxus WASM frontend (Tailwind CSS)
-  client-server-messages/ # Shared serde message types
+  euchre_server/          # Actix-web server that renders HTML via Maud + htmx
 xtask/                  # Build/deploy automation
 ```
 
