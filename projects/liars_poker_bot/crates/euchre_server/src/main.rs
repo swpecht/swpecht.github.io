@@ -32,11 +32,13 @@ use simplelog::{
 };
 use uuid::Uuid;
 
+mod html;
+
 const DEFAULT_WEIGHTS_PATH: &str = "/var/lib/card_platypus/infostate.three_card_played";
 const MAX_CARDS_PLAYED: usize = 3;
 const SERVER_HOST: &str = "localhost";
 const SERVER_PORT: u16 = 4000;
-const WIN_SCORE: usize = 10;
+pub(crate) const WIN_SCORE: usize = 10;
 const INDEX_FILE: &str = "./static/index.html";
 const LOG_FILE: &str = "euchre_server.log";
 
@@ -46,9 +48,9 @@ const LOG_FILE: &str = "euchre_server.log";
 /// A poisoned mutex indicates a prior panic while the lock was held, which means the
 /// application state may be corrupt. In that case, panicking is the correct behavior
 /// rather than attempting to recover from potentially inconsistent state.
-struct AppState {
-    games: Mutex<HashMap<Uuid, GameData>>,
-    bot: Mutex<CFRES<EuchreGameState>>,
+pub(crate) struct AppState {
+    pub(crate) games: Mutex<HashMap<Uuid, GameData>>,
+    pub(crate) bot: Mutex<CFRES<EuchreGameState>>,
 }
 
 impl Default for AppState {
@@ -161,7 +163,10 @@ async fn post_game(
     HttpResponse::Ok().json(&game_data)
 }
 
-fn handle_ready_clear(game_data: &mut GameData, player_id: usize) -> Result<(), HttpResponse> {
+pub(crate) fn handle_ready_clear(
+    game_data: &mut GameData,
+    player_id: usize,
+) -> Result<(), HttpResponse> {
     match &mut game_data.display_state {
         GameProcessingState::WaitingTrickClear { ready_players }
         | GameProcessingState::WaitingBidClear { ready_players } => {
@@ -178,7 +183,7 @@ fn handle_ready_clear(game_data: &mut GameData, player_id: usize) -> Result<(), 
     }
 }
 
-fn handle_take_action(
+pub(crate) fn handle_take_action(
     game_data: &mut GameData,
     a: Action,
     player_id: usize,
@@ -226,7 +231,10 @@ fn handle_take_action(
     Ok(())
 }
 
-fn handle_register_player(game_data: &mut GameData, player_id: usize) -> Result<(), HttpResponse> {
+pub(crate) fn handle_register_player(
+    game_data: &mut GameData,
+    player_id: usize,
+) -> Result<(), HttpResponse> {
     let num_humans = game_data.players.iter().flatten().count();
     if num_humans >= 2 {
         return Err(HttpResponse::Forbidden().body("game already has 2 human players"));
@@ -244,7 +252,11 @@ fn handle_register_player(game_data: &mut GameData, player_id: usize) -> Result<
     Ok(())
 }
 
-fn progress_game(game_data: &mut GameData, bot: &Mutex<CFRES<EuchreGameState>>, game_id: &Uuid) {
+pub(crate) fn progress_game(
+    game_data: &mut GameData,
+    bot: &Mutex<CFRES<EuchreGameState>>,
+    game_id: &Uuid,
+) {
     let mut gs = EuchreGameState::from(game_data.gs.as_str());
 
     use GameProcessingState::*;
@@ -397,6 +409,7 @@ async fn main() -> std::io::Result<()> {
             .service(api_index)
             .service(get_game)
             .service(post_game)
+            .configure(html::configure)
             .route("/ws/", web::get().to(handle_euchre_ws))
             // Need to register this last so other services are accessible
             .service(actix_files::Files::new("/", "./static").index_file("index.html"))
@@ -407,7 +420,7 @@ async fn main() -> std::io::Result<()> {
     .await
 }
 
-fn new_game() -> EuchreGameState {
+pub(crate) fn new_game() -> EuchreGameState {
     let mut gs = Euchre::new_state();
 
     let mut actions = Vec::new();
