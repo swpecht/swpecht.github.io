@@ -204,6 +204,7 @@ impl IStateNormalizer<EuchreGameState> for LossyEuchreNormalizer {
         let len = new_key.len();
         let cards_played = gs.cards_played;
         let trump = gs.trump.unwrap();
+        let ppt = gs.players_per_trick();
         let mut lead_suit = Suit::Spades;
 
         new_key
@@ -212,7 +213,7 @@ impl IStateNormalizer<EuchreGameState> for LossyEuchreNormalizer {
             .enumerate()
             .for_each(|(i, x)| {
                 let a = EAction::from(*x);
-                if i % 4 == 0 {
+                if i % ppt == 0 {
                     lead_suit = gs.get_suit(a.card());
                 }
                 let new_a = match a {
@@ -410,7 +411,7 @@ mod tests {
     #[test]
     fn test_normalize_edge_cases() {
         validate_norm_denorm("Qs9cJcAhKd|JsTdJdQdAd|KsAsAcJhQh|TsTcKc9h9d|Kh|PPPPP");
-        validate_norm_denorm("TsAsQc9hAh|9sTcQhQdAd|Qs9cKcKhJd|JsKsJcAc9d|Th|T|")
+        validate_norm_denorm("TsAsQc9hAh|9sTcQhQdAd|Qs9cKcKhJd|JsKsJcAc9d|Th|T|P|")
     }
 
     fn validate_norm_denorm(state_string: &str) {
@@ -449,13 +450,13 @@ mod tests {
         );
 
         let gs = EuchreGameState::from(
-            "Qc9sTs9dAd|9cKsThQhTd|KcAsJhKhQd|JcJs9hAhJd|Qs|T|9h|9sKsAsJs|JcTsQhKc",
+            "Qc9sTs9dAd|9cKsThQhTd|KcAsJhKhQd|JcJs9hAhJd|Qs|T|9h|P|9sKsAsJs|JcTsQhKc",
         );
         let key = gs.istate_key(3);
 
         use EAction::*;
         let should = &[
-            JS, JC, NH, AH, JD, QS, Pickup, NH, NS, KS, AS, JS, JC, TS, NH, NC,
+            JS, JC, NH, AH, JD, QS, Pickup, NH, Pass, NS, KS, AS, JS, JC, TS, NH, NC,
         ];
         assert_eq!(
             normalizer.normalize_istate(&key, &gs).get(),

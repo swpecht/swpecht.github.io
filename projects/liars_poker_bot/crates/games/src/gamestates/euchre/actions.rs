@@ -58,12 +58,13 @@ pub enum EAction {
     /// Value to differentiate discard states from player 0 states
     DiscardMarker = (Card::AH as u32) << 2,
     Pickup = (Card::AS as u32) << 2,
+    Alone = (Card::AC as u32) << 2,
     Pass = (Card::AD as u32) << 2, // make this the largest for saner sorting with suit call actions
 }
 
 /// Bit mask for EActions that should now by impacted by suit translations
 pub(super) const UNSUITED_ACTION_MASK: u32 =
-    EAction::DiscardMarker as u32 | EAction::Pickup as u32 | EAction::Pass as u32;
+    EAction::DiscardMarker as u32 | EAction::Pickup as u32 | EAction::Alone as u32 | EAction::Pass as u32;
 
 impl EAction {
     pub fn card(&self) -> Card {
@@ -177,6 +178,7 @@ fn eaction_fmt(v: &EAction, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
         EAction::Diamonds => f.write_char('D'),
         EAction::Pickup => f.write_char('T'),
         EAction::Pass => f.write_char('P'),
+        EAction::Alone => f.write_char('L'),
         EAction::DiscardMarker => f.write_str("|Dis|"),
         _ => f.write_str(&v.card().to_string()),
     }

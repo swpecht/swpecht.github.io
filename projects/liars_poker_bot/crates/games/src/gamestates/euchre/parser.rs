@@ -28,6 +28,7 @@ impl From<&str> for EuchreGameState {
                 EPhase::Pickup => 1,
                 EPhase::Discard => 2,
                 EPhase::ChooseTrump => 1,
+                EPhase::Alone => 1,
                 EPhase::Play => 2,
             };
 
@@ -38,8 +39,9 @@ impl From<&str> for EuchreGameState {
             let a = match (gs.phase(), action_buffer.as_str()) {
                 (EPhase::DealHands, x) => EAction::from(Card::from(x)),
                 (EPhase::DealFaceUp, x) => EAction::from(Card::from(x)),
-                (EPhase::Pickup | EPhase::ChooseTrump, "P") => EAction::Pass,
+                (EPhase::Pickup | EPhase::ChooseTrump | EPhase::Alone, "P") => EAction::Pass,
                 (EPhase::Pickup, "T") => EAction::Pickup,
+                (EPhase::Alone, "L") => EAction::Alone,
                 (EPhase::Discard, x) => EAction::from(Card::from(x)),
                 (EPhase::ChooseTrump, x) => match x {
                     "S" => EAction::Spades,

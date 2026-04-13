@@ -50,25 +50,27 @@ impl ResampleFromInfoState for EuchreGameState {
             .for_each(|(c, _)| known_cards[player].add(c));
 
         // Remove a suit from allowed cards if player didn't previously follow suit
+        let ppt = self.players_per_trick();
         let offset = key.len() - self.cards_played;
         for t in 0..5 {
-            let trick_start = offset + t * 4;
+            let trick_start = offset + t * ppt;
             let lead = key.get(trick_start).map(|x| EAction::from(*x).card());
             if lead.is_none() {
                 break;
             }
 
-            let lead_player = self.play_order[trick_start];
             let lead_suit = self.get_suit(lead.unwrap());
 
-            for i in 1..3 {
+            // Check each follower in the trick
+            for i in 1..ppt {
                 if let Some(played_card) =
                     key.get(trick_start + i).map(|x| EAction::from(*x).card())
                 {
+                    let follower = self.play_order[trick_start + i];
                     let played_suit = self.get_suit(played_card);
                     if played_suit != lead_suit {
                         let suit_cards = suit_mask(lead_suit, self.trump);
-                        allowed_cards[(lead_player + i) % 4].remove_all(suit_cards);
+                        allowed_cards[follower].remove_all(suit_cards);
                     }
                 }
             }

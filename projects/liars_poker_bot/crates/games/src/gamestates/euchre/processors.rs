@@ -34,6 +34,7 @@ pub fn euchre_early_terminate(gs: &EuchreGameState) -> bool {
         return false;
     }
 
+
     let mut future_score = gs.tricks_won;
     let mut highest = None;
     let mut i = 0;
@@ -95,6 +96,12 @@ fn get_n_highest_trump(gs: &EuchreGameState, n: usize) -> Option<(Player, Card)>
         use deck::CardLocation::*;
         match loc {
             Player0 | Player1 | Player2 | Player3 => {
+                // Skip cards held by sitting-out player when going alone
+                if let Some(sitting_out) = gs.sitting_out_player() {
+                    if loc.to_player() == Some(sitting_out) {
+                        continue;
+                    }
+                }
                 if n == count {
                     owner = loc.to_player();
                     highest_trump = Some(*c);
@@ -200,7 +207,7 @@ mod tests {
     #[test]
     fn test_highest_trump() {
         // Shouldn't do any filtering here as player 3 has the highest card
-        let gs = EuchreGameState::from("KcTsJsQsAd|9cTcAcKsAs|ThKh9dJdKd|JcJhQhAhQd|Qc|PT|Ah|");
+        let gs = EuchreGameState::from("KcTsJsQsAd|9cTcAcKsAs|ThKh9dJdKd|JcJhQhAhQd|Qc|PT|Ah|P|");
         let mut actions = Vec::new();
         gs.legal_actions(&mut actions);
         let old_actions = actions.clone();
@@ -208,7 +215,7 @@ mod tests {
         assert_eq!(actions, old_actions);
 
         let gs =
-            EuchreGameState::from("KcTsJsQsQd|9cTcAcKsAs|ThKh9dJdKd|JcJhQhAhAd|Qc|PT|Ah|QdAs9dAd");
+            EuchreGameState::from("KcTsJsQsQd|9cTcAcKsAs|ThKh9dJdKd|JcJhQhAhAd|Qc|PT|Ah|P|QdAs9dAd");
         let mut actions = Vec::new();
         gs.legal_actions(&mut actions);
         evaluate_highest_trump_first(&gs, &mut actions);
@@ -219,7 +226,7 @@ mod tests {
 
         // Not leading, so should just return all actions
         let gs = EuchreGameState::from(
-            "KcTsJsQsAd|9cTcAcKsAs|ThKh9dJdKd|JcJhQhAhQd|Qc|T|Jc|JsAcThQc|KcTcKhJh|Ts",
+            "KcTsJsQsAd|9cTcAcKsAs|ThKh9dJdKd|JcJhQhAhQd|Qc|T|Jc|P|JsAcThQc|KcTcKhJh|Ts",
         );
         let mut actions = Vec::new();
         gs.legal_actions(&mut actions);
@@ -231,7 +238,7 @@ mod tests {
     #[test]
     fn test_remove_equivalent_cards() {
         // shouldn't remove any cards
-        let gs = EuchreGameState::from("Kc9sQsAsAd|9cTcAcKsJs|ThKh9dJdKd|TsJhQhAhQd|Qc|PT|Ah|");
+        let gs = EuchreGameState::from("Kc9sQsAsAd|9cTcAcKsJs|ThKh9dJdKd|TsJhQhAhQd|Qc|PT|Ah|P|");
         let mut actions = Vec::new();
         gs.legal_actions(&mut actions);
         let old_actions = actions.clone();
@@ -241,7 +248,7 @@ mod tests {
             old_actions.into_iter().map(EAction::from).collect_vec(),
         );
 
-        let gs = EuchreGameState::from("KcTsJsQsAd|9cTcAcKsAs|ThKh9dJdKd|JcJhQhAhQd|Qc|PT|Ah|");
+        let gs = EuchreGameState::from("KcTsJsQsAd|9cTcAcKsAs|ThKh9dJdKd|JcJhQhAhQd|Qc|PT|Ah|P|");
         let mut actions = Vec::new();
         gs.legal_actions(&mut actions);
         remove_equivlent_cards(&gs, &mut actions);

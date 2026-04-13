@@ -327,9 +327,19 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
         let policy;
         {
             let normalizer = self.normalizer.clone();
-            let infostate_info = self
-                .lookup_entry(&info_state_key)
-                .unwrap_or_else(|| InfoState::new(normalized_actions.clone()));
+            let was_loaded;
+            let infostate_info = match self.lookup_entry(&info_state_key) {
+                Some(v) => {
+                    was_loaded = true;
+                    v
+                }
+                None => {
+                    was_loaded = false;
+                    InfoState::new(normalized_actions.clone())
+                }
+            };
+            let stored_norm_actions: Vec<NormalizedAction> =
+                infostate_info.regrets().into_iter().map(|(a, _)| a).collect();
             let regrets = infostate_info
                 .regrets()
                 .into_iter()
@@ -340,7 +350,30 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
 
             let mut policy_actions = policy.actions().clone();
             policy_actions.sort();
-            assert_eq!(actions, policy_actions, "{}", gs);
+            let mut sorted_actions = actions.clone();
+            sorted_actions.sort();
+            if sorted_actions != policy_actions {
+                let raw_key = gs.istate_key(cur_player);
+                panic!(
+                    "ISTATE COLLISION DETECTED in CFRES update_regrets\n\
+                     gs: {}\n\
+                     cur_player: {}\n\
+                     legal actions (sorted): {:?}\n\
+                     stored normalized actions: {:?}\n\
+                     denormalized policy actions (sorted): {:?}\n\
+                     normalized info_state_key: {:?}\n\
+                     raw istate_key: {:?}\n\
+                     was_loaded_from_indexer: {}",
+                    gs,
+                    cur_player,
+                    sorted_actions,
+                    stored_norm_actions,
+                    policy_actions,
+                    info_state_key.get(),
+                    raw_key,
+                    was_loaded,
+                );
+            }
         }
 
         let mut value = 0.0;

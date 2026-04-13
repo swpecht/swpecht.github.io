@@ -211,7 +211,7 @@ mod tests {
     #[test]
     fn pimcts_consistency() {
         let gs = EuchreGameState::from(
-            "JsQs9hKhAh|TcQcKcThAd|9cJc9sAsQh|KsJh9dJdQd|Kd|PPPT|Ks|JsThAsJh|JdQsAd9c|Qd",
+            "JsQs9hKhAh|TcQcKcThAd|9cJc9sAsQh|KsJh9dJdQd|Kd|PPPT|Ks|P|JsThAsJh|JdQsAd9c|Qd",
         );
 
         let mut policy = PIMCTSBot::new(

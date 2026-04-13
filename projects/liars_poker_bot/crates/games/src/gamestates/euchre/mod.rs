@@ -45,6 +45,7 @@ impl Euchre {
             deck: Deck::default(),
             cards_played: 0,
             phase: EPhase::DealHands,
+            going_alone: false,
         }
     }
 
@@ -73,6 +74,7 @@ pub struct EuchreGameState {
     deck: Deck,
     cards_played: usize,
     phase: EPhase,
+    going_alone: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy, Serialize, Deserialize, Hash, Default)]
@@ -84,6 +86,8 @@ pub enum EPhase {
     /// The dealer has been told to pickup the trump suit
     Discard,
     ChooseTrump,
+    /// Trump caller decides whether to go alone
+    Alone,
     Play,
 }
 
@@ -101,7 +105,7 @@ impl EuchreGameState {
         {
             use EAction::*;
             match a {
-                Pass | Pickup | Spades | Clubs | Diamonds | Hearts => *b = Some(a),
+                Pass | Pickup | Alone | Spades | Clubs | Diamonds | Hearts => *b = Some(a),
                 _ => break,
             }
         }
@@ -111,14 +115,44 @@ impl EuchreGameState {
 
     pub fn trump_caller(&self) -> Option<Player> {
         match self.phase() {
-            EPhase::Play | EPhase::Discard => Some(self.trump_caller),
+            EPhase::Play | EPhase::Discard | EPhase::Alone => Some(self.trump_caller),
             _ => None,
         }
+    }
+
+    pub fn going_alone(&self) -> bool {
+        self.going_alone
+    }
+
+    /// Number of players participating in each trick (3 if going alone, 4 otherwise)
+    pub fn players_per_trick(&self) -> usize {
+        if self.going_alone { 3 } else { 4 }
+    }
+
+    /// Returns the partner of the trump caller who sits out when going alone
+    pub fn sitting_out_player(&self) -> Option<Player> {
+        if self.going_alone {
+            Some((self.trump_caller + 2) % 4)
+        } else {
+            None
+        }
+    }
+
+    /// Advances to next player, skipping the sitting-out partner if going alone
+    fn next_player(&self, player: Player) -> Player {
+        let mut next = (player + 1) % self.num_players;
+        if let Some(sitting_out) = self.sitting_out_player() {
+            if next == sitting_out {
+                next = (next + 1) % self.num_players;
+            }
+        }
+        next
     }
 
     /// Returns true if the bidding phase just ended
     pub fn bidding_ended(&self) -> bool {
         self.phase() == EPhase::Discard
+            || self.phase() == EPhase::Alone
             || (self.phase() == EPhase::Play
                 && self.cards_played == 0
                 // don't want to go into this phase twice if we discarded
@@ -127,20 +161,22 @@ impl EuchreGameState {
 
     /// Returns true if a trick is over. Returns false if a trick hasn't started yet
     pub fn is_trick_over(&self) -> bool {
-        self.cards_played % 4 == 0 && self.cards_played > 0
+        let ppt = self.players_per_trick();
+        self.cards_played.is_multiple_of(ppt) && self.cards_played > 0
     }
 
-    pub fn last_trick(&self) -> Option<(Player, [Card; 4])> {
-        if self.cards_played < 4 {
+    pub fn last_trick(&self) -> Option<(Player, Vec<Card>)> {
+        let ppt = self.players_per_trick();
+        if self.cards_played < ppt {
             return None;
         }
 
-        let cards_played_in_cur_trick = self.cards_played % 4;
+        let cards_played_in_cur_trick = self.cards_played % ppt;
 
-        let sidx = self.key.len() - cards_played_in_cur_trick - 4;
-        let mut trick = [Card::NS; 4];
-        for (i, t) in trick.iter_mut().enumerate() {
-            *t = EAction::from(self.key[sidx + i]).card();
+        let sidx = self.key.len() - cards_played_in_cur_trick - ppt;
+        let mut trick = Vec::with_capacity(ppt);
+        for i in 0..ppt {
+            trick.push(EAction::from(self.key[sidx + i]).card());
         }
 
         let trick_starter = self.play_order[sidx];
@@ -199,7 +235,7 @@ impl EuchreGameState {
         }
         self.deck.set(card, self.cur_player.into());
 
-        if (self.key.len() + 1) % CARDS_PER_HAND == 0 {
+        if (self.key.len() + 1).is_multiple_of(CARDS_PER_HAND) {
             self.cur_player = (self.cur_player + 1) % self.num_players
         }
 
@@ -305,8 +341,8 @@ impl EuchreGameState {
             self.cur_player += 1;
         } else {
             self.trump_caller = self.cur_player;
-            self.cur_player = 0;
-            self.phase = EPhase::Play
+            self.cur_player = self.trump_caller;
+            self.phase = EPhase::Alone;
         }
     }
 
@@ -321,8 +357,28 @@ impl EuchreGameState {
             self.deck
         );
         self.deck.set(discard, CardLocation::None); // dealer
+        self.cur_player = self.trump_caller;
+        self.phase = EPhase::Alone;
+    }
+
+    fn apply_action_alone(&mut self, a: Action) {
+        match EAction::from(a) {
+            EAction::Alone => {
+                self.going_alone = true;
+            }
+            EAction::Pass => {
+                self.going_alone = false;
+            }
+            _ => panic!("invalid action during alone phase"),
+        }
+        // Start play from player 0, skipping sitting-out partner if needed
         self.cur_player = 0;
-        self.phase = EPhase::Play
+        if let Some(sitting_out) = self.sitting_out_player() {
+            if self.cur_player == sitting_out {
+                self.cur_player = self.next_player(self.cur_player);
+            }
+        }
+        self.phase = EPhase::Play;
     }
 
     fn apply_action_play(&mut self, a: Action) {
@@ -332,23 +388,23 @@ impl EuchreGameState {
             "Attempted to play card not in players hand"
         );
 
+        let ppt = self.players_per_trick();
+
         // track the cards in play for isomorphic key
         self.deck.play(card, self.cur_player).unwrap();
         self.cards_played += 1;
 
         // Set acting player based on who won last trick
-        // We can't use the trick_over function, since we need to accounts for the action that
-        // hasn't yet been pushed to the action history. To accounts for this we add a +1 to key.len()
-        let trick_over = self.cards_played % 4 == 0;
+        let trick_over = self.cards_played.is_multiple_of(ppt);
         // trick is over and played at least one card
         if trick_over && self.cards_played > 0 {
             let trick = self.last_trick_with_card(card).unwrap();
-            let starter = (self.cur_player + 1) % self.num_players;
+            let starter = self.next_player(self.cur_player);
             let winner = self.evaluate_trick(&trick, starter);
             self.cur_player = winner;
 
             // save the trick winner for later
-            let trick = self.cards_played / 4 - 1;
+            let trick = self.cards_played / ppt - 1;
             self.trick_winners[trick] = winner;
             self.tricks_won[winner % 2] += 1;
 
@@ -359,32 +415,33 @@ impl EuchreGameState {
                 }
             }
         } else {
-            self.cur_player = (self.cur_player + 1) % self.num_players;
+            self.cur_player = self.next_player(self.cur_player);
         }
     }
 
-    /// Determine if current trick is over (all 4 players have played)
+    /// Determine if current trick is over (all players have played)
     /// Also returns true if none have played
     fn is_start_of_trick(&self) -> bool {
-        self.cards_played % 4 == 0
+        self.cards_played.is_multiple_of(self.players_per_trick())
     }
 
     /// Gets last trick with a as the final action of the trick
-    fn last_trick_with_card(&self, card: Card) -> Option<[Card; 4]> {
+    fn last_trick_with_card(&self, card: Card) -> Option<Vec<Card>> {
         if self.phase() != EPhase::Play {
             return None;
         }
 
-        if self.cards_played < 4 {
+        let ppt = self.players_per_trick();
+        if self.cards_played < ppt {
             return None;
         }
 
-        let sidx = self.key.len() - 3;
-        let mut trick = [Card::NS; 4];
-        for (i, t) in trick.iter_mut().enumerate().take(3) {
-            *t = EAction::from(self.key[sidx + i]).card();
+        let sidx = self.key.len() - (ppt - 1);
+        let mut trick = Vec::with_capacity(ppt);
+        for i in 0..(ppt - 1) {
+            trick.push(EAction::from(self.key[sidx + i]).card());
         }
-        trick[3] = card;
+        trick.push(card);
 
         Some(trick)
     }
@@ -395,7 +452,7 @@ impl EuchreGameState {
             panic!("tried to get leading card of trick at invalid time")
         }
 
-        let cards_played_in_trick = self.cards_played % 4;
+        let cards_played_in_trick = self.cards_played % self.players_per_trick();
         if cards_played_in_trick == 0 {
             panic!()
         }
@@ -472,6 +529,15 @@ impl EuchreGameState {
         }
     }
 
+    /// Maps a trick position index to the actual player, accounting for going alone
+    fn trick_position_to_player(&self, trick_starter: Player, position: usize) -> Player {
+        let mut player = trick_starter;
+        for _ in 0..position {
+            player = self.next_player(player);
+        }
+        player
+    }
+
     /// Returns the player who won the trick
     fn evaluate_trick(&self, cards: &[Card], trick_starter: Player) -> Player {
         use Card::*;
@@ -484,12 +550,12 @@ impl EuchreGameState {
 
         // right always wins
         if let Some(winner) = cards.iter().position(|c| *c == right) {
-            return (trick_starter + winner) % self.num_players;
+            return self.trick_position_to_player(trick_starter, winner);
         }
 
         // if no right, left always wins
         if let Some(winner) = cards.iter().position(|c| *c == left) {
-            return (trick_starter + winner) % self.num_players;
+            return self.trick_position_to_player(trick_starter, winner);
         }
 
         // otherwise we can just evaluate by rank
@@ -499,16 +565,16 @@ impl EuchreGameState {
         let trumps = card_mask & trump_mask;
         if !trumps.is_empty() {
             let highest_card = trumps.highest().unwrap();
-            return (trick_starter + cards.iter().position(|c| *c == highest_card).unwrap())
-                % self.num_players;
+            let pos = cards.iter().position(|c| *c == highest_card).unwrap();
+            return self.trick_position_to_player(trick_starter, pos);
         }
 
         let leading_suit = self.get_suit(cards[0]);
         let leading_mask = suit_mask(leading_suit, self.trump);
         let follow_suits = card_mask & leading_mask;
         let highest_card = follow_suits.highest().unwrap();
-        return (trick_starter + cards.iter().position(|c| *c == highest_card).unwrap())
-            % self.num_players;
+        let pos = cards.iter().position(|c| *c == highest_card).unwrap();
+        self.trick_position_to_player(trick_starter, pos)
     }
 
     /// Gets the suit of a given card. Accounts for the weird scoring of the trump suit
@@ -583,10 +649,11 @@ impl EuchreGameState {
         assert!(tricks0 >= 3 || tricks1 >= 3);
         assert_eq!(self.phase(), EPhase::Play);
 
-        let team_0_call = self.trump_caller % 2 == 0;
+        let team_0_call = self.trump_caller.is_multiple_of(2);
+        let march_score = if self.going_alone { 4.0 } else { 2.0 };
         match (tricks0, tricks1, team_0_call) {
-            (5, 0, _) => 2.0,
-            (0, 5, _) => -2.0,
+            (5, 0, _) => march_score,
+            (0, 5, _) => -march_score,
             (3 | 4, _, true) => 1.0,
             (3 | 4, _, false) => 2.0,
             (_, 3 | 4, true) => -2.0,
@@ -604,6 +671,8 @@ impl Display for EuchreGameState {
         let key = &self.key();
         let mut first_play = None;
         let mut is_last_take = false;
+        let mut in_alone_phase = false;
+        let ppt = self.players_per_trick();
 
         for i in 0..key.len() {
             let a = EAction::from(key[i]);
@@ -616,19 +685,30 @@ impl Display for EuchreGameState {
                 _ if i == 20 => true,
                 EAction::Pickup => true,
                 EAction::Clubs | EAction::Diamonds | EAction::Hearts | EAction::Spades => {
-                    first_play = Some(i + 1);
+                    in_alone_phase = true;
                     true
                 }
                 // discard action
                 _ if i > 20 && is_last_take => {
+                    in_alone_phase = true;
+                    true
+                }
+                // alone decision
+                EAction::Alone => {
                     first_play = Some(i + 1);
+                    in_alone_phase = false;
+                    true
+                }
+                // pass in alone phase (declining to go alone)
+                EAction::Pass if in_alone_phase => {
+                    first_play = Some(i + 1);
+                    in_alone_phase = false;
                     true
                 }
                 EAction::Pass => false,
                 EAction::DiscardMarker => false,
                 // everything else is Play
-                _ => ((i - first_play.unwrap() + 1) % 4 == 0) && (i != first_play.unwrap()),
-                // _ => false,
+                _ => ((i - first_play.unwrap() + 1) % ppt == 0) && (i != first_play.unwrap()),
             };
             if append_pipe {
                 write!(f, "|").unwrap();
@@ -656,6 +736,7 @@ impl GameState for EuchreGameState {
             EPhase::Pickup => self.apply_action_pickup(a),
             EPhase::ChooseTrump => self.apply_action_choose_trump(a),
             EPhase::Discard => self.apply_action_discard(a),
+            EPhase::Alone => self.apply_action_alone(a),
             EPhase::Play => self.apply_action_play(a),
         }
         self.update_keys(a);
@@ -678,6 +759,10 @@ impl GameState for EuchreGameState {
                 }
             }
             EPhase::ChooseTrump => self.legal_actions_choose_trump(actions),
+            EPhase::Alone => {
+                actions.push(EAction::Alone.into());
+                actions.push(EAction::Pass.into());
+            }
             EPhase::Play => self.legal_actions_play(actions),
         };
     }
@@ -692,7 +777,7 @@ impl GameState for EuchreGameState {
         if team == 0 {
             self.score(future_tricks.0, future_tricks.1)
         } else {
-            -1.0 * self.score(future_tricks.0, future_tricks.1)
+            -self.score(future_tricks.0, future_tricks.1)
         }
     }
 
@@ -809,23 +894,36 @@ impl GameState for EuchreGameState {
         }
 
         // If the dealer, show the discarded card if that happened
+        let mut extra_offset = 0;
         if player == 3 && pickup_called {
             r.push('|');
             let a = istate[6 + num_pickups];
 
             let d = EAction::from(a).to_string();
             r.push_str(&d);
+            extra_offset = 1;
+        }
+
+        // Alone decision (L or P)
+        let alone_offset = 6 + num_pickups + num_calls + extra_offset;
+        if alone_offset < istate.len() {
+            let alone_action = EAction::from(istate[alone_offset]);
+            if alone_action == EAction::Alone || (alone_action == EAction::Pass && self.phase != EPhase::Alone) {
+                r.push_str(&alone_action.to_string());
+                extra_offset += 1;
+            }
+        }
+
+        if self.phase() == EPhase::Alone {
+            return r;
         }
 
         // populate play data
+        let ppt = self.players_per_trick();
         let mut turn = 0;
-        let mut i = if player == 3 && pickup_called {
-            6 + num_pickups + num_calls + 1 // pickups + discard + 1 to get first play
-        } else {
-            6 + num_pickups + num_calls
-        };
+        let mut i = 6 + num_pickups + num_calls + extra_offset;
         while i < istate.len() {
-            if turn % 4 == 0 {
+            if turn % ppt == 0 {
                 r.push('|');
             }
 
@@ -837,7 +935,7 @@ impl GameState for EuchreGameState {
             i += 1;
         }
 
-        if turn % 4 == 0 {
+        if turn % ppt == 0 {
             r.push('|');
         }
 
@@ -847,7 +945,7 @@ impl GameState for EuchreGameState {
     fn is_terminal(&self) -> bool {
         let future_tricks = self.future_tricks();
 
-        self.cards_played == 20
+        self.cards_played == 5 * self.players_per_trick()
         // Check if the scores are already decided: see if have taken a trick in defence
         || (future_tricks.0 > 0 && future_tricks.1 >= 3)
         || (future_tricks.0 >= 3 && future_tricks.1 > 0)
@@ -883,10 +981,11 @@ impl GameState for EuchreGameState {
         self.cur_player = self.play_order.pop().unwrap();
         let action_number = self.key.len();
         let applied_action = EAction::from(self.key.pop());
+        let ppt = self.players_per_trick();
 
         // fix the trick winner counts
-        if self.cards_played > 0 && self.cards_played % 4 == 0 {
-            let trick = self.cards_played / 4 - 1;
+        if self.cards_played > 0 && self.cards_played.is_multiple_of(ppt) {
+            let trick = self.cards_played / ppt - 1;
             let last_winner = self.trick_winners[trick];
             self.trick_winners[trick] = 0; // reset it
             self.tricks_won[last_winner % 2] -= 1;
@@ -906,9 +1005,18 @@ impl GameState for EuchreGameState {
                 self.phase = EPhase::DealFaceUp;
             }
 
+            EAction::Alone => {
+                self.going_alone = false;
+                self.phase = EPhase::Alone;
+            }
+
             EAction::Pass => {
+                // Undo alone-phase Pass: phase is Play and no cards played yet
+                if self.phase == EPhase::Play && self.cards_played == 0 {
+                    self.phase = EPhase::Alone;
+                }
                 // did we just undo the last pickup action?
-                if self.key.len() == 20 + 1 + 3 {
+                else if self.key.len() == 20 + 1 + 3 {
                     self.phase = EPhase::Pickup;
                     let face_up = self
                         .face_up()
@@ -948,15 +1056,15 @@ impl GameState for EuchreGameState {
 
                 self.cards_played -= 1;
                 // put the old cards back on the table if trick just ended
-                if self.cards_played % 4 == 3 {
+                if self.cards_played % ppt == ppt - 1 {
                     self.deck.set(c, self.cur_player.into());
 
                     for (a, p) in self
                         .key
                         .iter()
                         .rev()
-                        .take(self.cards_played % 4)
-                        .zip(self.play_order.iter().rev().take(self.cards_played % 4))
+                        .take(self.cards_played % ppt)
+                        .zip(self.play_order.iter().rev().take(self.cards_played % ppt))
                     {
                         let c = EAction::from(*a).card();
                         self.deck.set(c, CardLocation::Played(*p));
@@ -987,6 +1095,7 @@ impl GameState for EuchreGameState {
         self.tricks_won.hash(&mut hasher);
         let calling_team = self.trump_caller % 2;
         calling_team.hash(&mut hasher);
+        self.going_alone.hash(&mut hasher);
 
         // Necessary for search stability of the open hand solver
         // Previous attempts with just the team being hashed don't work.
@@ -1034,7 +1143,7 @@ mod tests {
     use std::{collections::HashSet, vec};
 
     use itertools::Itertools;
-    use rand::{rngs::StdRng, seq::IndexedRandom, rng, SeedableRng};
+    use rand::{rng, rngs::StdRng, seq::IndexedRandom, RngExt, SeedableRng};
 
     use crate::{
         actions,
@@ -1072,9 +1181,13 @@ mod tests {
         assert_eq!(s.cur_player, 0);
         s.apply_action(EAction::Pass.into());
         s.apply_action(EAction::Clubs.into());
-        assert_eq!(s.cur_player, 0);
+        assert_eq!(s.cur_player, 1); // player 1 called clubs, now decides alone
+
+        assert_eq!(s.phase(), EPhase::Alone);
+        s.apply_action(EAction::Pass.into()); // decline to go alone
 
         assert_eq!(s.phase(), EPhase::Play);
+        assert_eq!(s.cur_player, 0);
     }
 
     #[test]
@@ -1104,6 +1217,10 @@ mod tests {
 
         assert_eq!(s.phase(), EPhase::Discard);
         s.apply_action(EAction::QH.into());
+
+        assert_eq!(s.phase(), EPhase::Alone);
+        assert_eq!(s.cur_player, 3); // dealer (player 3) called pickup, decides alone
+        s.apply_action(EAction::Pass.into()); // decline to go alone
 
         assert_eq!(s.phase(), EPhase::Play);
         assert_eq!(s.cur_player, 0);
@@ -1142,6 +1259,14 @@ mod tests {
         assert_eq!(gs.phase(), EPhase::Discard);
         gs.apply_action(EAction::QH.into());
 
+        // Alone decision
+        assert_eq!(gs.phase(), EPhase::Alone);
+        assert_eq!(
+            actions!(gs),
+            vec![EAction::Alone.into(), EAction::Pass.into()]
+        );
+        gs.apply_action(EAction::Pass.into());
+
         // Cards player 0s hand
         assert_eq!(gs.phase(), EPhase::Play);
         assert_eq!(
@@ -1166,7 +1291,7 @@ mod tests {
             gs
         );
 
-        let gs = EuchreGameState::from("TcQs9hJdQd|QcThJhKhKd|AcTsAhTdAd|9cKc9sKsQh|Jc|T|Kc|QdKd");
+        let gs = EuchreGameState::from("TcQs9hJdQd|QcThJhKhKd|AcTsAhTdAd|9cKc9sKsQh|Jc|T|Kc|P|QdKd");
         let actions = actions!(gs);
         assert_eq!(gs.cur_player(), 2);
         use EAction::*;
@@ -1198,6 +1323,8 @@ mod tests {
         s.apply_action(EAction::Pickup.into());
         s.apply_action(EAction::from(Card::TD).into());
         assert_eq!(s.trump, Some(Suit::Clubs));
+        assert_eq!(s.phase(), EPhase::Alone);
+        s.apply_action(EAction::Pass.into()); // decline alone
         assert_eq!(s.phase(), EPhase::Play);
         // Jack of spades is now a club since it's trump
         assert_eq!(s.get_suit(Card::JS), Suit::Clubs);
@@ -1227,16 +1354,21 @@ mod tests {
         // Dealer discards the QH
         assert_eq!(gs.istate_string(3), "QhKhAh9dTd|Js|T|0S");
         gs.apply_action(EAction::QH.into());
-        assert_eq!(gs.istate_string(3), "QhKhAh9dTd|Js|T|0S|Qh|");
+        // After discard, now in Alone phase
+        assert_eq!(gs.phase(), EPhase::Alone);
+
+        // Alone decision
+        assert_eq!(gs.phase(), EPhase::Alone);
+        gs.apply_action(EAction::Pass.into()); // decline to go alone
 
         for _ in 0..4 {
             let a = actions!(gs)[0];
             gs.apply_action(a);
         }
-        assert_eq!(gs.istate_string(0), "9cTcJcQcKc|Js|T|0S|9cAcKsJs|");
-        assert_eq!(gs.istate_string(1), "9sTsQsAcJd|Js|T|0S|9cAcKsJs|");
-        assert_eq!(gs.istate_string(2), "KsAs9hThJh|Js|T|0S|9cAcKsJs|");
-        assert_eq!(gs.istate_string(3), "QhKhAh9dTd|Js|T|0S|Qh|9cAcKsJs|");
+        assert_eq!(gs.istate_string(0), "9cTcJcQcKc|Js|T|0SP|9cAcKsJs|");
+        assert_eq!(gs.istate_string(1), "9sTsQsAcJd|Js|T|0SP|9cAcKsJs|");
+        assert_eq!(gs.istate_string(2), "KsAs9hThJh|Js|T|0SP|9cAcKsJs|");
+        assert_eq!(gs.istate_string(3), "QhKhAh9dTd|Js|T|0S|QhP|9cAcKsJs|");
         assert_eq!(gs.cur_player(), 3);
 
         while !gs.is_terminal() {
@@ -1254,7 +1386,10 @@ mod tests {
             new_s.apply_action(EAction::Pass.into());
         }
         new_s.apply_action(EAction::Hearts.into());
-        assert_eq!(new_s.istate_string(0), "9cTcJcQcKc|Js|PPPPPH|1H|");
+        assert_eq!(new_s.phase(), EPhase::Alone);
+        assert_eq!(new_s.istate_string(0), "9cTcJcQcKc|Js|PPPPPH|1H");
+        new_s.apply_action(EAction::Pass.into()); // decline alone
+        assert_eq!(new_s.istate_string(0), "9cTcJcQcKc|Js|PPPPPH|1HP|");
     }
 
     #[test]
@@ -1315,12 +1450,12 @@ mod tests {
         for _ in 0..100 {
             // this is a hard case where the dealer discards a card and doesn't follow suit because of it
             let gs =
-        EuchreGameState::from("AcTsThTdJd|QcJs9hKh9d|Kc9sAsQdAd|9cTcJcQsJh|Ks|PPPT|Tc|Td9dAdJh|QdJcJdKh|QsTsJs9s|9hAs9cTh|KcKs");
-            gs.resample_from_istate(2, &mut rand::rng());
+        EuchreGameState::from("AcTsThTdJd|QcJs9hKh9d|Kc9sAsQdAd|9cTcJcQsJh|Ks|PPPT|Tc|P|Td9dAdJh|QdJcJdKh|QsTsJs9s|9hAs9cTh|KcKs");
+            gs.resample_from_istate(2, &mut rng);
 
             let gs =
-        EuchreGameState::from("9cTcAc9s9d|Jc9hJhTdKd|TsQsKsJdQd|QcKcAsQhAd|Js|PPPT|Qh|9dKdJdAd|QcAcJcQd|9hTsJs9c|As9sJhQs|KcTc");
-            gs.resample_from_istate(2, &mut rand::rng());
+        EuchreGameState::from("9cTcAc9s9d|Jc9hJhTdKd|TsQsKsJdQd|QcKcAsQhAd|Js|PPPT|Qh|P|9dKdJdAd|QcAcJcQd|9hTsJs9c|As9sJhQs|KcTc");
+            gs.resample_from_istate(2, &mut rng);
         }
     }
 
@@ -1345,14 +1480,360 @@ mod tests {
 
     #[test]
     fn test_euchre_resample_from_istate_deterministic() {
-        let gs = EuchreGameState::from("9cJcQcTsTd|KcKsQhKh9d|TcAcQsAsTh|Js9hAhQdAd|Kd|PT|Js|");
-        let sampled = gs.resample_from_istate(gs.cur_player(), &mut StdRng::seed_from_u64(42));
+        let gs = EuchreGameState::from("9cJcQcTsTd|KcKsQhKh9d|TcAcQsAsTh|Js9hAhQdAd|Kd|PT|Js|P|");
+        let sampled = gs.resample_from_istate(
+            gs.cur_player(),
+            &mut StdRng::seed_from_u64(42),
+        );
 
         for _ in 0..100 {
             assert_eq!(
-                gs.resample_from_istate(gs.cur_player(), &mut StdRng::seed_from_u64(42)),
+                gs.resample_from_istate(
+                    gs.cur_player(),
+                    &mut StdRng::seed_from_u64(42),
+                ),
                 sampled
             )
         }
+    }
+
+    // ==================== Going Alone Tests ====================
+
+    #[test]
+    fn test_going_alone_pickup_path() {
+        use Card::*;
+        let cards_to_deal = [
+            NC, TC, JC, QC, KC, AC, NS, TS, JS, QS, KS, AS, NH, TH, JH, QH, KH, AH, ND, TD,
+        ];
+        let mut s = Euchre::new_state();
+        for c in cards_to_deal {
+            s.apply_action(EAction::from(c).into());
+        }
+        s.apply_action(EAction::JD.into()); // face up
+
+        // Player 0 picks up
+        s.apply_action(EAction::Pickup.into());
+        assert_eq!(s.phase(), EPhase::Discard);
+
+        // Dealer discards
+        s.apply_action(EAction::QH.into());
+        assert_eq!(s.phase(), EPhase::Alone);
+        assert_eq!(s.cur_player, 0); // trump caller decides
+
+        // Go alone
+        s.apply_action(EAction::Alone.into());
+        assert_eq!(s.phase(), EPhase::Play);
+        assert!(s.going_alone());
+        assert_eq!(s.players_per_trick(), 3);
+        assert_eq!(s.sitting_out_player(), Some(2)); // partner of player 0
+
+        // Player 0 should start (not player 2 who is sitting out)
+        assert_eq!(s.cur_player, 0);
+    }
+
+    #[test]
+    fn test_going_alone_choose_trump_path() {
+        use Card::*;
+        let cards_to_deal = [
+            NC, TC, JC, QC, KC, AC, NS, TS, JS, QS, KS, AS, NH, TH, JH, QH, KH, AH, ND, TD,
+        ];
+        let mut s = Euchre::new_state();
+        for c in cards_to_deal {
+            s.apply_action(EAction::from(c).into());
+        }
+        s.apply_action(EAction::JD.into()); // face up
+
+        // All pass in pickup
+        for _ in 0..4 {
+            s.apply_action(EAction::Pass.into());
+        }
+        assert_eq!(s.phase(), EPhase::ChooseTrump);
+
+        // Player 1 calls clubs
+        s.apply_action(EAction::Pass.into()); // player 0 passes
+        s.apply_action(EAction::Clubs.into()); // player 1 calls
+        assert_eq!(s.phase(), EPhase::Alone);
+        assert_eq!(s.cur_player, 1); // player 1 decides alone
+
+        s.apply_action(EAction::Alone.into());
+        assert!(s.going_alone());
+        assert_eq!(s.sitting_out_player(), Some(3)); // partner of player 1
+        assert_eq!(s.players_per_trick(), 3);
+
+        // Player 0 starts play (player 3 sits out but player 0 is first)
+        assert_eq!(s.cur_player, 0);
+    }
+
+    #[test]
+    fn test_decline_alone() {
+        use Card::*;
+        let cards_to_deal = [
+            NC, TC, JC, QC, KC, AC, NS, TS, JS, QS, KS, AS, NH, TH, JH, QH, KH, AH, ND, TD,
+        ];
+        let mut s = Euchre::new_state();
+        for c in cards_to_deal {
+            s.apply_action(EAction::from(c).into());
+        }
+        s.apply_action(EAction::JD.into());
+
+        // Player 0 picks up, dealer discards, declines alone
+        s.apply_action(EAction::Pickup.into());
+        s.apply_action(EAction::QH.into());
+        s.apply_action(EAction::Pass.into()); // decline alone
+
+        assert!(!s.going_alone());
+        assert_eq!(s.players_per_trick(), 4);
+        assert_eq!(s.sitting_out_player(), None);
+        assert_eq!(s.phase(), EPhase::Play);
+    }
+
+    #[test]
+    fn test_alone_player_rotation_skips_partner() {
+        // Build a going-alone game via parser
+        // Player 3 picks up, discards Tc, goes alone. Partner is player 1.
+        let gs = EuchreGameState::from(
+            "KcTsJsQsAd|9cTcAcKsAs|ThKh9dJdKd|JcJhQhAhQd|Qc|PPPT|Ah|L|"
+        );
+        assert!(gs.going_alone());
+        assert_eq!(gs.sitting_out_player(), Some(1));
+        assert_eq!(gs.players_per_trick(), 3);
+
+        // Player 0 starts (player 1 sits out)
+        assert_eq!(gs.cur_player(), 0);
+
+        // After player 0 plays, should skip to player 2 (not 1)
+        let mut gs = gs;
+        gs.apply_action(EAction::KC.into()); // player 0 plays Kc
+        assert_eq!(gs.cur_player(), 2); // skipped player 1
+    }
+
+    #[test]
+    fn test_alone_trick_detection_3_players() {
+        // Players: 0(KcTsJsQsAd), 1(sits out), 2(ThKh9dJdKd), 3(JcJhQhQd+Qc-Ah)
+        // Trump is clubs. Player 0 leads Ad, player 2 plays Kd, player 3 plays Qd
+        let gs = EuchreGameState::from(
+            "KcTsJsQsAd|9cTcAcKsAs|ThKh9dJdKd|JcJhQhAhQd|Qc|PPPT|Ah|L|AdKdQd"
+        );
+        assert!(gs.going_alone());
+        // 3 cards played = 1 trick complete
+        assert!(gs.is_trick_over());
+        assert_eq!(gs.tricks_won[0] + gs.tricks_won[1], 1);
+    }
+
+    #[test]
+    fn test_alone_terminal_at_15_cards() {
+        // Full going-alone game: 5 tricks * 3 players = 15 cards
+        let mut rng: StdRng = SeedableRng::seed_from_u64(42);
+        for _ in 0..100 {
+            let mut gs = Euchre::new_state();
+            // Play through chance nodes
+            while gs.is_chance_node() {
+                let mut actions = Vec::new();
+                gs.legal_actions(&mut actions);
+                let a = actions.choose(&mut rng).unwrap();
+                gs.apply_action(*a);
+            }
+
+            // Force going alone in first opportunity
+            let mut went_alone = false;
+            while !gs.is_terminal() {
+                let mut actions = Vec::new();
+                gs.legal_actions(&mut actions);
+                let a = if gs.phase() == EPhase::Alone {
+                    went_alone = true;
+                    EAction::Alone.into()
+                } else {
+                    *actions.choose(&mut rng).unwrap()
+                };
+                gs.apply_action(a);
+            }
+
+            if went_alone {
+                assert!(gs.cards_played <= 15, "alone game played {} cards", gs.cards_played);
+            }
+        }
+    }
+
+    #[test]
+    fn test_alone_scoring_loner_march() {
+        // Team 0 goes alone and wins all 5 tricks = 4 points
+        let mut rng: StdRng = SeedableRng::seed_from_u64(100);
+        let mut found_loner_march = false;
+
+        for _ in 0..10000 {
+            let mut gs = Euchre::new_state();
+            while gs.is_chance_node() {
+                let mut actions = Vec::new();
+                gs.legal_actions(&mut actions);
+                gs.apply_action(*actions.choose(&mut rng).unwrap());
+            }
+
+            // Play randomly but force alone
+            while !gs.is_terminal() {
+                let mut actions = Vec::new();
+                gs.legal_actions(&mut actions);
+                let a = if gs.phase() == EPhase::Alone {
+                    EAction::Alone.into()
+                } else {
+                    *actions.choose(&mut rng).unwrap()
+                };
+                gs.apply_action(a);
+            }
+
+            if gs.going_alone() && gs.tricks_won[gs.trump_caller % 2] == 5 {
+                let caller_team = gs.trump_caller % 2;
+                let score = gs.evaluate(caller_team);
+                assert_eq!(score, 4.0, "loner march should be 4 points, got {}", score);
+                found_loner_march = true;
+                break;
+            }
+        }
+        assert!(found_loner_march, "should find at least one loner march in 10000 games");
+    }
+
+    #[test]
+    fn test_alone_scoring_euchred() {
+        // When going alone and losing, defense gets 2 points
+        let mut rng: StdRng = SeedableRng::seed_from_u64(200);
+        let mut found_euchre = false;
+
+        for _ in 0..10000 {
+            let mut gs = Euchre::new_state();
+            while gs.is_chance_node() {
+                let mut actions = Vec::new();
+                gs.legal_actions(&mut actions);
+                gs.apply_action(*actions.choose(&mut rng).unwrap());
+            }
+
+            while !gs.is_terminal() {
+                let mut actions = Vec::new();
+                gs.legal_actions(&mut actions);
+                let a = if gs.phase() == EPhase::Alone {
+                    EAction::Alone.into()
+                } else {
+                    *actions.choose(&mut rng).unwrap()
+                };
+                gs.apply_action(a);
+            }
+
+            if gs.going_alone() {
+                let caller_team = gs.trump_caller % 2;
+                let defense_team = (caller_team + 1) % 2;
+                if gs.tricks_won[defense_team] >= 3 && gs.tricks_won[caller_team] > 0 {
+                    // Defense wins = euchre. Defense gets 2 points.
+                    let defense_score = gs.evaluate(defense_team);
+                    assert_eq!(defense_score, 2.0, "euchre should give defense 2 points");
+                    found_euchre = true;
+                    break;
+                }
+            }
+        }
+        assert!(found_euchre, "should find at least one euchre in 10000 games");
+    }
+
+    #[test]
+    fn test_alone_legal_actions() {
+        use Card::*;
+        let cards_to_deal = [
+            NC, TC, JC, QC, KC, AC, NS, TS, JS, QS, KS, AS, NH, TH, JH, QH, KH, AH, ND, TD,
+        ];
+        let mut s = Euchre::new_state();
+        for c in cards_to_deal {
+            s.apply_action(EAction::from(c).into());
+        }
+        s.apply_action(EAction::JD.into());
+        s.apply_action(EAction::Pickup.into());
+        s.apply_action(EAction::QH.into());
+
+        assert_eq!(s.phase(), EPhase::Alone);
+        let legal = actions!(s);
+        assert_eq!(legal, vec![EAction::Alone.into(), EAction::Pass.into()]);
+    }
+
+    #[test]
+    fn test_alone_undo() {
+        use Card::*;
+        let cards_to_deal = [
+            NC, TC, JC, QC, KC, AC, NS, TS, JS, QS, KS, AS, NH, TH, JH, QH, KH, AH, ND, TD,
+        ];
+        let mut s = Euchre::new_state();
+        for c in cards_to_deal {
+            s.apply_action(EAction::from(c).into());
+        }
+        s.apply_action(EAction::JD.into());
+        s.apply_action(EAction::Pickup.into());
+        s.apply_action(EAction::QH.into());
+
+        let before_alone = s.clone();
+        s.apply_action(EAction::Alone.into());
+        assert!(s.going_alone());
+        s.undo();
+        assert_eq!(s, before_alone);
+
+        let before_pass = s.clone();
+        s.apply_action(EAction::Pass.into());
+        assert!(!s.going_alone());
+        s.undo();
+        assert_eq!(s, before_pass);
+    }
+
+    #[test]
+    fn test_alone_parser_roundtrip() {
+        // Pickup path going alone
+        let gs1 = EuchreGameState::from(
+            "KcTsJsQsAd|9cTcAcKsAs|ThKh9dJdKd|JcJhQhAhQd|Qc|PPPT|Ah|L|"
+        );
+        assert!(gs1.going_alone());
+        assert_eq!(gs1.phase(), EPhase::Play);
+
+        // Pickup path declining alone
+        let gs2 = EuchreGameState::from(
+            "KcTsJsQsAd|9cTcAcKsAs|ThKh9dJdKd|JcJhQhAhQd|Qc|PPPT|Ah|P|"
+        );
+        assert!(!gs2.going_alone());
+        assert_eq!(gs2.phase(), EPhase::Play);
+    }
+
+    #[test]
+    fn test_alone_full_game_playthrough() {
+        // Play many full games with going alone to ensure no panics
+        let mut rng: StdRng = SeedableRng::seed_from_u64(42);
+        let mut alone_games = 0;
+
+        for _ in 0..1000 {
+            let mut gs = Euchre::new_state();
+            while !gs.is_terminal() {
+                let mut actions = Vec::new();
+                gs.legal_actions(&mut actions);
+                assert!(!actions.is_empty(), "no legal actions at: {}", gs);
+
+                let a = if gs.phase() == EPhase::Alone {
+                    // 50% chance of going alone
+                    if rng.random_range(0..2) == 0 {
+                        alone_games += 1;
+                        EAction::Alone.into()
+                    } else {
+                        EAction::Pass.into()
+                    }
+                } else {
+                    *actions.choose(&mut rng).unwrap()
+                };
+                gs.apply_action(a);
+            }
+
+            // Verify terminal state is valid
+            assert!(gs.is_terminal());
+            let score = gs.evaluate(0);
+            if gs.going_alone() {
+                assert!(
+                    score == 4.0 || score == 1.0 || score == -2.0
+                        || score == -4.0 || score == -1.0 || score == 2.0,
+                    "unexpected alone score: {} for game: {}",
+                    score,
+                    gs
+                );
+            }
+        }
+        assert!(alone_games > 100, "should have played many alone games");
     }
 }
