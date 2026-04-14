@@ -2,6 +2,15 @@ TODOs:
 [*] Get unit test running
 [*] Get the embassy example running on the pi
     * Note: need to use the blinky_wifi example since the pin for the led is on the wifi board
+[ ] Tone detection and morse logic
+    [ ] Change LED to light up when a tone is detected and send to bluetooth
+    [ ] Integrate morse code parsing based on tone detection
+[ ] Recieving messages
+    [ ] Get receive message working on bluetooth
+[ ] Website
+    [ ] Fork send and recieve examples into a page in the project
+    [ ] Add ui elements, e.g. for ID
+
 [ ] How do we want to abstract (or not) the signal from the input?
     [ ] Should we do sampling? Wait for signal edge? Something else?
 
@@ -11,6 +20,7 @@ Things to get:
 https://googlechrome.github.io/samples/web-bluetooth/index.html
  	Server can read peripheral: https://googlechrome.github.io/samples/web-bluetooth/read-characteristic-value-changed.html
 	Server can write to peripheral: https://googlechrome.github.io/samples/web-bluetooth/reset-energy.html
+    
 
 Make USB device available:
 
