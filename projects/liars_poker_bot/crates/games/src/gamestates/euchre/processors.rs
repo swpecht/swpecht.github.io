@@ -154,7 +154,11 @@ fn evaluate_picked_up_card_last(gs: &EuchreGameState, actions: &mut Vec<Action>)
 /// Removes cards that are equivalent. For example, If a player has the 9s and Ts, each card will play
 /// the same way. We don't need to evaluate both.
 fn remove_equivlent_cards(gs: &EuchreGameState, actions: &mut Vec<Action>) {
-    actions.retain(|x| find_next_card_owner(EAction::from(*x).card(), gs) != Some(gs.cur_player()));
+    actions.retain(|x| match EAction::from(*x) {
+        // Sentinel Pass plays for the sit-out partner aren't a card; keep as-is.
+        EAction::Pass => true,
+        ea => find_next_card_owner(ea.card(), gs) != Some(gs.cur_player()),
+    });
 }
 
 fn find_next_card_owner(c: Card, gs: &EuchreGameState) -> Option<Player> {

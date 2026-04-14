@@ -204,21 +204,32 @@ impl IStateNormalizer<EuchreGameState> for LossyEuchreNormalizer {
         let len = new_key.len();
         let cards_played = gs.cards_played;
         let trump = gs.trump.unwrap();
-        let ppt = gs.players_per_trick();
-        let mut lead_suit = Suit::Spades;
+        // Sit-out Pass sentinels are never normalized (they carry no suit).
+        // Track the lead suit per trick by finding the first real card; sentinels
+        // are left untouched.
+        let mut lead_suit: Option<Suit> = None;
 
         new_key
             .iter_mut()
             .skip(len - cards_played)
             .enumerate()
             .for_each(|(i, x)| {
-                let a = EAction::from(*x);
-                if i % ppt == 0 {
-                    lead_suit = gs.get_suit(a.card());
+                if i % 4 == 0 {
+                    lead_suit = None;
                 }
+                let a = EAction::from(*x);
+                if a == EAction::Pass {
+                    // sentinel, leave as-is
+                    return;
+                }
+                let suit = gs.get_suit(a.card());
+                if lead_suit.is_none() {
+                    lead_suit = Some(suit);
+                }
+                let lead = lead_suit.unwrap();
                 let new_a = match a {
                     a if gs.get_suit(a.card()) == trump => a,
-                    a if gs.get_suit(a.card()) == lead_suit => a,
+                    a if gs.get_suit(a.card()) == lead => a,
                     a if a.card().suit() == Suit::Clubs => EAction::NC,
                     a if a.card().suit() == Suit::Spades => EAction::NS,
                     a if a.card().suit() == Suit::Diamonds => EAction::ND,

@@ -29,7 +29,14 @@ impl From<&str> for EuchreGameState {
                 EPhase::Discard => 2,
                 EPhase::ChooseTrump => 1,
                 EPhase::Alone => 1,
-                EPhase::Play => 2,
+                // Play actions are 2-char cards except the `P` sit-out sentinel.
+                EPhase::Play => {
+                    if action_buffer.starts_with('P') {
+                        1
+                    } else {
+                        2
+                    }
+                }
             };
 
             if action_buffer.len() < chars_per_action {
@@ -50,6 +57,7 @@ impl From<&str> for EuchreGameState {
                     "D" => EAction::Diamonds,
                     _ => panic!("invalid suit: {}", x),
                 },
+                (EPhase::Play, "P") => EAction::Pass,
                 (EPhase::Play, x) => EAction::from(Card::from(x)),
                 _ => panic!(
                     "invalid action: {} for phase: {:?}",

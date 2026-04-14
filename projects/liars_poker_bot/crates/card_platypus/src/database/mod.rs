@@ -37,7 +37,11 @@ impl NodeStore {
 
         let path = path.map(|x| x.to_path_buf());
         let indexer = load_indexer(path.as_deref()).unwrap_or_else(|x| {
-            warn!("failed to load indexer {}", x);
+            warn!(
+                "failed to load indexer from {:?}: {}",
+                path.as_deref(),
+                x
+            );
             Indexer::euchre(max_cards_played)
         });
 

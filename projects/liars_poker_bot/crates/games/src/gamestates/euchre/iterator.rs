@@ -11,14 +11,6 @@ use super::{
 
 use EAction::*;
 const SPADES: u32 = NS as u32 | TS as u32 | JS as u32 | QS as u32 | KS as u32 | AS as u32;
-const NON_CARD_ACTIONS: u32 = Pass as u32
-    | Pickup as u32
-    | Alone as u32
-    | DiscardMarker as u32
-    | Spades as u32
-    | Clubs as u32
-    | Hearts as u32
-    | Diamonds as u32;
 
 /// Mask of set of actions
 #[derive(Default, Clone, Copy)]
@@ -154,13 +146,19 @@ impl EuchreIsomorphicIStateIterator {
                 }
             }
 
-            // todo: figure out how to handle the discard children
-            let is_alone = candidate.phase() == EPhase::Alone;
-            let skip = (matches!(candidate.phase(), EPhase::Play)
-                && candidate.cards_played() >= self.max_cards_played)
-                // we don't need to expand discard action states unless going to 4 cards played
-                || (candidate.has_discard_action && self.max_cards_played < 4 && !is_alone)
-                || (candidate.has_discard_action && candidate.cards_played() < 4 && !is_alone);
+            // Base depth cap: stop Play-phase expansion at max_cards_played.
+            let play_past_max = matches!(candidate.phase(), EPhase::Play)
+                && candidate.cards_played() >= self.max_cards_played;
+
+            // Density filter: the dealer plays no earlier than position 3 in
+            // a trick (0-indexed), so for max_cards_played < 4 CFR's depth
+            // check fires before the dealer's Play-phase istate is ever
+            // queried. Drop the entire dealer-view Play subtree in that range.
+            let dealer_play_not_queried = candidate.has_discard_action
+                && matches!(candidate.phase(), EPhase::Play)
+                && self.max_cards_played < 4;
+
+            let skip = play_past_max || dealer_play_not_queried;
 
             if !skip {
                 break candidate;
@@ -230,6 +228,15 @@ struct EuchreIState {
     has_discard_action: bool,
     // explicitly track the current phase
     cur_phase: EPhase,
+    // Set once an Alone action is observed (distinct from an alone-phase Pass
+    // declining to go alone).
+    going_alone: bool,
+    // Count of actions applied during the Play phase, including the sit-out
+    // Pass sentinels.
+    play_count: u8,
+    // True if the sit-out Pass sentinel has already been placed in the current
+    // trick. Reset at each trick boundary.
+    trick_has_pass: bool,
 }
 
 impl Default for EuchreIState {
@@ -240,6 +247,9 @@ impl Default for EuchreIState {
             undealt_cards: ActionSet::from_mask(ALL_CARDS),
             has_discard_action: Default::default(),
             cur_phase: EPhase::DealHands,
+            going_alone: false,
+            play_count: 0,
+            trick_has_pass: false,
         }
     }
 }
@@ -280,6 +290,8 @@ impl EuchreIState {
             self.has_discard_action = true;
         }
 
+        let prev_phase = self.cur_phase;
+
         // Update phase based on the action and current phase
         self.cur_phase = match (self.cur_phase, a) {
             (EPhase::DealHands, _) if self.actions.len() == 4 => EPhase::DealFaceUp,
@@ -301,6 +313,31 @@ impl EuchreIState {
             (EPhase::Play, _) => EPhase::Play,
             _ => panic!("unexpected action {:?} in phase {:?}", a, self.cur_phase),
         };
+
+        // Track going-alone state (set once an Alone action is observed;
+        // alone-phase Pass decline is also treated as "known" but non-going).
+        if prev_phase == EPhase::Alone && a == EAction::Alone {
+            self.going_alone = true;
+        }
+        if prev_phase == EPhase::Discard && a == EAction::Alone {
+            // Non-dealer shortcut: Discard → Play via Alone
+            self.going_alone = true;
+        }
+
+        // Only actual play-phase actions (applied when we were already in Play)
+        // count toward play_count. The transition into Play via Alone/Pass from
+        // Alone or Discard is not a play action itself.
+        if prev_phase == EPhase::Play {
+            self.play_count += 1;
+            if a == EAction::Pass {
+                // Sit-out sentinel within the Play phase.
+                self.trick_has_pass = true;
+            }
+            if self.play_count % 4 == 0 {
+                // End of trick: next trick starts clean.
+                self.trick_has_pass = false;
+            }
+        }
 
         self.played_actions.add(a);
         self.undealt_cards.remove(a); // ok if not a card actions since removing
@@ -374,7 +411,14 @@ impl EuchreIState {
 
     /// Returns the legal actions for playing
     fn legal_actions_play(&self) -> ActionSet {
-        self.undealt_cards
+        let mut out = self.undealt_cards;
+        // When going alone, the sitting-out partner plays a Pass sentinel on
+        // their turn. We don't know player positions, so allow Pass anywhere
+        // in a going-alone trick but at most once per trick.
+        if self.going_alone && !self.trick_has_pass {
+            out.add(EAction::Pass);
+        }
+        out
     }
 
     fn phase(&self) -> EPhase {
@@ -393,13 +437,11 @@ impl EuchreIState {
         IStateKey::copy_from_slice(&self.actions.iter().map(|x| x.into()).collect_vec())
     }
 
+    /// Number of actions taken during the Play phase (counting both real card
+    /// plays and sit-out Pass sentinels). Matches the semantics of
+    /// `EuchreGameState::cards_played`.
     fn cards_played(&self) -> usize {
-        // counts all the cards that have been seen. Since each card can only be seen when dealt, played, or discarded (which is a dealt card), we
-        // can subtrace 6 to see how many played cards there are
-        (self.played_actions.0 & !NON_CARD_ACTIONS)
-            .count_ones()
-            .max(6) as usize
-            - 6
+        self.play_count as usize
     }
 }
 

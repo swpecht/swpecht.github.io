@@ -26,12 +26,15 @@ impl ResampleFromInfoState for EuchreGameState {
         let face_up = self.face_up().unwrap();
         let key = self.key();
 
-        // collect the played cards from all players
+        // collect the played cards from all players (skip sit-out Pass sentinels)
         self.key
             .iter()
             .zip(self.play_order.iter())
             .skip(key.len() - self.cards_played)
-            .map(|(a, p)| (EAction::from(*a).card(), p))
+            .filter_map(|(a, p)| match EAction::from(*a) {
+                EAction::Pass => None,
+                ea => Some((ea.card(), p)),
+            })
             .for_each(|(c, p)| known_cards[*p].add(c));
 
         // remove the face up card from every player
@@ -49,29 +52,42 @@ impl ResampleFromInfoState for EuchreGameState {
             .filter(|(_, p)| **p == player)
             .for_each(|(c, _)| known_cards[player].add(c));
 
-        // Remove a suit from allowed cards if player didn't previously follow suit
-        let ppt = self.players_per_trick();
+        // Remove a suit from allowed cards if player didn't previously follow suit.
+        // With Pass-as-sit-out, a trick has 4 positions but may contain one Pass
+        // sentinel which carries no suit information.
         let offset = key.len() - self.cards_played;
         for t in 0..5 {
-            let trick_start = offset + t * ppt;
-            let lead = key.get(trick_start).map(|x| EAction::from(*x).card());
-            if lead.is_none() {
+            let trick_start = offset + t * 4;
+            // Find the first real card in this trick to determine lead suit.
+            let mut lead_suit = None;
+            for i in 0..4 {
+                let Some(a) = key.get(trick_start + i) else {
+                    break;
+                };
+                if let EAction::Pass = EAction::from(*a) {
+                    continue;
+                }
+                lead_suit = Some(self.get_suit(EAction::from(*a).card()));
                 break;
             }
+            let Some(lead_suit) = lead_suit else {
+                break;
+            };
 
-            let lead_suit = self.get_suit(lead.unwrap());
-
-            // Check each follower in the trick
-            for i in 1..ppt {
-                if let Some(played_card) =
-                    key.get(trick_start + i).map(|x| EAction::from(*x).card())
-                {
+            // Check each follower in the trick for failed-to-follow
+            for i in 0..4 {
+                let Some(a) = key.get(trick_start + i) else {
+                    break;
+                };
+                let ea = EAction::from(*a);
+                if ea == EAction::Pass {
+                    continue;
+                }
+                let played_card = ea.card();
+                if self.get_suit(played_card) != lead_suit {
                     let follower = self.play_order[trick_start + i];
-                    let played_suit = self.get_suit(played_card);
-                    if played_suit != lead_suit {
-                        let suit_cards = suit_mask(lead_suit, self.trump);
-                        allowed_cards[follower].remove_all(suit_cards);
-                    }
+                    let suit_cards = suit_mask(lead_suit, self.trump);
+                    allowed_cards[follower].remove_all(suit_cards);
                 }
             }
         }
@@ -126,7 +142,10 @@ impl ResampleFromInfoState for EuchreGameState {
                     .key
                     .iter()
                     .skip(key.len() - self.cards_played)
-                    .map(|a| EAction::from(*a).card())
+                    .filter_map(|a| match EAction::from(*a) {
+                        EAction::Pass => None,
+                        ea => Some(ea.card()),
+                    })
                     .collect_vec();
 
                 ngs.legal_actions(&mut actions);

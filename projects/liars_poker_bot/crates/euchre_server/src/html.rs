@@ -600,7 +600,10 @@ fn last_trick_card(gs: &EuchreGameState, gd: &GameData, player: Player) -> Marku
         return html! {};
     };
     trick.rotate_left((4 - starter) % 4);
-    card_icon(trick[player])
+    match trick[player] {
+        Some(card) => card_icon(card),
+        None => html! {},
+    }
 }
 
 fn bid_for(gs: &EuchreGameState, player: Player) -> Markup {

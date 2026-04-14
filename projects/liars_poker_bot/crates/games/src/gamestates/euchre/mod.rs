@@ -124,9 +124,10 @@ impl EuchreGameState {
         self.going_alone
     }
 
-    /// Number of players participating in each trick (3 if going alone, 4 otherwise)
+    /// Number of players per trick. Always 4 — when going alone the sitting-out
+    /// partner plays a Pass sentinel on their turn so the rotation stays uniform.
     pub fn players_per_trick(&self) -> usize {
-        if self.going_alone { 3 } else { 4 }
+        4
     }
 
     /// Returns the partner of the trump caller who sits out when going alone
@@ -138,50 +139,48 @@ impl EuchreGameState {
         }
     }
 
-    /// Advances to next player, skipping the sitting-out partner if going alone
+    /// Simple 1-step rotation. The sitting-out partner still takes their turn
+    /// but plays a Pass sentinel; no skipping.
     fn next_player(&self, player: Player) -> Player {
-        let mut next = (player + 1) % self.num_players;
-        if let Some(sitting_out) = self.sitting_out_player() {
-            if next == sitting_out {
-                next = (next + 1) % self.num_players;
-            }
-        }
-        next
+        (player + 1) % self.num_players
     }
 
     /// Returns true if the bidding phase just ended
     pub fn bidding_ended(&self) -> bool {
-        self.phase() == EPhase::Discard
-            || self.phase() == EPhase::Alone
-            || (self.phase() == EPhase::Play
-                && self.cards_played == 0
-                // don't want to go into this phase twice if we discarded
-                && !self.history().iter().any(|(_, a)| *a == EAction::Pickup))
+        self.phase() == EPhase::Discard || self.phase() == EPhase::Alone
     }
 
     /// Returns true if a trick is over. Returns false if a trick hasn't started yet
     pub fn is_trick_over(&self) -> bool {
-        let ppt = self.players_per_trick();
-        self.cards_played.is_multiple_of(ppt) && self.cards_played > 0
+        self.cards_played.is_multiple_of(4) && self.cards_played > 0
     }
 
-    pub fn last_trick(&self) -> Option<(Player, Vec<Card>)> {
-        let ppt = self.players_per_trick();
-        if self.cards_played < ppt {
+    /// Returns the starter and the 4 entries of the most recently completed trick.
+    /// Each entry is `Some(card)` for a real play or `None` for a sitting-out
+    /// partner's Pass sentinel.
+    pub fn last_trick(&self) -> Option<(Player, Vec<Option<Card>>)> {
+        if self.cards_played < 4 {
             return None;
         }
 
-        let cards_played_in_cur_trick = self.cards_played % ppt;
+        let cards_played_in_cur_trick = self.cards_played % 4;
 
-        let sidx = self.key.len() - cards_played_in_cur_trick - ppt;
-        let mut trick = Vec::with_capacity(ppt);
-        for i in 0..ppt {
-            trick.push(EAction::from(self.key[sidx + i]).card());
+        let sidx = self.key.len() - cards_played_in_cur_trick - 4;
+        let mut trick = Vec::with_capacity(4);
+        for i in 0..4 {
+            trick.push(Self::action_to_trick_card(self.key[sidx + i]));
         }
 
         let trick_starter = self.play_order[sidx];
 
         Some((trick_starter, trick))
+    }
+
+    fn action_to_trick_card(a: Action) -> Option<Card> {
+        match EAction::from(a) {
+            EAction::Pass => None,
+            ea => Some(ea.card()),
+        }
     }
 
     /// Return all cards currently in a players hand
@@ -371,41 +370,50 @@ impl EuchreGameState {
             }
             _ => panic!("invalid action during alone phase"),
         }
-        // Start play from player 0, skipping sitting-out partner if needed
+        // Eldest hand always leads the first trick; the sit-out partner (if any)
+        // will play a Pass sentinel when their turn comes around.
         self.cur_player = 0;
-        if let Some(sitting_out) = self.sitting_out_player() {
-            if self.cur_player == sitting_out {
-                self.cur_player = self.next_player(self.cur_player);
-            }
-        }
         self.phase = EPhase::Play;
     }
 
     fn apply_action_play(&mut self, a: Action) {
-        let card = EAction::from(a).card();
-        assert!(
-            self.deck.get_all(self.cur_player.into()).contains(card),
-            "Attempted to play card not in players hand"
-        );
+        let ea = EAction::from(a);
+        let played_card = match ea {
+            EAction::Pass => {
+                // Sit-out partner's sentinel play. Must actually be the sit-out player.
+                assert_eq!(
+                    self.sitting_out_player(),
+                    Some(self.cur_player),
+                    "Pass during Play is only legal for the sitting-out partner"
+                );
+                None
+            }
+            _ => {
+                let card = ea.card();
+                assert!(
+                    self.deck.get_all(self.cur_player.into()).contains(card),
+                    "Attempted to play card not in players hand"
+                );
+                // track the cards in play for isomorphic key
+                self.deck.play(card, self.cur_player).unwrap();
+                Some(card)
+            }
+        };
 
-        let ppt = self.players_per_trick();
-
-        // track the cards in play for isomorphic key
-        self.deck.play(card, self.cur_player).unwrap();
         self.cards_played += 1;
 
-        // Set acting player based on who won last trick
-        let trick_over = self.cards_played.is_multiple_of(ppt);
-        // trick is over and played at least one card
-        if trick_over && self.cards_played > 0 {
-            let trick = self.last_trick_with_card(card).unwrap();
+        let trick_over = self.cards_played.is_multiple_of(4);
+        if trick_over {
+            let trick = self
+                .last_trick_with_entry(played_card)
+                .expect("trick should be complete");
             let starter = self.next_player(self.cur_player);
             let winner = self.evaluate_trick(&trick, starter);
             self.cur_player = winner;
 
             // save the trick winner for later
-            let trick = self.cards_played / ppt - 1;
-            self.trick_winners[trick] = winner;
+            let trick_idx = self.cards_played / 4 - 1;
+            self.trick_winners[trick_idx] = winner;
             self.tricks_won[winner % 2] += 1;
 
             // clear the played cards
@@ -422,41 +430,24 @@ impl EuchreGameState {
     /// Determine if current trick is over (all players have played)
     /// Also returns true if none have played
     fn is_start_of_trick(&self) -> bool {
-        self.cards_played.is_multiple_of(self.players_per_trick())
+        self.cards_played.is_multiple_of(4)
     }
 
-    /// Gets last trick with a as the final action of the trick
-    fn last_trick_with_card(&self, card: Card) -> Option<Vec<Card>> {
-        if self.phase() != EPhase::Play {
+    /// Build the 4-entry trick just completed using `final_entry` as the final play.
+    /// Entries are `None` for sitting-out Pass sentinels.
+    fn last_trick_with_entry(&self, final_entry: Option<Card>) -> Option<Vec<Option<Card>>> {
+        if self.phase() != EPhase::Play || self.cards_played < 4 {
             return None;
         }
 
-        let ppt = self.players_per_trick();
-        if self.cards_played < ppt {
-            return None;
+        let sidx = self.key.len() - 3;
+        let mut trick = Vec::with_capacity(4);
+        for i in 0..3 {
+            trick.push(Self::action_to_trick_card(self.key[sidx + i]));
         }
-
-        let sidx = self.key.len() - (ppt - 1);
-        let mut trick = Vec::with_capacity(ppt);
-        for i in 0..(ppt - 1) {
-            trick.push(EAction::from(self.key[sidx + i]).card());
-        }
-        trick.push(card);
+        trick.push(final_entry);
 
         Some(trick)
-    }
-
-    /// Get the card that started the current trick
-    fn get_leading_card(&self) -> Card {
-        if self.phase() != EPhase::Play {
-            panic!("tried to get leading card of trick at invalid time")
-        }
-
-        let cards_played_in_trick = self.cards_played % self.players_per_trick();
-        if cards_played_in_trick == 0 {
-            panic!()
-        }
-        EAction::from(self.key[self.key.len() - cards_played_in_trick]).card()
     }
 
     fn legal_actions_dealing(&self, actions: &mut Vec<Action>) {
@@ -502,6 +493,12 @@ impl EuchreGameState {
     /// Needs to consider following suit if possible
     /// Can only play cards from hand
     fn legal_actions_play(&self, actions: &mut Vec<Action>) {
+        // Sitting-out partner plays a Pass sentinel on their turn.
+        if Some(self.cur_player) == self.sitting_out_player() {
+            actions.push(EAction::Pass.into());
+            return;
+        }
+
         let player_loc = self.cur_player.into();
         let hand = self.deck.get_all(player_loc);
         // If they are the first to act on a trick then can play any card in hand
@@ -512,7 +509,15 @@ impl EuchreGameState {
             return;
         }
 
-        let leading_card = self.get_leading_card();
+        // The leading card is the first real card in this trick (skipping any
+        // sit-out Pass sentinels that may have preceded it).
+        let Some(leading_card) = self.leading_card_of_current_trick() else {
+            // No real cards played yet this trick (only sentinels). Lead is open.
+            for c in hand {
+                actions.push(EAction::from(c).into());
+            }
+            return;
+        };
         let leading_suit = self.get_suit(leading_card);
         let suit_mask = suit_mask(leading_suit, self.trump);
 
@@ -529,17 +534,32 @@ impl EuchreGameState {
         }
     }
 
-    /// Maps a trick position index to the actual player, accounting for going alone
-    fn trick_position_to_player(&self, trick_starter: Player, position: usize) -> Player {
-        let mut player = trick_starter;
-        for _ in 0..position {
-            player = self.next_player(player);
+    /// First real card of the current trick, if any. Skips Pass sentinels.
+    fn leading_card_of_current_trick(&self) -> Option<Card> {
+        if self.phase() != EPhase::Play {
+            return None;
         }
-        player
+        let played_in_trick = self.cards_played % 4;
+        if played_in_trick == 0 {
+            return None;
+        }
+        let start = self.key.len() - played_in_trick;
+        for i in 0..played_in_trick {
+            if let Some(c) = Self::action_to_trick_card(self.key[start + i]) {
+                return Some(c);
+            }
+        }
+        None
     }
 
-    /// Returns the player who won the trick
-    fn evaluate_trick(&self, cards: &[Card], trick_starter: Player) -> Player {
+    /// Maps a trick position index to the actual player. With the Pass-sentinel
+    /// rotation the mapping is a straight modular add.
+    fn trick_position_to_player(&self, trick_starter: Player, position: usize) -> Player {
+        (trick_starter + position) % self.num_players
+    }
+
+    /// Returns the player who won the trick. Pass-sentinel entries are ignored.
+    fn evaluate_trick(&self, cards: &[Option<Card>], trick_starter: Player) -> Player {
         use Card::*;
         let (left, right) = match self.trump.unwrap() {
             Suit::Clubs => (JS, JC),
@@ -549,31 +569,40 @@ impl EuchreGameState {
         };
 
         // right always wins
-        if let Some(winner) = cards.iter().position(|c| *c == right) {
+        if let Some(winner) = cards.iter().position(|c| *c == Some(right)) {
             return self.trick_position_to_player(trick_starter, winner);
         }
 
         // if no right, left always wins
-        if let Some(winner) = cards.iter().position(|c| *c == left) {
+        if let Some(winner) = cards.iter().position(|c| *c == Some(left)) {
             return self.trick_position_to_player(trick_starter, winner);
         }
 
         // otherwise we can just evaluate by rank
-        let card_mask = Hand::from(cards);
+        let real_cards: Vec<Card> = cards.iter().filter_map(|c| *c).collect();
+        let card_mask = Hand::from(real_cards.as_slice());
         let trump_mask = suit_mask(self.trump.unwrap(), self.trump);
 
         let trumps = card_mask & trump_mask;
         if !trumps.is_empty() {
             let highest_card = trumps.highest().unwrap();
-            let pos = cards.iter().position(|c| *c == highest_card).unwrap();
+            let pos = cards
+                .iter()
+                .position(|c| *c == Some(highest_card))
+                .unwrap();
             return self.trick_position_to_player(trick_starter, pos);
         }
 
-        let leading_suit = self.get_suit(cards[0]);
+        // First non-None card determines the lead suit.
+        let leading_card = cards.iter().filter_map(|c| *c).next().unwrap();
+        let leading_suit = self.get_suit(leading_card);
         let leading_mask = suit_mask(leading_suit, self.trump);
         let follow_suits = card_mask & leading_mask;
         let highest_card = follow_suits.highest().unwrap();
-        let pos = cards.iter().position(|c| *c == highest_card).unwrap();
+        let pos = cards
+            .iter()
+            .position(|c| *c == Some(highest_card))
+            .unwrap();
         self.trick_position_to_player(trick_starter, pos)
     }
 
@@ -672,12 +701,12 @@ impl Display for EuchreGameState {
         let mut first_play = None;
         let mut is_last_take = false;
         let mut in_alone_phase = false;
-        let ppt = self.players_per_trick();
 
         for i in 0..key.len() {
             let a = EAction::from(key[i]);
             write!(f, "{}", a).unwrap();
 
+            let in_play = first_play.is_some();
             let append_pipe = match a {
                 // dealing cards
                 _ if i < 20 => (i + 1) % 5 == 0,
@@ -705,10 +734,16 @@ impl Display for EuchreGameState {
                     in_alone_phase = false;
                     true
                 }
+                // Pass sentinel during Play (sit-out partner). Falls through to
+                // the trick-boundary check.
+                EAction::Pass if in_play => {
+                    let fp = first_play.unwrap();
+                    ((i - fp + 1) % 4 == 0) && (i != fp)
+                }
                 EAction::Pass => false,
                 EAction::DiscardMarker => false,
                 // everything else is Play
-                _ => ((i - first_play.unwrap() + 1) % ppt == 0) && (i != first_play.unwrap()),
+                _ => ((i - first_play.unwrap() + 1) % 4 == 0) && (i != first_play.unwrap()),
             };
             if append_pipe {
                 write!(f, "|").unwrap();
@@ -945,7 +980,7 @@ impl GameState for EuchreGameState {
     fn is_terminal(&self) -> bool {
         let future_tricks = self.future_tricks();
 
-        self.cards_played == 5 * self.players_per_trick()
+        self.cards_played == 20
         // Check if the scores are already decided: see if have taken a trick in defence
         || (future_tricks.0 > 0 && future_tricks.1 >= 3)
         || (future_tricks.0 >= 3 && future_tricks.1 > 0)
@@ -981,11 +1016,10 @@ impl GameState for EuchreGameState {
         self.cur_player = self.play_order.pop().unwrap();
         let action_number = self.key.len();
         let applied_action = EAction::from(self.key.pop());
-        let ppt = self.players_per_trick();
 
         // fix the trick winner counts
-        if self.cards_played > 0 && self.cards_played.is_multiple_of(ppt) {
-            let trick = self.cards_played / ppt - 1;
+        if self.cards_played > 0 && self.cards_played.is_multiple_of(4) {
+            let trick = self.cards_played / 4 - 1;
             let last_winner = self.trick_winners[trick];
             self.trick_winners[trick] = 0; // reset it
             self.tricks_won[last_winner % 2] -= 1;
@@ -1011,11 +1045,31 @@ impl GameState for EuchreGameState {
             }
 
             EAction::Pass => {
-                // Undo alone-phase Pass: phase is Play and no cards played yet
-                if self.phase == EPhase::Play && self.cards_played == 0 {
+                // Play-phase Pass (sit-out sentinel): undo the play step.
+                if self.phase == EPhase::Play && self.cards_played > 0 {
+                    self.cards_played -= 1;
+                    if self.cards_played % 4 == 3 {
+                        // Just undid the trick-completing play. Restore the 3 preceding
+                        // plays (skipping any sentinels) to the table.
+                        for (a, p) in self
+                            .key
+                            .iter()
+                            .rev()
+                            .take(3)
+                            .zip(self.play_order.iter().rev().take(3))
+                        {
+                            let ea = EAction::from(*a);
+                            if ea != EAction::Pass {
+                                self.deck.set(ea.card(), CardLocation::Played(*p));
+                            }
+                        }
+                    }
+                }
+                // Alone-phase Pass (decline going alone).
+                else if self.phase == EPhase::Play && self.cards_played == 0 {
                     self.phase = EPhase::Alone;
                 }
-                // did we just undo the last pickup action?
+                // Pickup 4th-pass → ChooseTrump transition.
                 else if self.key.len() == 20 + 1 + 3 {
                     self.phase = EPhase::Pickup;
                     let face_up = self
@@ -1023,6 +1077,7 @@ impl GameState for EuchreGameState {
                         .expect("can't call faceup before deal finished");
                     self.deck.set(face_up, CardLocation::FaceUp);
                 }
+                // Otherwise: plain bidding/choose-trump pass, no phase change.
             }
             EAction::Clubs | EAction::Spades | EAction::Hearts | EAction::Diamonds => {
                 self.phase = EPhase::ChooseTrump;
@@ -1050,24 +1105,26 @@ impl GameState for EuchreGameState {
             EAction::DiscardMarker => {
                 panic!("discard marker should never be in interanl game istate")
             }
-            // all that's left are play actions
+            // Play-phase card action.
             _ => {
                 let c = applied_action.card();
 
                 self.cards_played -= 1;
                 // put the old cards back on the table if trick just ended
-                if self.cards_played % ppt == ppt - 1 {
+                if self.cards_played % 4 == 3 {
                     self.deck.set(c, self.cur_player.into());
 
                     for (a, p) in self
                         .key
                         .iter()
                         .rev()
-                        .take(self.cards_played % ppt)
-                        .zip(self.play_order.iter().rev().take(self.cards_played % ppt))
+                        .take(3)
+                        .zip(self.play_order.iter().rev().take(3))
                     {
-                        let c = EAction::from(*a).card();
-                        self.deck.set(c, CardLocation::Played(*p));
+                        let ea = EAction::from(*a);
+                        if ea != EAction::Pass {
+                            self.deck.set(ea.card(), CardLocation::Played(*p));
+                        }
                     }
                 } else {
                     self.deck
@@ -1524,10 +1581,11 @@ mod tests {
         s.apply_action(EAction::Alone.into());
         assert_eq!(s.phase(), EPhase::Play);
         assert!(s.going_alone());
-        assert_eq!(s.players_per_trick(), 3);
+        // Sentinel rotation keeps 4 players per trick; sit-out plays Pass.
+        assert_eq!(s.players_per_trick(), 4);
         assert_eq!(s.sitting_out_player(), Some(2)); // partner of player 0
 
-        // Player 0 should start (not player 2 who is sitting out)
+        // Player 0 leads the first trick.
         assert_eq!(s.cur_player, 0);
     }
 
@@ -1558,9 +1616,9 @@ mod tests {
         s.apply_action(EAction::Alone.into());
         assert!(s.going_alone());
         assert_eq!(s.sitting_out_player(), Some(3)); // partner of player 1
-        assert_eq!(s.players_per_trick(), 3);
+        assert_eq!(s.players_per_trick(), 4);
 
-        // Player 0 starts play (player 3 sits out but player 0 is first)
+        // Player 0 starts play.
         assert_eq!(s.cur_player, 0);
     }
 
@@ -1588,45 +1646,52 @@ mod tests {
     }
 
     #[test]
-    fn test_alone_player_rotation_skips_partner() {
+    fn test_alone_player_rotation_sits_out_partner() {
         // Build a going-alone game via parser
-        // Player 3 picks up, discards Tc, goes alone. Partner is player 1.
+        // Player 3 picks up, discards Ah (the face-up), goes alone. Partner is player 1.
         let gs = EuchreGameState::from(
-            "KcTsJsQsAd|9cTcAcKsAs|ThKh9dJdKd|JcJhQhAhQd|Qc|PPPT|Ah|L|"
+            "KcTsJsQsAd|9cTcAcKsAs|ThKh9dJdKd|JcJhQhAhQd|Qc|PPPT|Ah|L|",
         );
         assert!(gs.going_alone());
         assert_eq!(gs.sitting_out_player(), Some(1));
-        assert_eq!(gs.players_per_trick(), 3);
+        // Sentinel rotation: always 4 players per trick.
+        assert_eq!(gs.players_per_trick(), 4);
 
-        // Player 0 starts (player 1 sits out)
+        // Player 0 leads.
         assert_eq!(gs.cur_player(), 0);
 
-        // After player 0 plays, should skip to player 2 (not 1)
+        // Player 0 plays Kc; next player is 1 (the sit-out partner).
         let mut gs = gs;
-        gs.apply_action(EAction::KC.into()); // player 0 plays Kc
-        assert_eq!(gs.cur_player(), 2); // skipped player 1
+        gs.apply_action(EAction::KC.into());
+        assert_eq!(gs.cur_player(), 1);
+        // The only legal action for the sit-out player is a Pass sentinel.
+        let mut actions = Vec::new();
+        gs.legal_actions(&mut actions);
+        assert_eq!(actions, vec![EAction::Pass.into()]);
+        gs.apply_action(EAction::Pass.into());
+        assert_eq!(gs.cur_player(), 2);
     }
 
     #[test]
-    fn test_alone_trick_detection_3_players() {
-        // Players: 0(KcTsJsQsAd), 1(sits out), 2(ThKh9dJdKd), 3(JcJhQhQd+Qc-Ah)
-        // Trump is clubs. Player 0 leads Ad, player 2 plays Kd, player 3 plays Qd
+    fn test_alone_trick_detection_3_real_cards_plus_sentinel() {
+        // Going-alone trick contains 3 real plays + 1 Pass sentinel for the
+        // sitting-out partner.
         let gs = EuchreGameState::from(
-            "KcTsJsQsAd|9cTcAcKsAs|ThKh9dJdKd|JcJhQhAhQd|Qc|PPPT|Ah|L|AdKdQd"
+            "KcTsJsQsAd|9cTcAcKsAs|ThKh9dJdKd|JcJhQhAhQd|Qc|PPPT|Ah|L|AdPKdQd",
         );
         assert!(gs.going_alone());
-        // 3 cards played = 1 trick complete
+        // 4 plays (including one sentinel) = 1 trick complete.
         assert!(gs.is_trick_over());
         assert_eq!(gs.tricks_won[0] + gs.tricks_won[1], 1);
     }
 
     #[test]
-    fn test_alone_terminal_at_15_cards() {
-        // Full going-alone game: 5 tricks * 3 players = 15 cards
+    fn test_alone_terminal_at_20_plays() {
+        // Full going-alone game: 5 tricks × 4 plays = 20 play actions (with
+        // 5 sit-out Pass sentinels mixed in).
         let mut rng: StdRng = SeedableRng::seed_from_u64(42);
         for _ in 0..100 {
             let mut gs = Euchre::new_state();
-            // Play through chance nodes
             while gs.is_chance_node() {
                 let mut actions = Vec::new();
                 gs.legal_actions(&mut actions);
@@ -1634,7 +1699,6 @@ mod tests {
                 gs.apply_action(*a);
             }
 
-            // Force going alone in first opportunity
             let mut went_alone = false;
             while !gs.is_terminal() {
                 let mut actions = Vec::new();
@@ -1649,7 +1713,15 @@ mod tests {
             }
 
             if went_alone {
-                assert!(gs.cards_played <= 15, "alone game played {} cards", gs.cards_played);
+                // 5 tricks × 4 plays = 20 max; early termination can end sooner
+                // once the outcome is decided.
+                assert!(
+                    gs.cards_played <= 20,
+                    "alone game plays: {}",
+                    gs.cards_played
+                );
+                // Any completed trick has exactly 4 play entries (3 real + 1 sentinel).
+                assert!(gs.cards_played.is_multiple_of(4) || gs.cards_played == 20);
             }
         }
     }
