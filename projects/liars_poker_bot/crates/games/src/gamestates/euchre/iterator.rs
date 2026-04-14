@@ -462,23 +462,30 @@ mod tests {
             println!("{:?}", translate_istate!(state, EAction))
         }
 
-        use EAction::*;
+        // Hardcoded counts for the NS face-up shard. If any of these drift,
+        // inspect the iterator change that caused it before bumping the
+        // constants: the MPHF input size and weight-file slot count scale
+        // directly with these numbers.
+        const C0_NS: usize = 979_363;
+        const C1_NS: usize = 1_633_247;
+        const C2_NS: usize = 13_645_645;
 
-        // Validate states are generated for both 0 and 1 cards played
         let iterator = EuchreIsomorphicIStateIterator::with_face_up(0, &[EAction::NS]);
-        assert!(iterator.count() > 0, "should produce states for 0 cards played");
+        assert_eq!(iterator.count(), C0_NS);
 
         let iterator = EuchreIsomorphicIStateIterator::with_face_up(1, &[EAction::NS]);
-        assert!(iterator.count() > 0, "should produce states for 1 card played");
+        assert_eq!(iterator.count(), C1_NS);
 
-        // Validate overall counts
-        let iterator = EuchreIsomorphicIStateIterator::with_face_up(0, &[EAction::NS]);
-        let c0 = iterator.count();
+        // All-face-up count for max=0 should be exactly 6 times the NS shard,
+        // since the 6 face-up cards partition the state space symmetrically.
         let iterator = EuchreIsomorphicIStateIterator::new(0);
-        let ca = iterator.count();
-        let iterator = EuchreIsomorphicIStateIterator::with_face_up(1, &[EAction::NS]);
-        let c1 = iterator.count();
-        eprintln!("c0={} ca={} c1={}", c0, ca, c1);
-        assert_eq!(ca, c0 * 6);
+        assert_eq!(iterator.count(), C0_NS * 6);
+
+        // max=2 is slower (~2 min in release); gate behind the expensive test
+        // suite so the default test run stays fast.
+        if std::env::var("EUCHRE_SLOW_ITERATOR_TESTS").is_ok() {
+            let iterator = EuchreIsomorphicIStateIterator::with_face_up(2, &[EAction::NS]);
+            assert_eq!(iterator.count(), C2_NS);
+        }
     }
 }
