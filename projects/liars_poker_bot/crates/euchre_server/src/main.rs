@@ -25,9 +25,9 @@ mod html;
 
 pub(crate) use game_data::{GameData, GameProcessingState};
 
-const DEFAULT_WEIGHTS_PATH: &str = "/var/lib/card_platypus/infostate.three_card_played";
+const DEFAULT_WEIGHTS_PATH: &str = "/home/steven/card_platypus/infostate.three_card_played_f32";
 const MAX_CARDS_PLAYED: usize = 3;
-const SERVER_HOST: &str = "localhost";
+const SERVER_HOST: &str = "0.0.0.0";
 const SERVER_PORT: u16 = 4000;
 pub(crate) const WIN_SCORE: usize = 10;
 const LOG_FILE: &str = "euchre_server.log";
