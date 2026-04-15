@@ -20,6 +20,7 @@ use simplelog::{
 };
 use uuid::Uuid;
 
+mod bench;
 mod game_data;
 mod html;
 
@@ -41,6 +42,7 @@ const LOG_FILE: &str = "euchre_server.log";
 pub(crate) struct AppState {
     pub(crate) games: Mutex<HashMap<Uuid, GameData>>,
     pub(crate) bot: Mutex<CFRES<EuchreGameState>>,
+    pub(crate) bench: bench::BenchState,
 }
 
 impl Default for AppState {
@@ -71,9 +73,15 @@ impl Default for AppState {
 
         info!("loaded debugging gamestates: {:?}", games.lock().unwrap());
 
+        let bench = bench::BenchState {
+            agents: bench::load_bench_agents(),
+            ..Default::default()
+        };
+
         Self {
             games,
             bot: Mutex::new(bot),
+            bench,
         }
     }
 }
@@ -303,6 +311,7 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .app_data(app_state.clone())
             .wrap(Logger::default())
+            .configure(bench::configure)
             .configure(html::configure)
     })
     .bind((SERVER_HOST, SERVER_PORT))?
