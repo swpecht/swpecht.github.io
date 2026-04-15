@@ -5,6 +5,7 @@ use std::{
 };
 
 use dashmap::DashMap;
+use rustc_hash::FxBuildHasher;
 use games::{
     actions,
     gamestates::euchre::{
@@ -217,11 +218,17 @@ struct AlphaBetaResult {
     action: Option<Action>,
 }
 type TranspositionKey = (Team, u64);
-/// Helper struct to speeding up alpha_beta search
+/// Helper struct to speeding up alpha_beta search.
+///
+/// Uses `FxBuildHasher` (rustc-hash) instead of DashMap's default `RandomState` (SipHasher).
+/// The cache key is already a `(Team, u64)` where the `u64` is itself the output of an
+/// isomorphic canonicalization hash, so running it through a cryptographic-strength hasher
+/// like SipHasher is pure overhead. FxHasher is a simple multiply-xor-shift that runs in a
+/// handful of instructions on a single u64.
 #[derive(Clone)]
 struct AlphaBetaCache<G> {
     vec_pool: Pool<Vec<Action>>,
-    transposition_table: Arc<DashMap<TranspositionKey, AlphaBetaResult>>,
+    transposition_table: Arc<DashMap<TranspositionKey, AlphaBetaResult, FxBuildHasher>>,
     optimizations: Optimizations<G>,
 }
 
@@ -229,44 +236,29 @@ impl<G> AlphaBetaCache<G> {
     fn new(optimizations: Optimizations<G>) -> Self {
         Self {
             vec_pool: Pool::new(|| Vec::with_capacity(5)),
-            transposition_table: Arc::new(DashMap::new()),
+            transposition_table: Arc::new(DashMap::with_hasher(FxBuildHasher)),
             optimizations,
         }
     }
 }
 
 impl<G: GameState> AlphaBetaCache<G> {
-    pub fn get(&self, gs: &G, maximizing_team: Team) -> Option<AlphaBetaResult> {
-        if !self.optimizations.use_transposition_table {
-            return None;
-        }
-
-        let k = self.get_game_key(gs);
-        if let Some(k) = k {
-            self.transposition_table
-                .get(&(maximizing_team, k))
-                .as_deref()
-                .copied()
-        } else {
-            None
-        }
+    /// Look up a cached result by a precomputed game key. The caller computes the key
+    /// once per alpha_beta frame via `get_game_key` and passes it to both `get_by_key`
+    /// and `insert_by_key`, avoiding the iso-deck + hash cost on the insert side.
+    pub fn get_by_key(&self, k: u64, maximizing_team: Team) -> Option<AlphaBetaResult> {
+        self.transposition_table
+            .get(&(maximizing_team, k))
+            .as_deref()
+            .copied()
     }
 
-    pub fn insert(&self, gs: &G, v: AlphaBetaResult, maximizing_team: Team, depth: u8) {
-        if !self.optimizations.use_transposition_table
-            || depth > self.optimizations.max_depth_for_tt
-        {
-            return;
-        }
-
-        // Check if the game wants to store this state
-        let k = self.get_game_key(gs);
-        if let Some(k) = k {
-            self.transposition_table.insert((maximizing_team, k), v);
-        }
+    /// Insert with a precomputed key. See `get_by_key`.
+    pub fn insert_by_key(&self, k: u64, v: AlphaBetaResult, maximizing_team: Team) {
+        self.transposition_table.insert((maximizing_team, k), v);
     }
 
-    fn get_game_key(&self, gs: &G) -> Option<u64> {
+    pub(crate) fn get_game_key(&self, gs: &G) -> Option<u64> {
         let k = gs.transposition_table_hash();
 
         // Continue to use the game specific logic of when to put things in the table
@@ -339,16 +331,27 @@ fn alpha_beta<G: GameState>(
 
     let alpha_orig = alpha;
     let beta_orig = beta;
+    // Compute the cache key once at function entry. The state is unchanged across the
+    // get/insert pair (apply_action/undo pairs leave gs identical by the end of the
+    // recursion), so we can reuse the key for both lookups instead of running
+    // transposition_table_hash (and iso_deck) twice per frame.
+    let cache_key = if cache.optimizations.use_transposition_table {
+        cache.get_game_key(gs)
+    } else {
+        None
+    };
     // We can only return the value if we have the right bound
     // http://people.csail.mit.edu/plaat/mtdf.html#abmem
-    if let Some(v) = cache.get(gs, maximizing_team) {
-        if v.lower_bound >= beta {
-            return (v.lower_bound, v.action);
-        } else if v.upper_bound <= alpha {
-            return (v.upper_bound, v.action);
+    if let Some(k) = cache_key {
+        if let Some(v) = cache.get_by_key(k, maximizing_team) {
+            if v.lower_bound >= beta {
+                return (v.lower_bound, v.action);
+            } else if v.upper_bound <= alpha {
+                return (v.upper_bound, v.action);
+            }
+            alpha = alpha.max(v.lower_bound);
+            beta = beta.min(v.upper_bound);
         }
-        alpha = alpha.max(v.lower_bound);
-        beta = beta.min(v.upper_bound);
     }
 
     let mut actions = cache.vec_pool.detach();
@@ -431,7 +434,11 @@ fn alpha_beta<G: GameState>(
         cache_value.lower_bound = result.0;
     }
 
-    cache.insert(gs, cache_value, maximizing_team, depth);
+    if let Some(k) = cache_key {
+        if depth <= cache.optimizations.max_depth_for_tt {
+            cache.insert_by_key(k, cache_value, maximizing_team);
+        }
+    }
     actions.clear();
     cache.vec_pool.attach(actions);
     result

@@ -66,14 +66,79 @@ pub enum EAction {
 pub(super) const UNSUITED_ACTION_MASK: u32 =
     EAction::DiscardMarker as u32 | EAction::Pickup as u32 | EAction::Alone as u32 | EAction::Pass as u32;
 
+// Dense lookup table from Action bit index (0..32) to EAction. Each EAction variant has a
+// unique single-bit discriminant, and every bit position 0..=31 is used, so this is a bijection
+// that can be resolved with one memory load. Built from the variant definitions above.
+const ACTION_TO_EACTION: [EAction; 32] = [
+    EAction::NS,            // bit 0
+    EAction::TS,            // bit 1
+    EAction::JS,            // bit 2
+    EAction::QS,            // bit 3
+    EAction::KS,            // bit 4
+    EAction::AS,            // bit 5
+    EAction::Spades,        // bit 6  = (AS as u32) << 1
+    EAction::Pickup,        // bit 7  = (AS as u32) << 2
+    EAction::NC,            // bit 8
+    EAction::TC,            // bit 9
+    EAction::JC,            // bit 10
+    EAction::QC,            // bit 11
+    EAction::KC,            // bit 12
+    EAction::AC,            // bit 13
+    EAction::Clubs,         // bit 14 = (AC as u32) << 1
+    EAction::Alone,         // bit 15 = (AC as u32) << 2
+    EAction::NH,            // bit 16
+    EAction::TH,            // bit 17
+    EAction::JH,            // bit 18
+    EAction::QH,            // bit 19
+    EAction::KH,            // bit 20
+    EAction::AH,            // bit 21
+    EAction::Hearts,        // bit 22 = (AH as u32) << 1
+    EAction::DiscardMarker, // bit 23 = (AH as u32) << 2
+    EAction::ND,            // bit 24
+    EAction::TD,            // bit 25
+    EAction::JD,            // bit 26
+    EAction::QD,            // bit 27
+    EAction::KD,            // bit 28
+    EAction::AD,            // bit 29
+    EAction::Diamonds,      // bit 30 = (AD as u32) << 1
+    EAction::Pass,          // bit 31 = (AD as u32) << 2
+];
+
 impl EAction {
     pub fn card(&self) -> Card {
-        // SAFETY: EAction and Card are both #[repr(u32)] enums. The first 24 variants of EAction
-        // share the same discriminant values as Card (each card is a single-bit bitmask in its
-        // suit's byte). This method must only be called on card-valued EAction variants (not on
-        // Spades, Clubs, Hearts, Diamonds, DiscardMarker, Pickup, or Pass).
-        // We use FromPrimitive to safely convert with a runtime check instead of transmute.
-        Card::from_u32(*self as u32).expect("card() called on a non-card EAction variant")
+        // Uses the Action bit index (trailing_zeros) as a cheap lookup rather than going
+        // through Card::from_u32, which walks a match over 24 discriminants at runtime.
+        // Must only be called on card-valued EAction variants (not Spades/Clubs/.../Pass).
+        const EACTION_TO_CARD: [Option<Card>; 32] = {
+            let mut arr = [None; 32];
+            arr[0] = Some(Card::NS);
+            arr[1] = Some(Card::TS);
+            arr[2] = Some(Card::JS);
+            arr[3] = Some(Card::QS);
+            arr[4] = Some(Card::KS);
+            arr[5] = Some(Card::AS);
+            arr[8] = Some(Card::NC);
+            arr[9] = Some(Card::TC);
+            arr[10] = Some(Card::JC);
+            arr[11] = Some(Card::QC);
+            arr[12] = Some(Card::KC);
+            arr[13] = Some(Card::AC);
+            arr[16] = Some(Card::NH);
+            arr[17] = Some(Card::TH);
+            arr[18] = Some(Card::JH);
+            arr[19] = Some(Card::QH);
+            arr[20] = Some(Card::KH);
+            arr[21] = Some(Card::AH);
+            arr[24] = Some(Card::ND);
+            arr[25] = Some(Card::TD);
+            arr[26] = Some(Card::JD);
+            arr[27] = Some(Card::QD);
+            arr[28] = Some(Card::KD);
+            arr[29] = Some(Card::AD);
+            arr
+        };
+        EACTION_TO_CARD[(*self as u32).trailing_zeros() as usize]
+            .expect("card() called on a non-card EAction variant")
     }
 
     /// Changes the color of an action if applicable
@@ -124,18 +189,17 @@ impl From<&EAction> for Action {
 
 impl From<Action> for EAction {
     fn from(value: Action) -> Self {
-        let repr: u32 = 1 << value.0;
-        // Use safe FromPrimitive conversion. Action.0 is the bit index (trailing_zeros of the
-        // EAction discriminant), so 1 << value.0 reconstructs a valid EAction discriminant.
-        EAction::from_u32(repr).expect("Action does not correspond to a valid EAction")
+        // Action.0 is the bit index (0..32). All 32 bit positions correspond to valid EAction
+        // variants (see ACTION_TO_EACTION above), so this is a single array load.
+        ACTION_TO_EACTION[value.0 as usize]
     }
 }
 
 impl From<Card> for EAction {
     fn from(value: Card) -> Self {
-        // Card and EAction are both #[repr(u32)], and every Card discriminant value is also a
-        // valid EAction discriminant (the first 24 EAction variants mirror Card exactly).
-        EAction::from_u32(value as u32).expect("Card value does not map to a valid EAction")
+        // Card discriminants are single-bit bitmasks matching the first 24 EAction variants;
+        // reuse ACTION_TO_EACTION indexed by trailing_zeros for a single-load conversion.
+        ACTION_TO_EACTION[(value as u32).trailing_zeros() as usize]
     }
 }
 
@@ -152,9 +216,14 @@ impl From<Suit> for EAction {
 
 impl From<u32> for EAction {
     fn from(value: u32) -> Self {
-        // Use safe FromPrimitive conversion instead of transmute. Panics if the u32 does not
-        // match any EAction discriminant, which is preferable to undefined behavior.
-        EAction::from_u32(value).expect("u32 does not correspond to a valid EAction discriminant")
+        // value must be a single-bit EAction discriminant; trailing_zeros gives its bit index.
+        // Panics via array bounds check if value is 0 or has multiple bits set outside 0..=31.
+        assert!(
+            value != 0 && value.is_power_of_two(),
+            "u32 {:#x} is not a single-bit EAction discriminant",
+            value
+        );
+        ACTION_TO_EACTION[value.trailing_zeros() as usize]
     }
 }
 

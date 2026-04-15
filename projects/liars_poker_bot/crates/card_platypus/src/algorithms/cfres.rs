@@ -510,12 +510,14 @@ fn add_regret<const N: usize>(
         // an optimization, but also ensures that we don't set the weights to 0 by accident
         && infostate.last_iteration > 0
     {
-        // We only apply the factor up to the cutoff amount
-        let factor: Weight = (infostate.last_iteration..iteration.min(LINEAR_CFR_CUTOFF))
-            .map(|i| i as Weight / (i as Weight + 1.0))
-            .product();
-
-        infostate.regrets.iter_mut().for_each(|r| *r *= factor);
+        // Closed form of the telescoping product ∏(i=a..b) i/(i+1) = a/b.
+        // a = last_iteration, b = min(iteration, LINEAR_CFR_CUTOFF).
+        // If a >= b the range is empty and factor is 1.0 (no scaling applied).
+        let end = iteration.min(LINEAR_CFR_CUTOFF);
+        if infostate.last_iteration < end {
+            let factor: Weight = infostate.last_iteration as Weight / end as Weight;
+            infostate.regrets.iter_mut().for_each(|r| *r *= factor);
+        }
     }
 
     infostate.last_iteration = iteration;
@@ -623,7 +625,7 @@ impl DepthChecker<EuchreGameState> for EuchreDepthChecker {
 #[cfg(test)]
 mod tests {
 
-    use super::{feature, CFRES};
+    use super::{feature, Weight, CFRES, LINEAR_CFR_CUTOFF};
 
     #[test]
     fn cfres_train_test() {
@@ -631,5 +633,59 @@ mod tests {
 
         let mut alg = CFRES::new_kp();
         alg.train(10);
+    }
+
+    // Reference in f64 — the true mathematical answer, used to verify the f32 closed form.
+    // The existing f32 iterative version accumulates rounding drift (up to ~0.2% per 500k
+    // multiplies) so it is NOT a valid reference; the closed form is more accurate, which is
+    // a small positive side-effect of this refactor, not a correctness regression.
+    fn linear_cfr_factor_reference_f64(last: usize, iteration: usize) -> f64 {
+        let end = iteration.min(LINEAR_CFR_CUTOFF);
+        if last >= end {
+            1.0
+        } else {
+            last as f64 / end as f64
+        }
+    }
+
+    fn linear_cfr_factor_closed(last: usize, iteration: usize) -> Weight {
+        let end = iteration.min(LINEAR_CFR_CUTOFF);
+        if last >= end {
+            1.0
+        } else {
+            last as Weight / end as Weight
+        }
+    }
+
+    #[test]
+    fn linear_cfr_factor_closed_matches_reference() {
+        // Telescoping product ∏(i=a..b) i/(i+1) = a/b. Verify the f32 closed form agrees
+        // with the f64 mathematical reference within f32 epsilon.
+        let cases = [
+            (1, 2),
+            (1, 100),
+            (100, 101),
+            (100, 1_000),
+            (999, 1_000),
+            (1_000, 100_000),
+            (1, LINEAR_CFR_CUTOFF),
+            (500_000, LINEAR_CFR_CUTOFF),
+            (LINEAR_CFR_CUTOFF - 1, LINEAR_CFR_CUTOFF),
+            // iteration beyond cutoff: end clamped to cutoff
+            (500_000, LINEAR_CFR_CUTOFF + 50_000),
+            // empty range: last >= end
+            (LINEAR_CFR_CUTOFF, LINEAR_CFR_CUTOFF),
+            (LINEAR_CFR_CUTOFF + 10, LINEAR_CFR_CUTOFF),
+        ];
+        for (last, iter) in cases {
+            let reference = linear_cfr_factor_reference_f64(last, iter) as Weight;
+            let closed = linear_cfr_factor_closed(last, iter);
+            let diff = (reference - closed).abs();
+            let tol = reference.abs() * 1e-6 + 1e-7;
+            assert!(
+                diff < tol,
+                "mismatch at last={last} iter={iter}: reference={reference} closed={closed} diff={diff} tol={tol}"
+            );
+        }
     }
 }

@@ -24,6 +24,9 @@ perf.data.old
 callgrind.out.*
 heaptrack.*
 
+# Local profiling artifacts
+profile_data/
+
 # generated infostates
 infostates.*
 infostate.*

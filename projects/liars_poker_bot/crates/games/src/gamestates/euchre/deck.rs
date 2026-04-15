@@ -1,7 +1,7 @@
 use std::{fmt::Debug, mem, ops::BitAnd};
 
 use anyhow::{bail, Context, Ok};
-use num_traits::{FromPrimitive, ToPrimitive};
+use num_traits::FromPrimitive;
 use serde::{Deserialize, Serialize};
 
 use crate::Player;
@@ -134,13 +134,15 @@ impl Deck {
     }
 
     pub fn set(&mut self, card: Card, loc: CardLocation) {
-        // remove the card everywhere
+        let mask = card as u32;
+        // A card is in exactly one location; remove from the first match and stop.
         for locs in self.locations.iter_mut() {
-            locs.remove(card);
+            if locs.mask & mask != 0 {
+                locs.mask &= !mask;
+                break;
+            }
         }
-
-        // then set its final spot
-        self.locations[loc.idx()].add(card);
+        self.locations[loc.idx()].mask |= mask;
     }
 
     pub fn get(&self, card: Card) -> CardLocation {
@@ -218,11 +220,11 @@ impl Hand {
 
     /// Adds a card to the hand
     pub fn add(&mut self, card: Card) {
-        self.mask |= ToPrimitive::to_u32(&card).unwrap();
+        self.mask |= card as u32;
     }
 
     pub fn remove(&mut self, card: Card) {
-        self.mask &= !ToPrimitive::to_u32(&card).unwrap();
+        self.mask &= !(card as u32);
     }
 
     /// Remove all cards in hand from self
@@ -236,6 +238,12 @@ impl Hand {
 
     pub fn contains(&self, card: Card) -> bool {
         self.mask & (card as u32) > 0
+    }
+
+    /// Raw bitmask for callers that need to combine hands with OR/AND for hot-path checks.
+    /// Prefer the safer `contains` / `add_all` / `remove_all` methods where possible.
+    pub(super) fn raw_mask(&self) -> u32 {
+        self.mask
     }
 
     pub fn len(&self) -> usize {

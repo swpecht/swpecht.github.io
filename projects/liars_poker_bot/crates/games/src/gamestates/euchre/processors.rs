@@ -154,39 +154,52 @@ fn evaluate_picked_up_card_last(gs: &EuchreGameState, actions: &mut Vec<Action>)
 /// Removes cards that are equivalent. For example, If a player has the 9s and Ts, each card will play
 /// the same way. We don't need to evaluate both.
 fn remove_equivlent_cards(gs: &EuchreGameState, actions: &mut Vec<Action>) {
-    actions.retain(|x| match EAction::from(*x) {
-        // Sentinel Pass plays for the sit-out partner aren't a card; keep as-is.
-        EAction::Pass => true,
-        ea => find_next_card_owner(ea.card(), gs) != Some(gs.cur_player()),
+    // Precompute per-location masks once (instead of doing Deck::get — which walks all 10
+    // locations — inside a tight per-action loop). With bitmask ops the inner check for each
+    // candidate card becomes a handful of AND instructions instead of ~6 Hand::contains calls.
+    let cur_hand: u32 = gs.deck.get_all(deck::CardLocation::from(gs.cur_player())).raw_mask();
+    let all_hands: u32 = gs.deck.get_all(deck::CardLocation::Player0).raw_mask()
+        | gs.deck.get_all(deck::CardLocation::Player1).raw_mask()
+        | gs.deck.get_all(deck::CardLocation::Player2).raw_mask()
+        | gs.deck.get_all(deck::CardLocation::Player3).raw_mask();
+    let visible: u32 = gs.deck.get_all(deck::CardLocation::Played(0)).raw_mask()
+        | gs.deck.get_all(deck::CardLocation::Played(1)).raw_mask()
+        | gs.deck.get_all(deck::CardLocation::Played(2)).raw_mask()
+        | gs.deck.get_all(deck::CardLocation::Played(3)).raw_mask()
+        | gs.deck.get_all(deck::CardLocation::FaceUp).raw_mask();
+    // "Chain breaker" = any card that isn't None. If the next higher card in a suit is held by
+    // another player OR visible on the table, the equivalence chain is broken and we must
+    // keep the current card. Excludes cur_hand because we check that first.
+    let chain_breaker: u32 = (all_hands & !cur_hand) | visible;
+
+    actions.retain(|x| {
+        let ea = EAction::from(*x);
+        if ea == EAction::Pass {
+            // Sentinel Pass plays for the sit-out partner aren't a card; keep as-is.
+            return true;
+        }
+        let c = ea.card();
+        let same_suit = get_cards(gs.get_suit(c), gs.trump);
+        let idx = same_suit
+            .iter()
+            .position(|&x| x == c)
+            .expect("card must be in its own suit list");
+        for next in &same_suit[idx + 1..] {
+            let mask = *next as u32;
+            if mask & cur_hand != 0 {
+                // Current player owns the next higher card: this one is redundant, remove it.
+                return false;
+            }
+            if mask & chain_breaker != 0 {
+                // Next higher card is held by another player or visible on the table.
+                // Chain is broken: keep this card.
+                return true;
+            }
+            // Otherwise the next card is None (discarded) — look further up the suit.
+        }
+        // No card above this one, keep it.
+        true
     });
-}
-
-fn find_next_card_owner(c: Card, gs: &EuchreGameState) -> Option<Player> {
-    // we must use the effective suit of the card here (from the gamestate)
-    let same_suit = get_cards(gs.get_suit(c), gs.trump);
-    let idx = same_suit
-        .iter()
-        .find_position(|&x| *x == c)
-        .unwrap_or_else(|| {
-            panic!(
-                "couldn't find {} in {:?} for {}\n{:?}",
-                c, same_suit, gs, gs
-            )
-        })
-        .0;
-
-    for card in same_suit[idx + 1..].iter() {
-        let loc = gs.deck.get(*card);
-        use deck::CardLocation::*;
-        match loc {
-            Player0 | Player1 | Player2 | Player3 => return loc.to_player(),
-            // If in play or face up, can't do the optimizations, so we return none
-            Played(_) | FaceUp => return Option::None,
-            None => continue, // if already played, we can look for the next card up
-        };
-    }
-
-    None
 }
 
 /// Returns true if >= n cards have been played in the play phase. If n=0

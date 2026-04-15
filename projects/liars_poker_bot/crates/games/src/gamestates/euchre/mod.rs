@@ -1,8 +1,4 @@
-use std::{
-    collections::hash_map::DefaultHasher,
-    fmt::Display,
-    hash::{Hash, Hasher},
-};
+use std::fmt::Display;
 
 use itertools::Itertools;
 
@@ -435,19 +431,18 @@ impl EuchreGameState {
 
     /// Build the 4-entry trick just completed using `final_entry` as the final play.
     /// Entries are `None` for sitting-out Pass sentinels.
-    fn last_trick_with_entry(&self, final_entry: Option<Card>) -> Option<Vec<Option<Card>>> {
+    fn last_trick_with_entry(&self, final_entry: Option<Card>) -> Option<[Option<Card>; 4]> {
         if self.phase() != EPhase::Play || self.cards_played < 4 {
             return None;
         }
 
         let sidx = self.key.len() - 3;
-        let mut trick = Vec::with_capacity(4);
-        for i in 0..3 {
-            trick.push(Self::action_to_trick_card(self.key[sidx + i]));
-        }
-        trick.push(final_entry);
-
-        Some(trick)
+        Some([
+            Self::action_to_trick_card(self.key[sidx]),
+            Self::action_to_trick_card(self.key[sidx + 1]),
+            Self::action_to_trick_card(self.key[sidx + 2]),
+            final_entry,
+        ])
     }
 
     fn legal_actions_dealing(&self, actions: &mut Vec<Action>) {
@@ -1145,22 +1140,33 @@ impl GameState for EuchreGameState {
             return None;
         }
 
-        let mut hasher = DefaultHasher::new();
+        // Inlined FxHash-style mix. DefaultHasher (SipHasher) was showing up at ~4% of total
+        // CPU time; this call is on the alpha_beta hot path and all inputs together are well
+        // under 64 bytes, so a minimal multiply-xor mix gives the same collision resistance
+        // we need (just a cache key, not a security hash) for a fraction of the cost.
+        const K: u64 = 0x517cc1b727220a95;
+        #[inline(always)]
+        fn mix(h: u64, x: u64) -> u64 {
+            (h.rotate_left(5) ^ x).wrapping_mul(K)
+        }
+
         let iso_deck = iso_deck(self.deck, self.trump);
-        iso_deck.hash(&mut hasher);
+        let d0 = ((iso_deck[0] as u64) << 32) | (iso_deck[1] as u64);
+        let d1 = ((iso_deck[2] as u64) << 32) | (iso_deck[3] as u64);
+        // Pack tricks_won (2 × u8), calling_team (1 bit), going_alone (1 bit), cur_player
+        // (2 bits) into a single u64 word.
+        let calling_team = (self.trump_caller & 1) as u64;
+        let tail: u64 = (self.tricks_won[0] as u64)
+            | ((self.tricks_won[1] as u64) << 8)
+            | (calling_team << 16)
+            | ((self.going_alone as u64) << 17)
+            | ((self.cur_player as u64 & 0b11) << 18);
 
-        self.tricks_won.hash(&mut hasher);
-        let calling_team = self.trump_caller % 2;
-        calling_team.hash(&mut hasher);
-        self.going_alone.hash(&mut hasher);
-
-        // Necessary for search stability of the open hand solver
-        // Previous attempts with just the team being hashed don't work.
-        // This is because when we hash hands at the start of tricks, it is not
-        // clear from any other state who should be the first to act
-        self.cur_player.hash(&mut hasher);
-
-        Some(hasher.finish())
+        let mut h: u64 = 0;
+        h = mix(h, d0);
+        h = mix(h, d1);
+        h = mix(h, tail);
+        Some(h)
     }
 }
 
