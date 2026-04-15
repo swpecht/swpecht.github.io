@@ -57,34 +57,36 @@ features! {
 }
 
 
-/// Number of actions we can store in a given "slot" of the database.
-/// Must be large enough for the game with the most actions at a single info state.
-/// Euchre needs 6, Bluff(1,1) needs up to 11 (10 bids + call).
-const MAX_ACTIONS_PER_SLOT: usize = 12;
+/// Max actions per slot for Euchre (max 6 legal actions at any decision node)
+pub const EUCHRE_MAX_ACTIONS: usize = 6;
+/// Max actions per slot for Bluff(1,1) (up to 10 legal actions at betting decisions)
+pub const BLUFF_MAX_ACTIONS: usize = 10;
+/// Max actions per slot for Kuhn Poker
+pub const KP_MAX_ACTIONS: usize = 6;
 
 #[derive(Copy, Clone, Serialize, Deserialize)]
-pub struct InfoState {
+pub struct InfoState<const MAX_ACTIONS: usize> {
     pub actions: ActionList,
-    pub regrets: ArrayVec<[Weight; MAX_ACTIONS_PER_SLOT]>,
-    pub avg_strategy: ArrayVec<[Weight; MAX_ACTIONS_PER_SLOT]>,
+    pub regrets: ArrayVec<[Weight; MAX_ACTIONS]>,
+    pub avg_strategy: ArrayVec<[Weight; MAX_ACTIONS]>,
     pub last_iteration: usize,
 }
 
 // SAFETY: InfoState is composed of:
 //   - ActionList(u32): a plain u32 bitmask, trivially Pod/Zeroable.
-//   - ArrayVec<[f32; 12]> (x2): tinyvec's ArrayVec is internally a length field + a fixed-size
-//     array. All bytes patterns are valid for its fields (u16 len + [f32; N]). The all-zeros
-//     pattern produces a valid ArrayVec with len=0.
+//   - ArrayVec<[f32; MAX_ACTIONS]> (x2): tinyvec's ArrayVec is internally a length field + a
+//     fixed-size array. All byte patterns are valid for its fields (u16 len + [f32; N]).
+//     The all-zeros pattern produces a valid ArrayVec with len=0.
 //   - last_iteration: usize, trivially Pod/Zeroable.
 //
 // All fields are Copy and contain no padding that would be uninitialized, making the struct
 // safe to reinterpret as bytes. The all-zeros bit pattern is valid (empty ActionList, empty
 // ArrayVecs with len=0, last_iteration=0). We cannot use #[derive(Pod, Zeroable)] because
 // tinyvec::ArrayVec does not itself implement Pod or Zeroable.
-unsafe impl Pod for InfoState {}
-unsafe impl Zeroable for InfoState {}
+unsafe impl<const N: usize> Pod for InfoState<N> {}
+unsafe impl<const N: usize> Zeroable for InfoState<N> {}
 
-impl InfoState {
+impl<const MAX_ACTIONS: usize> InfoState<MAX_ACTIONS> {
     pub fn new(normalized_actions: Vec<NormalizedAction>) -> Self {
         let n = normalized_actions.len();
         let mut regrets = ArrayVec::new();
@@ -125,11 +127,11 @@ impl InfoState {
 /// Based on implementation from: OpenSpiel:
 ///     https://github.com/deepmind/open_spiel/blob/master/open_spiel/python/algorithms/mccfr.py
 #[derive(Clone)]
-pub struct CFRES<G> {
+pub struct CFRES<G, const MAX_ACTIONS: usize = EUCHRE_MAX_ACTIONS> {
     vector_pool: Pool<Vec<Action>>,
     game_generator: fn() -> G,
     iteration: Arc<AtomicUsize>,
-    infostates: Arc<Mutex<NodeStore>>,
+    infostates: Arc<Mutex<NodeStore<MAX_ACTIONS>>>,
     /// determine if we are at the max depth and should use the rollout
     depth_checker: Box<dyn DepthChecker<G>>,
     normalizer: Box<dyn IStateNormalizer<G>>,
@@ -137,13 +139,13 @@ pub struct CFRES<G> {
     evaluator: OpenHandSolver<G>,
 }
 
-impl<G> CFRES<G> {
+impl<G, const MAX_ACTIONS: usize> CFRES<G, MAX_ACTIONS> {
     pub fn iterations(&self) -> usize {
         self.iteration.load(Ordering::Relaxed)
     }
 }
 
-impl<G> Seedable for CFRES<G> {
+impl<G, const MAX_ACTIONS: usize> Seedable for CFRES<G, MAX_ACTIONS> {
     /// Sets the seed for the evaluator, it doesn't change the seed used for training
     fn set_seed(&mut self, seed: u64) {
         self.play_bot.set_seed(seed);
@@ -189,12 +191,12 @@ impl CFRES<EuchreGameState> {
     }
 }
 
-impl<G: GameState + ResampleFromInfoState> CFRES<G> {
+impl<G: GameState + ResampleFromInfoState, const MAX_ACTIONS: usize> CFRES<G, MAX_ACTIONS> {
     /// Creates a CFRES instance for simple (non-Euchre) games that don't need
     /// depth checking or state normalization.
     fn new_simple(
         game_generator: fn() -> G,
-        node_store: NodeStore,
+        node_store: NodeStore<MAX_ACTIONS>,
     ) -> Self {
         let mut rng: StdRng = SeedableRng::seed_from_u64(43);
         let pimcts_seed = rng.random();
@@ -215,13 +217,13 @@ impl<G: GameState + ResampleFromInfoState> CFRES<G> {
     }
 }
 
-impl CFRES<KPGameState> {
+impl CFRES<KPGameState, KP_MAX_ACTIONS> {
     pub fn new_kp() -> Self {
         Self::new_simple(KuhnPoker::new_state, NodeStore::new_kp(None).unwrap())
     }
 }
 
-impl CFRES<BluffGameState> {
+impl CFRES<BluffGameState, BLUFF_MAX_ACTIONS> {
     pub fn new_bluff_11() -> Self {
         Self::new_simple(
             || Bluff::new_state(1, 1),
@@ -230,7 +232,7 @@ impl CFRES<BluffGameState> {
     }
 }
 
-impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
+impl<G: GameState + ResampleFromInfoState + Sync, const MAX_ACTIONS: usize> CFRES<G, MAX_ACTIONS> {
     pub fn train(&mut self, n: usize) {
         if feature::is_enabled(feature::SingleThread) {
             for _ in 0..n {
@@ -453,13 +455,13 @@ impl<G: GameState + ResampleFromInfoState + Sync> CFRES<G> {
     }
 }
 
-impl<G> CFRES<G> {
+impl<G, const MAX_ACTIONS: usize> CFRES<G, MAX_ACTIONS> {
     /// Can deadlock if we hold onto handle
-    fn lookup_entry(&self, key: &NormalizedIstate) -> Option<InfoState> {
+    fn lookup_entry(&self, key: &NormalizedIstate) -> Option<InfoState<MAX_ACTIONS>> {
         self.infostates.lock().unwrap().get(&key.get())
     }
 
-    fn put_entry(&self, key: &NormalizedIstate, v: InfoState) {
+    fn put_entry(&self, key: &NormalizedIstate, v: InfoState<MAX_ACTIONS>) {
         self.infostates.lock().unwrap().put(&key.get(), &v);
     }
 }
@@ -487,8 +489,8 @@ fn regret_matching(regrets: &[(Action, Weight)]) -> ActionVec<Weight> {
     policy
 }
 
-fn add_regret(
-    infostate: &mut InfoState,
+fn add_regret<const N: usize>(
+    infostate: &mut InfoState<N>,
     action: NormalizedAction,
     amount: Weight,
     iteration: usize,
@@ -525,7 +527,11 @@ fn add_regret(
     infostate.regrets[idx] += amount;
 }
 
-fn add_avstrat(infostate: &mut InfoState, action: NormalizedAction, amount: Weight) {
+fn add_avstrat<const N: usize>(
+    infostate: &mut InfoState<N>,
+    action: NormalizedAction,
+    amount: Weight,
+) {
     let idx = infostate
         .actions
         .index(action)
@@ -533,7 +539,9 @@ fn add_avstrat(infostate: &mut InfoState, action: NormalizedAction, amount: Weig
     infostate.avg_strategy[idx] += amount;
 }
 
-impl<G: GameState + ResampleFromInfoState + Send> Policy<G> for CFRES<G> {
+impl<G: GameState + ResampleFromInfoState + Send, const MAX_ACTIONS: usize> Policy<G>
+    for CFRES<G, MAX_ACTIONS>
+{
     /// Returns the MCCFR average policy for a player in a state.
     ///
     /// If the policy is not defined for the provided state, a uniform
@@ -576,7 +584,9 @@ impl<G: GameState + ResampleFromInfoState + Send> Policy<G> for CFRES<G> {
     }
 }
 
-impl<G: GameState + ResampleFromInfoState + Send> Agent<G> for CFRES<G> {
+impl<G: GameState + ResampleFromInfoState + Send, const MAX_ACTIONS: usize> Agent<G>
+    for CFRES<G, MAX_ACTIONS>
+{
     fn step(&mut self, s: &G) -> Action {
         let action_weights = self.action_probabilities(s).to_vec();
         action_weights

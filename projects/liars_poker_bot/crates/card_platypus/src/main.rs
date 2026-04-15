@@ -132,7 +132,14 @@ fn run_scratch(_args: Args) {
     println!("kuhn poker size: {}", mem::size_of::<KPGameState>());
     println!("euchre size: {}", mem::size_of::<EuchreGameState>());
 
-    println!("cfres node {}", mem::size_of::<InfoState>());
+    println!(
+        "cfres node (euchre) {}",
+        mem::size_of::<InfoState<{ cfres::EUCHRE_MAX_ACTIONS }>>()
+    );
+    println!(
+        "cfres node (bluff)  {}",
+        mem::size_of::<InfoState<{ cfres::BLUFF_MAX_ACTIONS }>>()
+    );
     println!("istate key {}", mem::size_of::<IStateKey>());
 
     let database = NodeStore::new_euchre(
