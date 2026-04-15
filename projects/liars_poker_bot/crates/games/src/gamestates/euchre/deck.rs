@@ -1,7 +1,6 @@
 use std::{fmt::Debug, mem, ops::BitAnd};
 
 use anyhow::{bail, Context, Ok};
-use num_traits::FromPrimitive;
 use serde::{Deserialize, Serialize};
 
 use crate::Player;
@@ -81,15 +80,6 @@ impl CardLocation {
         }
     }
 
-    pub fn to_player(self) -> Option<Player> {
-        match self {
-            CardLocation::Player0 => Some(0),
-            CardLocation::Player1 => Some(1),
-            CardLocation::Player2 => Some(2),
-            CardLocation::Player3 => Some(3),
-            _ => None,
-        }
-    }
 }
 
 impl From<Player> for CardLocation {
@@ -260,9 +250,8 @@ impl Hand {
 
         while mask.count_ones() > 0 {
             let bit_index = mask.trailing_zeros();
-            let card_rep = 1 << bit_index;
-            mask &= !card_rep;
-            cards.push(FromPrimitive::from_u32(card_rep).unwrap())
+            mask &= !(1u32 << bit_index);
+            cards.push(card_from_bit_index(bit_index as usize).expect("valid card bit"));
         }
 
         cards
@@ -270,10 +259,10 @@ impl Hand {
 
     /// Returns a single card if there is only one in the hand
     pub fn card(&self) -> Option<Card> {
-        if self.len() != 1 {
+        if self.mask.count_ones() != 1 {
             return None;
         }
-        FromPrimitive::from_u32(self.mask)
+        card_from_bit_index(self.mask.trailing_zeros() as usize)
     }
 
     pub fn from_mask(mask: u32) -> Self {
@@ -283,11 +272,50 @@ impl Hand {
     /// Returns the highest card, this should only be called if there is a single
     /// suit in the hand otherwise behavior is undefined
     pub fn highest(&self) -> anyhow::Result<Card> {
-        let bit_index = self.mask.leading_zeros();
-        let card_rep = 0b10000000000000000000000000000000 >> bit_index;
+        // 31 - leading_zeros = highest set bit index
+        let bit_index = 31 - self.mask.leading_zeros() as usize;
+        card_from_bit_index(bit_index).context("Failed to convert card rep to Card")
+    }
+}
 
-        let c = FromPrimitive::from_u32(card_rep).context("Failed to convert card rep to Card")?;
-        Ok(c)
+/// O(1) bit-position → Card lookup. Card is `#[repr(u32)]` with single-bit discriminants,
+/// so the bit index in [0..=31] uniquely identifies the card (24 of the 32 positions are
+/// valid cards; the other 8 are EAction-only positions like Pickup/Pass).
+const BIT_TO_CARD: [Option<Card>; 32] = {
+    let mut arr = [None; 32];
+    arr[0] = Some(Card::NS);
+    arr[1] = Some(Card::TS);
+    arr[2] = Some(Card::JS);
+    arr[3] = Some(Card::QS);
+    arr[4] = Some(Card::KS);
+    arr[5] = Some(Card::AS);
+    arr[8] = Some(Card::NC);
+    arr[9] = Some(Card::TC);
+    arr[10] = Some(Card::JC);
+    arr[11] = Some(Card::QC);
+    arr[12] = Some(Card::KC);
+    arr[13] = Some(Card::AC);
+    arr[16] = Some(Card::NH);
+    arr[17] = Some(Card::TH);
+    arr[18] = Some(Card::JH);
+    arr[19] = Some(Card::QH);
+    arr[20] = Some(Card::KH);
+    arr[21] = Some(Card::AH);
+    arr[24] = Some(Card::ND);
+    arr[25] = Some(Card::TD);
+    arr[26] = Some(Card::JD);
+    arr[27] = Some(Card::QD);
+    arr[28] = Some(Card::KD);
+    arr[29] = Some(Card::AD);
+    arr
+};
+
+#[inline(always)]
+fn card_from_bit_index(bit: usize) -> Option<Card> {
+    if bit < 32 {
+        BIT_TO_CARD[bit]
+    } else {
+        None
     }
 }
 

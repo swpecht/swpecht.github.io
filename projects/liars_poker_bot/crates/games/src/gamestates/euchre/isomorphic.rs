@@ -36,29 +36,60 @@ const HEARTS_DIAMONDS: &[Card] = &[NH, TH, QH, KH, AH];
 const DIAMONDS_DIAMONDS: &[Card] = &[ND, TD, QD, KD, AD, JH, JD];
 
 pub(super) fn iso_deck(deck: Deck, trump: Option<Suit>) -> [Locations; 4] {
-    let mut locations = [0; 4];
-    // if we have trump, skip all the none locations, we can fully compress
+    // Precompute the seven hand bitmasks once, then for each card do a handful of
+    // bitmask ANDs instead of calling Deck::get (which loops over all 10 hand locations).
+    // For the trump case there are 24 cards × ~6 mask checks ≈ 144 cheap ops, vs the old
+    // 24 × ~10 Hand::contains-with-CardLocation-dispatch cycles.
+    let p0 = deck.get_all(CardLocation::Player0).raw_mask();
+    let p1 = deck.get_all(CardLocation::Player1).raw_mask();
+    let p2 = deck.get_all(CardLocation::Player2).raw_mask();
+    let p3 = deck.get_all(CardLocation::Player3).raw_mask();
+    let played = deck.get_all(CardLocation::Played(0)).raw_mask()
+        | deck.get_all(CardLocation::Played(1)).raw_mask()
+        | deck.get_all(CardLocation::Played(2)).raw_mask()
+        | deck.get_all(CardLocation::Played(3)).raw_mask();
+    let face_up = deck.get_all(CardLocation::FaceUp).raw_mask();
+    let none = deck.get_all(CardLocation::None).raw_mask();
+
+    #[inline(always)]
+    fn loc_word(card: Card, p0: u32, p1: u32, p2: u32, p3: u32, played: u32, face_up: u32) -> u32 {
+        let m = card as u32;
+        if m & p0 != 0 {
+            0b1000
+        } else if m & p1 != 0 {
+            0b0001
+        } else if m & p2 != 0 {
+            0b0010
+        } else if m & p3 != 0 {
+            0b0011
+        } else if m & played != 0 {
+            0b0100
+        } else if m & face_up != 0 {
+            0b0101
+        } else {
+            0b0000 // None
+        }
+    }
+
+    let mut locations = [0u32; 4];
     if trump.is_some() {
-        let none_cards = deck.get_all(CardLocation::None);
+        // Fully compressed: skip None cards.
         for s in SUITS {
             for c in get_cards(*s, trump) {
-                if !none_cards.contains(*c) {
+                if (*c as u32) & none == 0 {
                     locations[*s as usize] <<= WORD_SIZE;
-                    locations[*s as usize] |= location_mask(deck.get(*c))
+                    locations[*s as usize] |= loc_word(*c, p0, p1, p2, p3, played, face_up);
                 }
             }
         }
     } else {
-        // todo: could do this in a single pass if needed for performance reasons
-        // if no trump, we load everything and then swap around the jacks
+        // No trump: load everything and then swap around the jacks.
         for s in SUITS {
             for c in get_cards(*s, trump) {
                 locations[*s as usize] <<= WORD_SIZE;
-                locations[*s as usize] |= location_mask(deck.get(*c))
+                locations[*s as usize] |= loc_word(*c, p0, p1, p2, p3, played, face_up);
             }
         }
-
-        // we can only swap things around the jacks
         for suit_locations in locations.iter_mut() {
             for i in 0..MAX_WORDS - 1 {
                 if i != JACK_RANK
@@ -72,12 +103,9 @@ pub(super) fn iso_deck(deck: Deck, trump: Option<Suit>) -> [Locations; 4] {
     }
 
     if let Some(trump) = trump {
-        // put trump in the first spot
         locations.swap(0, trump as usize);
-        // sort everything else
         locations[1..].sort();
     } else {
-        // sort everything
         locations.sort();
     }
 

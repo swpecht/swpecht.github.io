@@ -109,11 +109,29 @@ impl<G: Clone> Default for OpenHandSolver<G> {
     }
 }
 
+impl<G: GameState> OpenHandSolver<G> {
+    /// Like the trait `evaluate_player` but takes `&mut G` and relies on `apply_action` /
+    /// `undo` inside `alpha_beta` to leave the state untouched on return. Avoids the per-
+    /// rollout `gs.clone()` (which heap-allocates `play_order` for Euchre). CFRES holds a
+    /// concrete `OpenHandSolver` and calls this directly via the inherent method.
+    pub fn evaluate_player_mut(&mut self, gs: &mut G, maximizing_player: Player) -> f64 {
+        mtd_search(
+            gs,
+            maximizing_player,
+            0,
+            self.cache.clone(),
+            &self.optimizations,
+        )
+        .0
+    }
+}
+
 impl<G: GameState> Evaluator<G> for OpenHandSolver<G> {
     /// Evaluates the gamestate for a maximizing player using alpha-beta search
     fn evaluate_player(&mut self, gs: &G, maximizing_player: Player) -> f64 {
+        let mut owned = gs.clone();
         mtd_search(
-            gs.clone(),
+            &mut owned,
             maximizing_player,
             0,
             self.cache.clone(),
@@ -173,7 +191,7 @@ impl<G: GameState> Evaluator<G> for OpenHandSolver<G> {
 ///
 /// http://people.csail.mit.edu/plaat/mtdf.html#abmem
 fn mtd_search<G: GameState>(
-    mut root: G,
+    root: &mut G,
     maximizing_player: Player,
     first_guess: i8,
     mut cache: AlphaBetaCache<G>,
@@ -187,7 +205,7 @@ fn mtd_search<G: GameState>(
     loop {
         let beta = if g == lowerbound { g + 1 } else { g };
         let result = alpha_beta(
-            &mut root,
+            root,
             Team::from(maximizing_player),
             (beta - 1) as f64,
             beta as f64,
@@ -464,9 +482,9 @@ mod tests {
 
     #[test]
     fn test_mtd_kuhn_poker() {
-        let gs = KuhnPoker::from_actions(&[KPAction::Jack, KPAction::Queen]);
+        let mut gs = KuhnPoker::from_actions(&[KPAction::Jack, KPAction::Queen]);
         let (v, a) = mtd_search(
-            gs,
+            &mut gs,
             0,
             0,
             AlphaBetaCache::new(Optimizations::default()),
@@ -475,9 +493,9 @@ mod tests {
         assert_eq!(v, -1.0);
         assert_eq!(a.unwrap(), KPAction::Pass.into());
 
-        let gs = KuhnPoker::from_actions(&[KPAction::King, KPAction::Queen]);
+        let mut gs = KuhnPoker::from_actions(&[KPAction::King, KPAction::Queen]);
         let (v, a) = mtd_search(
-            gs,
+            &mut gs,
             0,
             0,
             AlphaBetaCache::new(Optimizations::default()),
@@ -486,14 +504,14 @@ mod tests {
         assert_eq!(v, 1.0);
         assert_eq!(a.unwrap(), KPAction::Bet.into());
 
-        let gs = KuhnPoker::from_actions(&[
+        let mut gs = KuhnPoker::from_actions(&[
             KPAction::King,
             KPAction::Queen,
             KPAction::Pass,
             KPAction::Bet,
         ]);
         let (v, a) = mtd_search(
-            gs,
+            &mut gs,
             0,
             0,
             AlphaBetaCache::new(Optimizations::default()),
@@ -512,7 +530,7 @@ mod tests {
         gs.apply_action(BluffActions::Roll(Dice::Three).into());
 
         let (v, a) = mtd_search(
-            gs,
+            &mut gs,
             0,
             0,
             AlphaBetaCache::new(Optimizations::default()),
@@ -531,7 +549,7 @@ mod tests {
         gs.apply_action(BluffActions::Roll(Dice::Three).into());
 
         let (v, a) = mtd_search(
-            gs,
+            &mut gs,
             0,
             0,
             AlphaBetaCache::new(Optimizations::default()),

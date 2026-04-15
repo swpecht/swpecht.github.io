@@ -498,9 +498,7 @@ impl EuchreGameState {
         let hand = self.deck.get_all(player_loc);
         // If they are the first to act on a trick then can play any card in hand
         if self.is_start_of_trick() {
-            for c in hand {
-                actions.push(EAction::from(c).into());
-            }
+            push_hand_as_actions(hand, actions);
             return;
         }
 
@@ -508,24 +506,18 @@ impl EuchreGameState {
         // sit-out Pass sentinels that may have preceded it).
         let Some(leading_card) = self.leading_card_of_current_trick() else {
             // No real cards played yet this trick (only sentinels). Lead is open.
-            for c in hand {
-                actions.push(EAction::from(c).into());
-            }
+            push_hand_as_actions(hand, actions);
             return;
         };
         let leading_suit = self.get_suit(leading_card);
         let suit_mask = suit_mask(leading_suit, self.trump);
 
-        if (suit_mask & hand).is_empty() {
+        let suited_hand = suit_mask & hand;
+        if suited_hand.is_empty() {
             // no suit, can play any card
-            for c in hand {
-                actions.push(EAction::from(c).into());
-            }
+            push_hand_as_actions(hand, actions);
         } else {
-            let suited_hand = suit_mask & hand;
-            for c in suited_hand {
-                actions.push(EAction::from(c).into());
-            }
+            push_hand_as_actions(suited_hand, actions);
         }
     }
 
@@ -573,9 +565,12 @@ impl EuchreGameState {
             return self.trick_position_to_player(trick_starter, winner);
         }
 
-        // otherwise we can just evaluate by rank
-        let real_cards: Vec<Card> = cards.iter().filter_map(|c| *c).collect();
-        let card_mask = Hand::from(real_cards.as_slice());
+        // otherwise we can just evaluate by rank. Build the Hand mask directly via OR — no
+        // need to collect into an intermediate Vec just to feed Hand::from(&[Card]).
+        let mut card_mask = Hand::default();
+        for c in cards.iter().filter_map(|c| *c) {
+            card_mask.add(c);
+        }
         let trump_mask = suit_mask(self.trump.unwrap(), self.trump);
 
         let trumps = card_mask & trump_mask;
@@ -1167,6 +1162,20 @@ impl GameState for EuchreGameState {
         h = mix(h, d1);
         h = mix(h, tail);
         Some(h)
+    }
+}
+
+/// Push every card in a hand as an `Action` directly via bit iteration. Each `Action`
+/// stores the bit-index of the corresponding `EAction` discriminant, so we can produce
+/// it from the hand mask without going through `Card → EAction → Action`, both of which
+/// pay an extra `trailing_zeros` round-trip.
+#[inline]
+fn push_hand_as_actions(hand: Hand, actions: &mut Vec<Action>) {
+    let mut mask = hand.raw_mask();
+    while mask != 0 {
+        let bit = mask.trailing_zeros() as u8;
+        mask &= mask - 1; // clear lowest set bit
+        actions.push(Action(bit));
     }
 }
 

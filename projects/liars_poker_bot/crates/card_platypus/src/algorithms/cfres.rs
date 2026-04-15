@@ -298,9 +298,10 @@ impl<G: GameState + ResampleFromInfoState + Sync, const MAX_ACTIONS: usize> CFRE
             return value;
         }
 
-        // If we're at max depth, do the rollout
+        // If we're at max depth, do the rollout. evaluate_player_mut is the &mut variant
+        // that avoids the per-rollout gs.clone() — alpha_beta restores state via undo.
         if self.depth_checker.is_max_depth(gs) {
-            return self.evaluator.evaluate_player(gs, player) as Weight;
+            return self.evaluator.evaluate_player_mut(gs, player) as Weight;
         }
 
         let cur_player = gs.cur_player();
@@ -404,12 +405,13 @@ impl<G: GameState + ResampleFromInfoState + Sync, const MAX_ACTIONS: usize> CFRE
         if cur_player == player {
             // update regrets
             let iteration = self.iteration.load(Ordering::SeqCst);
-            let normalizer = self.normalizer.clone();
             let mut infostate_info = self
                 .lookup_entry(&info_state_key)
                 .unwrap_or_else(|| InfoState::new(normalized_actions.clone()));
-            for &a in actions.iter() {
-                let norm_a = normalizer.normalize_action(a, gs);
+            // normalized_actions was already computed at the top of this frame, so reuse it
+            // instead of calling normalize_action (which redoes istate_key + norm_transform)
+            // once per legal action.
+            for (&a, &norm_a) in actions.iter().zip(normalized_actions.iter()) {
                 add_regret(
                     &mut infostate_info,
                     norm_a,
@@ -428,12 +430,10 @@ impl<G: GameState + ResampleFromInfoState + Sync, const MAX_ACTIONS: usize> CFRE
         let cur_team = cur_player % 2;
         let player_team = player % 2;
         if cur_team != player_team {
-            let normalizer = self.normalizer.clone();
             let mut infostate_info = self
                 .lookup_entry(&info_state_key)
                 .unwrap_or_else(|| InfoState::new(normalized_actions.clone()));
-            for &action in actions.iter() {
-                let norm_a = normalizer.normalize_action(action, gs);
+            for (&action, &norm_a) in actions.iter().zip(normalized_actions.iter()) {
                 add_avstrat(&mut infostate_info, norm_a, policy[action]);
             }
 

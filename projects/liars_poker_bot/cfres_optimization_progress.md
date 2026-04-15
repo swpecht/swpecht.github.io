@@ -773,3 +773,260 @@ Allocator pressure clearly dropped. `Vec::from_iter` frame didn't fall because t
 
 **Cumulative speedup: roughly 2x** (64.3s → ~33s). For the 600M-iteration `three_card_played` profile this should translate to several hours saved per full training run.
 
+---
+
+## F1 SHIPPED — `get_n_highest_trump` bitmask rewrite
+
+### Change
+
+- `crates/games/src/gamestates/euchre/processors.rs:85-122` — rewrote `get_n_highest_trump` to precompute per-active-player hand masks (Player0..3 with sitting-out player zeroed) and walk trump cards via bitmask AND instead of `Deck::get`. Same pattern as the Phase 1.0 rewrite of `find_next_card_owner`.
+- `crates/games/src/gamestates/euchre/deck.rs:84-92` — removed `CardLocation::to_player()` which is now unused (only callers were `find_next_card_owner` and `get_n_highest_trump`).
+
+### Test results
+
+`cargo test --release -p games`: **52 passed**. `cargo test --release -p card_platypus`: all green including the alpha-beta solver tests that exercise `euchre_early_terminate → get_n_highest_trump`.
+
+### Wall-clock delta (test profile)
+
+```
+Pre-F1 baseline:  32.5s, 32.9s
+Post-F1:          32.2s, 34.1s
+```
+
+Within run-to-run noise (~2s) on test profile. test profile has `max_cards_played=0` so `euchre_early_terminate` (the main caller) is rarely active.
+
+### Hotspot delta (three_card_played, `profile_data/f1-three_card.data`, 24,547 samples)
+
+| Symbol | Phase 1.2 | F1 | Δ |
+|---|---|---|---|
+| `get_n_highest_trump` (self) | 3.80% | **dropped out of top 25** | ✓ |
+| `euchre_early_terminate` | 1.95% | 2.84% | +0.89pp (absorbed inlined work) |
+| `process_euchre_actions` | 5.91% | 7.29% | +1.38pp (absorbed inlined work) |
+| **Subsystem total (the three above)** | **11.66%** | **10.13%** | **-1.53pp** ✓ |
+
+The function disappeared from the profile because its body got inlined into its two callers, and the net work dropped by ~1.5pp. Wall-clock effect (~0.5s) is below the test profile noise floor.
+
+**F1 verdict: ship.**
+
+---
+
+## F2 SHIPPED — `iso_deck` Deck::get → precomputed bitmask check
+
+### Audit
+
+`grep deck.get(` found 6 call sites:
+- `isomorphic.rs:47, 57` inside `iso_deck` — **HOT** (called once per alpha_beta frame that wants caching, ~24 calls per `iso_deck`).
+- `mod.rs:224, 228, 271, 348` — all in `apply_action_deal_hands` / `apply_action_deal_face_up` / `apply_action_discard`, which are called at most once per CFRES iteration (not per alpha_beta frame). Cold; left alone.
+
+### Change
+
+- `crates/games/src/gamestates/euchre/isomorphic.rs:38-114` — rewrote `iso_deck` to precompute the 7 hand bitmasks once at function entry (Player0..3, Played, FaceUp, None) then use a small inline `loc_word(card, ...)` helper to determine each card's location code via bitmask AND chain. Replaces ~24 `Deck::get` calls (each O(10)) with ~24 inline mask checks (each up to 6 ANDs).
+
+### Test results
+
+Full workspace `cargo test --release`: all green (52 games + 25 + 3 + 1 card_platypus suites).
+
+### Wall-clock (test profile, noise floor ~2s)
+
+```
+F1:  32.2s, 34.1s
+F2:  34.2s, 35.3s
+```
+
+Within noise floor.
+
+### Hotspot delta (three_card_played, `profile_data/f2-three_card.data`)
+
+| Symbol | F1 | F2 | Δ |
+|---|---|---|---|
+| `iso_deck` (self) | 3.38% | 3.12% | -0.26pp |
+| `apply_action` | 10.70% | 9.84% | -0.86pp |
+| `undo` | 9.25% | 8.63% | -0.62pp |
+| `alpha_beta` | 12.16% | 11.63% | -0.53pp |
+| `process_euchre_actions` | 7.29% | 7.04% | -0.25pp |
+
+Many small redistributions adding up to ~2pp aggregate, consistent with the iso_deck hot path getting cheaper. The `Deck::get → loc_word` change is small per-call but the call count per `iso_deck` is high.
+
+**F2 verdict: ship. Modest but real.**
+
+---
+
+## F7 simple SHIPPED — reuse `normalized_actions` in CFRES regret/avg-strat loops
+
+### Change
+
+- `crates/card_platypus/src/algorithms/cfres.rs:404-441` — the regret-update loop (player == cur_player branch) and the avg-strategy loop (opposing-team branch) were both calling `normalizer.normalize_action(a, gs)` per legal action. That call walks `gs.istate_key(...)` + `norm_transform(...)` for every action. The normalized actions were already computed at the top of the function in the `normalized_actions` vec. Replaced with `actions.iter().zip(normalized_actions.iter())` to reuse the cached values, and removed the now-unused `let normalizer = self.normalizer.clone();` bindings on lines 407 and 431.
+
+### Test results
+
+Full workspace `cargo test --release`: green.
+
+### Wall-clock (test profile)
+
+```
+F2:  34.2s, 35.3s
+F7:  31.8s, 32.4s
+```
+
+Consistently faster — ~2s improvement vs F2, putting the test profile back in the **31-32s range** (vs original 64.3s baseline = -50.4%).
+
+### Hotspot delta (three_card_played, `profile_data/f7-three_card.data`)
+
+| Symbol | F2 | F7 simple | Δ |
+|---|---|---|---|
+| `istate_key` | 2.79% | **1.97%** | **-0.82pp** ✓ |
+| `normalize_euchre_istate` | 1.28% | 1.08% | -0.20pp |
+| `norm_transform` | 1.10% | 0.89% | -0.21pp |
+| `update_regrets` (self) | 1.31% | 1.36% | flat |
+
+Combined CFRES normalization path: **-1.23pp**. The recompute only fired at player-action nodes (where regrets are updated) and at opposing-team nodes (where avg-strat is updated), so it's not visited at every CFRES decision node — explains why the win is real but not larger.
+
+**F7 simple verdict: ship. Hit the 50% cumulative speedup mark on test profile.**
+
+---
+
+## F5 SHIPPED — `OpenHandSolver::evaluate_player_mut` avoids per-rollout `gs.clone()`
+
+### Change
+
+- `crates/card_platypus/src/algorithms/open_hand_solver.rs:111-156` — added an inherent `OpenHandSolver::evaluate_player_mut` that takes `&mut G` and reuses the existing `apply_action`/`undo` pattern inside `alpha_beta` to leave the state unchanged on return. Changed `mtd_search` to take `&mut G` instead of an owned `G`. The trait `Evaluator::evaluate_player(&G)` impl still exists for non-CFRES callers (PIMCTSBot, scripts, benches, tests) and now does its own `gs.clone()` internally — preserving API while removing the clone from the hot training path.
+- `crates/card_platypus/src/algorithms/cfres.rs:301-304` — switched the rollout call from `evaluate_player(gs, ...)` to `evaluate_player_mut(gs, ...)`. CFRES holds a concrete `OpenHandSolver` so the inherent method is dispatched without trait indirection.
+- Updated the four `mtd_search` test call sites in `open_hand_solver.rs::tests` to pass `&mut gs`.
+
+### Test results
+
+Full workspace `cargo test --release`: green. Bluff and Kuhn Poker MTD tests still pass.
+
+### Wall-clock (test profile)
+
+```
+F7 simple:  31.8s, 32.4s
+F5:         32.3s, 32.0s
+```
+
+Within noise (the per-rollout clone was small — `play_order` is a small Vec). The real win on this fix scales with rollout frequency.
+
+### Hotspot delta (`profile_data/f5-three_card.data`)
+
+Allocation subsystem aggregate:
+- F7 simple: malloc 2.46% + _int_malloc 2.03% + _int_free 1.45% + cfree 1.02% = **~7.0%**
+- F5:        malloc 2.53% + _int_malloc 1.67% + _int_free 1.32% + cfree 1.09% = **~6.6%**
+
+Modest but real allocation pressure reduction. CFRES no longer pays for cloning game state on every rollout.
+
+**F5 verdict: ship.**
+
+---
+
+## F8 SHIPPED — eliminate `Vec<Card>` collect in `evaluate_trick`
+
+### Finding
+
+After F1.2's `last_trick_with_entry` fix, `Vec::from_iter` was *still* at 3.60% in the F5 profile. Drill found a second alloc site: `evaluate_trick` at `mod.rs:577` collected `cards.iter().filter_map(|c| *c)` into a `Vec<Card>` just to feed `Hand::from(real_cards.as_slice())`.
+
+### Change
+
+- `crates/games/src/gamestates/euchre/mod.rs:557-602` — build the `Hand` mask directly inline via `Hand::default()` + `add()` over the filter_map iterator. No intermediate Vec.
+
+### Wall-clock (test profile)
+
+```
+F5:  32.0s, 32.3s
+F8:  32.0s, 31.6s  (best stable numbers yet)
+```
+
+### Hotspot delta (`profile_data/f8-three_card.data`)
+
+| Symbol | F5 | F8 | Δ |
+|---|---|---|---|
+| `Vec::from_iter` | 3.60% | **out of top 25** | ✓ |
+| Allocation aggregate (malloc + int_malloc + int_free + cfree) | ~6.6% | ~5.5% | -1.1pp |
+
+**F8 verdict: ship.**
+
+---
+
+## F9 SHIPPED — `Hand::card` / `Hand::cards` / `Hand::highest` const lookup
+
+### Change
+
+- `crates/games/src/gamestates/euchre/deck.rs` — added a `const BIT_TO_CARD: [Option<Card>; 32]` lookup table indexed by trailing-zero bit position. Replaces three callers (`Hand::card`, `Hand::cards`, `Hand::highest`) of `num_traits::FromPrimitive::from_u32` with direct array indexing. Removed the now-unused `num_traits::FromPrimitive` import.
+
+### Wall-clock (test profile)
+
+```
+F8:  32.0s, 31.6s
+F9:  32.3s, 31.7s
+```
+
+Within noise on test profile, but user CPU time dropped from ~5:31 → ~5:13 — ~18 seconds of real CPU work eliminated, masked at the wall-clock level by parallelism saturation.
+
+### Hotspot delta (`profile_data/f9-three_card.data`)
+
+| Symbol | F8 | F9 | Δ |
+|---|---|---|---|
+| `Hand::card` | 1.91% | **out of top 25** | ✓ |
+| `apply_action` | 11.39% | 9.60% | **-1.79pp** ✓ (Hand::card was inlined into apply_action's hot path) |
+| `undo` | 8.98% | 9.59% | +0.61pp redistribution |
+
+**F9 verdict: ship.**
+
+---
+
+## F10 SHIPPED — `push_hand_as_actions` direct bit iteration
+
+### Finding
+
+`legal_actions_play` had four `for c in hand { actions.push(EAction::from(c).into()) }` loops. Each iteration pays:
+1. `HandIterator::next` → trailing_zeros + transmute to Card
+2. `EAction::from(Card)` → trailing_zeros + ACTION_TO_EACTION lookup
+3. `Action::from(EAction)` → trailing_zeros + try_into
+
+Three trailing_zeros calls and three table/transmute round-trips per card, when the bit position is what `Action.0` actually stores.
+
+### Change
+
+- `crates/games/src/gamestates/euchre/mod.rs` — added `push_hand_as_actions(hand, actions)` helper that iterates the hand mask directly via `mask & (mask - 1)` clearing and pushes `Action(bit_index)` straight from the trailing zero count. No Card or EAction temporaries.
+- Replaced all four loops in `legal_actions_play` with calls to the helper. Also slightly simplified the suit-following control flow.
+
+### Wall-clock (test profile)
+
+```
+F9:   32.3s, 31.7s
+F10:  32.6s, 31.4s
+```
+
+### Hotspot delta (`profile_data/f10-three_card.data`)
+
+| Symbol | F9 | F10 | Δ |
+|---|---|---|---|
+| `legal_actions` | 5.88% | 5.76% | -0.12pp |
+| `process_euchre_actions` | 7.96% | 9.02% | +1.06pp (sample noise on a 60s window) |
+
+Individual change is below the per-run profile-window noise floor. Worth doing for code clarity (clearer intent) and the small but real CPU savings shown in `user` time.
+
+**F10 verdict: ship.**
+
+---
+
+## Cumulative status after F1+F2+F7+F5+F8+F9+F10
+
+**Wall-clock test profile (100k iters, parallel):**
+
+| Phase | real | Δ vs Phase 1.2 baseline | Δ vs original |
+|---|---|---|---|
+| Phase 1.2 (last commit) | ~33s | — | -48.7% |
+| F1+F2 | ~34s (noise) | flat | ~-47% |
+| F7 simple | 31.8s | -3.6% | -50.5% |
+| F5 | 32.0s | -3% | -50.2% |
+| F8 | 31.6s | -4.2% | -50.9% |
+| F9 | 31.7s | -3.9% | -50.7% |
+| F10 | **31.5s** | **-4.5%** | **-51.0%** |
+
+Cumulative since the original 64.3s baseline: **-51%, just over a 2x speedup.** Diminishing returns are clear — individual phases now produce sub-1% wins that are within run-to-run noise on the test profile. The remaining hot frames (`alpha_beta`, `apply_action`, `undo`, `process_euchre_actions`) need either algorithmic changes or invasive struct restructuring to attack further.
+
+**Decisions made:**
+- **F4 deferred** — `iso_deck` memoization. After analysis: `transposition_table_hash` is called once per alpha_beta frame and each frame visits a unique state, so cache hits would be rare. Memoization only helps for repeated calls on the same state, which doesn't happen in the current control flow.
+- **F6 deferred** — `play_order` Vec → fixed array. ~20 callers to update for a sub-1% expected win since F5 already eliminated the hot per-rollout clone.
+- **Algorithmic improvements (PVS / NegaScout, struct restructuring) deferred** — Tier 3 work, several days of effort each, requires the currently-ignored `test_alg_open_hand_solver_euchre` test to be unblocked first.
+

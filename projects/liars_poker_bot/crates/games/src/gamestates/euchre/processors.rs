@@ -86,35 +86,40 @@ fn process_discard_actions(gs: &EuchreGameState, actions: &mut Vec<Action>) {
 /// 0 is the highest
 fn get_n_highest_trump(gs: &EuchreGameState, n: usize) -> Option<(Player, Card)> {
     let trump = gs.trump?;
-    let deck = gs.deck;
-    let mut owner = None;
-    let mut highest_trump = None;
+    // Precompute each active player's hand mask once. Skipping Deck::get (which walks all 10
+    // card locations per call) in favour of bitmask AND on the four player hands keeps this
+    // function O(trump_cards) instead of O(trump_cards × 10).
+    let sitting_out = gs.sitting_out_player();
+    let p0 = if sitting_out == Some(0) { 0 } else { gs.deck.get_all(deck::CardLocation::Player0).raw_mask() };
+    let p1 = if sitting_out == Some(1) { 0 } else { gs.deck.get_all(deck::CardLocation::Player1).raw_mask() };
+    let p2 = if sitting_out == Some(2) { 0 } else { gs.deck.get_all(deck::CardLocation::Player2).raw_mask() };
+    let p3 = if sitting_out == Some(3) { 0 } else { gs.deck.get_all(deck::CardLocation::Player3).raw_mask() };
+    let active_hands = p0 | p1 | p2 | p3;
+
     let mut count = 0;
     for c in get_cards(trump, gs.trump).iter().rev() {
-        let loc = deck.get(*c);
-
-        use deck::CardLocation::*;
-        match loc {
-            Player0 | Player1 | Player2 | Player3 => {
-                // Skip cards held by sitting-out player when going alone
-                if let Some(sitting_out) = gs.sitting_out_player() {
-                    if loc.to_player() == Some(sitting_out) {
-                        continue;
-                    }
-                }
-                if n == count {
-                    owner = loc.to_player();
-                    highest_trump = Some(*c);
-                    break;
-                } else {
-                    count += 1;
-                }
-            }
-            Played(_) | FaceUp | None => {}
+        let mask = *c as u32;
+        if mask & active_hands == 0 {
+            // Card is played, face up, discarded, or held by the sitting-out player. Skip.
+            continue;
         }
+        if count == n {
+            // Determine which active player holds this card. At most four cheap checks.
+            let player: Player = if mask & p0 != 0 {
+                0
+            } else if mask & p1 != 0 {
+                1
+            } else if mask & p2 != 0 {
+                2
+            } else {
+                debug_assert!(mask & p3 != 0);
+                3
+            };
+            return Some((player, *c));
+        }
+        count += 1;
     }
-
-    owner.map(|owner| (owner, highest_trump.unwrap()))
+    None
 }
 
 fn evaluate_highest_trump_first(gs: &EuchreGameState, actions: &mut Vec<Action>) {

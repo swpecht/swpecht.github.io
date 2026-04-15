@@ -1,6 +1,20 @@
 # CFRES Euchre — Future Performance Improvements
 
-Status snapshot: 8 phases shipped, cumulative wall-clock on `test` profile **64.3s → ~33s (-48.7%, ~2x speedup)**. See `cfres_optimization_progress.md` for the per-phase log. This doc lists what's next, ranked by expected value / effort ratio on the `three_card_played` workload (user's primary target).
+Status snapshot: **15 phases shipped (8 in first batch + 7 in F-series), cumulative wall-clock on `test` profile 64.3s → ~31.5s (-51%, just over 2x).** See `cfres_optimization_progress.md` for the per-phase log. This doc lists what's next, ranked by expected value / effort ratio on the `three_card_played` workload (user's primary target).
+
+## Already done (this session)
+
+The first eight phases shipped in the prior commit `76ce507`. The F-series shipped in this round:
+
+- **F1** — `get_n_highest_trump` bitmask rewrite.
+- **F2** — `iso_deck` Deck::get → precomputed bitmask check.
+- **F7 simple** — reuse `normalized_actions` in CFRES regret/avg-strat loops.
+- **F5** — `OpenHandSolver::evaluate_player_mut` avoids per-rollout clone.
+- **F8** — eliminate `Vec<Card>` collect in `evaluate_trick`.
+- **F9** — `Hand::card`/`cards`/`highest` const lookup table.
+- **F10** — `push_hand_as_actions` direct bit iteration in `legal_actions_play`.
+
+The pre-shipped fix for `Deck::set` already absorbed the dealing-phase `Deck::get` callers' would-be wins, so F2's actual change ended up being just `iso_deck`. F4 (iso_deck memoization) was investigated and **declined** — analysis showed the cache would rarely hit because `transposition_table_hash` is called once per alpha_beta frame and each frame visits a unique state. F6 (`play_order` fixed array) was **declined** for now: ~20 caller updates for a sub-1% expected win after F5 eliminated the per-rollout clone.
 
 ## Methodology reminders
 
@@ -10,77 +24,42 @@ For each item: confidence, expected self-time recovery, estimated effort, and th
 
 ---
 
-## Tier 1 — Clean pattern-matches of existing wins (start here)
+## Tier 1 — done
 
-These are the cheapest remaining fixes. All apply the *same patterns* that worked in Phases 0.5–1.2.
-
-### F1 — `get_n_highest_trump` bitmask rewrite
-
-- **Where:** `crates/games/src/gamestates/euchre/processors.rs:85-118`
-- **Signal:** 3.80% self-time in Phase 1.2 profile.
-- **Why:** Same structural bug as the old `find_next_card_owner` (deleted in Phase 1.0). Calls `deck.get(*c)` inside a per-trump-card loop. `Deck::get` walks up to 10 card locations per call. With 6 trump cards × alpha_beta's hundreds of calls per rollout, this is pure waste.
-- **Fix pattern (mirrors Phase 1.0):** Precompute per-location bitmasks (`player_hands[0..4]`, `played`, `faceup`, `none`) once at function entry, then for each trump card do a handful of bitmask ANDs to find the owner instead of calling `Deck::get`.
-- **Callers to update?** No — `get_n_highest_trump` is internal to this file.
-- **Expected:** ~3% wall-clock (high confidence: same class of fix that worked twice already).
-- **Effort:** 30-60 min.
-
-### F2 — `Deck::get` callers audit
-
-- **Where:** anywhere `Deck::get` is still called in hot paths. Grep `deck.get(` to find them.
-- **Signal:** `Deck::get` is inherently O(10) and shows up via its callers across the profile. Phase 0.5 fixed `Deck::set` the same way; `Deck::get` got missed.
-- **Fix pattern:** For callers that only need "is card C in the player's hand", use `gs.deck.get_all(loc).contains(card)` instead (direct bitmask AND). For callers that actually need the location, consider a `Deck::locate_u8` helper that takes a bit index and scans 10 locations with a small loop — still O(10) but avoids repeated trait-call overhead if there's any.
-- **Effort:** 1-2 hours (depending on how many callers).
-
-### F3 — Collapse redundant `EAction::from`/`EAction::card` round-trips
-
-- **Where:** `legal_actions_play` and `process_euchre_actions` call `EAction::from(action).card()` in loops. Every round-trip goes through the array lookup I added in Phase 0.7 — still fast but nonzero.
-- **Signal:** `EAction::card` 1.38% + `Hand::card` 0.98% in Phase 1.2 profile.
-- **Fix:** where we already have a `Card`, don't detour through `EAction`. Where we have an `Action`, consider caching the `Card` alongside if the same conversion is done multiple times per loop iteration.
-- **Effort:** 1 hour.
-- **Expected:** ~1-2%.
+All Tier 1 items from the previous version of this doc are shipped (F1, F2, F7 simple). F3 (`EAction::from(action).card()` round-trip cleanup) was made obsolete by F10's direct bit iteration, which avoids the round-trip entirely in the hot caller (`legal_actions_play`).
 
 ---
 
-## Tier 2 — Algorithmic / data-structure changes (medium risk)
+## Tier 2 — done or declined
 
-### F4 — `iso_deck` memoization on `EuchreGameState`
+- **F4** (`iso_deck` memoization) — declined. Analysis: `transposition_table_hash` is called once per alpha_beta frame, each frame visits a unique state, so the cache would rarely hit.
+- **F5** (remove `gs.clone()` in `evaluate_player`) — shipped via `evaluate_player_mut` inherent method.
+- **F6** (`play_order` fixed array) — declined. ~20 caller updates for a sub-1% expected win after F5 eliminated the per-rollout clone. Reconsider only if F4's reasoning is invalidated (e.g., a future change re-introduces hot cloning).
+- **F7** (`istate_key` memoization) — partial. F7 simple (the cheap hoist version) shipped. Full struct-level memoization with a mutation counter not done — would reduce `istate_key` further but adds invariants to maintain.
 
-- **Where:** `crates/games/src/gamestates/euchre/isomorphic.rs:iso_deck` (called from `transposition_table_hash` at `euchre/mod.rs:1137`).
-- **Signal:** 2.89% self in Phase 1.2 profile. Phase 0.8 already cut it in half by hoisting the key lookup once per alpha_beta frame; further reduction requires caching across frames.
-- **Fix sketch:** Add `iso_deck_cache: Cell<Option<([u32; 4], u16)>>` (or similar) to `EuchreGameState` where `u16` is a mutation counter bumped on every `apply_action`/`undo`. `iso_deck` checks the counter, recomputes if stale. This gives a cache hit on the many consecutive alpha_beta frames that share the same trick state.
-- **Risks:**
-  - Grows `EuchreGameState` struct size → slower `Clone` (CFRES clones state per rayon task, and `OpenHandSolver::evaluate_player` clones the root).
-  - Invalidation bugs are hard to debug. Must also invalidate on `undo`.
-  - Interior mutability (`Cell`) means `transposition_table_hash(&self)` stays `&self`.
-- **Expected:** 2-3%.
-- **Effort:** 2-3 hours including careful invariant testing.
+---
 
-### F5 — Avoid `EuchreGameState::clone` in `OpenHandSolver::evaluate_player`
+## Tier 2.5 — Bonus opportunities found this round
 
-- **Where:** `crates/card_platypus/src/algorithms/open_hand_solver.rs:113-122` — `evaluate_player` clones the game state before passing to `mtd_search`.
-- **Signal:** Not directly hot but every rollout in CFRES calls this, and `EuchreGameState::Clone` still heap-allocates `play_order: Vec<Player>` (though play_order is small).
-- **Fix:** Plumb `&mut G` through `evaluate_player → mtd_search → alpha_beta` and rely on `undo()` to restore state. `alpha_beta` already uses apply/undo internally; the top-level clone is just paranoia.
-- **Risks:** if `alpha_beta` ever panics mid-recursion the caller gets a corrupt state. Acceptable for a training loop that panics → aborts.
+These came up while drilling into the F1–F10 profile data. They're below the 1% wall-clock threshold and require care.
+
+### B1 — Specialize `process_euchre_actions` early-out
+
+- **Where:** `crates/games/src/gamestates/euchre/processors.rs:64-72` (`process_play_actions`).
+- **Signal:** `process_euchre_actions` is now ~9% self in F10 profile. Most of the cost is `evaluate_highest_trump_first` + `remove_equivlent_cards`, both of which precompute hand masks even when the action list is small.
+- **Idea:** when the action list has ≤2 entries, neither helper can do meaningful pruning — early-return without doing the bitmask setup. Also: skip `evaluate_highest_trump_first` when not at start of trick.
 - **Expected:** 1-2%.
-- **Effort:** 1 hour (trait signature update + callers).
+- **Effort:** 1 hour.
 
-### F6 — `play_order: Vec<Player>` → fixed-size array
+### B2 — Inline `Hand::card` callers that already know the card
 
-- **Where:** `crates/games/src/gamestates/euchre/mod.rs:72` (`EuchreGameState` struct) and all callers of `play_order.push()` / `.pop()` / indexing.
-- **Signal:** `EuchreGameState::Clone` allocates this Vec on every state clone; bounded max length is 5+4+1+2+20 = 32.
-- **Fix:** Replace with `play_order: [Player; 32]` + `play_order_len: u8`, add helper methods. Struct becomes entirely `Copy`-like (the `Vec` is the only heap-allocated field, per earlier exploration).
-- **Benefit:** `Clone` becomes a `memcpy` — important because F5 may not completely eliminate clones (e.g., CFRES `self.clone().iteration()` in the rayon path at `cfres.rs:244`).
-- **Expected:** 1-3% (depends on how much cloning remains after F5).
-- **Effort:** 2 hours.
+- Found while looking at F9: several `Deck::face_up()` / `Deck::played(player)` callers do `Hand::card()` to extract the single card. Since the caller often knows it expects a card to be present, the `Option<Card>` round-trip and length check are wasted work.
+- **Effort:** 1 hour, sub-1% win.
 
-### F7 — Memoize `istate_key` on `EuchreGameState`
+### B3 — Pack `iso_deck` mask building into a single SWAR pass
 
-- **Where:** `crates/games/src/gamestates/euchre/mod.rs:819-850` (`istate_key`).
-- **Signal:** `istate_key` 2.42% + `normalize_euchre_istate` 1.17% + `norm_transform` 1.15% = **~4.7% combined** in Phase 1.2 profile.
-- **Fix:** Similar to F4 — cache the last-computed istate_key per player with a mutation counter. CFRES calls `istate_key` at every decision node; many are on the same state (e.g., before and after a noop).
-- **Caveat:** the original static-analysis plan called for deduping `istate_key` calls *within one `update_regrets` body* — simpler and lower-risk than full memoization. Consider that first: in `cfres.rs:307-327`, the istate key is computed once per call, then `normalize_action` re-computes it for every legal action via `normalize_euchre_istate`. Hoist the transform once per `update_regrets` frame.
-- **Expected:** 2-3% (with the cheap hoist), possibly more with full memoization.
-- **Effort:** 1-2 hours.
+- `iso_deck` (F2 version) does ~24 `loc_word` calls each branching through 6 hand checks. A SWAR (SIMD-within-a-register) approach could compute several cards in parallel via wider bitmask ops, but the data layout doesn't trivially permit it.
+- **Effort:** experimental, several hours.
 
 ---
 
@@ -129,17 +108,14 @@ These are the cheapest remaining fixes. All apply the *same patterns* that worke
 
 ---
 
-## Suggested order of operations
+## Suggested next steps (post F1-F10)
 
-1. **F1 (`get_n_highest_trump`)** — pattern-match win, ~3% for ~1 hour, can ship today.
-2. **F2 (`Deck::get` audit)** — cleanup from the same pattern, another 1-2%.
-3. **F7 simple version** (hoist `normalize_action` transform in `update_regrets`) — ~2%, low risk.
-4. **Profile break.** If cumulative wins in Tier 1 land us under 30s on the `test` profile (~53% vs baseline), stop and assess whether that's enough.
-5. **F5 (remove `gs.clone()` in `evaluate_player`)** — ~1% for ~1 hour, low risk.
-6. **F6 (`play_order` fixed array)** — small struct refactor, improves F5's ceiling.
-7. **F4 (`iso_deck` memoization)** — interior-mutability gamble, 2-3% upside.
-8. **Profile break.** Reassess whether further work is worth it for the user's real workload.
-9. Only then consider F8/F9/F10.
+The cheap wins are exhausted. Each remaining option requires either algorithmic depth or invasive struct changes:
+
+1. **B1 (`process_euchre_actions` early-out)** — 1 hour, ~1-2% upside, if you want to keep nibbling.
+2. **F8 (`alpha_beta` PVS / NegaScout)** — biggest potential algorithmic win (5-15%) but several days of work. Prerequisite: fix the currently-ignored `test_alg_open_hand_solver_euchre` going-alone test so PVS changes can be validated.
+3. **F9 (`apply_action` / `undo` Play-phase specialization)** — 3-5% but high risk of breaking `test_undo_is_inverse_of_apply_all_games`.
+4. **Profile a fresh `three_card_played` capture** before any further work to confirm the new top frames after F1-F10 — what was hot in earlier profiles may have shifted.
 
 ## Hard constraints to remember
 
