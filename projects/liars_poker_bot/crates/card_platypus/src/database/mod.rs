@@ -21,6 +21,7 @@ pub mod indexer;
 
 const REMAP_INCREMENT: usize = 10_000_000;
 const INDEXER_NAME: &str = "indexer";
+const METADATA_NAME: &str = "meta";
 
 /// A performant, optionally disk-backed node storage system.
 ///
@@ -33,6 +34,10 @@ pub struct NodeStore<const MAX_ACTIONS: usize> {
     mmap: MmapMut,
     path: Option<PathBuf>,
     populated_count: AtomicUsize,
+    /// True when the indexer was just built (not loaded from disk) and needs
+    /// to be written on the next commit. Once written, set to false so
+    /// subsequent commits skip the expensive 226MB JSON serialization.
+    indexer_needs_save: bool,
 }
 
 impl<const MAX_ACTIONS: usize> NodeStore<MAX_ACTIONS> {
@@ -102,13 +107,22 @@ impl<const MAX_ACTIONS: usize> NodeStore<MAX_ACTIONS> {
             return anyhow::Ok(());
         };
 
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .open(dir.join(INDEXER_NAME))?;
+        // Only serialize the indexer when it was newly built (not loaded from disk).
+        // The PHF is immutable after construction so re-writing the 226MB JSON on every
+        // save was pure waste.
+        if self.indexer_needs_save {
+            let mut file = OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(dir.join(INDEXER_NAME))?;
+            let buf = serde_json::to_string(&self.indexer)?;
+            file.write_all(buf.as_bytes())?;
+            self.indexer_needs_save = false;
+        }
 
-        let buf = serde_json::to_string(&self.indexer)?;
-        file.write_all(buf.as_bytes())?;
+        // Persist the populated count so the next startup can skip the full mmap scan.
+        save_metadata(&dir, self.populated_count.load(Ordering::Relaxed))?;
 
         anyhow::Ok(())
     }
@@ -136,23 +150,29 @@ impl NodeStore<EUCHRE_MAX_ACTIONS> {
             .context("failed to create mmap")?;
 
         let path = path.map(|x| x.to_path_buf());
+        let mut indexer_needs_save = false;
         let indexer = load_indexer(path.as_deref()).unwrap_or_else(|x| {
             warn!(
                 "failed to load indexer from {:?}: {}",
                 path.as_deref(),
                 x
             );
+            indexer_needs_save = true;
             Indexer::euchre(max_cards_played)
         });
 
-        // Count existing populated entries when loading from disk
-        let populated_count = count_populated(&mmap, &indexer, Self::BUCKET_SIZE);
+        // Try loading the persisted count; fall back to a full mmap scan if missing.
+        let populated_count = path
+            .as_deref()
+            .and_then(|p| load_metadata(p).ok())
+            .unwrap_or_else(|| count_populated(&mmap, &indexer, Self::BUCKET_SIZE));
 
         Ok(Self {
             indexer,
             mmap,
             path,
             populated_count: AtomicUsize::new(populated_count),
+            indexer_needs_save,
         })
     }
 }
@@ -171,6 +191,7 @@ impl NodeStore<KP_MAX_ACTIONS> {
             mmap,
             path,
             populated_count: AtomicUsize::new(0),
+            indexer_needs_save: false,
         })
     }
 }
@@ -188,6 +209,7 @@ impl NodeStore<BLUFF_MAX_ACTIONS> {
             mmap,
             path,
             populated_count: AtomicUsize::new(0),
+            indexer_needs_save: false,
         })
     }
 }
@@ -221,8 +243,14 @@ fn get_mmap(dir: Option<&Path>, len: usize, bucket_size: usize) -> anyhow::Resul
     Ok(mmap)
 }
 
-/// Count the number of populated entries in an mmap
+/// Count the number of populated entries in an mmap by scanning every bucket.
+/// Expensive for large mmaps (60GB+ for three_card_played). Prefer loading
+/// the persisted count via `load_metadata` when available.
 fn count_populated(mmap: &MmapMut, indexer: &Indexer, bucket_size: usize) -> usize {
+    warn!(
+        "no persisted populated count found — scanning {} mmap entries (this may take minutes for large weight files)",
+        indexer.len()
+    );
     let mut count = 0;
     for i in 0..indexer.len() {
         let start = i * bucket_size;
@@ -234,6 +262,26 @@ fn count_populated(mmap: &MmapMut, indexer: &Indexer, bucket_size: usize) -> usi
         }
     }
     count
+}
+
+fn save_metadata(dir: &Path, populated_count: usize) -> anyhow::Result<()> {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(dir.join(METADATA_NAME))?;
+    write!(file, "{}", populated_count)?;
+    Ok(())
+}
+
+fn load_metadata(dir: &Path) -> anyhow::Result<usize> {
+    let mut file = OpenOptions::new()
+        .read(true)
+        .open(dir.join(METADATA_NAME))?;
+    let mut buf = String::new();
+    file.read_to_string(&mut buf)?;
+    let count: usize = buf.trim().parse()?;
+    Ok(count)
 }
 
 fn load_indexer(path: Option<&Path>) -> anyhow::Result<Indexer> {
