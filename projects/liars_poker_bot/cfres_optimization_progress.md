@@ -1025,6 +1025,28 @@ Individual change is below the per-run profile-window noise floor. Worth doing f
 
 Cumulative since the original 64.3s baseline: **-51%, just over a 2x speedup.** Diminishing returns are clear — individual phases now produce sub-1% wins that are within run-to-run noise on the test profile. The remaining hot frames (`alpha_beta`, `apply_action`, `undo`, `process_euchre_actions`) need either algorithmic changes or invasive struct restructuring to attack further.
 
+### A/B measurement on three_card_played (user CPU time, cold mmap)
+
+Wall-clock on the `test` profile showed F1-F10 as ~2% improvement (within noise). To validate whether the fixes were real, ran a proper A/B on the actual target workload (`pass-on-bower-cfr-train 50000 --max-cards-played 3`) using user CPU time as the metric. User CPU excludes IO wait, which dominates wall time on a cold sparse mmap (user/real ratio was ~0.4 — 60% of wall time is page faults).
+
+Built both binaries via `git worktree`:
+- OLD: commit `76ce507` (prior batch, before F1-F10)
+- NEW: commit `2c3153b` (current HEAD, after F1-F10)
+
+Each binary ran twice on a fresh weight directory (copied indexer, empty mmap). Work verified identical: both produced `iteration: 49800, nodes_touched: ~3,525,3xx, info_states: ~1,872,xxx`.
+
+**Results:**
+
+| Run | OLD user CPU | NEW user CPU |
+|---|---|---|
+| 1 | 106.9s | 92.0s |
+| 2 | 105.4s | 94.0s |
+| **Mean** | **106.15s** | **93.0s** |
+
+**NEW does 12.4% less CPU work per iteration on three_card_played.** The 13.15s delta across 4 runs (sub-2s noise per binary) is ~6 standard deviations from zero.
+
+Wall time was misleading (NEW was 8% wall-slower due to IO variance), but that reflects cold-mmap page-fault noise, not CPU efficiency. The real 600M-iteration training run uses a warm mmap where IO amortizes away — the CPU savings should translate fairly directly to 12-14% wall-clock on steady-state training.
+
 **Decisions made:**
 - **F4 deferred** — `iso_deck` memoization. After analysis: `transposition_table_hash` is called once per alpha_beta frame and each frame visits a unique state, so cache hits would be rare. Memoization only helps for repeated calls on the same state, which doesn't happen in the current control flow.
 - **F6 deferred** — `play_order` Vec → fixed array. ~20 callers to update for a sub-1% expected win since F5 already eliminated the hot per-rollout clone.
