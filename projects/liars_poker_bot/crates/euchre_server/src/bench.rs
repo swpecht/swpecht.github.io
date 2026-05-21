@@ -10,7 +10,8 @@
 
 use std::{
     collections::HashMap,
-    path::Path,
+    env,
+    path::PathBuf,
     sync::Mutex,
 };
 
@@ -156,6 +157,8 @@ impl Agent<EuchreGameState> for StdRandomAgent {
 
 const MEDIUM_WEIGHT_PATH: &str = "/home/steven/card_platypus/infostate.baseline";
 const HARD_WEIGHT_PATH: &str = "/home/steven/card_platypus/infostate.three_card_played_f32";
+const MEDIUM_WEIGHT_PATH_ENV: &str = "EUCHRE_MEDIUM_WEIGHTS_PATH";
+const HARD_WEIGHT_PATH_ENV: &str = "EUCHRE_HARD_WEIGHTS_PATH";
 
 /// Build the set of bench agents at server startup. Missing weight files
 /// are skipped with a log message so development works without training.
@@ -181,37 +184,49 @@ pub(crate) fn load_bench_agents() -> HashMap<String, Mutex<BenchAgent>> {
     info!("bench agent 'easy' loaded (PIMCTS, 50 rollouts)");
 
     // medium — CFR trained on bidding only (max_cards_played = 0)
-    let medium_path = Path::new(MEDIUM_WEIGHT_PATH);
+    let medium_path: PathBuf = env::var(MEDIUM_WEIGHT_PATH_ENV)
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(MEDIUM_WEIGHT_PATH));
     if medium_path.exists() {
         let agent = CFRES::new_euchre(
             StdRng::from_rng(&mut rng()),
             0,
-            Some(medium_path),
+            Some(medium_path.as_path()),
         );
         info!(
-            "bench agent 'medium' loaded ({} infostates)",
+            "bench agent 'medium' loaded from {} ({} infostates)",
+            medium_path.display(),
             agent.num_info_states()
         );
         agents.insert("medium".to_string(), Mutex::new(Box::new(agent)));
     } else {
-        info!("bench agent 'medium' skipped: weights not found at {MEDIUM_WEIGHT_PATH}");
+        info!(
+            "bench agent 'medium' skipped: weights not found at {}",
+            medium_path.display()
+        );
     }
 
     // hard — CFR trained through 3 cards played
-    let hard_path = Path::new(HARD_WEIGHT_PATH);
+    let hard_path: PathBuf = env::var(HARD_WEIGHT_PATH_ENV)
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(HARD_WEIGHT_PATH));
     if hard_path.exists() {
         let agent = CFRES::new_euchre(
             StdRng::from_rng(&mut rng()),
             3,
-            Some(hard_path),
+            Some(hard_path.as_path()),
         );
         info!(
-            "bench agent 'hard' loaded ({} infostates)",
+            "bench agent 'hard' loaded from {} ({} infostates)",
+            hard_path.display(),
             agent.num_info_states()
         );
         agents.insert("hard".to_string(), Mutex::new(Box::new(agent)));
     } else {
-        info!("bench agent 'hard' skipped: weights not found at {HARD_WEIGHT_PATH}");
+        info!(
+            "bench agent 'hard' skipped: weights not found at {}",
+            hard_path.display()
+        );
     }
 
     agents
