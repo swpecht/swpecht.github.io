@@ -75,13 +75,20 @@ pub(crate) struct BenchSession {
     total_games: usize,
     total_challenger_score: usize,
     total_agent_score: usize,
+    total_challenger_match_wins: usize,
+    total_agent_match_wins: usize,
     total_hands: usize,
     complete: bool,
 }
 
 #[derive(Serialize, Clone, Default)]
 pub(crate) struct AgentRecord {
+    // "games" here is sessions, kept for backwards compatibility with the
+    // /bench/results consumers; matches_won + matches_lost is the per-match
+    // tally added when match-level scoring was introduced.
     games: usize,
+    matches_won: usize,
+    matches_lost: usize,
     points: usize,
     opp_points: usize,
 }
@@ -90,6 +97,8 @@ pub(crate) struct AgentRecord {
 pub(crate) struct ChallengerStats {
     games_completed: usize,
     hands_played: usize,
+    matches_won: usize,
+    matches_lost: usize,
     total_points: usize,
     total_opp_points: usize,
     per_agent: HashMap<String, AgentRecord>,
@@ -130,6 +139,8 @@ enum BenchMoveResponse {
         complete: bool,
         challenger_score: usize,
         agent_score: usize,
+        challenger_match_wins: usize,
+        agent_match_wins: usize,
         hands_played: usize,
     },
 }
@@ -344,6 +355,8 @@ async fn start_session(
         total_games: req.num_games,
         total_challenger_score: 0,
         total_agent_score: 0,
+        total_challenger_match_wins: 0,
+        total_agent_match_wins: 0,
         total_hands: 0,
         complete: false,
     };
@@ -371,6 +384,13 @@ async fn start_session(
                 session.total_agent_score += agent_pts;
                 session.total_hands += hands;
                 session.games_done += 1;
+                // Each match goes to WIN_SCORE; only one side can reach it
+                // in a given hand, so the winner is unambiguous.
+                if challenger_pts >= crate::WIN_SCORE {
+                    session.total_challenger_match_wins += 1;
+                } else {
+                    session.total_agent_match_wins += 1;
+                }
             }
         }
         session.games.insert(game_id, game);
@@ -430,7 +450,8 @@ async fn make_move(
     let req = body.into_inner();
 
     // Collected for post-lock results recording.
-    let mut completion: Option<(String, String, usize, usize, usize)> = None;
+    // (challenger_id, agent_name, c_pts, a_pts, c_match_wins, a_match_wins, hands)
+    let mut completion: Option<(String, String, usize, usize, usize, usize, usize)> = None;
 
     let response = {
         let mut sessions = data.bench.sessions.lock().unwrap();
@@ -449,6 +470,8 @@ async fn make_move(
                 complete: true,
                 challenger_score: session.total_challenger_score,
                 agent_score: session.total_agent_score,
+                challenger_match_wins: session.total_challenger_match_wins,
+                agent_match_wins: session.total_agent_match_wins,
                 hands_played: session.total_hands,
             });
         }
@@ -508,6 +531,11 @@ async fn make_move(
                     session.total_agent_score += agent_pts;
                     session.total_hands += hands;
                     session.games_done += 1;
+                    if challenger_pts >= crate::WIN_SCORE {
+                        session.total_challenger_match_wins += 1;
+                    } else {
+                        session.total_agent_match_wins += 1;
+                    }
                 }
             }
         }
@@ -520,12 +548,16 @@ async fn make_move(
                 session.agent_name.clone(),
                 session.total_challenger_score,
                 session.total_agent_score,
+                session.total_challenger_match_wins,
+                session.total_agent_match_wins,
                 session.total_hands,
             ));
             BenchMoveResponse::Complete {
                 complete: true,
                 challenger_score: session.total_challenger_score,
                 agent_score: session.total_agent_score,
+                challenger_match_wins: session.total_challenger_match_wins,
+                agent_match_wins: session.total_agent_match_wins,
                 hands_played: session.total_hands,
             }
         } else {
@@ -548,10 +580,10 @@ async fn make_move(
     }; // sessions lock released
 
     // Record results and unblock challenger once the match is over.
-    if let Some((challenger_id, agent_name, c_pts, a_pts, hands)) = completion {
+    if let Some((challenger_id, agent_name, c_pts, a_pts, c_wins, a_wins, hands)) = completion {
         info!(
-            "bench session complete|challenger={}|agent={}|challenger_score={}|agent_score={}|hands={}",
-            challenger_id, agent_name, c_pts, a_pts, hands
+            "bench session complete|challenger={}|agent={}|challenger_score={}|agent_score={}|c_match_wins={}|a_match_wins={}|hands={}",
+            challenger_id, agent_name, c_pts, a_pts, c_wins, a_wins, hands
         );
         {
             let mut active = data.bench.active_challengers.lock().unwrap();
@@ -562,10 +594,14 @@ async fn make_move(
             let stats = results.entry(challenger_id).or_default();
             stats.games_completed += 1;
             stats.hands_played += hands;
+            stats.matches_won += c_wins;
+            stats.matches_lost += a_wins;
             stats.total_points += c_pts;
             stats.total_opp_points += a_pts;
             let rec = stats.per_agent.entry(agent_name).or_default();
             rec.games += 1;
+            rec.matches_won += c_wins;
+            rec.matches_lost += a_wins;
             rec.points += c_pts;
             rec.opp_points += a_pts;
         }
@@ -667,7 +703,13 @@ random order.
        Complete: {{"complete": true,
                   "challenger_score": <int>,
                   "agent_score": <int>,
+                  "challenger_match_wins": <int>,
+                  "agent_match_wins": <int>,
                   "hands_played": <int>}}
+
+   *_score is total Euchre points (1, 2, or 4 per hand). *_match_wins is the
+   count of to-10 matches won by each team within the session. With
+   num_games=N, challenger_match_wins + agent_match_wins = N.
 
    Each submitted `action` must appear in the previous response's
    `legal_actions` list.
@@ -747,6 +789,18 @@ async fn ui_page(data: web::Data<AppState>) -> impl Responder {
             100.0 * points_for as f64 / total as f64
         }
     }
+    // Match win rate: fraction of to-WIN_SCORE matches won. Sharper signal
+    // than point win rate — a team that consistently wins close matches will
+    // have a high match win rate but a mediocre point win rate, and vice
+    // versa.
+    fn match_win_pct(won: usize, lost: usize) -> f64 {
+        let total = won + lost;
+        if total == 0 {
+            0.0
+        } else {
+            100.0 * won as f64 / total as f64
+        }
+    }
 
     let mut html = String::from(
         r#"<!DOCTYPE html>
@@ -780,26 +834,43 @@ async fn ui_page(data: web::Data<AppState>) -> impl Responder {
     } else {
         html.push_str(
             "<table>\n<tr><th>Challenger</th><th>Sessions</th><th>Hands</th>\
+             <th>Matches W–L</th><th>Match Win%</th>\
              <th>Points For</th><th>Points Against</th><th>Point Win%</th></tr>\n",
         );
 
+        // Sort by match win rate primarily — it's the headline metric now —
+        // with point win rate as the tiebreak for challengers who haven't
+        // finished any matches yet.
         let mut rows: Vec<(&String, &ChallengerStats)> = results.iter().collect();
         rows.sort_by(|a, b| {
-            let pct_a = win_pct(a.1.total_points, a.1.total_opp_points);
-            let pct_b = win_pct(b.1.total_points, b.1.total_opp_points);
-            pct_b
-                .partial_cmp(&pct_a)
+            let mpct_a = match_win_pct(a.1.matches_won, a.1.matches_lost);
+            let mpct_b = match_win_pct(b.1.matches_won, b.1.matches_lost);
+            mpct_b
+                .partial_cmp(&mpct_a)
                 .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| {
+                    let ppct_a = win_pct(a.1.total_points, a.1.total_opp_points);
+                    let ppct_b = win_pct(b.1.total_points, b.1.total_opp_points);
+                    ppct_b
+                        .partial_cmp(&ppct_a)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
         });
 
         for (id, stats) in &rows {
-            let pct = win_pct(stats.total_points, stats.total_opp_points);
-            let cls = if pct >= 50.0 { "win" } else { "loss" };
+            let mpct = match_win_pct(stats.matches_won, stats.matches_lost);
+            let ppct = win_pct(stats.total_points, stats.total_opp_points);
+            let mcls = if mpct >= 50.0 { "win" } else { "loss" };
+            let pcls = if ppct >= 50.0 { "win" } else { "loss" };
             html.push_str(&format!(
-                "<tr><td>{id}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td>\
-                 <td class=\"{cls}\">{pct:.1}%</td></tr>\n",
+                "<tr><td>{id}</td><td>{}</td><td>{}</td>\
+                 <td>{}–{}</td><td class=\"{mcls}\">{mpct:.1}%</td>\
+                 <td>{}</td><td>{}</td>\
+                 <td class=\"{pcls}\">{ppct:.1}%</td></tr>\n",
                 stats.games_completed,
                 stats.hands_played,
+                stats.matches_won,
+                stats.matches_lost,
                 stats.total_points,
                 stats.total_opp_points,
             ));
@@ -811,18 +882,25 @@ async fn ui_page(data: web::Data<AppState>) -> impl Responder {
     for (challenger_id, stats) in results.iter() {
         html.push_str(&format!("<h3>{challenger_id}</h3>\n<table>\n"));
         html.push_str(
-            "<tr><th>Agent</th><th>Sessions</th><th>Points For</th>\
-             <th>Points Against</th><th>Win%</th></tr>\n",
+            "<tr><th>Agent</th><th>Sessions</th>\
+             <th>Matches W–L</th><th>Match Win%</th>\
+             <th>Points For</th><th>Points Against</th><th>Point Win%</th></tr>\n",
         );
         let mut agent_rows: Vec<(&String, &AgentRecord)> = stats.per_agent.iter().collect();
         agent_rows.sort_by_key(|(name, _)| *name);
         for (agent_name, rec) in &agent_rows {
-            let pct = win_pct(rec.points, rec.opp_points);
-            let cls = if pct >= 50.0 { "win" } else { "loss" };
+            let mpct = match_win_pct(rec.matches_won, rec.matches_lost);
+            let ppct = win_pct(rec.points, rec.opp_points);
+            let mcls = if mpct >= 50.0 { "win" } else { "loss" };
+            let pcls = if ppct >= 50.0 { "win" } else { "loss" };
             html.push_str(&format!(
-                "<tr><td>{agent_name}</td><td>{}</td><td>{}</td><td>{}</td>\
-                 <td class=\"{cls}\">{pct:.1}%</td></tr>\n",
-                rec.games, rec.points, rec.opp_points,
+                "<tr><td>{agent_name}</td><td>{}</td>\
+                 <td>{}–{}</td><td class=\"{mcls}\">{mpct:.1}%</td>\
+                 <td>{}</td><td>{}</td>\
+                 <td class=\"{pcls}\">{ppct:.1}%</td></tr>\n",
+                rec.games,
+                rec.matches_won, rec.matches_lost,
+                rec.points, rec.opp_points,
             ));
         }
         html.push_str("</table>\n");
