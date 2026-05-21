@@ -306,7 +306,7 @@ async fn game_action(
 
 // ---------- Rendering ----------
 
-fn render_game_view(gd: &GameData, player_id: usize, game_id: &Uuid) -> Markup {
+pub(crate) fn render_game_view(gd: &GameData, player_id: usize, game_id: &Uuid) -> Markup {
     use GameProcessingState::*;
     match &gd.display_state {
         WaitingPlayerJoin { .. } => render_waiting_players(game_id),
@@ -409,6 +409,16 @@ fn render_game_info(gs: &EuchreGameState, south: Player) -> Markup {
         Some(c) => format!("Face up card is: {}", c.icon()),
         None => "Face up card not yet dealt".to_string(),
     };
+    // Going-alone status: only the trump caller's seat plays; their partner
+    // sits out. Without this line, the seat that "doesn't play" looks like a
+    // bug to the user.
+    let alone_line = if gs.going_alone() {
+        gs.trump().map(|(_, caller)| {
+            format!("{} is going alone", seat_name(caller, south))
+        })
+    } else {
+        None
+    };
     let south_tricks = gs.trick_score()[south % 2];
     let opp_tricks = gs.trick_score()[(south + 1) % 2];
 
@@ -418,6 +428,9 @@ fn render_game_info(gs: &EuchreGameState, south: Player) -> Markup {
             div { "Dealer is " (dealer_seat) }
             div { (face_up_line) }
             div { (trump_line) }
+            @if let Some(line) = alone_line {
+                div class="font-bold text-amber-700" { (line) }
+            }
             div class="font-bold pt-2" { "Tricks taken:" }
             div class="grid grid-cols-2" {
                 div { "North/South" }

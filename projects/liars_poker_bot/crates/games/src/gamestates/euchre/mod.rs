@@ -146,6 +146,14 @@ impl EuchreGameState {
         self.phase() == EPhase::Discard || self.phase() == EPhase::Alone
     }
 
+    /// Returns true if Play has just begun — phase has flipped from Alone to
+    /// Play, but no card has been played yet. Used by the server to pause
+    /// exactly once at the bidding→play boundary instead of pausing at each
+    /// intermediate bidding sub-phase.
+    pub fn play_phase_entered(&self) -> bool {
+        self.phase() == EPhase::Play && self.cards_played == 0
+    }
+
     /// Returns true if a trick is over. Returns false if a trick hasn't started yet
     pub fn is_trick_over(&self) -> bool {
         self.cards_played.is_multiple_of(4) && self.cards_played > 0

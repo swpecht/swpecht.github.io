@@ -212,11 +212,24 @@ pub(crate) fn progress_game(
                     WaitingTrickClear {
                         ready_players: vec![],
                     }
-                } else if gs.bidding_ended() {
+                } else if gs.play_phase_entered() {
+                    // Single pause at the bidding→play boundary so humans
+                    // see who called trump / who's going alone before cards
+                    // start flying. (Previously bidding_ended() also fired
+                    // inside the Discard and Alone sub-phases, forcing the
+                    // user to click Continue 2–3 times in a row.)
                     WaitingBidClear {
                         ready_players: vec![],
                     }
-                } else if game_data.players[gs.cur_player()].is_none() {
+                } else if game_data.players[gs.cur_player()].is_none()
+                    || gs.sitting_out_player() == Some(gs.cur_player())
+                {
+                    // Sitting-out partner's "turn" is just the Pass sentinel —
+                    // no human input is meaningful. Route it through the bot
+                    // path so the only legal action (Pass) gets applied
+                    // automatically. Without this, the renderer falls through
+                    // to the regular-play branch and EAction::card() panics on
+                    // the Pass variant, poisoning the per-app Mutex.
                     WaitingMachineMoves
                 } else {
                     WaitingHumanMove
@@ -259,7 +272,9 @@ pub(crate) fn progress_game(
                             game_data.players
                         );
                         GameOver
-                    } else if game_data.players[gs.cur_player()].is_none() {
+                    } else if game_data.players[gs.cur_player()].is_none()
+                        || gs.sitting_out_player() == Some(gs.cur_player())
+                    {
                         WaitingMachineMoves
                     } else {
                         WaitingHumanMove
@@ -340,4 +355,84 @@ pub(crate) fn new_game() -> EuchreGameState {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    //! Fuzz-style integration test that simulates a bunch of games end-to-end
+    //! using the same code paths the HTTP handlers do (handle_take_action,
+    //! handle_ready_clear, progress_game, render_game_view). Goal: catch
+    //! panics from rare gameplay paths — e.g. EAction::card() on a non-card
+    //! variant — before they hit production and poison the per-app Mutex.
+    //!
+    //! Uses CFRES with no weights so the bot returns uniform random over
+    //! legal actions. Weights aren't required to exercise the state-machine
+    //! and rendering paths where panics tend to hide.
+    use std::sync::Mutex;
+    use uuid::Uuid;
+    use rand::{rng, rngs::StdRng, SeedableRng};
+    use games::GameState;
+    use games::gamestates::euchre::EuchreGameState;
+    use card_platypus::algorithms::cfres::CFRES;
+    use crate::html::render_game_view;
+    use crate::{
+        GameData, GameProcessingState, MAX_CARDS_PLAYED, handle_ready_clear,
+        handle_take_action, new_game, progress_game,
+    };
+
+    fn make_test_bot() -> Mutex<CFRES<EuchreGameState>> {
+        // None path → in-memory NodeStore, uniform-random policy.
+        Mutex::new(CFRES::new_euchre(
+            StdRng::from_rng(&mut rng()),
+            MAX_CARDS_PLAYED,
+            None,
+        ))
+    }
+
+    fn play_random_game(bot: &Mutex<CFRES<EuchreGameState>>, human_id: usize) {
+        let game_id = Uuid::new_v4();
+        let mut gd = GameData::new(new_game(), human_id, 1);
+        progress_game(&mut gd, bot, &game_id);
+
+        // Hard cap so a state-machine bug can't spin forever.
+        for _ in 0..2000 {
+            // Rendering runs on every HTTP response in production, so include
+            // it in the loop — most "passes invalid input to renderer" bugs
+            // surface here.
+            let _ = render_game_view(&gd, human_id, &game_id).into_string();
+
+            match &gd.display_state {
+                GameProcessingState::WaitingHumanMove => {
+                    let gs = gd.to_state();
+                    let mut legal = Vec::new();
+                    gs.legal_actions(&mut legal);
+                    assert!(!legal.is_empty(), "no legal actions for human turn");
+                    let a = legal[rand::random::<u32>() as usize % legal.len()];
+                    handle_take_action(&mut gd, a, human_id).expect("take action");
+                }
+                GameProcessingState::WaitingTrickClear { .. }
+                | GameProcessingState::WaitingBidClear { .. } => {
+                    handle_ready_clear(&mut gd, human_id).expect("ready clear");
+                }
+                GameProcessingState::GameOver => return,
+                // After progress_game, the state shouldn't be machine-waiting
+                // or player-joining (min_players=1 and progress_game drives
+                // bots in a loop), but tolerate them defensively.
+                GameProcessingState::WaitingMachineMoves
+                | GameProcessingState::WaitingPlayerJoin { .. } => {}
+            }
+            progress_game(&mut gd, bot, &game_id);
+        }
+        panic!("game did not reach GameOver within 2000 iterations");
+    }
+
+    #[test]
+    fn random_play_does_not_panic() {
+        let bot = make_test_bot();
+        // 200 games × ~50 turns ≈ 10k random transitions per run. Catches
+        // most state-machine corners without blowing test runtime.
+        for _ in 0..200 {
+            play_random_game(&bot, 0);
+        }
+        // If we got here without panicking, no path through random play
+        // tripped a Mutex-poisoning panic.
+        assert!(!bot.is_poisoned(), "bot mutex got poisoned during fuzz");
+    }
+}
