@@ -1,7 +1,8 @@
 use std::{
     collections::HashMap,
+    env,
     fs::OpenOptions,
-    path::Path,
+    path::PathBuf,
     str::FromStr,
     sync::Mutex,
 };
@@ -27,6 +28,7 @@ mod html;
 pub(crate) use game_data::{GameData, GameProcessingState};
 
 const DEFAULT_WEIGHTS_PATH: &str = "/home/steven/card_platypus/infostate.three_card_played_f32";
+const WEIGHTS_PATH_ENV: &str = "EUCHRE_WEIGHTS_PATH";
 const MAX_CARDS_PLAYED: usize = 3;
 const SERVER_HOST: &str = "0.0.0.0";
 const SERVER_PORT: u16 = 4000;
@@ -47,10 +49,15 @@ pub(crate) struct AppState {
 
 impl Default for AppState {
     fn default() -> Self {
+        let weights_path: PathBuf = env::var(WEIGHTS_PATH_ENV)
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from(DEFAULT_WEIGHTS_PATH));
+        info!("loading weights from {}", weights_path.display());
+
         let bot = CFRES::new_euchre(
             StdRng::from_rng(&mut rng()),
             MAX_CARDS_PLAYED,
-            Some(Path::new(DEFAULT_WEIGHTS_PATH)),
+            Some(weights_path.as_path()),
         );
 
         let n = bot.num_info_states();
