@@ -746,6 +746,36 @@ fn render_hand_and_actions(
         };
     }
 
+    // Go-alone phase — the maker (or dealer told to pick up) chooses
+    // whether to play without their partner. Legal actions are Alone and
+    // Pass. Must be handled before the "Regular play" fallthrough; that
+    // branch assumes every legal action is a card and calls .card() on
+    // each, which panics for non-card variants like Alone/Pass and
+    // poisons the shared mutex.
+    if legal.contains(&EAction::Alone) {
+        return html! {
+            div class="grid gap-y-4 justify-items-center" {
+                div class="flex gap-x-4" {
+                    @for c in &hand { (card_icon(*c)) }
+                }
+                div class="flex gap-x-4" {
+                    (action_form_button(
+                        EAction::Alone as u32,
+                        "Go alone",
+                        "text-xl bg-white outline outline-black hover:bg-slate-100 rounded-lg px-3 py-2",
+                        game_id,
+                    ))
+                    (action_form_button(
+                        EAction::Pass as u32,
+                        "With partner",
+                        "text-xl bg-white outline outline-black hover:bg-slate-100 rounded-lg px-3 py-2",
+                        game_id,
+                    ))
+                }
+            }
+        };
+    }
+
     // Suit-choice phase
     if legal.contains(&EAction::Clubs) || legal.contains(&EAction::Spades) {
         return html! {
