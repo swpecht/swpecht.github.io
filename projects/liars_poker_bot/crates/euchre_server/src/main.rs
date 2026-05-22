@@ -22,6 +22,7 @@ use simplelog::{
 use uuid::Uuid;
 
 mod bench;
+mod db;
 mod game_data;
 mod html;
 
@@ -29,6 +30,8 @@ pub(crate) use game_data::{GameData, GameProcessingState};
 
 const DEFAULT_WEIGHTS_PATH: &str = "/home/steven/card_platypus/infostate.three_card_played_f32";
 const WEIGHTS_PATH_ENV: &str = "EUCHRE_WEIGHTS_PATH";
+const DEFAULT_DB_PATH: &str = "platypus.db";
+const DB_PATH_ENV: &str = "PLATYPUS_DB_PATH";
 const MAX_CARDS_PLAYED: usize = 3;
 const SERVER_HOST: &str = "0.0.0.0";
 const SERVER_PORT: u16 = 4000;
@@ -80,9 +83,17 @@ impl Default for AppState {
 
         info!("loaded debugging gamestates: {:?}", games.lock().unwrap());
 
+        let db_path: PathBuf = env::var(DB_PATH_ENV)
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from(DEFAULT_DB_PATH));
+        info!("opening bench db at {}", db_path.display());
+        let db = db::open(&db_path).expect("failed to open bench sqlite db");
+
         let bench = bench::BenchState {
+            sessions: Default::default(),
+            active_challengers: Default::default(),
             agents: bench::load_bench_agents(),
-            ..Default::default()
+            db: Mutex::new(db),
         };
 
         Self {
