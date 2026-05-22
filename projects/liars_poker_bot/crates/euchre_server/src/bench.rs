@@ -966,12 +966,18 @@ async fn ui_page(data: web::Data<AppState>) -> impl Responder {
             by_challenger.into_iter().collect();
         challenger_rows.sort_by_key(|(c, _)| c.clone());
 
+        // Fixed difficulty order so the table reads left-to-right by
+        // increasing difficulty. Any agent outside the canonical set goes
+        // after the known ones, alphabetically.
+        const AGENT_ORDER: &[&str] = &["random", "easy", "medium", "hard"];
+        let agent_rank = |name: &str| -> (usize, String) {
+            match AGENT_ORDER.iter().position(|n| *n == name) {
+                Some(i) => (i, String::new()),
+                None => (AGENT_ORDER.len(), name.to_string()),
+            }
+        };
         for (challenger_id, mut rows) in challenger_rows {
-            rows.sort_by(|a, b| {
-                let ma = match_win_pct(a.challenger_match_wins, a.agent_match_wins);
-                let mb = match_win_pct(b.challenger_match_wins, b.agent_match_wins);
-                mb.partial_cmp(&ma).unwrap_or(std::cmp::Ordering::Equal)
-            });
+            rows.sort_by(|a, b| agent_rank(&a.agent_name).cmp(&agent_rank(&b.agent_name)));
             html.push_str(&format!(
                 "<h3>{}</h3>\n<table>\n\
                  <tr><th>Agent</th><th>Sessions</th><th>Latest Hands</th>\
