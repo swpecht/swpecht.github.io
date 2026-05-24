@@ -53,6 +53,27 @@ So sonnet and gemini-3.5-flash built simpler rollouts and got lucky on variance;
 
 The honest read is: at 5–8 wins out of 100 with maybe 3 wins of standard deviation per session, the gap between the top three is mostly noise. The gap between the top three and the bottom four is real.
 
+# Why the agents' rollouts fell short
+
+The two rollout-building agents only managed 5 and 6 wins out of 100 against `easy` — and `easy` is itself a PIMCTS bot. So one obvious question: if the bot they're trying to beat is using rollouts, why don't *their* rollouts hold up?
+
+Four things stacked up:
+
+1. **They built MC, not PIMCTS.** Same outer loop (sample worlds, average results) but different inner loops. The `easy` bot's per-world evaluator is an open-hand alpha-beta solver — given a deal, it returns the exact optimal value. The agents' inner loops play each sampled world out using their own heuristic policy. Same number of samples, much noisier per-world signal.
+
+2. **Far fewer samples.** Gemini sampled 5 worlds per decision; Sonnet's `n_sims=100` is hand evaluations, not full PIMCTS world-solves. The `easy` bot runs hundreds of worlds because it's Rust and the solver is fast. The agents had to fit everything inside a Python session-time budget, and correctly chose coverage over depth — but 5 worlds isn't enough to average out noise.
+
+3. **Loose world-sampling.** The `easy` bot's sampler respects every observable constraint: bidding inferences, void tracking, the dealer's discard. Only sonnet did partial voids tracking; gemini's sampler is roughly uniform over plausible deals given the played cards. Loose constraints give you garbage worlds, and a rollout of a world that couldn't have happened just adds noise.
+
+4. **Strategy fusion stacks on top.** [Strategy fusion](/posts/cfr-for-euchre/) is the original reason I wrote the CFR post: in each sampled world the open-hand solver can pick a different "best" move, treating its information as perfect — but in the real game you have to commit to one move that's robust across all worlds you might actually be in. The `easy` bot has this weakness too (which is why `hard` exists), and the agents inherited it on top of points 1–3. Claude Code's discovery is strategy fusion in action:
+
+   > Pickup MC with heuristic playout: too optimistic (every hand says order up).
+   > Pickup MC with open-hand playout: too conservative (every hand says pass).
+
+   The open-hand playout makes every hand look winnable in *some* world; the heuristic playout makes every hand look losable. Neither equilibrates to "what should I commit to."
+
+So the agents' rollouts didn't *fail* relative to `easy` — they're losing the same way `easy` loses, just somewhat more, because the per-world signal is weaker and the samples are fewer.
+
 # One agent gamed the rules
 
 The bench grades on the *latest* 100-game session per challenger. I picked that rule to keep the leaderboard simple. Claude Code (opus-4.7) noticed:
