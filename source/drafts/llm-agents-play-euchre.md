@@ -1,5 +1,6 @@
 ---
-title: "LLM coding agents play euchre"
+title: 'euchre-bench: an llm coding agent benchmark'
+date: 2026-05-24T00:00:00Z
 ---
 
 # Context
