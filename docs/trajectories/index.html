@@ -1,0 +1,143 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trajectories — Few word do trick</title>
+
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/code.css">
+
+<link rel="alternate" type="application/rss+xml" title="Few word do trick" href="/feed.xml">
+
+</head>
+<body>
+<header>
+<h1 class="site-title"><a href="/">Few word do trick</a></h1>
+<p class="site-tagline">A silly reminder to keep posts short. And a place to keep a diary of projects.</p>
+</header>
+<main>
+
+<article>
+<h1>Trajectories</h1>
+<p class="post-meta">agent runs from <a href="https://github.com/swpecht/euchre-bench">euchre-bench</a></p>
+
+<p>Each row is one LLM playing the <a href="https://euchre.fewworddotrick.com/bench">euchre benchmark</a> end-to-end as a coding agent: probing the API, writing a Python policy in its workspace, and running 100-game evaluations against the four difficulties (<code>random</code>, <code>easy</code>, <code>medium</code>, <code>hard</code>).</p>
+
+<p>Click a row to scroll through the agent's full event stream — tool calls, assistant text, token counts, cost.</p>
+
+<table class="trajectory-table">
+<thead>
+<tr>
+<th>Model</th>
+<th class="num">rand</th>
+<th class="num">easy</th>
+<th class="num">med</th>
+<th class="num">hard</th>
+<th class="num">sum</th>
+<th class="num">cost</th>
+<th class="num">tokens</th>
+<th class="num">wall</th>
+</tr>
+</thead>
+<tbody>
+
+<tr class="clickable" onclick="window.location='/trajectories/anthropic__claude-sonnet-4.6/'">
+<td><a href="/trajectories/anthropic__claude-sonnet-4.6/">anthropic / claude-sonnet-4.6</a></td>
+<td class="num">100</td>
+<td class="num">5</td>
+<td class="num">8</td>
+<td class="num">5</td>
+<td class="num"><strong>118</strong></td>
+<td class="num">$23.70</td>
+<td class="num">14.6 M</td>
+<td class="num">2h 30m</td>
+</tr>
+
+<tr class="clickable" onclick="window.location='/trajectories/claude-code__claude-opus-4-7/'">
+<td><a href="/trajectories/claude-code__claude-opus-4-7/">claude-code / claude-opus-4-7</a></td>
+<td class="num">99</td>
+<td class="num">9</td>
+<td class="num">6</td>
+<td class="num">6</td>
+<td class="num"><strong>120</strong></td>
+<td class="num">$328.65</td>
+<td class="num">146.4 M</td>
+<td class="num">—</td>
+</tr>
+
+<tr class="clickable" onclick="window.location='/trajectories/deepseek__deepseek-v4-flash/'">
+<td><a href="/trajectories/deepseek__deepseek-v4-flash/">deepseek / deepseek-v4-flash</a></td>
+<td class="num">81</td>
+<td class="num">0</td>
+<td class="num">0</td>
+<td class="num">1</td>
+<td class="num"><strong>82</strong></td>
+<td class="num">$0.57</td>
+<td class="num">10.2 M</td>
+<td class="num">1h 29m</td>
+</tr>
+
+<tr class="clickable" onclick="window.location='/trajectories/deepseek__deepseek-v4-pro/'">
+<td><a href="/trajectories/deepseek__deepseek-v4-pro/">deepseek / deepseek-v4-pro</a></td>
+<td class="num">41</td>
+<td class="num">0</td>
+<td class="num">0</td>
+<td class="num">0</td>
+<td class="num"><strong>41</strong></td>
+<td class="num">$2.06</td>
+<td class="num">12.0 M</td>
+<td class="num">1h 33m</td>
+</tr>
+
+<tr class="clickable" onclick="window.location='/trajectories/google__gemini-3-flash-preview/'">
+<td><a href="/trajectories/google__gemini-3-flash-preview/">google / gemini-3-flash-preview</a></td>
+<td class="num">80</td>
+<td class="num">0</td>
+<td class="num">1</td>
+<td class="num">0</td>
+<td class="num"><strong>81</strong></td>
+<td class="num">$0.44</td>
+<td class="num">1.2 M</td>
+<td class="num">1h 15m</td>
+</tr>
+
+<tr class="clickable" onclick="window.location='/trajectories/google__gemini-3.5-flash/'">
+<td><a href="/trajectories/google__gemini-3.5-flash/">google / gemini-3.5-flash</a></td>
+<td class="num">97</td>
+<td class="num">2</td>
+<td class="num">7</td>
+<td class="num">6</td>
+<td class="num"><strong>112</strong></td>
+<td class="num">$5.22</td>
+<td class="num">12.0 M</td>
+<td class="num">59m</td>
+</tr>
+
+<tr class="clickable" onclick="window.location='/trajectories/openai__gpt-5.5/'">
+<td><a href="/trajectories/openai__gpt-5.5/">openai / gpt-5.5</a></td>
+<td class="num">90</td>
+<td class="num">3</td>
+<td class="num">2</td>
+<td class="num">3</td>
+<td class="num"><strong>98</strong></td>
+<td class="num">$1.46</td>
+<td class="num">897.6 k</td>
+<td class="num">43m</td>
+</tr>
+
+</tbody>
+</table>
+
+<p class="post-nav"><a href="/">← all posts</a></p>
+</article>
+
+</main>
+<footer>
+<p><a href="/feed.xml">RSS</a> · <a href="/trajectories/">trajectories</a> · &copy; 2026</p>
+</footer>
+
+</body>
+</html>
+

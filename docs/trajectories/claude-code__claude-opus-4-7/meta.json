@@ -1,0 +1,17 @@
+{
+  "model": "claude-opus-4-7",
+  "run_id": "20260523T012940Z",
+  "challenger_id": "swpecht-claude-code-opus-4.7",
+  "started_at": "2026-05-23T01:29:40Z",
+  "harness": "claude-code",
+  "imported_from": "/home/steven/.claude/projects/-home-steven-src-euchre-test/3be12100-5313-4e26-9941-38ebd5d1b68c.jsonl",
+  "imported_at": "2026-05-23T12:06:54Z",
+  "source_session_id": "3be12100-5313-4e26-9941-38ebd5d1b68c",
+  "num_games_final": 100,
+  "final_agents": [
+    "random",
+    "easy",
+    "medium",
+    "hard"
+  ]
+}

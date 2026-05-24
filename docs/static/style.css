@@ -146,3 +146,76 @@ footer {
   color: #888;
   font-size: 0.85rem;
 }
+
+/* ─── Trajectories ─────────────────────────────────────────────────────── */
+
+.trajectory-table th.num, .trajectory-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.trajectory-table tr.clickable { cursor: pointer; }
+.trajectory-table tr.clickable:hover { background: #eef; }
+
+.trajectory-meta {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.2rem 1rem;
+  margin: 1rem 0 2rem 0;
+  padding: 0.6rem 0.8rem;
+  background: #f0f0f0;
+  border: 1px solid #ddd;
+  font-size: 0.9rem;
+}
+.trajectory-meta dt { color: #666; }
+.trajectory-meta dd { margin: 0; font-weight: bold; }
+
+.trajectory-links { margin: 0 0 2rem 0; font-size: 0.9rem; }
+
+.trajectory-prompt summary { cursor: pointer; color: #1452a3; }
+.trajectory-prompt pre { max-height: 400px; overflow: auto; font-size: 0.85rem; }
+
+.trajectory-controls {
+  display: flex; gap: 1rem; align-items: center;
+  padding: 0.4rem 0.6rem; margin-bottom: 0.5rem;
+  background: #f0f0f0; border: 1px solid #ddd;
+  font-size: 0.85rem;
+  position: sticky; top: 0; z-index: 1;
+}
+.trajectory-controls #event-count { margin-left: auto; }
+
+.trajectory-events { display: flex; flex-direction: column; gap: 0.3rem; }
+.trajectory-events.hide-tool .event-tool_use { display: none; }
+.trajectory-events.hide-text .event-text { display: none; }
+.trajectory-events.hide-step .event-boundary { display: none; }
+
+.event { font-size: 0.9rem; }
+.step-sep {
+  border-top: 1px dashed #ccc;
+  padding-top: 0.6rem;
+  margin-top: 0.6rem;
+  color: #888;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.step-finish { color: #888; font-size: 0.8rem; padding: 0.1rem 0; }
+
+.tool-use {
+  border: 1px solid #ddd;
+  background: #fff;
+  padding: 0.3rem 0.5rem;
+}
+.tool-use summary { cursor: pointer; outline: none; }
+.tool-use summary::marker { color: #888; }
+.tool-name { color: #1a7a1a; font-weight: bold; margin-right: 0.5rem; }
+.tool-summary { color: #444; }
+.tool-section { margin-top: 0.5rem; }
+.tool-label {
+  color: #888; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;
+  margin-bottom: 0.2rem;
+}
+.tool-use pre { max-height: 400px; overflow: auto; font-size: 0.85rem; margin: 0; }
+
+.assistant-text {
+  white-space: pre-wrap;
+  padding: 0.5rem 0.7rem;
+  background: #f8f8f4;
+  border-left: 3px solid #d4a017;
+}
