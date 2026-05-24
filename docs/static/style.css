@@ -1,33 +1,148 @@
-/* Bench page style — verbatim from euchre_server/src/bench.rs:899-916 */
-body { font-family: monospace; max-width: 960px; margin: 2rem auto; padding: 0 1rem; background: #fafafa; }
-h1 { border-bottom: 2px solid #333; }
-h2 { border-bottom: 1px solid #ccc; margin-top: 2rem; }
-h3 { margin-top: 1.5rem; color: #444; }
-table { border-collapse: collapse; width: 100%; margin-bottom: 1.5rem; }
-th, td { border: 1px solid #ccc; padding: 0.4rem 0.8rem; text-align: left; }
-th { background: #f0f0f0; }
-tr.clickable { cursor: pointer; }
-tr.clickable:hover { background: #eef; }
+/* Bench page palette — adapted from euchre_server/src/bench.rs:899-916,
+   re-tuned for a four-tier hierarchy on blog post pages:
+     1. site title  (header h1)            — small chrome bar
+     2. post title  (article > h1)         — page anchor, largest
+     3. section     (article h2 = `#`)     — major section break
+     4. subsection  (article h3 = `##`)    — minor section
+   Body markdown headings are shifted +1 by the renderer so post body
+   content never produces an <h1>. */
+
+body {
+  font-family: monospace;
+  max-width: 960px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+  background: #fafafa;
+  color: #111;
+  line-height: 1.5;
+}
+
 a { color: #1452a3; text-decoration: none; }
 a:hover { text-decoration: underline; }
-.win { color: #1a7a1a; font-weight: bold; }
-.loss { color: #b00; }
-pre { background: #f4f4f4; padding: 1rem; border: 1px solid #ddd; overflow-x: auto; }
-ul { line-height: 1.8; }
-svg { background: #fff; border: 1px solid #ddd; }
 
-/* Blog-specific extensions */
-.site-title { margin-bottom: 0; }
+/* ─── Site chrome ──────────────────────────────────────────────────────── */
+
+body > header {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding-bottom: 0.5rem;
+  margin-bottom: 2.5rem;
+  border-bottom: 1px solid #ccc;
+}
+.site-title {
+  font-size: 1rem;
+  font-weight: bold;
+  margin: 0;
+  border: none;
+  letter-spacing: 0.02em;
+}
 .site-title a { color: inherit; }
-.site-title a:hover { text-decoration: none; }
-.site-tagline { color: #666; margin-top: 0.25rem; font-size: 0.95rem; }
-.post-list { list-style: none; padding: 0; }
-.post-list li { display: flex; justify-content: space-between; gap: 1rem; padding: 0.3rem 0; border-bottom: 1px dotted #ddd; }
-.post-meta { color: #666; font-size: 0.9rem; white-space: nowrap; }
-article h1 { margin-bottom: 0.25rem; }
-article .post-meta { margin-top: 0; margin-bottom: 2rem; }
-.post-nav { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid #ccc; }
-code { background: #f4f4f4; padding: 0 0.2rem; border-radius: 2px; }
-pre code { background: transparent; padding: 0; }
-footer { margin-top: 4rem; padding-top: 1rem; border-top: 1px solid #ccc; color: #666; font-size: 0.9rem; }
-blockquote { border-left: 3px solid #ccc; margin-left: 0; padding-left: 1rem; color: #555; }
+.site-title a:hover { text-decoration: none; color: #1452a3; }
+.site-tagline {
+  margin: 0;
+  color: #777;
+  font-size: 0.85rem;
+}
+
+/* ─── Post page ────────────────────────────────────────────────────────── */
+
+article > h1 {
+  font-size: 1.9rem;
+  font-weight: bold;
+  line-height: 1.2;
+  margin: 0 0 0.35rem 0;
+  border: none;
+  color: #111;
+}
+article > .post-meta {
+  color: #888;
+  font-size: 0.85rem;
+  margin: 0 0 2.5rem 0;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+article h2 {
+  font-size: 1.3rem;
+  font-weight: bold;
+  margin: 2.5rem 0 0.6rem 0;
+  padding-bottom: 0.2rem;
+  border-bottom: 1px solid #ddd;
+  color: #1a1a1a;
+}
+article h3 {
+  font-size: 1.05rem;
+  font-weight: bold;
+  margin: 1.75rem 0 0.4rem 0;
+  color: #333;
+  border: none;
+}
+article h4, article h5, article h6 {
+  font-size: 0.95rem;
+  font-weight: bold;
+  margin: 1.25rem 0 0.3rem 0;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+article p { margin: 0.6rem 0; }
+
+/* ─── Index page ──────────────────────────────────────────────────────── */
+
+.post-list { list-style: none; padding: 0; margin: 0; }
+.post-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px dotted #ddd;
+}
+.post-list .post-meta {
+  color: #888;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  letter-spacing: 0.03em;
+}
+
+/* ─── Inline elements ─────────────────────────────────────────────────── */
+
+code { background: #f0f0f0; padding: 0.05rem 0.3rem; border-radius: 2px; font-size: 0.95em; }
+pre { background: #f4f4f4; padding: 1rem; border: 1px solid #ddd; overflow-x: auto; line-height: 1.4; }
+pre code { background: transparent; padding: 0; font-size: 0.9rem; }
+
+blockquote {
+  border-left: 3px solid #ccc;
+  margin: 1rem 0;
+  padding: 0.2rem 1rem;
+  color: #555;
+}
+
+ul, ol { line-height: 1.7; }
+
+table { border-collapse: collapse; width: 100%; margin: 1rem 0 1.5rem; }
+th, td { border: 1px solid #ccc; padding: 0.4rem 0.8rem; text-align: left; }
+th { background: #f0f0f0; }
+
+img { max-width: 100%; height: auto; }
+
+hr { border: none; border-top: 1px solid #ddd; margin: 2rem 0; }
+
+/* ─── Footer / nav ─────────────────────────────────────────────────────── */
+
+.post-nav {
+  margin: 3rem 0 0 0;
+  padding-top: 1rem;
+  border-top: 1px solid #ddd;
+  font-size: 0.9rem;
+}
+footer {
+  margin-top: 4rem;
+  padding-top: 1rem;
+  border-top: 1px solid #ccc;
+  color: #888;
+  font-size: 0.85rem;
+}

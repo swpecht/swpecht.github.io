@@ -20,11 +20,11 @@
 <article>
 <h1>Euchre wisdom: pass on the bower, lose for an hour? Part 2</h1>
 <p class="post-meta">Aug 14, 2023</p>
-<h1 id="context">Context</h1>
+<h2 id="context">Context</h2>
 <p>This post is a followup to <a href="/project-log/2023/05/30/pass-on-the-bower-lose-for-an-hour.html">Euchre wisdom: pass on the bower, lose for an hour?</a> and <a href="/project-log/2023/07/30/cfr-for-euchre.html">CFR for euchre</a>. In the counterfactual regret minimization (CFR) for euchre post, we saw that CFR for just the pre-play phase of euchre could result in a stronger agent than just perfect information monte carlo tree search (PIMCTS). We also saw that the pre-play CFR bot did not recommend always picking up the jack as the dealer -- in fact it recommended passing ~30% of the time.</p>
 <p>In this post, I summarize the bot's strategy.</p>
 <p>All of these results are based on using CFR for the pre-play phases of euchre and PIMCTS with 50 worlds for the play phase. The CFR was trained over 20m iterations using CFR with external sampling.</p>
-<h1 id="analyzing-high-level-strategy">Analyzing high-level strategy</h1>
+<h2 id="analyzing-high-level-strategy">Analyzing high-level strategy</h2>
 <p>We can plot a heatmap of the bots policy based on what cards are in a hand. Each cell represents all hands containing the matching card from the cell's row and column. The color of the cell represents the probability of the bot picking up the jack of spades. The blue colors mean to pickup the jack more than 50% of the time. While red colors are for &lt;50% of the time. The cards are sorted from highest likelihood of pickup to lowest.</p>
 <p>As an example, the top left area of the heatmap represents when the agent has multiple spade cards (would be trump). This area is dark blue -- as expected, the bot is likely to pickup the jack of spades if it already has many spades in it's hand.</p>
 <p>{: style=&quot;text-align:center&quot;}
@@ -62,7 +62,7 @@
 </tr>
 </tbody>
 </table>
-<h2 id="translating-to-a-decision-tree">Translating to a decision tree</h2>
+<h3 id="translating-to-a-decision-tree">Translating to a decision tree</h3>
 <p>The heatmap gives a highlevel overview of how the bots value cards, but it can only represent information for 2 cards at a time. To get a deeper understanding of the strategy, we can use the heatmap regions as additional inputs to train a decision tree model.</p>
 <p>Using <a href="https://scikit-learn.org/stable/modules/tree.html#minimal-cost-complexity-pruning">Minimal Cost-Complexity Pruning</a>, I generated a simplified, 3-level, decision tree, that achieves 94% accuracy for predicting the action a bot would take.</p>
 <p><strong>Decision tree for passing or picking up the jack based on cards in hand</strong></p>
@@ -82,7 +82,7 @@
 </pre>
 <p>As expected, having more spades or offsuit aces is a strong indicator for picking up the jack of spades -- these are strong cards that can win tricks.</p>
 <p>Of note, the bots will rarely pickup a jack if they have no other spades. This only happens for 11 hands [0].</p>
-<h2 id="passing-to-make-room-for-euchring-the-opponent">Passing to make room for euchring the opponent</h2>
+<h3 id="passing-to-make-room-for-euchring-the-opponent">Passing to make room for euchring the opponent</h3>
 <p>As with the heatmap, having a red jack causes the bots to be more likely to pass. And in the last post, I noted that <code>JcQcJhAh9d|Js|PPP</code> -- a hand with a single red jack -- is always a pass for the bots.</p>
 <p>To better understand what's going on I had the bots play 50k games where the dealer is dealt this hand. Of those games, 52% (26k) made it to the dealer being able to choose to pass or pickup the jack.</p>
 <p>When the dealer picks up the jack, their team wins 62% of games. But the average score is 0.0002 -- the dealer's team wins as many points as they lose by often getting ecuhred (losing the majority of tricks when calling trump).</p>
@@ -107,7 +107,7 @@
 <img src="/assets/pass-on-bower-2-JcQcJhAh9d-heatmap.png" alt="heatmap of score by who called trump"></p>
 <p>Player 0 is the player left of the dealer and player 3 is the dealer. The dealer is getting most of the wins by euchering the other team. Player zero is calling clubs as trump 32% of the time. And with the <code>Jc</code>, <code>Qc</code>, and an offsuit ace (<code>Ah</code>), the dealer is in a good position to euchre.</p>
 <p>The propensity for player 0 to call clubs explains area D from the heatmap at the start of the post. The bot is more likely to pass if it has clubs in its hand because it values those cards for euchering the other team when they call Clubs as trump.</p>
-<h1 id="future-work-and-limitations">Future work and limitations</h1>
+<h2 id="future-work-and-limitations">Future work and limitations</h2>
 <p>This post outlines simplified rules for when to pass on the bower. But these results are not based on fully solving the game of euchre. And there is not guarantee that the combined CFR + PIMCTS agent will converge to an optimal strategy.</p>
 <p>Next steps are to:</p>
 <ul>

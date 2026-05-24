@@ -20,12 +20,12 @@
 <article>
 <h1>Building a disk-backed key-value store for a euchre bot</h1>
 <p class="post-meta">Sep 15, 2023</p>
-<h1 id="context">Context</h1>
+<h2 id="context">Context</h2>
 <p>I began training my <a href="/posts/speeding-up-cfr-training/">euchre bot</a> on more of the game -- expanding it from just the bidding phase where trump is called into the card play phase.</p>
 <p>But I ran into a problem: the data needed to actually train the bot could no longer fit into memory. Storing just the bidding phase took 0.3GB of memory. Storing just up to the first 2 cards played required 6GB -- 20x the cost for 2 additional cards. We would likely need 100s of GBs to store the full 20 cards of play.</p>
 <p>This post outlines my attempt to find the most performant disk-backed key-value store for training a euchre bot.</p>
 <p>Much of the benchmark code for this is based on this excellent post: <a href="https://ntietz.com/blog/rust-hashmap-overhead/">Measuring the overhead of HashMaps in Rust</a>.</p>
-<h1 id="the-benchmark">The benchmark</h1>
+<h2 id="the-benchmark">The benchmark</h2>
 <p>For the workload, we need to:</p>
 <ul>
 <li>look up a key: a vector of <code>u8</code>s representing the actions taken so far</li>
@@ -65,7 +65,7 @@
 </tbody>
 </table>
 <p>The difference in allocations from the theoretical size is due to rusts doubling behavior when extending a hashmap (<a href="https://ntietz.com/blog/rust-hashmap-overhead/">Measuring the overhead of HashMaps in Rust</a>).</p>
-<h1 id="dont-you-just-need-a-database">Don't you just need a database?</h1>
+<h2 id="dont-you-just-need-a-database">Don't you just need a database?</h2>
 <p>My first approach was to use a database. I evaluated both LMDB (with <a href="https://github.com/meilisearch/heed">heed</a>) and RocksDB (with <a href="https://github.com/rust-rocksdb/rust-rocksdb">rust-rocksdb</a>). I gave each database a cache of 1m keys so they could batch writes.</p>
 <p>The LMDB code as an example:</p>
 <pre class="chroma"><code><span class="line"><span class="cl"><span class="k">fn</span> <span class="nf">heed_bench</span><span class="p">(</span><span class="n">size</span>: <span class="kt">usize</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
@@ -147,7 +147,7 @@
 <p>The database backed approaches are 1/5 the speed of the memory only approach even with a cache that can hold 1/20th of the total keys (much better than possible in practice).</p>
 <p>While tuning these benchmarks, I opted to turn on many of the &quot;unsafe&quot; features. For example, <code>WriteMap</code> for LMDB can improve write performance, but it can also allow application bugs to corrupt the database.</p>
 <p>Given we aren't storing anything important in our database, can we go even faster if we get rid of even more of these pesky <a href="https://en.wikipedia.org/wiki/ACID">ACID</a> features?</p>
-<h1 id="memory-mapped-files-and-perfect-hash-functions">Memory mapped files and perfect hash functions</h1>
+<h2 id="memory-mapped-files-and-perfect-hash-functions">Memory mapped files and perfect hash functions</h2>
 <p>When LMDB is in <code>WriteMap</code> mode, it uses a <a href="https://en.wikipedia.org/wiki/Memory-mapped_file">memory mapped file</a> to directly update the entries. A memory mapped file let's us read and write the files contents as if it were fully loaded into memory.</p>
 <p>Importantly it does not load the file into memory -- it works with files larger than RAM.</p>
 <p>A memory mapped file solves part of the problem: it gives us a performant way to read and write a serialized version of our values to disk at specific locations. But it doesn't give us a way to tell which value is at a given location. Writing to the memory map requires a byte index, not a key like a hashmap.</p>
@@ -224,8 +224,8 @@
 </table>
 <p>This approach is only 1.4x the time of the in memory approach as compared to the 5x+ time for the database approach.</p>
 <p>But it didn't come for free -- its sacrifices the correctness guarantees of a traditional database. Hopefully I don't come to regret not having those later :)</p>
-<h2 id="appendix">Appendix</h2>
-<h1 id="infostate-definition">Infostate definition</h1>
+<h3 id="appendix">Appendix</h3>
+<h2 id="infostate-definition">Infostate definition</h2>
 <p>The infostates are about 165 bytes of data total on average [0]. We need to store one of these for every state the CFR algorithm need to evaluate.</p>
 <pre class="chroma"><code><span class="line"><span class="cl"><span class="k">pub</span><span class="w"> </span><span class="k">struct</span> <span class="nc">InfoState</span><span class="w"> </span><span class="p">{</span><span class="w">
 </span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">actions</span>: <span class="nb">Vec</span><span class="o">&lt;</span><span class="kt">u8</span><span class="o">&gt;</span><span class="p">,</span><span class="w"> </span><span class="c1">// 24 bytes for vector + 5 * 1 for each u8 action
@@ -234,7 +234,7 @@
 </span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="w">    </span><span class="n">last_iteration</span>: <span class="kt">usize</span><span class="p">,</span><span class="w"> </span><span class="c1">// 8 bytes
 </span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="p">}</span><span class="w">
 </span></span></span></code></pre><p>[0] There are some things we could do to reduce this size, e.g. switching to <code>f32</code> instead of <code>f64</code> or using a bit mask to keep track of which actions are present rather than storing a vector of actions, but none of these changes would be enough to fit everything into RAM for a full game of euchre.</p>
-<h1 id="code-for-generating-benchmark-data">Code for generating benchmark data</h1>
+<h2 id="code-for-generating-benchmark-data">Code for generating benchmark data</h2>
 <pre class="chroma"><code><span class="line"><span class="cl"><span class="k">struct</span> <span class="nc">DataGenerator</span><span class="w"> </span><span class="p">{</span><span class="w">
 </span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">rng</span>: <span class="nc">StdRng</span><span class="p">,</span><span class="w">
 </span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">len</span>: <span class="kt">usize</span><span class="p">,</span><span class="w">

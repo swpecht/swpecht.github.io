@@ -20,11 +20,11 @@
 <article>
 <h1>Counterfactual regret minimization in Rust</h1>
 <p class="post-meta">May 5, 2023</p>
-<h1 id="context">Context</h1>
+<h2 id="context">Context</h2>
 <p>This post gives a brief overview of two Counter Factual Regret (CFR) algorithms, shows their implementation in Rust, and compares their performance. The code is heavily based on <a href="http://mlanctot.info/files/papers/PhD_Thesis_MarcLanctot.pdf">Marc Lanctot's thesis</a>, <a href="https://towardsdatascience.com/counterfactual-regret-minimization-ff4204bf4205">Ziad SALLOUM's post</a>, and <a href="https://aipokertutorial.com/the-cfr-algorithm/">Max Chiswick's AI Poker Tutorial</a>. They will provide an introduction to some of the concepts mentioned in this post like information states.</p>
 <p>All the code for this post can be found <a href="https://github.com/swpecht/swpecht.github.io/tree/master/projects/liars_poker_bot">on Github</a>.</p>
 <p>I have implemented both vanilla CFR and CFR with chance sampling (CFRCS). Both algorithms have been evaluated on <a href="https://en.wikipedia.org/wiki/Kuhn_poker">Kuhn Poker</a> and Bluff (<a href="https://en.wikipedia.org/wiki/Liar%27s_dice">liar's dice</a>). Overall, for larger games, CFRCS converges to a more optimal strategy faster than CFR.</p>
-<h1 id="cfr-algorithm">CFR algorithm</h1>
+<h2 id="cfr-algorithm">CFR algorithm</h2>
 <p>The CFR algorithm is taken from <a href="http://mlanctot.info/files/papers/PhD_Thesis_MarcLanctot.pdf">section 2.2.2 of Marc Lanctot's thesis</a>:
 <img src="/assets/cfr-in-rust/vCFR.png" alt="CFR algorithm"></p>
 <p>As someone without an academic background in the subject, this made little sense to me. I understood the high-level concept for CFR -- choose an action that minimizes regret. But I didn't understand the details of how to actually implement it. After doing my own implementation, here a line-by-line breakdown:</p>
@@ -170,7 +170,7 @@ After we've calculated the expected value for this node and each of the child ac
 </span></span></span></code></pre><hr>
 <p><img src="/assets/cfr-in-rust/vCFR%2033-38.png" alt="CFR line 33-38">
 The final step is to run the CFR algorithm repeatedly for each player until it sufficiently converges.</p>
-<h1 id="chance-sampled-cfr">Chance sampled CFR</h1>
+<h2 id="chance-sampled-cfr">Chance sampled CFR</h2>
 <p>Chance sampled CFR is similar to vanilla CFR except rather than iterating over every possible chance node in a single iteration of CFR, it chooses a single chance node.</p>
 <p>Specifically, it requires the two following changes:</p>
 <p><strong>Choose a random chance node rather than iterating</strong></p>
@@ -191,11 +191,11 @@ The final step is to run the CFR algorithm repeatedly for each player until it s
 </span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">// save the updates
 </span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="w">    </span><span class="n">ns</span><span class="p">.</span><span class="n">insert_node</span><span class="p">(</span><span class="n">is</span><span class="p">,</span><span class="w"> </span><span class="n">node</span><span class="p">);</span><span class="w">
 </span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="p">}</span><span class="w">
-</span></span></span></code></pre><h1 id="cfr-vs-cfrcs-performance">CFR vs CFRCS performance</h1>
+</span></span></span></code></pre><h2 id="cfr-vs-cfrcs-performance">CFR vs CFRCS performance</h2>
 <p>These minimal changes allows CFRCS to converge faster than vanilla CFR. For example in a game of <a href="https://en.wikipedia.org/wiki/Liar%27s_poker">bluff</a> with 2 dice for each player, CFRCS converges meaningfully faster than CFR.
 <img src="/assets/cfr-in-rust/bluff22%20results.png" alt="Bluff22 results"></p>
 <p>The exploitability is based on the best response algorithm. More details can be found in <a href="http://mlanctot.info/files/papers/PhD_Thesis_MarcLanctot.pdf">Marc Lanctot's thesis</a>.</p>
-<h1 id="code">Code</h1>
+<h2 id="code">Code</h2>
 <p>All the code for this post can be found <a href="https://github.com/swpecht/swpecht.github.io/tree/master/projects/liars_poker_bot">on Github</a>. But each implementation is repeated below for convenience.</p>
 <p><strong>Vanilla CFR</strong></p>
 <pre class="chroma"><code><span class="line"><span class="cl"><span class="k">pub</span><span class="w"> </span><span class="k">struct</span> <span class="nc">VanillaCFR</span><span class="w"> </span><span class="p">{</span><span class="w">

@@ -20,7 +20,7 @@
 <article>
 <h1>Speeding up CFR training for euchre</h1>
 <p class="post-meta">Aug 29, 2023</p>
-<h1 id="context">Context</h1>
+<h2 id="context">Context</h2>
 <p>This post outlines how I sped up training a <a href="/posts/cfr-for-euchre/">CFR bot for euchre</a>. I used three approaches:</p>
 <ul>
 <li>Multithreading</li>
@@ -35,12 +35,12 @@ Linear CFR          | | 0
 All optimizations   |█ 2
 </code></pre>
 <p>All results are on a Hetzner AX41-NVME (AMD Ryzen 5 3600 with 64GB of DDR4 RAM).</p>
-<h1 id="multithreading">Multithreading</h1>
+<h2 id="multithreading">Multithreading</h2>
 <p>For multi-threading that main change was storing the CFR weights in a <a href="https://docs.rs/dashmap/latest/dashmap/">DashMap</a> rather than Rust's standard <code>HashMap</code>. DashMap is a concurrent HashMap implementation.</p>
 <p>Once everything could be shared across threads, I used <a href="https://github.com/rayon-rs/rayon">Rayon</a> to parallelize the work.</p>
 <p>Multithreading took the convergence time from 30 hrs to 7 hrs.</p>
 <p>This is significantly slower than we would see with perfect parallelization across the 12 threads on the AMD Ryzen 5. Further work is needed to investigate why we don't get the theoretical gains.</p>
-<h1 id="normalizing-card-suit">Normalizing card suit</h1>
+<h2 id="normalizing-card-suit">Normalizing card suit</h2>
 <p>In euchre, there are 9.7m infostates to store before the play phase of the game:</p>
 <p>$$
 I = D * (B + D')\
@@ -88,7 +88,7 @@ $$</p>
 $$</p>
 <p>This reduces the number of infostates by 1/4 to 2.4m.</p>
 <p>This change takes us from 7 hrs to 2 hrs -- almost achieving a linear speed up with respect to the reduction in the number of info states.</p>
-<h1 id="linear-cfr">Linear CFR</h1>
+<h2 id="linear-cfr">Linear CFR</h2>
 <p>Linear CFR (LCFR) is well described in <a href="https://arxiv.org/pdf/1809.04040.pdf">Solving Imperfect-Information Games
 via Discounted Regret Minimization</a>. The main challenge was making it performant in a multi-threaded environment. The naive approach to Linear CFR is to &quot;multiply the accumulated regret by $\frac{t}{t + 1}$ where $t$ is the current iteration.&quot;</p>
 <p>This approach creates significant read and write contention on our hashmap as every thread tries to update all elements of the hashmap at each iteration. Instead I store the last iteration a node was updated with each infostate.</p>
@@ -109,7 +109,7 @@ via Discounted Regret Minimization</a>. The main challenge was making it perform
 </span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="p">}</span><span class="w">
 </span></span></span></code></pre><p>In theory, a later iteration could finish before an earlier iteration and touch the same node, but this is rare as each iteration touches a small fraction of the 2m istates. In practice, this effect did not negatively impact convergence times.</p>
 <p>Linear CFR had no impact on training time to achieve parity with PIMCTS.</p>
-<h1 id="conclusion">Conclusion</h1>
+<h2 id="conclusion">Conclusion</h2>
 <p>Rust delivered on its promise to make it easy to convert my single-threaded code to parallel code. Combined with the normalization improvements, I can now train a CFR agent in 1-2 hours rather than a couple of days.</p>
 <p>Linear CFR didn't improve the time to PIMCTS parity, but it may help with long-term convergence. In a future post, I'll compare the performance of bots trained with and without LCFR.</p>
 

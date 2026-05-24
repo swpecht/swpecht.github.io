@@ -20,7 +20,7 @@
 <article>
 <h1>Perfect information monte carlo tree search (PIMCTS) for euchre</h1>
 <p class="post-meta">Jul 15, 2023</p>
-<h1 id="context">Context</h1>
+<h2 id="context">Context</h2>
 <p>In my previous post <a href="/project-log/2023/05/30/pass-on-the-bower-lose-for-an-hour">Euchre wisdom: pass on the bower, lose for an hour?</a>, I used perfect information monte carlo tree search (PIMCTS) to evaluate euchre hands. This post outlines the optimizations from evaluating 3 hands/second to 44/s.</p>
 <p>Much of this work is adapted from <a href="http://privat.bahnhof.se/wb758135/">Bo Haglund's double dummy solver for bridge</a>.</p>
 <p>PIMCTS evaluates several euchre hands, assuming that each player can see the other's cards and play optimally. It then suggests the move with the highest chance of winning across all games evaluated.</p>
@@ -62,7 +62,7 @@ Our hand is always the same
 Optimized                   |██████████████████████ 44 (22ms per game)
 </code></pre>
 <p>All benchmarks were done on a ThinkPad laptop with a 10th gen Core i7 Pro and 16GB of RAM.</p>
-<h1 id="1-vanilla-mtd">1) Vanilla MTD</h1>
+<h2 id="1-vanilla-mtd">1) Vanilla MTD</h2>
 <p>I use the MTD search algorithm from <a href="http://people.csail.mit.edu/plaat/mtdf.html">Aske Plaat's post</a>.</p>
 <p>In pseudocode:</p>
 <pre><code>function MTDF(root : node_type; f : integer; d : integer) : integer;
@@ -77,7 +77,7 @@ Optimized                   |█████████████████
     return g;
 </code></pre>
 <p>To start, our <code>AlphaBetaWithMemory</code> has no memory, and we must fully re-run the search each time. We max out at evaluating 3 games / s.</p>
-<h1 id="2-transposition-table">2) Transposition table</h1>
+<h2 id="2-transposition-table">2) Transposition table</h2>
 <p>The first optimization is to give some memory to the <code>AlphaBetaWithMemory</code> function. We use the <a href="https://docs.rs/dashmap/latest/dashmap/">dashmap crate</a> as a performant, thread-safe hashmap for this.</p>
 <p>Initially, we use the full game state as the key when storing and retrieving values, for example, <code>Qc9sTs9dAd|9cKsThQhTd|KcAsJhKhQd|AcJs9hAhJd|Qs</code>.</p>
 <p>Because a zero-window alpha-beta search (what we use with MTD) returns bounds for each search and not exact values, we store the lower bound, upper bound, and the best action in each entry. For more details on how this works, see <a href="http://people.csail.mit.edu/plaat/mtdf.html#abmem">Aske's post</a>.</p>
@@ -87,7 +87,7 @@ Qc9sTs9dAd|9cKsThQhTd|KcAsJhKhQd|AcJs9hAhJd|Qs|PT|AdTdQdJd: stored, we're in the
 Qc9sTs9dAd|9cKsThQhTd|KcAsJhKhQd|AcJs9hAhJd|Qs|PT|AdTdQd: not stored, we're in the middle of a trick.
 </code></pre>
 <p>Adding in the transposition table means we don't need to recalculate everything on future searches to <code>AlphaBetaWithMemory</code> for the same game state. We can evaluate 7 games / s — more than twice as many as without the transposition table.</p>
-<h1 id="3-isometric-representation">3) Isometric representation</h1>
+<h2 id="3-isometric-representation">3) Isometric representation</h2>
 <p>While we can now re-use results between calls to <code>AlphaBetaWithMemory</code> for the same game state, we don't get any benefits from similar game states. We need an isometric representation for game states where those with the same value look the same.</p>
 <p>For example, imagine we stored the cards in a table, where each entry is the player holding the card. If the entry is empty, the card is out of play, i.e., it has been played or was never dealt. <code>JL</code> is the left jack, e.g., <code>Jc</code> when spades are trump. And <code>JR</code> is the right jack. An x means the card isn't valid, e.g., the <code>Jc</code> becomes <code>JL.</code></p>
 <table>
@@ -287,12 +287,12 @@ Qc9sTs9dAd|9cKsThQhTd|KcAsJhKhQd|AcJs9hAhJd|Qs|PT|AdTdQd: not stored, we're in t
 <p>With this change, we're agnostic to the suit and specific value of cards, only caring about their relative ordering.</p>
 <p>If we store as a hash of this table the current score of tricks, the calling team for the current trick, and the current player, we can get many more hits in our transposition table -- allowing us to avoid calculating the score for many game states.</p>
 <p>With this change, we can evaluate 38 games / s — 5.4x with the naive transposition table.</p>
-<h1 id="4-euchre-specific-rules">4) Euchre-specific rules</h1>
+<h2 id="4-euchre-specific-rules">4) Euchre-specific rules</h2>
 <p>The final optimization is to add some euchre-specific rules on when games are over and what moves to evaluate.</p>
 <p>For determining if a game is over, we know that if a player has the highest trump card, they are guaranteed to get at least one more trick, similarly for the second highest trump card, etc. We can use this fact to determine if games are over early and stop evaluation.</p>
 <p>For choosing what moves to evaluate, we do two optimizations. First, we remove equivalent cards from our hand. Similarly, the <code>9c</code> is the same as the <code>10c</code> if a player holds both. We only need to evaluate one of those plays. It is also usually beneficial to play the highest trump card to start a new trick if you have it. So we evaluate that move first.</p>
 <p>With these changes, we can evaluate up to 44 games / s — a 16% improvement.</p>
-<h1 id="conclusion">Conclusion</h1>
+<h2 id="conclusion">Conclusion</h2>
 <p>Being able to evaluate 44 games / s will significantly reduce the amount of waiting I need to do when evaluating more advanced euchre bots. I was also surprised to see how large of an impact the isometric representation had, especially compared to the naive transposition table.</p>
 <p>[0] Some care needs to be taken during the bidding phase because the relative value of jacks has yet to be established.</p>
 
