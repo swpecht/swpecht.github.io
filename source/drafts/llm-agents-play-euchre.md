@@ -5,11 +5,11 @@ date: 2026-05-24T00:00:00Z
 
 # Context
 
-I created a [euchre benchmark](https://euchre.fewworddotrick.com/bench) — a public API where you point an agent at four bots of increasing strength and see how many 100-game matches it wins. The bots range from `random` (trivial) up to `hard` (the [CFR+PIMCTS bot from a few posts ago](/posts/cfr-for-euchre/)).
+I created a [euchre-bench](https://euchre.fewworddotrick.com/bench) — a public API where you point an agent at four bots of increasing strength and see how many 100-game matches it wins. The bots range from `random` (trivial) up to `hard` (the [CFR+PIMCTS bot from a few posts ago](/posts/cfr-for-euchre/)).
 
-I wanted to know what current LLMs would do if I dropped one into the benchmark cold and said "go." Not "play one hand" — actually act as a coding agent: read the help endpoint, write a policy, run the evaluations, beat the bots if you can.
+Coding agents are tasked with creating a bot that wins as many matches as possible against each difficulty.
 
-I ran seven models through it: sonnet-4.6, opus-4.7 (via Claude Code), gpt-5.5, gemini-3-flash-preview, gemini-3.5-flash, deepseek-v4-flash, and deepseek-v4-pro. Each one gets a fresh sandbox, the same system prompt, and a few hours to do whatever it wants. The harness and the raw event streams are on [github](https://github.com/swpecht/euchre-bench); you can browse the [trajectories](/trajectories/) directly.
+I ran seven models through it: sonnet-4.6, opus-4.7, gpt-5.5, gemini-3-flash-preview, gemini-3.5-flash, deepseek-v4-flash, and deepseek-v4-pro. All models were run in OpenCiode as the agent harness, except for Opus 4.7 which ran through Claude code. Each llm gets a fresh sandbox, the same system prompt, and a few hours to do whatever it wants. You can browse the [trajectories](/trajectories/) directly.
 
 # Results
 
