@@ -23,23 +23,24 @@
 <h1>claude-code / claude-opus-4-7</h1>
 <p class="post-meta">2026-05-23 01:29 UTC → 0001-01-01 00:00 UTC (—)</p>
 
-<dl class="trajectory-meta">
-<dt>cost</dt><dd>$328.65</dd>
-<dt>tokens</dt><dd>146.4 M</dd>
-<dt>steps</dt><dd>514</dd>
-<dt>tool calls</dt><dd>297</dd>
+<p class="trajectory-summary">
+  $328.65 ·
+  146.4 M tokens ·
+  514 steps ·
+  297 tool calls
+</p>
 
-<dt>easy</dt><dd>9 – 91 match wins</dd>
 
-<dt>hard</dt><dd>6 – 94 match wins</dd>
+<p class="trajectory-summary">
+  random 99–1 ·
+  easy 9–91 ·
+  medium 6–94 ·
+  hard 6–94
+</p>
 
-<dt>medium</dt><dd>6 – 94 match wins</dd>
-
-<dt>random</dt><dd>99 – 1 match wins</dd>
-
-</dl>
 
 <p class="trajectory-links">
+files:
 <a href="trajectory.jsonl" download>trajectory.jsonl</a> ·
 <a href="meta.json" download>meta.json</a> ·
 <a href="prompt.md" download>prompt.md</a>
@@ -47,17 +48,18 @@
 </p>
 
 <h2 id="prompt">System prompt</h2>
-<details class="trajectory-prompt"><summary>show / hide</summary>
+<details class="trajectory-prompt"><summary>show</summary>
 <pre id="prompt-block">loading…</pre>
 </details>
 
 <h2 id="events">Event stream</h2>
-<div class="trajectory-controls">
+<p class="trajectory-filters">
+show:
 <label><input type="checkbox" id="filter-tool-use" checked> tool calls</label>
 <label><input type="checkbox" id="filter-text" checked> assistant text</label>
 <label><input type="checkbox" id="filter-step" checked> step boundaries</label>
-<span id="event-count" class="post-meta"></span>
-</div>
+<span id="event-count" class="trajectory-count"></span>
+</p>
 <div id="events" class="trajectory-events"><p class="post-meta">loading…</p></div>
 
 <p class="post-nav"><a href="/trajectories/">← all trajectories</a></p>

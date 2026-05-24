@@ -23,23 +23,24 @@
 <h1>openai / gpt-5.5</h1>
 <p class="post-meta">2026-05-22 19:46 UTC → 2026-05-22 20:29 UTC (43m)</p>
 
-<dl class="trajectory-meta">
-<dt>cost</dt><dd>$1.46</dd>
-<dt>tokens</dt><dd>897.6 k</dd>
-<dt>steps</dt><dd>24</dd>
-<dt>tool calls</dt><dd>24</dd>
+<p class="trajectory-summary">
+  $1.46 ·
+  897.6 k tokens ·
+  24 steps ·
+  24 tool calls
+</p>
 
-<dt>easy</dt><dd>3 – 97 match wins</dd>
 
-<dt>hard</dt><dd>3 – 97 match wins</dd>
+<p class="trajectory-summary">
+  random 90–10 ·
+  easy 3–97 ·
+  medium 2–98 ·
+  hard 3–97
+</p>
 
-<dt>medium</dt><dd>2 – 98 match wins</dd>
-
-<dt>random</dt><dd>90 – 10 match wins</dd>
-
-</dl>
 
 <p class="trajectory-links">
+files:
 <a href="trajectory.jsonl" download>trajectory.jsonl</a> ·
 <a href="meta.json" download>meta.json</a> ·
 <a href="prompt.md" download>prompt.md</a>
@@ -47,17 +48,18 @@
 </p>
 
 <h2 id="prompt">System prompt</h2>
-<details class="trajectory-prompt"><summary>show / hide</summary>
+<details class="trajectory-prompt"><summary>show</summary>
 <pre id="prompt-block">loading…</pre>
 </details>
 
 <h2 id="events">Event stream</h2>
-<div class="trajectory-controls">
+<p class="trajectory-filters">
+show:
 <label><input type="checkbox" id="filter-tool-use" checked> tool calls</label>
 <label><input type="checkbox" id="filter-text" checked> assistant text</label>
 <label><input type="checkbox" id="filter-step" checked> step boundaries</label>
-<span id="event-count" class="post-meta"></span>
-</div>
+<span id="event-count" class="trajectory-count"></span>
+</p>
 <div id="events" class="trajectory-events"><p class="post-meta">loading…</p></div>
 
 <p class="post-nav"><a href="/trajectories/">← all trajectories</a></p>
