@@ -1,0 +1,75 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Yak shaving I did to get set up — Few word do trick</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/code.css">
+<link rel="alternate" type="application/rss+xml" title="Few word do trick" href="/feed.xml">
+
+</head>
+<body>
+<header>
+<h1 class="site-title"><a href="/">Few word do trick</a></h1>
+<p class="site-tagline">A silly reminder to keep posts short. And a place to keep a diary of projects.</p>
+</header>
+<main>
+
+<article>
+<h1>Yak shaving I did to get set up</h1>
+<p class="post-meta">May 23, 2020</p>
+<p>This post gives a summary of what I did to get my dev environment set up. Main goals:</p>
+<ul>
+<li>Hold myself accountable to not spend too much time tuning the colors of my terminal</li>
+<li>Document, in case I need to do it again</li>
+<li>Better learn Vim to write this</li>
+</ul>
+<h1 id="dev-environment">Dev environment</h1>
+<p>I wanted a Linux environment for development. But I only have access to a machine running windows and ChromeOS. Dual-booting -- or something like cygwin -- is possible but it seemed like a hassle to setup. And would add another barrier to writing or working on side projects.</p>
+<p>I ended up going with a Digital Ocean machine. It had a few added benefits for me:</p>
+<ul>
+<li>easy backups I could turn on with a click</li>
+<li>ability to access my dev environment where ever I was and a variety of different computers</li>
+<li>seemed like an interesting project to try out -- I'd wanted a forcing function to get better with a terminal for a while</li>
+</ul>
+<p>I'm sure any cloud provider would have worked, but I had a good experience using digital ocean in the past -- it's reasonably priced and reasonably simple.</p>
+<p>Next, I setup tmux and putty. This ended up being a bigger waste of time than expected. I had foolishly gotten my Vim and terminal color scheme set up with out tmux. Running things through tmux immediately reverted me to the previous, ugly colors :(</p>
+<p>I eventually realized I needed to start tmux with the <code>-2</code> argument to enable 256 colors:</p>
+<pre><code>tmux -2 a -t base || tmux -2 new -s base
+</code></pre>
+<p>I was able to get Putty set up with minimal configuration.</p>
+<h1 id="editor">Editor</h1>
+<p>For my editor, I went with Vim. I'd always heard great things. And the flexibility it provides seemed valuable to support both coding and blog writing in a single platform. I also appreciated the flexibility of moving around a <code>.vimrc</code> file to set up a new editor.</p>
+<p>I used <a href="https://github.com/amix/vimrc">amix's .vimrc</a> as a starting point. And removed most of the configuration that didn't make sense to me -- my goal was to end with something simple.</p>
+<p>I also added the following plugins:</p>
+<ul>
+<li>gruvbox theme</li>
+<li>vim-fugitive</li>
+<li>vim-go</li>
+<li>nerd-tree</li>
+</ul>
+<p>Similar to the .vimrc, I tried to keep my plugins simple.</p>
+<h1 id="blog">Blog</h1>
+<p>I wanted an easy way to keep track of thoughts and notes. I'll mostly use this as a project log for myself. But hope to also have some more polished content eventually.</p>
+<p>Used github pages and jekyll making the blog easy to set up and maintain. I registered a domain with Google Domain.</p>
+<h1 id="future-plans">Future plans</h1>
+<p>A few things I hope to eventually figure out:</p>
+<ul>
+<li>get ssl working with github pages</li>
+<li>get ssl working for some sort of dev instance</li>
+<li>...</li>
+</ul>
+
+</article>
+<p class="post-nav"><a href="/">← all posts</a></p>
+
+</main>
+<footer>
+<p><a href="/feed.xml">RSS</a> · &copy; 2026</p>
+</footer>
+
+</body>
+</html>
+

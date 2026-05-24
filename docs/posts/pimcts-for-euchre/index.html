@@ -1,0 +1,309 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Perfect information monte carlo tree search (PIMCTS) for euchre — Few word do trick</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/code.css">
+<link rel="alternate" type="application/rss+xml" title="Few word do trick" href="/feed.xml">
+
+</head>
+<body>
+<header>
+<h1 class="site-title"><a href="/">Few word do trick</a></h1>
+<p class="site-tagline">A silly reminder to keep posts short. And a place to keep a diary of projects.</p>
+</header>
+<main>
+
+<article>
+<h1>Perfect information monte carlo tree search (PIMCTS) for euchre</h1>
+<p class="post-meta">Jul 15, 2023</p>
+<h1 id="context">Context</h1>
+<p>In my previous post <a href="/project-log/2023/05/30/pass-on-the-bower-lose-for-an-hour">Euchre wisdom: pass on the bower, lose for an hour?</a>, I used perfect information monte carlo tree search (PIMCTS) to evaluate euchre hands. This post outlines the optimizations from evaluating 3 hands/second to 44/s.</p>
+<p>Much of this work is adapted from <a href="http://privat.bahnhof.se/wb758135/">Bo Haglund's double dummy solver for bridge</a>.</p>
+<p>PIMCTS evaluates several euchre hands, assuming that each player can see the other's cards and play optimally. It then suggests the move with the highest chance of winning across all games evaluated.</p>
+<p>For example, imagine we are dealt the following hand: <code>Qc9sTs9dAd|Qs</code> where <code>Qc9sTs9dAd</code> are our cards and <code>Qs</code> is the face-up card. This is our information state- all of the information we know about the game. We don’t know the actual game state, i.e., the cards the other players are dealt. To overcome this, we generate several games that have the same information state and solve each of those games independently, such as:</p>
+<pre><code>Qc9sTs9dAd|9cKsThQhTd|KcAsJhKhQd|AcJs9hAhJd|Qs
+Qc9sTs9dAd|JcKcKsAsKd|9cTc9hJhKh|JsThQhTdJd|Qs
+Qc9sTs9dAd|9cJcAc9hKh|KsAsQhAhJd|TcKcJsQdKd|Qs
+Qc9sTs9dAd|KcAcJsAhQd|JcKsQhTdJd|9c9hThJhKd|Qs
+Qc9sTs9dAd|9cTcThJhTd|JcKcKsAs9h|JsQhAhJdKd|Qs
+^           ^ Other player's hands vary
+Our hand is always the same
+</code></pre>
+<p>In Rust code, it would look something like this:</p>
+<pre class="chroma"><code><span class="line"><span class="cl"><span class="sd">/// Return the expected score of the passed game state for the `maximizing_player`
+</span></span></span><span class="line"><span class="cl"><span class="sd"></span><span class="k">fn</span> <span class="nf">evaluate_player</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span><span class="w"> </span><span class="bp">self</span><span class="p">,</span><span class="w"> </span><span class="n">gs</span>: <span class="kp">&amp;</span><span class="nc">EuchreGameState</span><span class="p">,</span><span class="w"> </span><span class="n">maximizing_player</span>: <span class="nc">Player</span><span class="p">)</span><span class="w"> </span>-&gt; <span class="kt">f64</span> <span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="kd">let</span><span class="w"> </span><span class="n">num_rollouts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">50</span><span class="p">;</span><span class="w"> </span><span class="c1">// number of generated worlds to evaluate
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="kd">let</span><span class="w"> </span><span class="k">mut</span><span class="w"> </span><span class="n">worlds</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">Vec</span>::<span class="n">with_capacity</span><span class="p">(</span><span class="n">n</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="k">for</span><span class="w"> </span><span class="n">_</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="mi">0</span><span class="o">..</span><span class="n">n</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="n">worlds</span><span class="p">.</span><span class="n">push</span><span class="p">(</span><span class="n">gs</span><span class="p">.</span><span class="n">resample_from_istate</span><span class="p">(</span><span class="n">gs</span><span class="p">.</span><span class="n">cur_player</span><span class="p">(),</span><span class="w"> </span><span class="n">rng</span><span class="p">));</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="c1">// This could be any solver. Here we use one that can see all cards in the
+</span></span></span><span class="line"><span class="cl"><span class="c1">// generated worlds and assumes all players play optimally
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="kd">let</span><span class="w"> </span><span class="n">solver</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OpenHandSolver</span>::<span class="n">new</span><span class="p">();</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="kd">let</span><span class="w"> </span><span class="n">sum</span>: <span class="kt">f64</span> <span class="o">=</span><span class="w"> </span><span class="n">worlds</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="p">.</span><span class="n">into_par_iter</span><span class="p">()</span><span class="w"> </span><span class="c1">// parallelize the search across worlds with Rayon
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="p">.</span><span class="n">map</span><span class="p">(</span><span class="o">|</span><span class="n">w</span><span class="o">|</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="n">solver</span><span class="p">.</span><span class="n">clone</span><span class="p">().</span><span class="n">mtd_search</span><span class="p">(</span><span class="n">gs</span><span class="p">.</span><span class="n">clone</span><span class="p">(),</span><span class="w"> </span><span class="n">maximizing_player</span><span class="p">))</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="p">.</span><span class="n">sum</span><span class="p">();</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="n">sum</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">num_rollouts</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="kt">f64</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="p">}</span><span class="w">
+</span></span></span></code></pre><p>The optimizations are focused on improving the <code>mtd_search</code> function. See below for an overview of the optimizations.</p>
+<p><strong>Information states evaluated per second, for 50 game PIMCTS, 2000 samples</strong></p>
+<pre><code>1) Vanilla MTD              |█▌3
+2) Transposition table      |  ██ +4
+3) Isometric representation |    ███████████████ +31
+4) Euchre-specific rules    |                   ███ +7
+Optimized                   |██████████████████████ 44 (22ms per game)
+</code></pre>
+<p>All benchmarks were done on a ThinkPad laptop with a 10th gen Core i7 Pro and 16GB of RAM.</p>
+<h1 id="1-vanilla-mtd">1) Vanilla MTD</h1>
+<p>I use the MTD search algorithm from <a href="http://people.csail.mit.edu/plaat/mtdf.html">Aske Plaat's post</a>.</p>
+<p>In pseudocode:</p>
+<pre><code>function MTDF(root : node_type; f : integer; d : integer) : integer;
+    g := f;
+    upperbound := +INFINITY;
+    lowerbound := -INFINITY;
+    repeat
+        if g == lowerbound then beta := g + 1 else beta := g;
+        g := AlphaBetaWithMemory(root, beta - 1, beta, d);
+        if g &lt; beta then upperbound := g else lowerbound := g;
+    until lowerbound &gt;= upperbound;
+    return g;
+</code></pre>
+<p>To start, our <code>AlphaBetaWithMemory</code> has no memory, and we must fully re-run the search each time. We max out at evaluating 3 games / s.</p>
+<h1 id="2-transposition-table">2) Transposition table</h1>
+<p>The first optimization is to give some memory to the <code>AlphaBetaWithMemory</code> function. We use the <a href="https://docs.rs/dashmap/latest/dashmap/">dashmap crate</a> as a performant, thread-safe hashmap for this.</p>
+<p>Initially, we use the full game state as the key when storing and retrieving values, for example, <code>Qc9sTs9dAd|9cKsThQhTd|KcAsJhKhQd|AcJs9hAhJd|Qs</code>.</p>
+<p>Because a zero-window alpha-beta search (what we use with MTD) returns bounds for each search and not exact values, we store the lower bound, upper bound, and the best action in each entry. For more details on how this works, see <a href="http://people.csail.mit.edu/plaat/mtdf.html#abmem">Aske's post</a>.</p>
+<p>For memory reasons, we only store results during the bidding phase and at the start of new tricks for euchre. For example:</p>
+<pre><code>Qc9sTs9dAd|9cKsThQhTd|KcAsJhKhQd|AcJs9hAhJd|Qs|PT: stored, we're still in the bidding phase
+Qc9sTs9dAd|9cKsThQhTd|KcAsJhKhQd|AcJs9hAhJd|Qs|PT|AdTdQdJd: stored, we're in the play phase and at the start of a new trick
+Qc9sTs9dAd|9cKsThQhTd|KcAsJhKhQd|AcJs9hAhJd|Qs|PT|AdTdQd: not stored, we're in the middle of a trick.
+</code></pre>
+<p>Adding in the transposition table means we don't need to recalculate everything on future searches to <code>AlphaBetaWithMemory</code> for the same game state. We can evaluate 7 games / s — more than twice as many as without the transposition table.</p>
+<h1 id="3-isometric-representation">3) Isometric representation</h1>
+<p>While we can now re-use results between calls to <code>AlphaBetaWithMemory</code> for the same game state, we don't get any benefits from similar game states. We need an isometric representation for game states where those with the same value look the same.</p>
+<p>For example, imagine we stored the cards in a table, where each entry is the player holding the card. If the entry is empty, the card is out of play, i.e., it has been played or was never dealt. <code>JL</code> is the left jack, e.g., <code>Jc</code> when spades are trump. And <code>JR</code> is the right jack. An x means the card isn't valid, e.g., the <code>Jc</code> becomes <code>JL.</code></p>
+<table>
+<thead>
+<tr>
+<th>Suit</th>
+<th>9</th>
+<th>10</th>
+<th>J</th>
+<th>Q</th>
+<th>K</th>
+<th>A</th>
+<th>JL</th>
+<th>JR</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Clubs</td>
+<td>2</td>
+<td>1</td>
+<td>x</td>
+<td></td>
+<td>2</td>
+<td></td>
+<td>x</td>
+<td>x</td>
+</tr>
+<tr>
+<td>Spades (trump)</td>
+<td>1</td>
+<td></td>
+<td>x</td>
+<td></td>
+<td>3</td>
+<td>4</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Hearts</td>
+<td></td>
+<td></td>
+<td>3</td>
+<td></td>
+<td></td>
+<td>4</td>
+<td>x</td>
+<td></td>
+</tr>
+<tr>
+<td>Diamonds</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td>x</td>
+</tr>
+</tbody>
+</table>
+<p>This would correspond to the following hands:</p>
+<ul>
+<li>Player 1: 9s 10c</li>
+<li>Player 2: 9c Kc</li>
+<li>Player 3: Jh Ks</li>
+<li>Player 4: As Ah</li>
+</ul>
+<p>In euchre, the rank of a card only matters for evaluating the card against other cards of the same suit. For example, if spades is trump, a <code>9s</code> beats an <code>Ah</code> &quot;as much&quot; as a <code>Js</code> does. And if the lead card is <code>9d</code>, no heart card will ever be able to beat it [0].</p>
+<p>Knowing this, we can shift all of the cards in our table without changing the relative value of the cards, e.g., Player 3's <code>Ks</code> has the same values as the <code>10s</code> would -- it's the second highest spade. With this change, the new table looks like this:</p>
+<table>
+<thead>
+<tr>
+<th>Suit</th>
+<th>9</th>
+<th>10</th>
+<th>J</th>
+<th>Q</th>
+<th>K</th>
+<th>A</th>
+<th>JL</th>
+<th>JR</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Clubs</td>
+<td>2</td>
+<td>1</td>
+<td>x</td>
+<td>2</td>
+<td></td>
+<td></td>
+<td>x</td>
+<td>x</td>
+</tr>
+<tr>
+<td>Spades (trump)</td>
+<td>1</td>
+<td>3</td>
+<td>x</td>
+<td>4</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Hearts</td>
+<td>3</td>
+<td>4</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td>x</td>
+<td></td>
+</tr>
+<tr>
+<td>Diamonds</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td>x</td>
+</tr>
+</tbody>
+</table>
+<p>Now we can match our cards against a much wider set of hands. We're only storing the relative value of the cards rather than the cards themselves.</p>
+<p>Next, we know suits cause some symmetry. For example, an <code>Ah</code> when spades are trump is the highest possible heart in the same way the <code>As</code> when hearts are trump is the highest. We can change the order of the rows in our table to make it indifferent to the card's suit. Specifically, we store trump in the first row, then sort the rows by the number of cards. Our table becomes:</p>
+<table>
+<thead>
+<tr>
+<th>Suit</th>
+<th>9</th>
+<th>10</th>
+<th>J</th>
+<th>Q</th>
+<th>K</th>
+<th>A</th>
+<th>JL</th>
+<th>JR</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Spades (trump)</td>
+<td>1</td>
+<td>3</td>
+<td>x</td>
+<td>4</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Clubs</td>
+<td>2</td>
+<td>1</td>
+<td>x</td>
+<td>2</td>
+<td></td>
+<td></td>
+<td>x</td>
+<td>x</td>
+</tr>
+<tr>
+<td>Hearts</td>
+<td>3</td>
+<td>4</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td>x</td>
+<td></td>
+</tr>
+<tr>
+<td>Diamonds</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td>x</td>
+</tr>
+</tbody>
+</table>
+<p>With this change, we're agnostic to the suit and specific value of cards, only caring about their relative ordering.</p>
+<p>If we store as a hash of this table the current score of tricks, the calling team for the current trick, and the current player, we can get many more hits in our transposition table -- allowing us to avoid calculating the score for many game states.</p>
+<p>With this change, we can evaluate 38 games / s — 5.4x with the naive transposition table.</p>
+<h1 id="4-euchre-specific-rules">4) Euchre-specific rules</h1>
+<p>The final optimization is to add some euchre-specific rules on when games are over and what moves to evaluate.</p>
+<p>For determining if a game is over, we know that if a player has the highest trump card, they are guaranteed to get at least one more trick, similarly for the second highest trump card, etc. We can use this fact to determine if games are over early and stop evaluation.</p>
+<p>For choosing what moves to evaluate, we do two optimizations. First, we remove equivalent cards from our hand. Similarly, the <code>9c</code> is the same as the <code>10c</code> if a player holds both. We only need to evaluate one of those plays. It is also usually beneficial to play the highest trump card to start a new trick if you have it. So we evaluate that move first.</p>
+<p>With these changes, we can evaluate up to 44 games / s — a 16% improvement.</p>
+<h1 id="conclusion">Conclusion</h1>
+<p>Being able to evaluate 44 games / s will significantly reduce the amount of waiting I need to do when evaluating more advanced euchre bots. I was also surprised to see how large of an impact the isometric representation had, especially compared to the naive transposition table.</p>
+<p>[0] Some care needs to be taken during the bidding phase because the relative value of jacks has yet to be established.</p>
+
+</article>
+<p class="post-nav"><a href="/">← all posts</a></p>
+
+</main>
+<footer>
+<p><a href="/feed.xml">RSS</a> · &copy; 2026</p>
+</footer>
+
+</body>
+</html>
+

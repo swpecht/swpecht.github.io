@@ -1,0 +1,198 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Overthinking Phase 10 — Few word do trick</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/code.css">
+<link rel="alternate" type="application/rss+xml" title="Few word do trick" href="/feed.xml">
+
+</head>
+<body>
+<header>
+<h1 class="site-title"><a href="/">Few word do trick</a></h1>
+<p class="site-tagline">A silly reminder to keep posts short. And a place to keep a diary of projects.</p>
+</header>
+<main>
+
+<article>
+<h1>Overthinking Phase 10</h1>
+<p class="post-meta">Nov 30, 2021</p>
+<h2 id="context">Context</h2>
+<p>Phase 10 is a rummy-like card game where the player needs to accomplish various goals (or phases) to progress. For example, the player may need two sets of three cards or a seven card straight. In each turn, the player must decide between 1) taking the faceup card discarded by the player to their right or 2) drawing an unknown card from the deck.</p>
+<p>Wikipedia gives a good overview of <a href="https://en.wikipedia.org/wiki/Phase_10">the rules</a>.</p>
+<h2 id="problem">Problem</h2>
+<p>While playing with family over Thanksgiving, I was still determining the best approach to accomplishing phases nine and ten of the game. These phases require the player to get one set of five and one set of two (or three). Specifically, I was trying to decide between:</p>
+<ol>
+<li>Greedily taking cards from the discard pile to start pairs, hurting my near-term chances of getting to the set of five, but giving me more options in the future.</li>
+<li>Only taking cards from the discard pile when they helped me get to sets of three or four and instead taking my chances with the draw pile.</li>
+</ol>
+<p>As you can imagine, these decisions are incredibly high stakes, especially when playing with family.</p>
+<p>What is the best policy for determining when to take the face-up card or to draw a new card? Where best lets us complete Phase 10 (one set of five and one set of three) in the smallest number of turns.</p>
+<h2 id="approach">Approach</h2>
+<p>I built a simulation for Phase 10 in Rust (<a href="https://github.com/swpecht/swpecht.github.io/tree/master/projects/phase-10">code on Github</a>). I chose Rust for fun.</p>
+<p>The main area of interest is the 'take-policy' -- the set of rules that determine when to take the face-up discarded card or to draw an unknown card[0].</p>
+<p>I run 100k simulations for each take-policy and compare the median and average turns to win. First, we're modeling the discarded cards as random from the deck.</p>
+<p>See below for an overview of the policies.</p>
+<h3 id="baseline-policy">Baseline policy</h3>
+<p>Rules that apply no matter what we're doing:</p>
+<ul>
+<li>Always take wild cards.</li>
+<li>Always draw if a skip card is on the discard pile. Skip cards can't contribute to a set.</li>
+</ul>
+<h3 id="greedy-pairs-1-from-above">Greedy pairs (1 from above)</h3>
+<p>If taking the discard card gives us a pair or better, take it.</p>
+<pre class="chroma"><code><span class="line"><span class="cl"><span class="k">fn</span> <span class="nf">greedy_pairs</span><span class="p">(</span><span class="n">hand</span>: <span class="kp">&amp;</span><span class="nb">Vec</span><span class="o">&lt;</span><span class="n">Card</span><span class="o">&gt;</span><span class="p">,</span><span class="w"> </span><span class="n">candidate_card</span>: <span class="nc">Card</span><span class="p">)</span><span class="w"> </span>-&gt; <span class="nc">Action</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="k">match</span><span class="w"> </span><span class="n">hand</span><span class="p">.</span><span class="n">contains</span><span class="p">(</span><span class="o">&amp;</span><span class="n">candidate_card</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="kc">true</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">Action</span>::<span class="n">Take</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="n">_</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">Action</span>::<span class="n">Draw</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="p">}</span><span class="w">
+</span></span></span></code></pre><h3 id="greedy-5-of-a-kind-after-n-2-from-above">Greedy 5 of a kind after N (2 from above)</h3>
+<p>Play the same as <code>greedy pairs</code> until we have a set of N cards. After that, greedily try to complete the set of five, so only take from the discard pile if it moves toward completing the set. Otherwise, draw a card.</p>
+<pre class="chroma"><code><span class="line"><span class="cl"><span class="k">fn</span> <span class="nf">greedy_5_after_n</span><span class="p">(</span><span class="n">hand</span>: <span class="kp">&amp;</span><span class="nb">Vec</span><span class="o">&lt;</span><span class="n">Card</span><span class="o">&gt;</span><span class="p">,</span><span class="w"> </span><span class="n">candidate_card</span>: <span class="nc">Card</span><span class="p">,</span><span class="w"> </span><span class="n">target_n</span>: <span class="kt">i32</span><span class="p">)</span><span class="w"> </span>-&gt; <span class="nc">Action</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="kd">let</span><span class="w"> </span><span class="n">counts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">get_counts</span><span class="p">(</span><span class="o">&amp;</span><span class="n">hand</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="kd">let</span><span class="w"> </span><span class="p">(</span><span class="n">_</span><span class="p">,</span><span class="w"> </span><span class="n">mcount</span><span class="p">)</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">counts</span><span class="p">[</span><span class="n">counts</span><span class="p">.</span><span class="n">len</span><span class="p">()</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">1</span><span class="p">];</span><span class="w"> </span><span class="c1">// end of list has highest count
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="k">if</span><span class="w"> </span><span class="n">mcount</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">target_n</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="k">return</span><span class="w"> </span><span class="n">greedy_pairs</span><span class="p">(</span><span class="n">hand</span><span class="p">,</span><span class="w"> </span><span class="n">candidate_card</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">card</span><span class="p">,</span><span class="w"> </span><span class="n">count</span><span class="p">)</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">counts</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="k">match</span><span class="w"> </span><span class="p">(</span><span class="n">card</span><span class="p">,</span><span class="w"> </span><span class="n">count</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="c1">// Check to ensure you don&#39;t already have 5 of a kind
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="p">(</span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">n</span><span class="p">)</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">x</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">candidate_card</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">n</span><span class="w"> </span><span class="o">&gt;=</span><span class="w"> </span><span class="n">target_n</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">n</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">5</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">Action</span>::<span class="n">Take</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="n">_</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="k">continue</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="p">};</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="k">return</span><span class="w"> </span><span class="n">Action</span>::<span class="n">Draw</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="p">}</span><span class="w">
+</span></span></span></code></pre><h3 id="hide-intentions-until-n-of-a-kind">Hide intentions until N of a kind</h3>
+<p>Always draw a card unless picking up a card completes a set of N. The goal is to hide the cards you are aiming for from opponents as discarded cards come from the player to your right.</p>
+<pre class="chroma"><code><span class="line"><span class="cl"><span class="k">fn</span> <span class="nf">hide_until_n</span><span class="p">(</span><span class="n">hand</span>: <span class="kp">&amp;</span><span class="nb">Vec</span><span class="o">&lt;</span><span class="n">Card</span><span class="o">&gt;</span><span class="p">,</span><span class="w"> </span><span class="n">candidate_card</span>: <span class="nc">Card</span><span class="p">,</span><span class="w"> </span><span class="n">target_n</span>: <span class="kt">i32</span><span class="p">)</span><span class="w"> </span>-&gt; <span class="nc">Action</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="kd">let</span><span class="w"> </span><span class="n">counts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">get_counts</span><span class="p">(</span><span class="o">&amp;</span><span class="n">hand</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="kd">let</span><span class="w"> </span><span class="p">(</span><span class="n">_</span><span class="p">,</span><span class="w"> </span><span class="n">mcount</span><span class="p">)</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">counts</span><span class="p">[</span><span class="n">counts</span><span class="p">.</span><span class="n">len</span><span class="p">()</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">1</span><span class="p">];</span><span class="w"> </span><span class="c1">// end of list has highest count
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="k">if</span><span class="w"> </span><span class="n">mcount</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="n">target_n</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="k">return</span><span class="w"> </span><span class="n">Action</span>::<span class="n">Draw</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">card</span><span class="p">,</span><span class="w"> </span><span class="n">count</span><span class="p">)</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">counts</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="k">match</span><span class="w"> </span><span class="p">(</span><span class="n">card</span><span class="p">,</span><span class="w"> </span><span class="n">count</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="c1">// Check to ensure you don&#39;t already have 5 of a kind
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="p">(</span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">n</span><span class="p">)</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">x</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">candidate_card</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">n</span><span class="w"> </span><span class="o">&gt;=</span><span class="w"> </span><span class="n">target_n</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">n</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">5</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">Action</span>::<span class="n">Take</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="n">_</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="k">continue</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="p">};</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="k">return</span><span class="w"> </span><span class="n">Action</span>::<span class="n">Draw</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="p">}</span><span class="w">
+</span></span></span></code></pre><h2 id="initial-results-greedy-pairs-wins">Initial results: ‘Greedy pairs’ wins</h2>
+<table>
+<thead>
+<tr>
+<th>Policy</th>
+<th>Turns to win (median)</th>
+<th>Turns to win (average)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Greedy pairs</td>
+<td>10</td>
+<td>10.1</td>
+</tr>
+<tr>
+<td>Greedy 5 of a kind after 4</td>
+<td>10</td>
+<td>10.3</td>
+</tr>
+<tr>
+<td>Greedy 5 of a kind after 3</td>
+<td>11</td>
+<td>11.1</td>
+</tr>
+<tr>
+<td>Hide until 4 of a kind</td>
+<td>14</td>
+<td>15.1</td>
+</tr>
+<tr>
+<td>Hide until 3 of a kind</td>
+<td>14</td>
+<td>14.7</td>
+</tr>
+</tbody>
+</table>
+<p><code>Greedy pairs</code> seems to be the best approach. It has the lowest median and mean number of turns to win. But the main downside of this approach is that it informs other players about what cards you're going for. Right now, we model the discarded cards as random.</p>
+<p>Do things change if we account for other player behavior? For example, if a player knows you're going for a set of threes, they may be less likely to discard a 3 for you to pick up.</p>
+<h2 id="results-with-the-antagonistic-discard-pile">Results with the antagonistic discard pile</h2>
+<p>To test this, we build an antagonistic discard pile: we never let the discard pile show a card we've taken in the past. This would model the person next to you playing perfectly (a tough sell after a Thanksgiving of eating and drinking). With this constraint:</p>
+<table>
+<thead>
+<tr>
+<th>Policy</th>
+<th>Turns to win (median)</th>
+<th>Turns to win (average)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Greedy pairs</td>
+<td>11</td>
+<td>11.7</td>
+</tr>
+<tr>
+<td>Greedy 5 of a kind after 4</td>
+<td>11</td>
+<td>11.9</td>
+</tr>
+<tr>
+<td>Greedy 5 of a kind after 3</td>
+<td>11</td>
+<td>12.3</td>
+</tr>
+<tr>
+<td>Hide until 4 of a kind</td>
+<td>14</td>
+<td>15.1</td>
+</tr>
+<tr>
+<td>Hide until 3 of a kind</td>
+<td>14</td>
+<td>14.7</td>
+</tr>
+</tbody>
+</table>
+<p>As expected, there isn't much impact on the <code>hide until n</code> strategies.The whole point is to hide the cards we're trying to get.</p>
+<p>The <code>greedy pairs</code> strategy is negatively impacted. But it's still the best strategy. And it's the simplest, if you have the discard card in your hand, take it.</p>
+<p>I was way overthinking this.</p>
+<h2 id="possible-future-ideas">Possible future ideas</h2>
+<p>Notes in case I want to revisit this:</p>
+<ul>
+<li>Better understand why certain strategies outperform. For example, look at a graph of close-ness to goal over time. Does anything stand out between the strategies</li>
+<li>Evaluate distributions of results, anything unexpected?</li>
+<li>Improve performance of the simulation</li>
+</ul>
+<p>[0] There is also a policy for discarding cards. For simplicity, this policy is the same for all take-policies: discard the card with the lowest number of sets in the hand.</p>
+
+</article>
+<p class="post-nav"><a href="/">← all posts</a></p>
+
+</main>
+<footer>
+<p><a href="/feed.xml">RSS</a> · &copy; 2026</p>
+</footer>
+
+</body>
+</html>
+

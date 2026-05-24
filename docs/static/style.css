@@ -1,0 +1,33 @@
+/* Bench page style — verbatim from euchre_server/src/bench.rs:899-916 */
+body { font-family: monospace; max-width: 960px; margin: 2rem auto; padding: 0 1rem; background: #fafafa; }
+h1 { border-bottom: 2px solid #333; }
+h2 { border-bottom: 1px solid #ccc; margin-top: 2rem; }
+h3 { margin-top: 1.5rem; color: #444; }
+table { border-collapse: collapse; width: 100%; margin-bottom: 1.5rem; }
+th, td { border: 1px solid #ccc; padding: 0.4rem 0.8rem; text-align: left; }
+th { background: #f0f0f0; }
+tr.clickable { cursor: pointer; }
+tr.clickable:hover { background: #eef; }
+a { color: #1452a3; text-decoration: none; }
+a:hover { text-decoration: underline; }
+.win { color: #1a7a1a; font-weight: bold; }
+.loss { color: #b00; }
+pre { background: #f4f4f4; padding: 1rem; border: 1px solid #ddd; overflow-x: auto; }
+ul { line-height: 1.8; }
+svg { background: #fff; border: 1px solid #ddd; }
+
+/* Blog-specific extensions */
+.site-title { margin-bottom: 0; }
+.site-title a { color: inherit; }
+.site-title a:hover { text-decoration: none; }
+.site-tagline { color: #666; margin-top: 0.25rem; font-size: 0.95rem; }
+.post-list { list-style: none; padding: 0; }
+.post-list li { display: flex; justify-content: space-between; gap: 1rem; padding: 0.3rem 0; border-bottom: 1px dotted #ddd; }
+.post-meta { color: #666; font-size: 0.9rem; white-space: nowrap; }
+article h1 { margin-bottom: 0.25rem; }
+article .post-meta { margin-top: 0; margin-bottom: 2rem; }
+.post-nav { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid #ccc; }
+code { background: #f4f4f4; padding: 0 0.2rem; border-radius: 2px; }
+pre code { background: transparent; padding: 0; }
+footer { margin-top: 4rem; padding-top: 1rem; border-top: 1px solid #ccc; color: #666; font-size: 0.9rem; }
+blockquote { border-left: 3px solid #ccc; margin-left: 0; padding-left: 1rem; color: #555; }

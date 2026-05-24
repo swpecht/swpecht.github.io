@@ -1,0 +1,130 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Speeding up CFR training for euchre — Few word do trick</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/code.css">
+<link rel="alternate" type="application/rss+xml" title="Few word do trick" href="/feed.xml">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+</head>
+<body>
+<header>
+<h1 class="site-title"><a href="/">Few word do trick</a></h1>
+<p class="site-tagline">A silly reminder to keep posts short. And a place to keep a diary of projects.</p>
+</header>
+<main>
+
+<article>
+<h1>Speeding up CFR training for euchre</h1>
+<p class="post-meta">Aug 29, 2023</p>
+<h1 id="context">Context</h1>
+<p>This post outlines how I sped up training a <a href="/posts/cfr-for-euchre/">CFR bot for euchre</a>. I used three approaches:</p>
+<ul>
+<li>Multithreading</li>
+<li>Normalize card suits: transforming cards so that spades is always the card dealt face up</li>
+<li><a href="https://arxiv.org/pdf/1809.04040.pdf">Linear CFR</a>: An approach to discount regrets from early iterations of training when the agents are playing randomly</li>
+</ul>
+<p><strong>Impact of each approach on training time to achieve PIMCTS-equivalent performance (hrs, avg of 3 runs)</strong></p>
+<pre><code>Baseline            |██████████████████████████████ 30
+Multi-threading     |       ███████████████████████ 23
+Normalized suit     |  █████ 5
+Linear CFR          | | 0
+All optimizations   |█ 2
+</code></pre>
+<p>All results are on a Hetzner AX41-NVME (AMD Ryzen 5 3600 with 64GB of DDR4 RAM).</p>
+<h1 id="multithreading">Multithreading</h1>
+<p>For multi-threading that main change was storing the CFR weights in a <a href="https://docs.rs/dashmap/latest/dashmap/">DashMap</a> rather than Rust's standard <code>HashMap</code>. DashMap is a concurrent HashMap implementation.</p>
+<p>Once everything could be shared across threads, I used <a href="https://github.com/rayon-rs/rayon">Rayon</a> to parallelize the work.</p>
+<p>Multithreading took the convergence time from 30 hrs to 7 hrs.</p>
+<p>This is significantly slower than we would see with perfect parallelization across the 12 threads on the AMD Ryzen 5. Further work is needed to investigate why we don't get the theoretical gains.</p>
+<h1 id="normalizing-card-suit">Normalizing card suit</h1>
+<p>In euchre, there are 9.7m infostates to store before the play phase of the game:</p>
+<p>$$
+I = D * (B + D')\
+\begin{align}
+&amp;\text{where:}\
+&amp;I=\text{count of infostates}\
+&amp;D=\text{count of deals}\
+&amp;B=\text{count of bids}\
+&amp;D'=\text{count of discard states}\
+\end{align}
+$$</p>
+<p>For the deal states, there are 24 total cards. The player gets five and one of the reamaining 19 is dealt face up:</p>
+<p>$$
+D=\binom{24}{5}*19
+$$</p>
+<p>There are 8 possible bid states:</p>
+<pre><code>&quot;&quot; -- no one has acted yet
+&quot;P&quot; -- player 0 passes telling the dealer to pickup
+&quot;PP&quot;
+&quot;PPP&quot;
+&quot;PPPP&quot;
+&quot;PPPPP&quot; -- player 0 passes calling suit
+&quot;PPPPPP&quot;
+&quot;PPPPPPP&quot;
+</code></pre>
+<p>And 4 possible discard states:</p>
+<pre><code>&quot;PPPT|Dis|&quot;
+&quot;PPT|Dis|&quot;
+&quot;PT|Dis|&quot;
+&quot;T|Dis|&quot;
+</code></pre>
+<p>All together this gives us the 9.7m infostates.</p>
+<p>$$
+\binom{24}{5}*19 * (4+8) = 9.7\text{m}
+$$</p>
+<p>We can do better. Similar to the past post on <a href="/posts/pimcts-for-euchre/">speeding up PIMCTS</a>, we can take advantage of a symmetry between suits.</p>
+<p>For example, having a hand of <code>9dTdJdQdKd</code> with the <code>Ad</code> as the face up card is effectively the same hand as <code>9sTsJsQsKs</code> with <code>As</code> as the face up suit.</p>
+<p>Using this information we can normalize the infostate so that the face up card is always a spade.</p>
+<p>This reduces the number of deals we could get. As there are six options for the face up card and 5 of the only 23 remaining cards for the hand:</p>
+<p>$$
+D=6*\binom{23}{5}
+$$</p>
+<p>$$
+6*\binom{23}{5} * (4+8) = 2.4\text{m}
+$$</p>
+<p>This reduces the number of infostates by 1/4 to 2.4m.</p>
+<p>This change takes us from 7 hrs to 2 hrs -- almost achieving a linear speed up with respect to the reduction in the number of info states.</p>
+<h1 id="linear-cfr">Linear CFR</h1>
+<p>Linear CFR (LCFR) is well described in <a href="https://arxiv.org/pdf/1809.04040.pdf">Solving Imperfect-Information Games
+via Discounted Regret Minimization</a>. The main challenge was making it performant in a multi-threaded environment. The naive approach to Linear CFR is to &quot;multiply the accumulated regret by $\frac{t}{t + 1}$ where $t$ is the current iteration.&quot;</p>
+<p>This approach creates significant read and write contention on our hashmap as every thread tries to update all elements of the hashmap at each iteration. Instead I store the last iteration a node was updated with each infostate.</p>
+<p>And whenever a node is updated, I apply all of the discounting the node would have received in vanilla LCFR up to that point.</p>
+<pre class="chroma"><code><span class="line"><span class="cl"><span class="k">fn</span> <span class="nf">add_regret</span><span class="p">(</span><span class="n">infostate</span>: <span class="kp">&amp;</span><span class="nc">mut</span><span class="w"> </span><span class="n">InfoState</span><span class="p">,</span><span class="w"> </span><span class="n">action</span>: <span class="nc">Action</span><span class="p">,</span><span class="w"> </span><span class="n">amount</span>: <span class="kt">f64</span><span class="p">,</span><span class="w"> </span><span class="n">iteration</span>: <span class="kt">usize</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="n">feature</span>::<span class="n">is_enabled</span><span class="p">(</span><span class="n">feature</span>::<span class="n">LinearCFR</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">infostate</span><span class="p">.</span><span class="n">last_iteration</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="kd">let</span><span class="w"> </span><span class="n">lcfr_factor</span>: <span class="kt">f64</span> <span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">infostate</span><span class="p">.</span><span class="n">last_iteration</span><span class="o">..</span><span class="n">iteration</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">            </span><span class="p">.</span><span class="n">map</span><span class="p">(</span><span class="o">|</span><span class="n">i</span><span class="o">|</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="kt">f64</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="p">(</span><span class="n">i</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="kt">f64</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mf">1.0</span><span class="p">))</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">            </span><span class="p">.</span><span class="n">product</span><span class="p">();</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="n">infostate</span><span class="p">.</span><span class="n">regrets</span><span class="p">.</span><span class="n">iter_mut</span><span class="p">().</span><span class="n">for_each</span><span class="p">(</span><span class="o">|</span><span class="n">r</span><span class="o">|</span><span class="w"> </span><span class="o">*</span><span class="n">r</span><span class="w"> </span><span class="o">*=</span><span class="w"> </span><span class="n">lcfr_factor</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">infostate</span><span class="p">.</span><span class="n">last_iteration</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">iteration</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">infostate</span><span class="p">.</span><span class="n">regrets</span><span class="p">[</span><span class="n">action</span><span class="p">]</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="n">amount</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="p">}</span><span class="w">
+</span></span></span></code></pre><p>In theory, a later iteration could finish before an earlier iteration and touch the same node, but this is rare as each iteration touches a small fraction of the 2m istates. In practice, this effect did not negatively impact convergence times.</p>
+<p>Linear CFR had no impact on training time to achieve parity with PIMCTS.</p>
+<h1 id="conclusion">Conclusion</h1>
+<p>Rust delivered on its promise to make it easy to convert my single-threaded code to parallel code. Combined with the normalization improvements, I can now train a CFR agent in 1-2 hours rather than a couple of days.</p>
+<p>Linear CFR didn't improve the time to PIMCTS parity, but it may help with long-term convergence. In a future post, I'll compare the performance of bots trained with and without LCFR.</p>
+
+</article>
+<p class="post-nav"><a href="/">← all posts</a></p>
+
+</main>
+<footer>
+<p><a href="/feed.xml">RSS</a> · &copy; 2026</p>
+</footer>
+
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body, {delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]});"></script>
+
+</body>
+</html>
+

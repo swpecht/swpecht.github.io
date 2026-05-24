@@ -1,0 +1,291 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Building a disk-backed key-value store for a euchre bot — Few word do trick</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/code.css">
+<link rel="alternate" type="application/rss+xml" title="Few word do trick" href="/feed.xml">
+
+</head>
+<body>
+<header>
+<h1 class="site-title"><a href="/">Few word do trick</a></h1>
+<p class="site-tagline">A silly reminder to keep posts short. And a place to keep a diary of projects.</p>
+</header>
+<main>
+
+<article>
+<h1>Building a disk-backed key-value store for a euchre bot</h1>
+<p class="post-meta">Sep 15, 2023</p>
+<h1 id="context">Context</h1>
+<p>I began training my <a href="/posts/speeding-up-cfr-training/">euchre bot</a> on more of the game -- expanding it from just the bidding phase where trump is called into the card play phase.</p>
+<p>But I ran into a problem: the data needed to actually train the bot could no longer fit into memory. Storing just the bidding phase took 0.3GB of memory. Storing just up to the first 2 cards played required 6GB -- 20x the cost for 2 additional cards. We would likely need 100s of GBs to store the full 20 cards of play.</p>
+<p>This post outlines my attempt to find the most performant disk-backed key-value store for training a euchre bot.</p>
+<p>Much of the benchmark code for this is based on this excellent post: <a href="https://ntietz.com/blog/rust-hashmap-overhead/">Measuring the overhead of HashMaps in Rust</a>.</p>
+<h1 id="the-benchmark">The benchmark</h1>
+<p>For the workload, we need to:</p>
+<ul>
+<li>look up a key: a vector of <code>u8</code>s representing the actions taken so far</li>
+<li><code>do_work</code>: here a no-op function</li>
+<li>Write a new value to the same key</li>
+</ul>
+<p>See the appendix for the code to generate the benchmark data.</p>
+<p>As an example of the workload, here is the benchmark code for a <code>HashMap</code> in a <code>Mutex</code>:</p>
+<pre class="chroma"><code><span class="line"><span class="cl"><span class="k">fn</span> <span class="nf">mutex_hashmap_bench</span><span class="p">(</span><span class="n">size</span>: <span class="kt">usize</span><span class="p">)</span><span class="w"> </span>-&gt; <span class="nc">Arc</span><span class="o">&lt;</span><span class="n">Mutex</span><span class="o">&lt;</span><span class="n">HashMap</span><span class="o">&lt;</span><span class="n">IStateKey</span><span class="p">,</span><span class="w"> </span><span class="n">InfoState</span><span class="o">&gt;&gt;&gt;</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">x</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Arc</span>::<span class="n">new</span><span class="p">(</span><span class="n">Mutex</span>::<span class="n">new</span><span class="p">(</span><span class="n">HashMap</span>::<span class="n">new</span><span class="p">()));</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">generator</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">get_generator</span><span class="p">(</span><span class="n">size</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">generator</span><span class="p">.</span><span class="n">par_bridge</span><span class="p">().</span><span class="n">for_each</span><span class="p">(</span><span class="o">|</span><span class="p">(</span><span class="n">k</span><span class="p">,</span><span class="w"> </span><span class="n">v</span><span class="p">)</span><span class="o">|</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="kd">let</span><span class="w"> </span><span class="n">s</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">x</span><span class="p">.</span><span class="n">clone</span><span class="p">();</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">            </span><span class="n">s</span><span class="p">.</span><span class="n">lock</span><span class="p">().</span><span class="n">unwrap</span><span class="p">().</span><span class="n">get</span><span class="p">(</span><span class="o">&amp;</span><span class="n">k</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="n">do_work</span><span class="p">();</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="n">s</span><span class="p">.</span><span class="n">lock</span><span class="p">().</span><span class="n">unwrap</span><span class="p">().</span><span class="n">insert</span><span class="p">(</span><span class="n">k</span><span class="p">,</span><span class="w"> </span><span class="n">v</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="p">});</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">x</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="p">}</span><span class="w">
+</span></span></span></code></pre><p>I ran all benchmarks on a Lenovo laptop with 16GB of RAM and a 10th gen i7. The results for 20m infostates for the in-memory store is:</p>
+<table>
+<thead>
+<tr>
+<th>Storage</th>
+<th>Time (s)</th>
+<th>Peak allocations (GB)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Mutex(HashMap)</code></td>
+<td>████ 38</td>
+<td>█████████ 8.9</td>
+</tr>
+</tbody>
+</table>
+<p>The difference in allocations from the theoretical size is due to rusts doubling behavior when extending a hashmap (<a href="https://ntietz.com/blog/rust-hashmap-overhead/">Measuring the overhead of HashMaps in Rust</a>).</p>
+<h1 id="dont-you-just-need-a-database">Don't you just need a database?</h1>
+<p>My first approach was to use a database. I evaluated both LMDB (with <a href="https://github.com/meilisearch/heed">heed</a>) and RocksDB (with <a href="https://github.com/rust-rocksdb/rust-rocksdb">rust-rocksdb</a>). I gave each database a cache of 1m keys so they could batch writes.</p>
+<p>The LMDB code as an example:</p>
+<pre class="chroma"><code><span class="line"><span class="cl"><span class="k">fn</span> <span class="nf">heed_bench</span><span class="p">(</span><span class="n">size</span>: <span class="kt">usize</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Path</span>::<span class="n">new</span><span class="p">(</span><span class="s">&#34;/tmp/card_platypus&#34;</span><span class="p">).</span><span class="n">join</span><span class="p">(</span><span class="s">&#34;heed_bench.mdb&#34;</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">fs</span>::<span class="n">create_dir_all</span><span class="p">(</span><span class="n">path</span><span class="p">.</span><span class="n">clone</span><span class="p">()).</span><span class="n">unwrap</span><span class="p">();</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="k">mut</span><span class="w"> </span><span class="n">env_builder</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">EnvOpenOptions</span>::<span class="n">new</span><span class="p">();</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">unsafe</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="c1">// Only sync meta data at the end of a transaction, this can hurt the durability
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="w">        </span><span class="c1">// of the database, but cannot lead to corruption
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="w">        </span><span class="n">env_builder</span><span class="p">.</span><span class="n">flag</span><span class="p">(</span><span class="n">Flags</span>::<span class="n">MdbNoMetaSync</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="c1">// Disable OS read-ahead, can improve perf when db is larger than RAM
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="w">        </span><span class="n">env_builder</span><span class="p">.</span><span class="n">flag</span><span class="p">(</span><span class="n">Flags</span>::<span class="n">MdbNoRdAhead</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="c1">// Improves write performance, but can cause corruption if there is a bug in application
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="w">        </span><span class="c1">// code that overwrite the memory address
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="w">        </span><span class="n">env_builder</span><span class="p">.</span><span class="n">flag</span><span class="p">(</span><span class="n">Flags</span>::<span class="n">MdbWriteMap</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="c1">// Avoid zeroing memory before use -- can cause issues with
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="w">        </span><span class="c1">// sensitive data, but not a risk here.
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="w">        </span><span class="n">env_builder</span><span class="p">.</span><span class="n">flag</span><span class="p">(</span><span class="n">Flags</span>::<span class="n">MdbNoMemInit</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="no">MAX_DB_SIZE_GB</span>: <span class="kt">usize</span> <span class="o">=</span><span class="w"> </span><span class="mi">10</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">env_builder</span><span class="p">.</span><span class="n">map_size</span><span class="p">(</span><span class="no">MAX_DB_SIZE_GB</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">1024</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">1024</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">1024</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">env</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">env_builder</span><span class="p">.</span><span class="n">open</span><span class="p">(</span><span class="n">path</span><span class="p">).</span><span class="n">unwrap</span><span class="p">();</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">// need to open rather than create for WriteMap to work
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">x</span>: <span class="nc">Database</span><span class="o">&lt;</span><span class="n">ByteSlice</span><span class="p">,</span><span class="w"> </span><span class="n">SerdeBincode</span><span class="o">&lt;</span><span class="n">InfoState</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">env</span><span class="p">.</span><span class="n">open_database</span><span class="p">(</span><span class="nb">None</span><span class="p">).</span><span class="n">unwrap</span><span class="p">().</span><span class="n">unwrap</span><span class="p">();</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">cache</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Mutex</span>::<span class="n">new</span><span class="p">(</span><span class="n">HashMap</span>::<span class="n">new</span><span class="p">());</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">generator</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">get_generator</span><span class="p">(</span><span class="n">size</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">generator</span><span class="p">.</span><span class="n">par_bridge</span><span class="p">().</span><span class="n">for_each</span><span class="p">(</span><span class="o">|</span><span class="p">(</span><span class="n">k</span><span class="p">,</span><span class="w"> </span><span class="n">v</span><span class="p">)</span><span class="o">|</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="n">cache</span><span class="p">.</span><span class="n">lock</span><span class="p">().</span><span class="n">unwrap</span><span class="p">().</span><span class="n">get</span><span class="p">(</span><span class="o">&amp;</span><span class="n">k</span><span class="p">).</span><span class="n">is_none</span><span class="p">()</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">            </span><span class="kd">let</span><span class="w"> </span><span class="n">rtxn</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">env</span><span class="p">.</span><span class="n">read_txn</span><span class="p">().</span><span class="n">unwrap</span><span class="p">();</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">            </span><span class="kd">let</span><span class="w"> </span><span class="n">k</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">k</span><span class="p">.</span><span class="n">as_slice</span><span class="p">().</span><span class="n">iter</span><span class="p">().</span><span class="n">map</span><span class="p">(</span><span class="o">|</span><span class="n">x</span><span class="o">|</span><span class="w"> </span><span class="n">x</span><span class="p">.</span><span class="mi">0</span><span class="p">).</span><span class="n">collect_vec</span><span class="p">();</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">            </span><span class="n">x</span><span class="p">.</span><span class="n">get</span><span class="p">(</span><span class="o">&amp;</span><span class="n">rtxn</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">k</span><span class="p">).</span><span class="n">unwrap</span><span class="p">();</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="n">do_work</span><span class="p">();</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="n">cache</span><span class="p">.</span><span class="n">lock</span><span class="p">().</span><span class="n">unwrap</span><span class="p">().</span><span class="n">insert</span><span class="p">(</span><span class="n">k</span><span class="p">,</span><span class="w"> </span><span class="n">v</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="kd">let</span><span class="w"> </span><span class="k">mut</span><span class="w"> </span><span class="n">c</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">cache</span><span class="p">.</span><span class="n">lock</span><span class="p">().</span><span class="n">unwrap</span><span class="p">();</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="n">c</span><span class="p">.</span><span class="n">len</span><span class="p">()</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">1_000_000</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">            </span><span class="kd">let</span><span class="w"> </span><span class="k">mut</span><span class="w"> </span><span class="n">wtxn</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">env</span><span class="p">.</span><span class="n">write_txn</span><span class="p">().</span><span class="n">unwrap</span><span class="p">();</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">            </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">k</span><span class="p">,</span><span class="w"> </span><span class="n">v</span><span class="p">)</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">c</span><span class="p">.</span><span class="n">drain</span><span class="p">()</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">                </span><span class="kd">let</span><span class="w"> </span><span class="n">k</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">k</span><span class="p">.</span><span class="n">as_slice</span><span class="p">().</span><span class="n">iter</span><span class="p">().</span><span class="n">map</span><span class="p">(</span><span class="o">|</span><span class="n">x</span><span class="o">|</span><span class="w"> </span><span class="n">x</span><span class="p">.</span><span class="mi">0</span><span class="p">).</span><span class="n">collect_vec</span><span class="p">();</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">                </span><span class="n">x</span><span class="p">.</span><span class="n">put</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span><span class="w"> </span><span class="n">wtxn</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">k</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">v</span><span class="p">).</span><span class="n">unwrap</span><span class="p">();</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">            </span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">            </span><span class="n">wtxn</span><span class="p">.</span><span class="n">commit</span><span class="p">().</span><span class="n">unwrap</span><span class="p">();</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="p">});</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="p">}</span><span class="w">
+</span></span></span></code></pre><table>
+<thead>
+<tr>
+<th>Storage</th>
+<th>Time (s)</th>
+<th>Peak allocations (GB)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Mutex(HashMap)</code></td>
+<td>████ 38</td>
+<td>█████████ 8.9</td>
+</tr>
+<tr>
+<td>LMDB (heed)</td>
+<td>███████████████████ 190</td>
+<td>█ 0.5</td>
+</tr>
+<tr>
+<td>RocksDB</td>
+<td>█████████████████████████ 260</td>
+<td>█ 0.5</td>
+</tr>
+</tbody>
+</table>
+<p>The database backed approaches are 1/5 the speed of the memory only approach even with a cache that can hold 1/20th of the total keys (much better than possible in practice).</p>
+<p>While tuning these benchmarks, I opted to turn on many of the &quot;unsafe&quot; features. For example, <code>WriteMap</code> for LMDB can improve write performance, but it can also allow application bugs to corrupt the database.</p>
+<p>Given we aren't storing anything important in our database, can we go even faster if we get rid of even more of these pesky <a href="https://en.wikipedia.org/wiki/ACID">ACID</a> features?</p>
+<h1 id="memory-mapped-files-and-perfect-hash-functions">Memory mapped files and perfect hash functions</h1>
+<p>When LMDB is in <code>WriteMap</code> mode, it uses a <a href="https://en.wikipedia.org/wiki/Memory-mapped_file">memory mapped file</a> to directly update the entries. A memory mapped file let's us read and write the files contents as if it were fully loaded into memory.</p>
+<p>Importantly it does not load the file into memory -- it works with files larger than RAM.</p>
+<p>A memory mapped file solves part of the problem: it gives us a performant way to read and write a serialized version of our values to disk at specific locations. But it doesn't give us a way to tell which value is at a given location. Writing to the memory map requires a byte index, not a key like a hashmap.</p>
+<p>There are many way to solve this. For example, LMDB uses a <a href="https://en.wikipedia.org/wiki/B%2B_tree">B+ tree</a> to track where values are, and RocksDB uses an <a href="https://en.wikipedia.org/wiki/Log-structured_merge-tree">LSM tree</a>.</p>
+<p>But we can do better by exploiting a difference in this problem from a traditional database: we know every possible key ahead of time.</p>
+<p>We don't need to store arbitray data. We only need to store possible gamestates of euchre.</p>
+<p>With this information, we can create a <a href="https://en.wikipedia.org/wiki/Perfect_hash_function">perfect hash function</a> to map every key to exactly one index in our file. I used the <a href="https://github.com/10XGenomics/rust-boomphf">rust-boomphf</a> to create the function.</p>
+<p>Putting it all together:</p>
+<pre class="chroma"><code><span class="line"><span class="cl"><span class="k">fn</span> <span class="nf">mem_map</span><span class="p">(</span><span class="n">size</span>: <span class="kt">usize</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">serialized</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">std</span>::<span class="n">fs</span>::<span class="n">read</span><span class="p">(</span><span class="s">&#34;/tmp/card_platypus/phf&#34;</span><span class="p">).</span><span class="n">unwrap</span><span class="p">();</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">phf</span>: <span class="nc">Mphf</span><span class="o">&lt;</span><span class="n">IStateKey</span><span class="o">&gt;</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">rmp_serde</span>::<span class="n">from_slice</span><span class="p">(</span><span class="o">&amp;</span><span class="n">serialized</span><span class="p">).</span><span class="n">unwrap</span><span class="p">();</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&#34;/tmp/card_platypus/mem_map_bench&#34;</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">std</span>::<span class="n">fs</span>::<span class="n">create_dir_all</span><span class="p">(</span><span class="s">&#34;/tmp/card_platypus&#34;</span><span class="p">).</span><span class="n">unwrap</span><span class="p">();</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">file</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OpenOptions</span>::<span class="n">new</span><span class="p">()</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="p">.</span><span class="n">read</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="p">.</span><span class="n">write</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="p">.</span><span class="n">create</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="p">.</span><span class="n">open</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="p">.</span><span class="n">unwrap</span><span class="p">();</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="no">BUCKET_SIZE</span>: <span class="kt">usize</span> <span class="o">=</span><span class="w"> </span><span class="mi">200</span><span class="p">;</span><span class="w"> </span><span class="c1">// approximation of size of serialized infostate
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="w">    </span><span class="n">file</span><span class="p">.</span><span class="n">set_len</span><span class="p">((</span><span class="n">size</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="no">BUCKET_SIZE</span><span class="p">)</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="kt">u64</span><span class="p">).</span><span class="n">unwrap</span><span class="p">();</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="k">mut</span><span class="w"> </span><span class="n">mmap</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">unsafe</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">MmapMut</span>::<span class="n">map_mut</span><span class="p">(</span><span class="o">&amp;</span><span class="n">file</span><span class="p">).</span><span class="n">unwrap</span><span class="p">()</span><span class="w"> </span><span class="p">};</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">generator</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">get_generator</span><span class="p">(</span><span class="n">size</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">generator</span><span class="p">.</span><span class="n">for_each</span><span class="p">(</span><span class="o">|</span><span class="p">(</span><span class="n">k</span><span class="p">,</span><span class="w"> </span><span class="n">v</span><span class="p">)</span><span class="o">|</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="kd">let</span><span class="w"> </span><span class="n">index</span>: <span class="kt">usize</span> <span class="o">=</span><span class="w"> </span><span class="n">phf</span><span class="p">.</span><span class="n">hash</span><span class="p">(</span><span class="o">&amp;</span><span class="n">k</span><span class="p">)</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="kt">usize</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="kd">let</span><span class="w"> </span><span class="n">start</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">index</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="no">BUCKET_SIZE</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="kd">let</span><span class="w"> </span><span class="n">data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">mmap</span><span class="p">[</span><span class="n">start</span><span class="o">..</span><span class="n">start</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="no">BUCKET_SIZE</span><span class="p">];</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="kd">let</span><span class="w"> </span><span class="n">s</span>: <span class="nc">InfoState</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">rmp_serde</span>::<span class="n">from_slice</span><span class="p">(</span><span class="n">data</span><span class="p">).</span><span class="n">unwrap_or</span><span class="p">(</span><span class="n">InfoState</span>::<span class="n">new</span><span class="p">(</span><span class="fm">vec!</span><span class="p">[]));</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="n">do_work</span><span class="p">();</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="kd">let</span><span class="w"> </span><span class="n">data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">rmp_serde</span>::<span class="n">to_vec</span><span class="p">(</span><span class="o">&amp;</span><span class="n">v</span><span class="p">).</span><span class="n">unwrap</span><span class="p">();</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="fm">assert!</span><span class="p">(</span><span class="n">data</span><span class="p">.</span><span class="n">len</span><span class="p">()</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="no">BUCKET_SIZE</span><span class="p">);</span><span class="w"> </span><span class="c1">// if this is false, we&#39;re overflowing into another bucket
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="w">        </span><span class="n">mmap</span><span class="p">[</span><span class="n">start</span><span class="o">..</span><span class="n">start</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">data</span><span class="p">.</span><span class="n">len</span><span class="p">()].</span><span class="n">copy_from_slice</span><span class="p">(</span><span class="o">&amp;</span><span class="n">data</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="p">});</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">mmap</span><span class="p">.</span><span class="n">flush</span><span class="p">().</span><span class="n">unwrap</span><span class="p">();</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="p">}</span><span class="w">
+</span></span></span></code></pre><p>And the benchmark results:</p>
+<table>
+<thead>
+<tr>
+<th>Storage</th>
+<th>Time (s)</th>
+<th>Peak allocations (GB)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Mutex(HashMap)</code></td>
+<td>████ 38</td>
+<td>█████████ 8.9</td>
+</tr>
+<tr>
+<td>LMDB (heed)</td>
+<td>███████████████████ 190</td>
+<td>█ 0.5</td>
+</tr>
+<tr>
+<td>RocksDB</td>
+<td>█████████████████████████ 260</td>
+<td>█ 0.5</td>
+</tr>
+<tr>
+<td>MemMap w/ phf</td>
+<td>█████ 54</td>
+<td>|&lt;0.1</td>
+</tr>
+</tbody>
+</table>
+<p>This approach is only 1.4x the time of the in memory approach as compared to the 5x+ time for the database approach.</p>
+<p>But it didn't come for free -- its sacrifices the correctness guarantees of a traditional database. Hopefully I don't come to regret not having those later :)</p>
+<h2 id="appendix">Appendix</h2>
+<h1 id="infostate-definition">Infostate definition</h1>
+<p>The infostates are about 165 bytes of data total on average [0]. We need to store one of these for every state the CFR algorithm need to evaluate.</p>
+<pre class="chroma"><code><span class="line"><span class="cl"><span class="k">pub</span><span class="w"> </span><span class="k">struct</span> <span class="nc">InfoState</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">actions</span>: <span class="nb">Vec</span><span class="o">&lt;</span><span class="kt">u8</span><span class="o">&gt;</span><span class="p">,</span><span class="w"> </span><span class="c1">// 24 bytes for vector + 5 * 1 for each u8 action
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="w">    </span><span class="n">regrets</span>: <span class="nb">Vec</span><span class="o">&lt;</span><span class="kt">f64</span><span class="o">&gt;</span><span class="p">,</span><span class="w"> </span><span class="c1">// 24 bytes for vector + 5 * 8 for each f64 regret)
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="w">    </span><span class="n">avg_strategy</span>: <span class="nb">Vec</span><span class="o">&lt;</span><span class="kt">f64</span><span class="o">&gt;</span><span class="p">,</span><span class="w"> </span><span class="c1">// 24 bytes
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="w">    </span><span class="n">last_iteration</span>: <span class="kt">usize</span><span class="p">,</span><span class="w"> </span><span class="c1">// 8 bytes
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="p">}</span><span class="w">
+</span></span></span></code></pre><p>[0] There are some things we could do to reduce this size, e.g. switching to <code>f32</code> instead of <code>f64</code> or using a bit mask to keep track of which actions are present rather than storing a vector of actions, but none of these changes would be enough to fit everything into RAM for a full game of euchre.</p>
+<h1 id="code-for-generating-benchmark-data">Code for generating benchmark data</h1>
+<pre class="chroma"><code><span class="line"><span class="cl"><span class="k">struct</span> <span class="nc">DataGenerator</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">rng</span>: <span class="nc">StdRng</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">len</span>: <span class="kt">usize</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">count</span>: <span class="kt">usize</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="k">impl</span><span class="w"> </span><span class="n">DataGenerator</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">fn</span> <span class="nf">new</span><span class="p">(</span><span class="n">len</span>: <span class="kt">usize</span><span class="p">,</span><span class="w"> </span><span class="n">seed</span>: <span class="kt">u64</span><span class="p">)</span><span class="w"> </span>-&gt; <span class="nc">Self</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="bp">Self</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">            </span><span class="n">rng</span>: <span class="nc">SeedableRng</span>::<span class="n">seed_from_u64</span><span class="p">(</span><span class="n">seed</span><span class="p">),</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">            </span><span class="n">len</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">            </span><span class="n">count</span>: <span class="mi">0</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="k">impl</span><span class="w"> </span><span class="nb">Iterator</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">DataGenerator</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">type</span> <span class="nc">Item</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">IStateKey</span><span class="p">,</span><span class="w"> </span><span class="n">InfoState</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">fn</span> <span class="nf">next</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span><span class="w"> </span><span class="bp">self</span><span class="p">)</span><span class="w"> </span>-&gt; <span class="nb">Option</span><span class="o">&lt;</span><span class="bp">Self</span>::<span class="n">Item</span><span class="o">&gt;</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="bp">self</span><span class="p">.</span><span class="n">count</span><span class="w"> </span><span class="o">&gt;=</span><span class="w"> </span><span class="bp">self</span><span class="p">.</span><span class="n">len</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="nb">None</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="c1">// Minimum key length is 6 to reflect the 6 dealt cards in euchre
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="w">        </span><span class="kd">let</span><span class="w"> </span><span class="n">key_length</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="bp">self</span><span class="p">.</span><span class="n">rng</span><span class="p">.</span><span class="n">gen_range</span><span class="p">(</span><span class="mi">6</span><span class="o">..</span><span class="mi">20</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="kd">let</span><span class="w"> </span><span class="k">mut</span><span class="w"> </span><span class="n">key</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">IStateKey</span>::<span class="n">default</span><span class="p">();</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="p">(</span><span class="mi">0</span><span class="o">..</span><span class="n">key_length</span><span class="p">).</span><span class="n">for_each</span><span class="p">(</span><span class="o">|</span><span class="n">_</span><span class="o">|</span><span class="w"> </span><span class="n">key</span><span class="p">.</span><span class="n">push</span><span class="p">(</span><span class="n">Action</span><span class="p">(</span><span class="bp">self</span><span class="p">.</span><span class="n">rng</span><span class="p">.</span><span class="n">gen_range</span><span class="p">(</span><span class="mi">0</span><span class="o">..</span><span class="mi">32</span><span class="p">))));</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="kd">let</span><span class="w"> </span><span class="n">data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">InfoState</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">            </span><span class="n">actions</span>: <span class="p">(</span><span class="mi">0</span><span class="o">..</span><span class="mi">5</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">                </span><span class="p">.</span><span class="n">map</span><span class="p">(</span><span class="o">|</span><span class="n">_</span><span class="o">|</span><span class="w"> </span><span class="n">NormalizedAction</span>::<span class="n">new</span><span class="p">(</span><span class="n">Action</span><span class="p">(</span><span class="bp">self</span><span class="p">.</span><span class="n">rng</span><span class="p">.</span><span class="n">gen_range</span><span class="p">(</span><span class="mi">0</span><span class="o">..</span><span class="mi">32</span><span class="p">))))</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">                </span><span class="p">.</span><span class="n">collect</span><span class="p">(),</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">            </span><span class="n">regrets</span>: <span class="p">(</span><span class="mi">0</span><span class="o">..</span><span class="mi">5</span><span class="p">).</span><span class="n">map</span><span class="p">(</span><span class="o">|</span><span class="n">_</span><span class="o">|</span><span class="w"> </span><span class="bp">self</span><span class="p">.</span><span class="n">rng</span><span class="p">.</span><span class="n">gen</span><span class="p">()).</span><span class="n">collect</span><span class="p">(),</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">            </span><span class="n">avg_strategy</span>: <span class="p">(</span><span class="mi">0</span><span class="o">..</span><span class="mi">5</span><span class="p">).</span><span class="n">map</span><span class="p">(</span><span class="o">|</span><span class="n">_</span><span class="o">|</span><span class="w"> </span><span class="bp">self</span><span class="p">.</span><span class="n">rng</span><span class="p">.</span><span class="n">gen</span><span class="p">()).</span><span class="n">collect</span><span class="p">(),</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">            </span><span class="n">last_iteration</span>: <span class="nc">self</span><span class="p">.</span><span class="n">rng</span><span class="p">.</span><span class="n">gen</span><span class="p">(),</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="p">};</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="bp">self</span><span class="p">.</span><span class="n">count</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nb">Some</span><span class="p">((</span><span class="n">key</span><span class="p">,</span><span class="w"> </span><span class="n">data</span><span class="p">))</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="p">}</span><span class="w">
+</span></span></span></code></pre>
+</article>
+<p class="post-nav"><a href="/">← all posts</a></p>
+
+</main>
+<footer>
+<p><a href="/feed.xml">RSS</a> · &copy; 2026</p>
+</footer>
+
+</body>
+</html>
+
