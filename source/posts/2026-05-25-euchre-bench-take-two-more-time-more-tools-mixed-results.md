@@ -13,8 +13,6 @@ The harness gave each agent:
 2. **A real wall-clock budget**: 12 hours per model.
 3. **An auto-research-style prompt**: explicit instructions to keep iterating until the budget runs out, treat each commit as an experiment-journal entry (metric in the message), and reach for the search tool when stuck. The workspace was a fresh per-run git repo the agent pushed to as it worked. Full text in the [appendix below](#appendix-system-prompt).
 
-Sonnet wasn't included this time; claude-code stayed external.
-
 # Results
 
 Match wins against each difficulty (100 games per match):
@@ -34,7 +32,7 @@ Total spend was $251.
 
 (Cost is token count × OpenRouter's published per-model pricing. Most rows match what opencode wrote to the trajectory; qwen3.7-max and minimax-m2.7 don't have a discounted cache-read rate published, so cache reads on those two are billed at the full prompt rate — opencode's stream had treated them as free, understating qwen by ~5.7x and minimax by ~2.6x.)
 
-[Browse the new trajectories.](/trajectories/)
+[Browse the trajectories.](/trajectories/)
 
 # Auto-research worked, mostly
 
@@ -52,7 +50,7 @@ Every model used Tavily at least once. Two leaned on it heavily:
 
 # How gpt-5.5 took #1
 
-The new #1 (gpt-5.5) is also the model that did the *least* research and shipped the simplest policy. Its `euchre_bot.py` is 447 lines of stateless heuristic — no card counting, no rollouts, no opponent inference. It scores hands with a three-threshold formula (`pickup=70, call=70, alone=85`, tunable per agent), plays partner-save and beater-search in trick play, and that's it.
+gpt-5.5 is also the model that did the *least* research and shipped the simplest policy. Its `euchre_bot.py` is 447 lines of stateless heuristic — no card counting, no rollouts, no opponent inference. It scores hands with a three-threshold formula (`pickup=70, call=70, alone=85`, tunable per agent), plays partner-save and beater-search in trick play, and that's it.
 
 What it *did* do, 50 times, was run another 100-game session against `medium`. Its `notes.md:36` literally reads "Medium variance chase at 65/65/80 regressed to 2/100..." — and the distribution speaks for itself:
 

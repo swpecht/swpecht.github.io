@@ -30,7 +30,6 @@
 <li><strong>A real wall-clock budget</strong>: 12 hours per model.</li>
 <li><strong>An auto-research-style prompt</strong>: explicit instructions to keep iterating until the budget runs out, treat each commit as an experiment-journal entry (metric in the message), and reach for the search tool when stuck. The workspace was a fresh per-run git repo the agent pushed to as it worked. Full text in the <a href="#appendix-system-prompt">appendix below</a>.</li>
 </ol>
-<p>Sonnet wasn't included this time; claude-code stayed external.</p>
 <h2 id="results">Results</h2>
 <p>Match wins against each difficulty (100 games per match):</p>
 <table>
@@ -131,7 +130,7 @@
 </table>
 <p>Total spend was $251.</p>
 <p>(Cost is token count × OpenRouter's published per-model pricing. Most rows match what opencode wrote to the trajectory; qwen3.7-max and minimax-m2.7 don't have a discounted cache-read rate published, so cache reads on those two are billed at the full prompt rate — opencode's stream had treated them as free, understating qwen by ~5.7x and minimax by ~2.6x.)</p>
-<p><a href="/trajectories/">Browse the new trajectories.</a></p>
+<p><a href="/trajectories/">Browse the trajectories.</a></p>
 <h2 id="auto-research-worked-mostly">Auto-research worked, mostly</h2>
 <p>Every model used Tavily at least once. Two leaned on it heavily:</p>
 <table>
@@ -172,7 +171,7 @@
 </table>
 <p>38 calls across the matrix. The two Geminis went straight for the bench's underlying source — OpenSpiel's <code>euchre.cc</code> defines the same action encoding the bench uses. None returned actual policy code; OpenSpiel is enum definitions and game logic, not strategies.</p>
 <h2 id="how-gpt-55-took-1">How gpt-5.5 took #1</h2>
-<p>The new #1 (gpt-5.5) is also the model that did the <em>least</em> research and shipped the simplest policy. Its <code>euchre_bot.py</code> is 447 lines of stateless heuristic — no card counting, no rollouts, no opponent inference. It scores hands with a three-threshold formula (<code>pickup=70, call=70, alone=85</code>, tunable per agent), plays partner-save and beater-search in trick play, and that's it.</p>
+<p>gpt-5.5 is also the model that did the <em>least</em> research and shipped the simplest policy. Its <code>euchre_bot.py</code> is 447 lines of stateless heuristic — no card counting, no rollouts, no opponent inference. It scores hands with a three-threshold formula (<code>pickup=70, call=70, alone=85</code>, tunable per agent), plays partner-save and beater-search in trick play, and that's it.</p>
 <p>What it <em>did</em> do, 50 times, was run another 100-game session against <code>medium</code>. Its <code>notes.md:36</code> literally reads &quot;Medium variance chase at 65/65/80 regressed to 2/100...&quot; — and the distribution speaks for itself:</p>
 <table>
 <thead>
