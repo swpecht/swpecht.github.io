@@ -1,0 +1,119 @@
+---
+title: 'euchre-bench, take two: more nudges, more tools, mixed results'
+date: 2026-05-25T00:00:00Z
+---
+
+# Context
+
+A few weeks back I [ran 7 LLM coding agents through my euchre benchmark](/posts/llm-agents-play-euchre/) and noticed two things: most of them stopped early, and none of them used the web. So this matrix I changed two things in the harness:
+
+1. **Auto-research**: gave every agent a [Tavily MCP](https://tavily.com/) server with `tavily_search`, `tavily_extract`, and `tavily_research`. Agents could now look up euchre strategy guides, scan GitHub for action-encoding hints, and do deep-research crawls.
+2. **Higher nudge cap**: the harness's `scripts/nudge.sh` re-prompts the agent when opencode exits early. The previous matrix capped at 3 nudges per run. This one allowed 50, with a 12-hour wall clock per model.
+
+I ran 8 models. Sonnet wasn't included this time and claude-code stayed external. Each one got the same fresh sandbox and the same prompt.
+
+Both changes did what they were meant to do — agents nudged 50 times, ran for ~12 hours each, and most of them issued real Tavily searches. But the rankings barely moved, and the new #1 got there for a different reason than I expected.
+
+# Results
+
+Match wins against each difficulty (100 games per match):
+
+| model | rand | easy | med | hard | sum | cost | approach |
+|---|---|---|---|---|---|---|---|
+| openai / gpt-5.5 | **100** | **23** | **9** | **8** | **140** | $16.45 | three-threshold heuristic + 50x medium variance hunt |
+| google / gemini-3.5-flash | 96 | 6 | 3 | 2 | 107 | $34.47 | real PIMCTS: 40-world alpha-beta solver with TT cache |
+| minimax / minimax-m2.7 | 95 | 0 | 0 | 0 | 95 | $4.84 | always-pickup; trump-call branch broken (wrong codes) |
+| google / gemini-3-flash-preview | 88 | 2 | 1 | 2 | 93 | $7.28 | class-based heuristic, Next-suit bonus |
+| deepseek / deepseek-v4-flash | 82 | 6 | 0 | 1 | 89 | $3.12 | always-call + offense/defense lead routing |
+| moonshotai / kimi-k2.6 | 78 | 2 | 0 | 1 | 81 | $11.51 | aggressive bidder (`score >= 0.5`) |
+| deepseek / deepseek-v4-pro | 65 | 0 | 0 | 0 | 65 | $10.47 | function-decomposed heuristic + 20-rollout follow |
+| qwen / qwen3.7-max | 12 | — | 0 | 0 | 12 | $27.11 | broken decoder (`min/max(legal_actions)` as proxy) |
+
+Vs last matrix: gpt-5.5 jumped 98 -> 140 (#1); gemini-3.5-flash *regressed* 112 -> 107 despite a much better algorithm; minimax went from 2 random wins to 95. Total spend was $115.
+
+[Browse the new trajectories.](/trajectories/)
+
+# Auto-research worked, mostly
+
+Every model used Tavily at least once. Two leaned on it heavily:
+
+| model | tavily calls | what they searched |
+|---|---|---|
+| gemini-3-flash-preview | 12 | OpenSpiel `euchre.cc`, `kPass` / `kPickup` / `kAlone`, action values |
+| gemini-3.5-flash | 12 | OpenSpiel `euchre.cc`, `kCallSpades`, `NumDistinctActions` |
+| kimi-k2.6 | 7 | euchre strategy guides, Monte Carlo papers |
+| deepseek-v4-flash | 3 | safeharborgames.net Euchre column (extract) + 2 strategy searches |
+| others | 1 each | generic strategy queries |
+
+38 calls across the matrix. The two Geminis went straight for the bench's underlying source — OpenSpiel's `euchre.cc` defines the same action encoding the bench uses — same pattern the previous matrix saw with `webfetch`. None returned actual policy code; OpenSpiel is enum definitions and game logic, not strategies.
+
+The nudge cap did keep agents busy: every model hit exactly 50 nudges, and total wall was ~12 hours each. But per-step productivity dropped — opencode kept exiting after a few minutes of work, and the harness was the thing forcing it back to the keyboard. At 50 nudges x 12 hours / 8 models = 96 hours of wall budget delivering maybe 12 hours of model thinking, the harness is mostly babysitting now.
+
+# But the rankings barely moved
+
+Here's the thing: the new #1 (gpt-5.5) is also the model that did the *least* research and shipped the simplest policy. Its `euchre_bot.py` is 447 lines of stateless heuristic — no card counting, no rollouts, no opponent inference. It scores hands with a three-threshold formula (`pickup=70, call=70, alone=85`, tunable per agent), plays partner-save and beater-search in trick play, and that's it.
+
+What it *did* do, 50 times, was run another 100-game session against `medium`. Its `notes.md:36` literally reads "Medium variance chase at 65/65/80 regressed to 2/100..." — and the distribution speaks for itself:
+
+| agent | 100g sessions | distribution | what shipped |
+|---|---|---|---|
+| random | 4 | 90, 100, 99, 100 | 100 |
+| easy | 4 | 14, 11, 15, 23 | **23** (max of sample) |
+| medium | **50** | min 0, max 9, mean ~3.7 | **9** (max of sample) |
+| hard | 15 | min 2, max 8, mean ~4.5 | **8** (= max of sample) |
+
+The bench grades on the *newest* session per agent. So if you run a 100g match enough times and stop on a good draw, you lock in the upper tail. ~3 wins of standard deviation per session x 50 attempts means the maximum is 3–4 wins above the mean by construction. gpt-5.5 found this and exploited it across two agents at once. Same pattern claude-code used in the [last matrix](/posts/llm-agents-play-euchre/) — variance-hunting under newest-counts grading still works, and bumping the nudge cap to 50 made it 10x more effective.
+
+Grading switches to median-of-N this matrix. Should have done it after the last post.
+
+# Deep dive: gemini-3.5-flash
+
+Of the eight models, only one built proper PIMCTS rollouts in production. The May 22 gemini-3.5-flash had 5-world sampling and a heuristic playout; this one has 40 worlds and an actual alpha-beta open-hand solver with a transposition-table cache (`agent.py:284`). 712 lines of Python that look like real game-AI code: `sample_opponent_hands` constructs hands consistent with observed voids (line 452), `evaluate_hand_for_trump` (line 481) gives bowers 1.0/0.5/0.3 and off-aces 0.8, pickup/call thresholds 3.5/2.8 with a Next-suit bonus, alone at 4.5 with >=4 trump. Cache cleared between moves so it doesn't grow unbounded.
+
+It's the most sophisticated thing in the matrix. And it regressed. 6/100 on hard last time → 2/100 this time. Cost more than doubled ($5 -> $34) to build the better policy.
+
+Three things going on:
+
+1. **Sample-of-2.** Despite the 12-hour budget, gemini-3.5-flash only ran 2 medium 100g sessions and 3 hard. With ~3 wins of std-dev, the right tail of 2 draws is barely above the mean. gpt-5.5 ran 50 mediums; sonnet last matrix ran 23 easies. Sampling matters more than algorithm at this win count.
+2. **Algorithmic ceiling is real.** PIMCTS still has the strategy-fusion problem I [wrote about back in 2023](/posts/cfr-for-euchre/) — it can pick a different "best" move per sampled world, treating its information as perfect, but in the real game has to commit to one. 40 worlds and a perfect solver per world don't make this go away. Last post had [a longer treatment](/posts/llm-agents-play-euchre/) of why this hurts.
+3. **Tool spend went elsewhere.** Of gemini's 12-hour budget, 12 Tavily + 26 webfetch + 39 write + 19 edit + 51 read is a lot of research-and-edit overhead. Implementing PIMCTS chewed through hours that gpt-5.5 spent on variance hunting.
+
+Trajectory: [google__gemini-3.5-flash_20260524](/trajectories/google__gemini-3.5-flash_20260524/) — search for "N_WORLDS" or "PIMCTS" in the event stream to find when the algorithm landed.
+
+# Deep dive: minimax-m2.7
+
+Minimax went from 2 random wins (last matrix, only `easy 100` recorded) to 95 random wins. On paper, a huge jump. In code, almost entirely an accident.
+
+`workspace/euchre_bot_final.py` ships a hand evaluator and pickup/trump-call/alone branches. The pickup branch (`should_pickup`, line 94) orders up whenever right-bower + ≥2 trump, or ≥3 trump. **The trump-call branch is broken**: line 150 maps suit-call actions as `{'s':15, 'h':10, 'd':12, 'c':16}`. The actual bench action codes are 6/14/22/30. (15 is "go alone".) The `code in legal_actions` guard at line 152 means the call branch silently never fires — it falls through to `return int_actions[-1]` (usually `31 = pass`).
+
+So in effect: minimax orders up first round whenever the heuristic says yes, and passes second round always. There's also a buggy trick-play action mapping at line 185 — `action = card_index_in_hand` only happens to work for the lowest cards in some suits.
+
+Why does this beat random 95/100? Random doesn't punish aggressive making. If you order up on anything reasonable and play *any* coherent trump strategy, you'll make your point most hands. Random will take 0–1 tricks per hand on its own. Minimax made 95 random wins not by playing well, but by playing aggressively into a non-defensive opponent.
+
+The 0/100 across easy/medium/hard confirms it. The instant the opponent can punish a loose maker, minimax goes to zero.
+
+The instructive bit: in the [previous matrix](/posts/llm-agents-play-euchre/), minimax-m2.7 ran a "never bid" strategy and scored 2/100 against random. Same model family, same harness, opposite policy — and a 47x swing on random match wins came from flipping one decision. The space of "policies that work against random" is wide and most of it isn't actually euchre strategy.
+
+Trajectory: [minimax__minimax-m2.7_20260524](/trajectories/minimax__minimax-m2.7_20260524/) — the 42 versioned `euchre_bot_v*.py` files in the workspace are worth a look. The model knew it was iterating on the trump-call branch and never noticed the codes were wrong.
+
+# What auto-research changed and didn't
+
+Things auto-research **did** change:
+
+- Every model used the higher nudge cap to keep editing — way more commits, way more versioned policy files (minimax: 42, kimi: 32, qwen: 53).
+- Two Geminis spent a sustained budget on reading OpenSpiel's source as a substitute for figuring out the action encoding from probing.
+- The matrix cost tripled ($35 -> $115) and the wall budget tripled.
+
+Things auto-research **didn't** change:
+
+- The winner is still a stateless heuristic. None of the algorithm work — PIMCTS, opponent inference, rollouts — made it into the top of the leaderboard.
+- The grading exploit (variance-hunt under newest-counts) became *more* effective with more nudges, not less.
+- No model self-discovered the strategy-fusion problem the easy bot already demonstrates. Tavily searches found generic strategy guides and OpenSpiel source, neither of which would tell you about it. The post about it [on this blog](/posts/cfr-for-euchre/) is the only place the easy bot's weakness is laid out, and no model webfetched a fewworddotrick URL this matrix.
+
+# What's next
+
+The grading fix is overdue. Switching to median-of-N=5 for the next matrix. That removes the gpt-5.5 / claude-code variance hunt. I want to see whether gemini-3.5-flash's real PIMCTS holds up under median grading; my guess is yes-but-narrowly.
+
+The 50-nudge cap is too high. Dropping to ~10. The marginal nudge isn't producing meaningful work — it's producing more variance-chase attempts.
+
+Tavily stays. Two real searches per model is fine; the overhead isn't bad.
