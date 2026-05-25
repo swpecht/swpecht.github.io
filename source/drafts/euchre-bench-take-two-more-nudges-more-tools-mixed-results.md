@@ -8,11 +8,11 @@ date: 2026-05-25T00:00:00Z
 A few weeks back I [ran 7 LLM coding agents through my euchre benchmark](/posts/llm-agents-play-euchre/) and noticed two things: most of them stopped early, and none of them used the web. So this matrix I changed two things in the harness:
 
 1. **Auto-research**: gave every agent a [Tavily MCP](https://tavily.com/) server with `tavily_search`, `tavily_extract`, and `tavily_research`. Agents could now look up euchre strategy guides, scan GitHub for action-encoding hints, and do deep-research crawls.
-2. **Higher nudge cap**: the harness's `scripts/nudge.sh` re-prompts the agent when opencode exits early. The previous matrix capped at 3 nudges per run. This one allowed 50, with a 12-hour wall clock per model.
+2. **A real wall-clock budget**: 12 hours per model, vs. the 1–2 hours each one used last matrix.
 
 I ran 8 models. Sonnet wasn't included this time and claude-code stayed external. Each one got the same fresh sandbox and the same prompt.
 
-Both changes did what they were meant to do — agents nudged 50 times, ran for ~12 hours each, and most of them issued real Tavily searches. But the rankings barely moved, and the new #1 got there for a different reason than I expected.
+The rankings barely moved, and the new #1 got there for a different reason than I expected.
 
 # Results
 
@@ -47,11 +47,9 @@ Every model used Tavily at least once. Two leaned on it heavily:
 
 38 calls across the matrix. The two Geminis went straight for the bench's underlying source — OpenSpiel's `euchre.cc` defines the same action encoding the bench uses — same pattern the previous matrix saw with `webfetch`. None returned actual policy code; OpenSpiel is enum definitions and game logic, not strategies.
 
-The nudge cap did keep agents busy: every model hit exactly 50 nudges, and total wall was ~12 hours each. But per-step productivity dropped — opencode kept exiting after a few minutes of work, and the harness was the thing forcing it back to the keyboard. At 50 nudges x 12 hours / 8 models = 96 hours of wall budget delivering maybe 12 hours of model thinking, the harness is mostly babysitting now.
-
 # But the rankings barely moved
 
-Here's the thing: the new #1 (gpt-5.5) is also the model that did the *least* research and shipped the simplest policy. Its `euchre_bot.py` is 447 lines of stateless heuristic — no card counting, no rollouts, no opponent inference. It scores hands with a three-threshold formula (`pickup=70, call=70, alone=85`, tunable per agent), plays partner-save and beater-search in trick play, and that's it.
+The new #1 (gpt-5.5) is also the model that did the *least* research and shipped the simplest policy. Its `euchre_bot.py` is 447 lines of stateless heuristic — no card counting, no rollouts, no opponent inference. It scores hands with a three-threshold formula (`pickup=70, call=70, alone=85`, tunable per agent), plays partner-save and beater-search in trick play, and that's it.
 
 What it *did* do, 50 times, was run another 100-game session against `medium`. Its `notes.md:36` literally reads "Medium variance chase at 65/65/80 regressed to 2/100..." — and the distribution speaks for itself:
 
@@ -62,7 +60,7 @@ What it *did* do, 50 times, was run another 100-game session against `medium`. I
 | medium | **50** | min 0, max 9, mean ~3.7 | **9** (max of sample) |
 | hard | 15 | min 2, max 8, mean ~4.5 | **8** (= max of sample) |
 
-The bench grades on the *newest* session per agent. So if you run a 100g match enough times and stop on a good draw, you lock in the upper tail. ~3 wins of standard deviation per session x 50 attempts means the maximum is 3–4 wins above the mean by construction. gpt-5.5 found this and exploited it across two agents at once. Same pattern claude-code used in the [last matrix](/posts/llm-agents-play-euchre/) — variance-hunting under newest-counts grading still works, and bumping the nudge cap to 50 made it 10x more effective.
+The bench grades on the *newest* session per agent. So if you run a 100g match enough times and stop on a good draw, you lock in the upper tail. ~3 wins of standard deviation per session x 50 attempts means the maximum is 3–4 wins above the mean by construction. gpt-5.5 found this and exploited it across two agents at once. Same pattern claude-code used in the [last matrix](/posts/llm-agents-play-euchre/) — variance-hunting under newest-counts grading still works, and giving agents 12 hours of wall time instead of 1–2 made it ~10x more effective.
 
 Grading switches to median-of-N this matrix. Should have done it after the last post.
 
@@ -96,24 +94,22 @@ The instructive bit: in the [previous matrix](/posts/llm-agents-play-euchre/), m
 
 Trajectory: [minimax__minimax-m2.7_20260524](/trajectories/minimax__minimax-m2.7_20260524/) — the 42 versioned `euchre_bot_v*.py` files in the workspace are worth a look. The model knew it was iterating on the trump-call branch and never noticed the codes were wrong.
 
-# What auto-research changed and didn't
+# What the new harness changed and didn't
 
-Things auto-research **did** change:
+Things the new harness **did** change:
 
-- Every model used the higher nudge cap to keep editing — way more commits, way more versioned policy files (minimax: 42, kimi: 32, qwen: 53).
+- Way more commits, way more versioned policy files in each workspace (minimax: 42, kimi: 32, qwen: 53). The 12-hour budget let models iterate without time pressure.
 - Two Geminis spent a sustained budget on reading OpenSpiel's source as a substitute for figuring out the action encoding from probing.
-- The matrix cost tripled ($35 -> $115) and the wall budget tripled.
+- The matrix cost tripled ($35 -> $115).
 
-Things auto-research **didn't** change:
+Things it **didn't** change:
 
 - The winner is still a stateless heuristic. None of the algorithm work — PIMCTS, opponent inference, rollouts — made it into the top of the leaderboard.
-- The grading exploit (variance-hunt under newest-counts) became *more* effective with more nudges, not less.
+- The grading exploit (variance-hunt under newest-counts) got *more* effective with more wall time, not less.
 - No model self-discovered the strategy-fusion problem the easy bot already demonstrates. Tavily searches found generic strategy guides and OpenSpiel source, neither of which would tell you about it. The post about it [on this blog](/posts/cfr-for-euchre/) is the only place the easy bot's weakness is laid out, and no model webfetched a fewworddotrick URL this matrix.
 
 # What's next
 
 The grading fix is overdue. Switching to median-of-N=5 for the next matrix. That removes the gpt-5.5 / claude-code variance hunt. I want to see whether gemini-3.5-flash's real PIMCTS holds up under median grading; my guess is yes-but-narrowly.
-
-The 50-nudge cap is too high. Dropping to ~10. The marginal nudge isn't producing meaningful work — it's producing more variance-chase attempts.
 
 Tavily stays. Two real searches per model is fine; the overhead isn't bad.
