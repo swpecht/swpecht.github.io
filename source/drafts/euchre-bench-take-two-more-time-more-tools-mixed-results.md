@@ -1,5 +1,5 @@
 ---
-title: 'euchre-bench, take two: more nudges, more tools, mixed results'
+title: 'euchre-bench, take two: more time, more tools, mixed results'
 date: 2026-05-25T00:00:00Z
 ---
 
