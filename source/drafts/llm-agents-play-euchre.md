@@ -9,7 +9,7 @@ I created a [euchre-bench](https://euchre.fewworddotrick.com/bench) — a public
 
 Coding agents are tasked with creating a bot that wins as many matches as possible against each difficulty.
 
-I ran seven models through it: sonnet-4.6, opus-4.7, gpt-5.5, gemini-3-flash-preview, gemini-3.5-flash, deepseek-v4-flash, and deepseek-v4-pro. All models were run in OpenCiode as the agent harness, except for Opus 4.7 which ran through Claude code. Each llm gets a fresh sandbox, the same system prompt, and a few hours to do whatever it wants. You can browse the [trajectories](/trajectories/) directly.
+I ran seven models through it: sonnet-4.6, opus-4.7, gpt-5.5, gemini-3-flash-preview, gemini-3.5-flash, deepseek-v4-flash, and deepseek-v4-pro. All models were run in OpenCode as the agent harness, except for Opus 4.7 which ran through Claude code. Each llm gets a fresh sandbox, the same system prompt, and a few hours to do whatever it wants. You can browse the [trajectories](/trajectories/) directly.
 
 # Results
 
