@@ -1,0 +1,358 @@
+{
+  "challenger_id": "swpecht-google__gemini-3.5-flash-20260524T222528Z",
+  "by_agent": {
+    "random": {
+      "status": 200,
+      "data": [
+        {
+          "session_id": "85600495-5eab-47d1-8a59-3179160e8e47",
+          "challenger_id": "swpecht-google__gemini-3.5-flash-20260524T222528Z",
+          "agent_name": "random",
+          "num_games": 100,
+          "started_at": 1779695861,
+          "completed_at": 1779699058,
+          "challenger_score": 1044,
+          "agent_score": 364,
+          "challenger_match_wins": 96,
+          "agent_match_wins": 4,
+          "hands_played": 861
+        },
+        {
+          "session_id": "13f22d74-c26a-4887-b481-887ed7a0a412",
+          "challenger_id": "swpecht-google__gemini-3.5-flash-20260524T222528Z",
+          "agent_name": "random",
+          "num_games": 100,
+          "started_at": 1779682964,
+          "completed_at": 1779686004,
+          "challenger_score": 1008,
+          "agent_score": 427,
+          "challenger_match_wins": 89,
+          "agent_match_wins": 11,
+          "hands_played": 865
+        },
+        {
+          "session_id": "a119f465-4cf1-4fac-80f7-b83492b68444",
+          "challenger_id": "swpecht-google__gemini-3.5-flash-20260524T222528Z",
+          "agent_name": "random",
+          "num_games": 100,
+          "started_at": 1779661863,
+          "completed_at": 1779663575,
+          "challenger_score": 944,
+          "agent_score": 594,
+          "challenger_match_wins": 75,
+          "agent_match_wins": 25,
+          "hands_played": 954
+        },
+        {
+          "session_id": "c44370cd-c864-49c7-90bc-2e59052b8cb6",
+          "challenger_id": "swpecht-google__gemini-3.5-flash-20260524T222528Z",
+          "agent_name": "random",
+          "num_games": 10,
+          "started_at": 1779661646,
+          "completed_at": 1779661673,
+          "challenger_score": 68,
+          "agent_score": 90,
+          "challenger_match_wins": 4,
+          "agent_match_wins": 6,
+          "hands_played": 87
+        },
+        {
+          "session_id": "6f44eee8-bd53-4a1e-8be9-ed8f828cccc9",
+          "challenger_id": "swpecht-google__gemini-3.5-flash-20260524T222528Z",
+          "agent_name": "random",
+          "num_games": 1,
+          "started_at": 1779661577,
+          "completed_at": 1779661635,
+          "challenger_score": 2,
+          "agent_score": 10,
+          "challenger_match_wins": 0,
+          "agent_match_wins": 1,
+          "hands_played": 5
+        },
+        {
+          "session_id": "e928f13f-9d65-4d7f-b604-2a815df68683",
+          "challenger_id": "swpecht-google__gemini-3.5-flash-20260524T222528Z",
+          "agent_name": "random",
+          "num_games": 1,
+          "started_at": 1779661569,
+          "completed_at": 1779661571,
+          "challenger_score": 1,
+          "agent_score": 10,
+          "challenger_match_wins": 0,
+          "agent_match_wins": 1,
+          "hands_played": 6
+        }
+      ]
+    },
+    "easy": {
+      "status": 200,
+      "data": [
+        {
+          "session_id": "76c156bc-b69b-47fe-849a-3e78266f4623",
+          "challenger_id": "swpecht-google__gemini-3.5-flash-20260524T222528Z",
+          "agent_name": "easy",
+          "num_games": 100,
+          "started_at": 1779689830,
+          "completed_at": 1779695785,
+          "challenger_score": 378,
+          "agent_score": 1032,
+          "challenger_match_wins": 6,
+          "agent_match_wins": 94,
+          "hands_played": 875
+        },
+        {
+          "session_id": "b32ddfe8-58bc-44e5-b29a-a1cd1b8ba6f7",
+          "challenger_id": "swpecht-google__gemini-3.5-flash-20260524T222528Z",
+          "agent_name": "easy",
+          "num_games": 100,
+          "started_at": 1779674390,
+          "completed_at": 1779678783,
+          "challenger_score": 232,
+          "agent_score": 1068,
+          "challenger_match_wins": 0,
+          "agent_match_wins": 100,
+          "hands_played": 781
+        },
+        {
+          "session_id": "b9692ecc-2b6e-49c1-b888-9b85b1049ef7",
+          "challenger_id": "swpecht-google__gemini-3.5-flash-20260524T222528Z",
+          "agent_name": "easy",
+          "num_games": 100,
+          "started_at": 1779673306,
+          "completed_at": 1779674278,
+          "challenger_score": 216,
+          "agent_score": 1063,
+          "challenger_match_wins": 0,
+          "agent_match_wins": 100,
+          "hands_played": 749
+        },
+        {
+          "session_id": "4f6a5d85-9f9e-41d6-8660-7b00def9cbbb",
+          "challenger_id": "swpecht-google__gemini-3.5-flash-20260524T222528Z",
+          "agent_name": "easy",
+          "num_games": 100,
+          "started_at": 1779670061,
+          "completed_at": 1779670948,
+          "challenger_score": 153,
+          "agent_score": 1062,
+          "challenger_match_wins": 0,
+          "agent_match_wins": 100,
+          "hands_played": 697
+        },
+        {
+          "session_id": "a546ae65-21f3-4115-a04a-4e89facb207f",
+          "challenger_id": "swpecht-google__gemini-3.5-flash-20260524T222528Z",
+          "agent_name": "easy",
+          "num_games": 100,
+          "started_at": 1779669191,
+          "completed_at": 1779670048,
+          "challenger_score": 124,
+          "agent_score": 1071,
+          "challenger_match_wins": 0,
+          "agent_match_wins": 100,
+          "hands_played": 691
+        },
+        {
+          "session_id": "cf776859-f548-4e4f-83bf-786c9923fedf",
+          "challenger_id": "swpecht-google__gemini-3.5-flash-20260524T222528Z",
+          "agent_name": "easy",
+          "num_games": 1,
+          "started_at": 1779669170,
+          "completed_at": 1779669177,
+          "challenger_score": 1,
+          "agent_score": 11,
+          "challenger_match_wins": 0,
+          "agent_match_wins": 1,
+          "hands_played": 6
+        },
+        {
+          "session_id": "865aa4e7-8ffa-4d21-b04e-08baf8281a13",
+          "challenger_id": "swpecht-google__gemini-3.5-flash-20260524T222528Z",
+          "agent_name": "easy",
+          "num_games": 1,
+          "started_at": 1779669158,
+          "completed_at": 1779669166,
+          "challenger_score": 0,
+          "agent_score": 11,
+          "challenger_match_wins": 0,
+          "agent_match_wins": 1,
+          "hands_played": 6
+        },
+        {
+          "session_id": "f5885665-c6a0-4581-98f2-ba895618cbf2",
+          "challenger_id": "swpecht-google__gemini-3.5-flash-20260524T222528Z",
+          "agent_name": "easy",
+          "num_games": 10,
+          "started_at": 1779668674,
+          "completed_at": 1779668988,
+          "challenger_score": 19,
+          "agent_score": 109,
+          "challenger_match_wins": 0,
+          "agent_match_wins": 10,
+          "hands_played": 77
+        },
+        {
+          "session_id": "a2c43fb3-a711-4a39-b6f8-c08565a97a1b",
+          "challenger_id": "swpecht-google__gemini-3.5-flash-20260524T222528Z",
+          "agent_name": "easy",
+          "num_games": 100,
+          "started_at": 1779667776,
+          "completed_at": 1779668661,
+          "challenger_score": 161,
+          "agent_score": 1068,
+          "challenger_match_wins": 0,
+          "agent_match_wins": 100,
+          "hands_played": 711
+        },
+        {
+          "session_id": "f2a31100-4be5-493c-9546-33416174782e",
+          "challenger_id": "swpecht-google__gemini-3.5-flash-20260524T222528Z",
+          "agent_name": "easy",
+          "num_games": 100,
+          "started_at": 1779666874,
+          "completed_at": 1779667733,
+          "challenger_score": 154,
+          "agent_score": 1070,
+          "challenger_match_wins": 0,
+          "agent_match_wins": 100,
+          "hands_played": 719
+        },
+        {
+          "session_id": "f2da69c3-c219-4520-b3c2-ff28c205ebc2",
+          "challenger_id": "swpecht-google__gemini-3.5-flash-20260524T222528Z",
+          "agent_name": "easy",
+          "num_games": 100,
+          "started_at": 1779665232,
+          "completed_at": 1779666795,
+          "challenger_score": 153,
+          "agent_score": 1049,
+          "challenger_match_wins": 0,
+          "agent_match_wins": 100,
+          "hands_played": 709
+        },
+        {
+          "session_id": "3e819fc2-c8b3-4774-b5a1-e02fb087270d",
+          "challenger_id": "swpecht-google__gemini-3.5-flash-20260524T222528Z",
+          "agent_name": "easy",
+          "num_games": 100,
+          "started_at": 1779663598,
+          "completed_at": 1779665202,
+          "challenger_score": 141,
+          "agent_score": 1054,
+          "challenger_match_wins": 0,
+          "agent_match_wins": 100,
+          "hands_played": 704
+        }
+      ]
+    },
+    "medium": {
+      "status": 200,
+      "data": [
+        {
+          "session_id": "f8595a1b-b0db-480c-b9f4-8f7d870a49ef",
+          "challenger_id": "swpecht-google__gemini-3.5-flash-20260524T222528Z",
+          "agent_name": "medium",
+          "num_games": 100,
+          "started_at": 1779686070,
+          "completed_at": 1779689789,
+          "challenger_score": 268,
+          "agent_score": 1045,
+          "challenger_match_wins": 3,
+          "agent_match_wins": 97,
+          "hands_played": 857
+        },
+        {
+          "session_id": "9fc43f1f-b367-4632-aafa-1c39f216a0ec",
+          "challenger_id": "swpecht-google__gemini-3.5-flash-20260524T222528Z",
+          "agent_name": "medium",
+          "num_games": 100,
+          "started_at": 1779671021,
+          "completed_at": 1779671967,
+          "challenger_score": 176,
+          "agent_score": 1046,
+          "challenger_match_wins": 0,
+          "agent_match_wins": 100,
+          "hands_played": 722
+        }
+      ]
+    },
+    "hard": {
+      "status": 200,
+      "data": [
+        {
+          "session_id": "4394b535-ae12-4777-8bfa-4fb88399da15",
+          "challenger_id": "swpecht-google__gemini-3.5-flash-20260524T222528Z",
+          "agent_name": "hard",
+          "num_games": 100,
+          "started_at": 1779699137,
+          "completed_at": 1779703053,
+          "challenger_score": 302,
+          "agent_score": 1038,
+          "challenger_match_wins": 2,
+          "agent_match_wins": 98,
+          "hands_played": 852
+        },
+        {
+          "session_id": "df9ab0b7-9328-4c41-8940-a6ad04cf41a5",
+          "challenger_id": "swpecht-google__gemini-3.5-flash-20260524T222528Z",
+          "agent_name": "hard",
+          "num_games": 100,
+          "started_at": 1779678821,
+          "completed_at": 1779682869,
+          "challenger_score": 287,
+          "agent_score": 1047,
+          "challenger_match_wins": 0,
+          "agent_match_wins": 100,
+          "hands_played": 837
+        },
+        {
+          "session_id": "848d5cf1-2bae-4731-a0ad-5639c3a8914c",
+          "challenger_id": "swpecht-google__gemini-3.5-flash-20260524T222528Z",
+          "agent_name": "hard",
+          "num_games": 100,
+          "started_at": 1779672185,
+          "completed_at": 1779673080,
+          "challenger_score": 177,
+          "agent_score": 1063,
+          "challenger_match_wins": 0,
+          "agent_match_wins": 100,
+          "hands_played": 737
+        }
+      ]
+    }
+  },
+  "latest_per_agent": {
+    "random": {
+      "challenger_score": 1044,
+      "agent_score": 364,
+      "challenger_match_wins": 96,
+      "agent_match_wins": 4,
+      "hands_played": 861,
+      "num_games": 100
+    },
+    "easy": {
+      "challenger_score": 378,
+      "agent_score": 1032,
+      "challenger_match_wins": 6,
+      "agent_match_wins": 94,
+      "hands_played": 875,
+      "num_games": 100
+    },
+    "medium": {
+      "challenger_score": 268,
+      "agent_score": 1045,
+      "challenger_match_wins": 3,
+      "agent_match_wins": 97,
+      "hands_played": 857,
+      "num_games": 100
+    },
+    "hard": {
+      "challenger_score": 302,
+      "agent_score": 1038,
+      "challenger_match_wins": 2,
+      "agent_match_wins": 98,
+      "hands_played": 852,
+      "num_games": 100
+    }
+  }
+}
