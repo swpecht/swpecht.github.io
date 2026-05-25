@@ -5,10 +5,11 @@ date: 2026-05-25T00:00:00Z
 
 # Context
 
-Previously, I [ran 7 LLM coding agents through my euchre benchmark](/posts/llm-agents-play-euchre/) and noticed two things: most of them stopped early, and none of them used the web. So this time I changed two things in the harness:
+Previously, I [ran 7 LLM coding agents through my euchre benchmark](/posts/llm-agents-play-euchre/) and noticed two things: most of them stopped early, and none of them used the web. So this time I changed three things:
 
-1. **Auto-research**: gave every agent a [Tavily MCP](https://tavily.com/) server with `tavily_search`, `tavily_extract`, and `tavily_research`. Agents could now look up euchre strategy guides, scan GitHub for action-encoding hints, and do deep-research crawls.
+1. **A search tool**: gave every agent a [Tavily MCP](https://tavily.com/) server with `tavily_search`, `tavily_extract`, and `tavily_research`. Agents could now look up euchre strategy guides, scan GitHub for action-encoding hints, and do deep-research crawls.
 2. **A real wall-clock budget**: 12 hours per model, vs. the 1–2 hours each one used last matrix.
+3. **Auto research like prompt**:
 
 I ran 8 models. Sonnet wasn't included this time and claude-code stayed external. Each one got the same fresh sandbox and the same prompt (reproduced in [the previous post's appendix](/posts/llm-agents-play-euchre/#appendix-what-the-agents-saw)).
 
