@@ -10,7 +10,7 @@ A few weeks back I [ran 7 LLM coding agents through my euchre benchmark](/posts/
 1. **Auto-research**: gave every agent a [Tavily MCP](https://tavily.com/) server with `tavily_search`, `tavily_extract`, and `tavily_research`. Agents could now look up euchre strategy guides, scan GitHub for action-encoding hints, and do deep-research crawls.
 2. **A real wall-clock budget**: 12 hours per model, vs. the 1–2 hours each one used last matrix.
 
-I ran 8 models. Sonnet wasn't included this time and claude-code stayed external. Each one got the same fresh sandbox and the same prompt.
+I ran 8 models. Sonnet wasn't included this time and claude-code stayed external. Each one got the same fresh sandbox and the same prompt (reproduced in [the previous post's appendix](/posts/llm-agents-play-euchre/#appendix-what-the-agents-saw)).
 
 The rankings barely moved, and the new #1 got there for a different reason than I expected.
 
