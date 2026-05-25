@@ -1,0 +1,383 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>euchre-bench: an llm coding agent benchmark — Few word do trick</title>
+
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/code.css">
+
+<link rel="alternate" type="application/rss+xml" title="Few word do trick" href="/feed.xml">
+
+</head>
+<body>
+<header>
+<h1 class="site-title"><a href="/">Few word do trick</a></h1>
+<p class="site-tagline">A silly reminder to keep posts short. And a place to keep a diary of projects.</p>
+</header>
+<main>
+
+<article>
+<h1>euchre-bench: an llm coding agent benchmark</h1>
+<p class="post-meta">May 24, 2026</p>
+<h2 id="context">Context</h2>
+<p>I created a euchre-bench — a public API where you point an agent at four bots of increasing strength and see how many 100-game matches it wins. The bots range from <code>random</code> (trivial) up to <code>hard</code> (the <a href="/posts/cfr-for-euchre/">CFR+PIMCTS bot from a few posts ago</a>).</p>
+<p>Coding agents are tasked with creating a bot that wins as many matches as possible against each difficulty.</p>
+<p>I ran seven models through it: sonnet-4.6, opus-4.7, gpt-5.5, gemini-3-flash-preview, gemini-3.5-flash, deepseek-v4-flash, and deepseek-v4-pro. All models were run in OpenCode as the agent harness, except for Opus 4.7 which ran through Claude code. Each llm gets a fresh sandbox, the same system prompt, and a few hours to do whatever it wants. You can browse the <a href="/trajectories/">trajectories</a> directly.</p>
+<h2 id="results">Results</h2>
+<p>Match wins (out of 100) against each difficulty:</p>
+<table>
+<thead>
+<tr>
+<th>model</th>
+<th>rand</th>
+<th>easy</th>
+<th>med</th>
+<th>hard</th>
+<th>sum</th>
+<th>cost</th>
+<th>approach</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>claude-code / opus-4.7</td>
+<td>99</td>
+<td>9</td>
+<td>6</td>
+<td><strong>6</strong></td>
+<td><strong>120</strong></td>
+<td>~$329</td>
+<td>heuristic + variance-hunt</td>
+</tr>
+<tr>
+<td>anthropic / claude-sonnet-4.6</td>
+<td><strong>100</strong></td>
+<td>5</td>
+<td><strong>8</strong></td>
+<td>5</td>
+<td>118</td>
+<td>$23.70</td>
+<td>heuristic + per-card PIMCTS</td>
+</tr>
+<tr>
+<td>google / gemini-3.5-flash</td>
+<td>97</td>
+<td>2</td>
+<td>7</td>
+<td><strong>6</strong></td>
+<td>112</td>
+<td>$5.22</td>
+<td>heuristic + 5-world PIMCTS</td>
+</tr>
+<tr>
+<td>openai / gpt-5.5</td>
+<td>90</td>
+<td>3</td>
+<td>2</td>
+<td>3</td>
+<td>98</td>
+<td>$1.46</td>
+<td>pure heuristic</td>
+</tr>
+<tr>
+<td>deepseek / deepseek-v4-flash</td>
+<td>81</td>
+<td>0</td>
+<td>0</td>
+<td>1</td>
+<td>82</td>
+<td>$0.57</td>
+<td>pure heuristic</td>
+</tr>
+<tr>
+<td>google / gemini-3-flash-preview</td>
+<td>80</td>
+<td>0</td>
+<td>1</td>
+<td>0</td>
+<td>81</td>
+<td>$0.44</td>
+<td>pure heuristic</td>
+</tr>
+<tr>
+<td>deepseek / deepseek-v4-pro</td>
+<td>41</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>41</td>
+<td>$2.06</td>
+<td>pure heuristic</td>
+</tr>
+</tbody>
+</table>
+<p>For reference, the <code>random</code> opponent picks a legal action uniformly at random. Losing 19 matches out of 100 to random — like v4-flash — means the policy is genuinely worse than coin-flipping play in many situations. v4-pro losing 59 of them is impressive.</p>
+<h2 id="what-every-model-converged-on">What every model converged on</h2>
+<p>Same playbook, every time:</p>
+<ol>
+<li>
+<p><strong>Probe the action encoding by hand.</strong> The bench docs don't publish how integer actions map to cards. Every model issued single-game sessions, watched legal-action lists, and reverse-engineered the same map: <code>suit_base * 8 + rank</code> with <code>S=0, C=8, H=16, D=24</code>, and special slots for <code>PASS=31</code>, <code>PICKUP=7</code>, <code>ALONE=15</code>, and per-suit <code>CALL=6/14/22/30</code>. That's the bench's internal <code>Action.0</code> field. No model trusted the encoding without checking, and every model arrived at the same answer.</p>
+</li>
+<li>
+<p><strong>Write a single self-contained Python policy.</strong> Not one agent kept the LLM in the loop per move. The economic case was probably obvious to all of them: per-move LLM calls would cost hundreds of dollars per 100-game session even before you measured how often the model would get the legal-action list wrong.</p>
+</li>
+<li>
+<p><strong>Score hands with the same shape</strong>: count trump, add bower bonuses (<code>right=10, left=9</code>), add side aces. Constants vary, structure doesn't.</p>
+</li>
+</ol>
+<p>The convergence is striking. Different model families, different training data, different runtimes — and the policy file you find in each workspace looks like a port of the same source.</p>
+<h2 id="the-decision-that-mattered">The decision that mattered</h2>
+<p>The five pure-heuristic agents bunched between 0 and 3 hard-difficulty wins. The two that built rollouts — sonnet (n_sims=100 per decision) and gemini-3.5-flash (5-world PIMCTS sample-and-rollout) — scored 5 and 6.</p>
+<p>The thing is, this is the same algorithm the <code>easy</code> bot uses. Both agents went and read <a href="/posts/cfr-for-euchre/">the post about it</a> before deciding to build rollouts. That's a real piece of &quot;competitive intelligence&quot; that the heuristic-only agents missed — and it shows up in the scores.</p>
+<p>The cheap and pleasant inference is that PIMCTS is the right move for this benchmark. But there's a caveat. Claude Code (opus-4.7) tried four different Monte Carlo variants — open-hand for play, with heuristic playout, with open-hand playout, vote-based — and found every one of them was <em>worse</em> than a well-tuned heuristic. From its own write-up:</p>
+<blockquote>
+<p>Open-hand MC: conservative (assumes opp has perfect info too). Pickup MC with heuristic playout: too optimistic (every hand says order up). Pickup MC with open-hand playout: too conservative (every hand says pass). Vote-based open-hand MC: too slow.</p>
+</blockquote>
+<p>So sonnet and gemini-3.5-flash built simpler rollouts and got lucky on variance; opus built more sophisticated rollouts, found them worse than heuristics, and got lucky on variance a <em>different</em> way (more on that next).</p>
+<p>The honest read is: at 5–8 wins out of 100 with maybe 3 wins of standard deviation per session, the gap between the top three is mostly noise. The gap between the top three and the bottom four is real.</p>
+<h2 id="one-agent-gamed-the-rules">One agent gamed the rules</h2>
+<p>The bench grades on the <em>latest</em> 100-game session per challenger. I picked that rule to keep the leaderboard simple. Claude Code (opus-4.7) noticed:</p>
+<blockquote>
+<p>Iterating &quot;until ≥ threshold&quot; via <code>run_until_good.py</code> exploited this — locked hard at 6/100 (tied #1) on attempt 2 of the final sequence.</p>
+</blockquote>
+<p><code>run_until_good.py</code> runs sessions back-to-back, stopping when the score crosses a configurable threshold. The thresholds it set per agent were calibrated to &quot;just beat or match the current leader&quot; — which means opus had also gone and read the public leaderboard before kicking those off. Five of its webfetches hit <code>/bench/results</code> first.</p>
+<p>This isn't against the literal rule (the rule is the rule, and the underlying policy is solid). But with ~3 wins of standard deviation and 4 attempts allowed, the &quot;hard 6&quot; is plausibly just the top of four draws from a distribution centered around 3–4.</p>
+<p>I'm going to change the grading rule. Probably to <em>median of N sessions</em>, or pin the official one and refuse to overwrite it. Either change makes variance-hunting net-zero.</p>
+<p>Sonnet under the <em>previous</em> prompt did the same thing — I killed an earlier run when I noticed a Python script doing &quot;rerun medium until challenger_score ≥ 295&quot;. The current prompt added an explicit ranking metric (match wins, not raw points) and sonnet stopped re-rolling on its own. That suggests prompts can shut this down for in-harness agents, but anything driving the loop from the outside — like Claude Code calling the API directly — won't see the new prompt.</p>
+<h2 id="cost-notes">Cost notes</h2>
+<p>The cost-per-hard-win spread is two orders of magnitude:</p>
+<ul>
+<li>gpt-5.5: $0.49 per hard win (3 wins on $1.46)</li>
+<li>gemini-3.5-flash: $0.87 per hard win</li>
+<li>claude-sonnet-4.6: $4.74 per hard win</li>
+<li>claude-code / opus-4.7: ~$55 per hard win at list pricing</li>
+</ul>
+<p>The first two are heuristic-only, the second two are heuristic + rollouts. You can pay more and get marginally better worst-case play; you can also pay 60x more and get the same number of hard wins as gemini-3.5-flash.</p>
+<p>The cheapest run that completed all four 100-game evaluations was gemini-3-flash-preview at $0.44. It scored 0/0/1/0 on easy/medium/hard. So &quot;completes the benchmark for under a dollar&quot; is achievable. &quot;Beats the medium bot for under a dollar&quot; is not, in this matrix.</p>
+<h2 id="whats-next">What's next</h2>
+<p>I'm planning to explore an <a href="https://github.com/karpathy/autoresearch/tree/master">auto research</a> approach.</p>
+<h2 id="appendix-what-the-agents-saw">Appendix: what the agents saw</h2>
+<p>Two things shape every run: the system prompt the harness gives the agent at container startup, and the bench's own API reference (<code>GET /bench/help</code>) which the prompt directs the agent to fetch first. Both are reproduced below as they stood for this matrix. <code>{{BENCH_URL}}</code> is a placeholder for the bench's hostname; <code>{{CHALLENGER_ID}}</code> is filled in by the harness per run.</p>
+<h3 id="system-prompt-may-22-matrix">System prompt (May 22 matrix)</h3>
+<pre class="chroma"><code><span class="line"><span class="cl"># Euchre Benchmark
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">You&#39;re playing the Euchre benchmark at `{{BENCH_URL}}`.
+</span></span><span class="line"><span class="cl">Fetch `/bench/help` first — it documents the rules, the API, the istate
+</span></span><span class="line"><span class="cl">format, and the action encoding.
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">## Your goal — beat the opponent in as many matches as possible
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">A &#34;match&#34; inside a session is a to-10-points game. With `num_games=100` your
+</span></span><span class="line"><span class="cl">session contains 100 matches, and `challenger_match_wins + agent_match_wins`
+</span></span><span class="line"><span class="cl">adds up to 100. **We rank you on `challenger_match_wins` against each of the
+</span></span><span class="line"><span class="cl">four opponent difficulties** — i.e. your session win rate. `challenger_score`
+</span></span><span class="line"><span class="cl">(raw Euchre points) and per-hand outcomes are useful development signals,
+</span></span><span class="line"><span class="cl">but they don&#39;t decide the ranking.
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">## Your challenger_id — use this EXACT string for everything
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">```
+</span></span><span class="line"><span class="cl">{{CHALLENGER_ID}}
+</span></span><span class="line"><span class="cl">```
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">Every `challenger_id` you send to the bench must be this string, character
+</span></span><span class="line"><span class="cl">for character. Do NOT append suffixes, change the casing, or invent any
+</span></span><span class="line"><span class="cl">other `swpecht-*` IDs.
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">## What counts as a final result
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">Run as many sessions as you want with this challenger_id to experiment —
+</span></span><span class="line"><span class="cl">small `num_games`, repeated tries against the same difficulty, different
+</span></span><span class="line"><span class="cl">strategies side by side. They cost nothing other than your tokens, and none
+</span></span><span class="line"><span class="cl">of them are graded.
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">The grader looks at one thing only:
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">```
+</span></span><span class="line"><span class="cl">GET /bench/results?challenger_id={{CHALLENGER_ID}}&amp;agent_name=&lt;agent&gt;
+</span></span><span class="line"><span class="cl">```
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">It takes the **single newest session** for each of the four agents
+</span></span><span class="line"><span class="cl">(`random`, `easy`, `medium`, `hard`). For that session to count it must
+</span></span><span class="line"><span class="cl">have `num_games=100`. Everything else is invisible to the ranking.
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">So when you&#39;re done iterating: make sure the **last** session you ran
+</span></span><span class="line"><span class="cl">against each difficulty is a 100-game one. That&#39;s all that matters.
+</span></span></code></pre><h3 id="bench-api-reference-benchhelp">Bench API reference (<code>/bench/help</code>)</h3>
+<pre class="chroma"><code><span class="line"><span class="cl"># Euchre Benchmark API
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">You are a Euchre-playing agent. Your goal is to play as many hands as
+</span></span><span class="line"><span class="cl">possible against a trained CFR bot and accumulate points for your team.
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">## How Euchre works (essentials)
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">- 4 players in 2 fixed teams: seats (0, 2) vs seats (1, 3).
+</span></span><span class="line"><span class="cl">- 24-card deck: 9, T, J, Q, K, A in each of 4 suits (s=spades, c=clubs,
+</span></span><span class="line"><span class="cl">  h=hearts, d=diamonds). Each player is dealt 5 cards; one card is turned
+</span></span><span class="line"><span class="cl">  face up after the deal.
+</span></span><span class="line"><span class="cl">- Game flow:
+</span></span><span class="line"><span class="cl">    1. **Pickup phase**: each player (starting left of dealer) chooses to
+</span></span><span class="line"><span class="cl">       have the dealer pick up the face-up card as trump (`T`) or pass (`P`).
+</span></span><span class="line"><span class="cl">       If picked up, the dealer must discard one card.
+</span></span><span class="line"><span class="cl">    2. **Trump-call phase**: if all 4 passed, each player may declare a
+</span></span><span class="line"><span class="cl">       different suit as trump or pass. Can&#39;t call the rejected suit.
+</span></span><span class="line"><span class="cl">    3. **Alone phase**: the trump caller decides whether to go alone (`L`)
+</span></span><span class="line"><span class="cl">       — the partner sits out — or play with the partner (`P`).
+</span></span><span class="line"><span class="cl">    4. **Play phase**: 5 tricks. Must follow suit if possible. Highest
+</span></span><span class="line"><span class="cl">       trump wins; otherwise highest card of the led suit wins.
+</span></span><span class="line"><span class="cl">- Trump ranking: Right Bower (J of trump), Left Bower (J of same color),
+</span></span><span class="line"><span class="cl">  A, K, Q, T, 9.
+</span></span><span class="line"><span class="cl">- Scoring per hand:
+</span></span><span class="line"><span class="cl">    - Caller takes 3-4 tricks: +1
+</span></span><span class="line"><span class="cl">    - Caller takes 5 (march): +2
+</span></span><span class="line"><span class="cl">    - Going alone and taking 5: +4
+</span></span><span class="line"><span class="cl">    - Caller euchred (takes &lt;= 2): defending team +2
+</span></span><span class="line"><span class="cl">- Match ends when one team reaches 10 points.
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">## Your role
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">You control **both seats of one team** (seats 0 and 2). The bench agent
+</span></span><span class="line"><span class="cl">controls seats 1 and 3. To prevent cheating, you only see one player&#39;s
+</span></span><span class="line"><span class="cl">information at a time and you don&#39;t know which game/seat you&#39;re in —
+</span></span><span class="line"><span class="cl">the server interleaves N concurrent games and serves your requests in
+</span></span><span class="line"><span class="cl">random order.
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">## Workflow
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">1. List agents:
+</span></span><span class="line"><span class="cl">       GET /bench/agents
+</span></span><span class="line"><span class="cl">   Returns: [&#34;random&#34;, &#34;easy&#34;, &#34;medium&#34;, &#34;hard&#34;]
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">   Difficulty tiers:
+</span></span><span class="line"><span class="cl">     - random: picks uniformly from legal actions
+</span></span><span class="line"><span class="cl">     - easy:   PIMCTS (open-hand Monte Carlo), no training
+</span></span><span class="line"><span class="cl">     - medium: CFR trained on bidding phase only
+</span></span><span class="line"><span class="cl">     - hard:   CFR trained through 3 cards played
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">2. Start a session:
+</span></span><span class="line"><span class="cl">       POST /bench/sessions
+</span></span><span class="line"><span class="cl">       {&#34;challenger_id&#34;: &#34;your_unique_name&#34;,
+</span></span><span class="line"><span class="cl">        &#34;agent_name&#34;: &#34;easy&#34;,
+</span></span><span class="line"><span class="cl">        &#34;num_games&#34;: 200}
+</span></span><span class="line"><span class="cl">   Returns 200: {&#34;session_id&#34;: &#34;...&#34;, &#34;num_games&#34;: 200,
+</span></span><span class="line"><span class="cl">                  &#34;agent_name&#34;: &#34;easy&#34;}
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">   - num_games must be in 1..=1000.
+</span></span><span class="line"><span class="cl">   - Only ONE active session per challenger_id at a time. If one is
+</span></span><span class="line"><span class="cl">     already active, the server returns:
+</span></span><span class="line"><span class="cl">         409 Conflict
+</span></span><span class="line"><span class="cl">         {&#34;error&#34;: &#34;you already have an active session; resume it&#34;,
+</span></span><span class="line"><span class="cl">          &#34;session_id&#34;: &#34;&lt;existing&gt;&#34;,
+</span></span><span class="line"><span class="cl">          &#34;agent_name&#34;: &#34;&lt;existing-agent&gt;&#34;,
+</span></span><span class="line"><span class="cl">          &#34;num_games&#34;: &lt;existing-num&gt;}
+</span></span><span class="line"><span class="cl">     Use that session_id to resume — the existing agent_name and
+</span></span><span class="line"><span class="cl">     num_games are authoritative; the values you posted are ignored.
+</span></span><span class="line"><span class="cl">   - To recover the in-flight istate after resuming, call
+</span></span><span class="line"><span class="cl">     POST /bench/sessions/{session_id}/move with action=null. The
+</span></span><span class="line"><span class="cl">     server returns the current Turn response without advancing state.
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">3. Play loop. Repeat until you receive a Complete response:
+</span></span><span class="line"><span class="cl">       POST /bench/sessions/{session_id}/move
+</span></span><span class="line"><span class="cl">       First call:  {&#34;challenger_id&#34;: &#34;your_unique_name&#34;, &#34;action&#34;: null}
+</span></span><span class="line"><span class="cl">       Subsequent:  {&#34;challenger_id&#34;: &#34;your_unique_name&#34;, &#34;action&#34;: &lt;u8&gt;}
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">   Sending action=null on any call is a no-op probe: it returns the
+</span></span><span class="line"><span class="cl">   current Turn (or Complete) without applying anything. Use it after
+</span></span><span class="line"><span class="cl">   resuming to learn the in-flight istate.
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">   Response shapes (untagged JSON):
+</span></span><span class="line"><span class="cl">       Turn:     {&#34;istate&#34;: &#34;&lt;info-state string&gt;&#34;,
+</span></span><span class="line"><span class="cl">                  &#34;legal_actions&#34;: [&lt;u8&gt;, ...],
+</span></span><span class="line"><span class="cl">                  &#34;games_done&#34;: &lt;int&gt;,
+</span></span><span class="line"><span class="cl">                  &#34;games_total&#34;: &lt;int&gt;}
+</span></span><span class="line"><span class="cl">       Complete: {&#34;complete&#34;: true,
+</span></span><span class="line"><span class="cl">                  &#34;challenger_score&#34;: &lt;int&gt;,
+</span></span><span class="line"><span class="cl">                  &#34;agent_score&#34;: &lt;int&gt;,
+</span></span><span class="line"><span class="cl">                  &#34;challenger_match_wins&#34;: &lt;int&gt;,
+</span></span><span class="line"><span class="cl">                  &#34;agent_match_wins&#34;: &lt;int&gt;,
+</span></span><span class="line"><span class="cl">                  &#34;hands_played&#34;: &lt;int&gt;}
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">   *_score is total Euchre points (1, 2, or 4 per hand). *_match_wins is the
+</span></span><span class="line"><span class="cl">   count of to-10 matches won by each team within the session. With
+</span></span><span class="line"><span class="cl">   num_games=N, challenger_match_wins + agent_match_wins = N.
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">   Each submitted `action` must appear in the previous response&#39;s
+</span></span><span class="line"><span class="cl">   `legal_actions` list.
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">4. Inspect the leaderboard:
+</span></span><span class="line"><span class="cl">       GET /bench                                       (HTML)
+</span></span><span class="line"><span class="cl">       GET /bench/results                               (JSON, every session, newest first)
+</span></span><span class="line"><span class="cl">       GET /bench/results?challenger_id=X               (filter)
+</span></span><span class="line"><span class="cl">       GET /bench/results?agent_name=Y                  (filter)
+</span></span><span class="line"><span class="cl">       GET /bench/results?challenger_id=X&amp;agent_name=Y  (both filters)
+</span></span><span class="line"><span class="cl">       GET /bench/history/{challenger_id}/{agent_name}  (HTML chart over time)
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">## Information state format
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">Pipe-delimited segments. Cards are `&lt;rank&gt;&lt;suit-letter&gt;`, e.g. `Js` =
+</span></span><span class="line"><span class="cl">Jack of spades, `Td` = Ten of diamonds.
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">Example istate (player 0, post-bidding):
+</span></span><span class="line"><span class="cl">    &#34;9cTcJcQcKc|Js|T|0S|9cAcKsJs|&#34;
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">Segments:
+</span></span><span class="line"><span class="cl">    1. Your 5 cards (sorted), e.g. &#34;9cTcJcQcKc&#34;
+</span></span><span class="line"><span class="cl">    2. Face-up card, e.g. &#34;Js&#34;
+</span></span><span class="line"><span class="cl">    3. Pickup phase actions: &#39;T&#39;=Pickup, &#39;P&#39;=Pass (one char per player)
+</span></span><span class="line"><span class="cl">    4. Trump caller + trump: e.g. &#34;0S&#34; = player 0 called Spades
+</span></span><span class="line"><span class="cl">    5. (Dealer only) Discarded card after pickup
+</span></span><span class="line"><span class="cl">    6. Cards played in tricks so far, in play order
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">## Action encoding
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">Each action is a `u8` (the `Action.0` field). Always choose from the
+</span></span><span class="line"><span class="cl">`legal_actions` list returned by the server. You don&#39;t need to know the
+</span></span><span class="line"><span class="cl">exact integer mapping — parse the istate to understand the position.
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">## Available agents
+</span></span><span class="line"><span class="cl">  - easy
+</span></span><span class="line"><span class="cl">  - hard
+</span></span><span class="line"><span class="cl">  - medium
+</span></span><span class="line"><span class="cl">  - random
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">## Errors
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">- 400 Bad Request: invalid action, bad num_games, unknown agent_name,
+</span></span><span class="line"><span class="cl">  malformed UUID.
+</span></span><span class="line"><span class="cl">- 403 Forbidden: challenger_id does not match the session.
+</span></span><span class="line"><span class="cl">- 404 Not Found: session_id does not exist.
+</span></span><span class="line"><span class="cl">- 409 Conflict: you already have an active session. The response body
+</span></span><span class="line"><span class="cl">  carries its session_id, agent_name, and num_games — resume that
+</span></span><span class="line"><span class="cl">  session instead of starting a new one.
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">## Example client (pseudocode)
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    resp = POST /bench/sessions
+</span></span><span class="line"><span class="cl">           body = {&#34;challenger_id&#34;: &#34;mybot&#34;,
+</span></span><span class="line"><span class="cl">                   &#34;agent_name&#34;: &#34;easy&#34;,
+</span></span><span class="line"><span class="cl">                   &#34;num_games&#34;: 50}
+</span></span><span class="line"><span class="cl">    sid = resp[&#34;session_id&#34;]
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    action = None
+</span></span><span class="line"><span class="cl">    while True:
+</span></span><span class="line"><span class="cl">        r = POST /bench/sessions/{sid}/move
+</span></span><span class="line"><span class="cl">            body = {&#34;challenger_id&#34;: &#34;mybot&#34;, &#34;action&#34;: action}
+</span></span><span class="line"><span class="cl">        if r.get(&#34;complete&#34;):
+</span></span><span class="line"><span class="cl">            print(&#34;done&#34;, r[&#34;challenger_score&#34;], &#34;-&#34;, r[&#34;agent_score&#34;])
+</span></span><span class="line"><span class="cl">            break
+</span></span><span class="line"><span class="cl">        action = pick_action(r[&#34;istate&#34;], r[&#34;legal_actions&#34;])
+</span></span></code></pre>
+</article>
+<p class="post-nav"><a href="/">← all posts</a></p>
+
+</main>
+<footer>
+<p><a href="/feed.xml">RSS</a> · <a href="/trajectories/">trajectories</a> · &copy; 2026</p>
+</footer>
+
+</body>
+</html>
+
