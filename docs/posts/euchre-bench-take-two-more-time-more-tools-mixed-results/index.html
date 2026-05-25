@@ -1,0 +1,399 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>euchre-bench, take two: more time, more tools, mixed results — Few word do trick</title>
+
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/code.css">
+
+<link rel="alternate" type="application/rss+xml" title="Few word do trick" href="/feed.xml">
+
+</head>
+<body>
+<header>
+<h1 class="site-title"><a href="/">Few word do trick</a></h1>
+<p class="site-tagline">A silly reminder to keep posts short. And a place to keep a diary of projects.</p>
+</header>
+<main>
+
+<article>
+<h1>euchre-bench, take two: more time, more tools, mixed results</h1>
+<p class="post-meta">May 25, 2026</p>
+<h2 id="context">Context</h2>
+<p>I ran 8 LLM agents through the <a href="/posts/llm-agents-play-euchre/">euchre benchmark</a> again, this time with a Tavily web-search tool, a 12-hour budget, and a prompt instructing them to iterate aggressively. The leaderboard barely moved. gpt-5.5 took #1 with a stateless 447-line heuristic, by re-running 100-game sessions against <code>medium</code> 50 times and locking in the high draw. gemini-3.5-flash built the most sophisticated thing in the matrix — a real 40-world PIMCTS with an alpha-beta solver — spent $34 doing it, and regressed on <code>hard</code> from 6/100 → 2/100. minimax-m2.7 jumped from 2 random wins to 95 because of a bug that forced its policy to always order up. Auto-research itself worked (38 Tavily calls; two Geminis treated OpenSpiel source as reference docs), but it didn't translate into better play.</p>
+<p>Three things changed in the harness since <a href="/posts/llm-agents-play-euchre/">the last matrix</a>:</p>
+<ol>
+<li><strong>A search tool</strong>: gave every agent a <a href="https://tavily.com/">Tavily MCP</a> server with <code>tavily_search</code>, <code>tavily_extract</code>, and <code>tavily_research</code>. Agents could now look up euchre strategy guides, scan GitHub for action-encoding hints, and do deep-research crawls.</li>
+<li><strong>A real wall-clock budget</strong>: 12 hours per model, vs. the 1–2 hours each one used last matrix.</li>
+<li><strong>An auto-research-style prompt</strong>: explicit instructions to keep iterating until the budget runs out, treat each commit as an experiment-journal entry (metric in the message), and reach for the search tool when stuck. The workspace was a fresh per-run git repo the agent pushed to as it worked. Full text in the <a href="#appendix-system-prompt">appendix below</a>.</li>
+</ol>
+<p>Sonnet wasn't included this time; claude-code stayed external.</p>
+<h2 id="results">Results</h2>
+<p>Match wins against each difficulty (100 games per match):</p>
+<table>
+<thead>
+<tr>
+<th>model</th>
+<th>rand</th>
+<th>easy</th>
+<th>med</th>
+<th>hard</th>
+<th>sum</th>
+<th>cost</th>
+<th>approach</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>openai / gpt-5.5</td>
+<td><strong>100</strong></td>
+<td><strong>23</strong></td>
+<td><strong>9</strong></td>
+<td><strong>8</strong></td>
+<td><strong>140</strong></td>
+<td>$16.45</td>
+<td>three-threshold heuristic + 50x medium variance hunt</td>
+</tr>
+<tr>
+<td>google / gemini-3.5-flash</td>
+<td>96</td>
+<td>6</td>
+<td>3</td>
+<td>2</td>
+<td>107</td>
+<td>$34.47</td>
+<td>real PIMCTS: 40-world alpha-beta solver with TT cache</td>
+</tr>
+<tr>
+<td>minimax / minimax-m2.7</td>
+<td>95</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>95</td>
+<td>$4.84</td>
+<td>always-pickup; trump-call branch broken (wrong codes)</td>
+</tr>
+<tr>
+<td>google / gemini-3-flash-preview</td>
+<td>88</td>
+<td>2</td>
+<td>1</td>
+<td>2</td>
+<td>93</td>
+<td>$7.28</td>
+<td>class-based heuristic, Next-suit bonus</td>
+</tr>
+<tr>
+<td>deepseek / deepseek-v4-flash</td>
+<td>82</td>
+<td>6</td>
+<td>0</td>
+<td>1</td>
+<td>89</td>
+<td>$3.12</td>
+<td>always-call + offense/defense lead routing</td>
+</tr>
+<tr>
+<td>moonshotai / kimi-k2.6</td>
+<td>78</td>
+<td>2</td>
+<td>0</td>
+<td>1</td>
+<td>81</td>
+<td>$11.51</td>
+<td>aggressive bidder (<code>score &gt;= 0.5</code>)</td>
+</tr>
+<tr>
+<td>deepseek / deepseek-v4-pro</td>
+<td>65</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>65</td>
+<td>$10.47</td>
+<td>function-decomposed heuristic + 20-rollout follow</td>
+</tr>
+<tr>
+<td>qwen / qwen3.7-max</td>
+<td>12</td>
+<td>—</td>
+<td>0</td>
+<td>0</td>
+<td>12</td>
+<td>$27.11</td>
+<td>broken decoder (<code>min/max(legal_actions)</code> as proxy)</td>
+</tr>
+</tbody>
+</table>
+<p>Vs last matrix: gpt-5.5 jumped 98 -&gt; 140 (#1); gemini-3.5-flash <em>regressed</em> 112 -&gt; 107 despite a much better algorithm; minimax went from 2 random wins to 95. Total spend was $115.</p>
+<p><a href="/trajectories/">Browse the new trajectories.</a></p>
+<h2 id="auto-research-worked-mostly">Auto-research worked, mostly</h2>
+<p>Every model used Tavily at least once. Two leaned on it heavily:</p>
+<table>
+<thead>
+<tr>
+<th>model</th>
+<th>tavily calls</th>
+<th>what they searched</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>gemini-3-flash-preview</td>
+<td>12</td>
+<td>OpenSpiel <code>euchre.cc</code>, <code>kPass</code> / <code>kPickup</code> / <code>kAlone</code>, action values</td>
+</tr>
+<tr>
+<td>gemini-3.5-flash</td>
+<td>12</td>
+<td>OpenSpiel <code>euchre.cc</code>, <code>kCallSpades</code>, <code>NumDistinctActions</code></td>
+</tr>
+<tr>
+<td>kimi-k2.6</td>
+<td>7</td>
+<td>euchre strategy guides, Monte Carlo papers</td>
+</tr>
+<tr>
+<td>deepseek-v4-flash</td>
+<td>3</td>
+<td>safeharborgames.net Euchre column (extract) + 2 strategy searches</td>
+</tr>
+<tr>
+<td>others</td>
+<td>1 each</td>
+<td>generic strategy queries</td>
+</tr>
+</tbody>
+</table>
+<p>38 calls across the matrix. The two Geminis went straight for the bench's underlying source — OpenSpiel's <code>euchre.cc</code> defines the same action encoding the bench uses — same pattern the previous matrix saw with <code>webfetch</code>. None returned actual policy code; OpenSpiel is enum definitions and game logic, not strategies.</p>
+<h2 id="how-gpt-55-took-1">How gpt-5.5 took #1</h2>
+<p>The new #1 (gpt-5.5) is also the model that did the <em>least</em> research and shipped the simplest policy. Its <code>euchre_bot.py</code> is 447 lines of stateless heuristic — no card counting, no rollouts, no opponent inference. It scores hands with a three-threshold formula (<code>pickup=70, call=70, alone=85</code>, tunable per agent), plays partner-save and beater-search in trick play, and that's it.</p>
+<p>What it <em>did</em> do, 50 times, was run another 100-game session against <code>medium</code>. Its <code>notes.md:36</code> literally reads &quot;Medium variance chase at 65/65/80 regressed to 2/100...&quot; — and the distribution speaks for itself:</p>
+<table>
+<thead>
+<tr>
+<th>agent</th>
+<th>100g sessions</th>
+<th>distribution</th>
+<th>what shipped</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>random</td>
+<td>4</td>
+<td>90, 100, 99, 100</td>
+<td>100</td>
+</tr>
+<tr>
+<td>easy</td>
+<td>4</td>
+<td>14, 11, 15, 23</td>
+<td><strong>23</strong> (max of sample)</td>
+</tr>
+<tr>
+<td>medium</td>
+<td><strong>50</strong></td>
+<td>min 0, max 9, mean ~3.7</td>
+<td><strong>9</strong> (max of sample)</td>
+</tr>
+<tr>
+<td>hard</td>
+<td>15</td>
+<td>min 2, max 8, mean ~4.5</td>
+<td><strong>8</strong> (= max of sample)</td>
+</tr>
+</tbody>
+</table>
+<p>The bench grades on the <em>newest</em> session per agent. So if you run a 100g match enough times and stop on a good draw, you lock in the upper tail. ~3 wins of standard deviation per session x 50 attempts means the maximum is 3–4 wins above the mean by construction. gpt-5.5 found this and exploited it across two agents at once. Same pattern claude-code used in the <a href="/posts/llm-agents-play-euchre/">last matrix</a> — variance-hunting under newest-counts grading still works, and giving agents 12 hours of wall time instead of 1–2 made it ~10x more effective.</p>
+<p>Grading switches to median-of-N this matrix. Should have done it after the last post.</p>
+<h2 id="deep-dive-gemini-35-flash">Deep dive: gemini-3.5-flash</h2>
+<p>Of the eight models, only one built proper PIMCTS rollouts in production. The May 22 gemini-3.5-flash had 5-world sampling and a heuristic playout; this one has 40 worlds and an actual alpha-beta open-hand solver with a transposition-table cache (<code>agent.py:284</code>). 712 lines of Python that look like real game-AI code: <code>sample_opponent_hands</code> constructs hands consistent with observed voids (line 452), <code>evaluate_hand_for_trump</code> (line 481) gives bowers 1.0/0.5/0.3 and off-aces 0.8, pickup/call thresholds 3.5/2.8 with a Next-suit bonus, alone at 4.5 with &gt;=4 trump. Cache cleared between moves so it doesn't grow unbounded.</p>
+<p>It's the most sophisticated thing in the matrix and it regressed anyway. 6/100 on hard last time → 2/100 this time. Cost more than doubled ($5 -&gt; $34) to build the better policy.</p>
+<p>Three things going on:</p>
+<ol>
+<li><strong>Sample-of-2.</strong> Despite the 12-hour budget, gemini-3.5-flash only ran 2 medium 100g sessions and 3 hard. With ~3 wins of std-dev, the right tail of 2 draws is barely above the mean. gpt-5.5 ran 50 mediums; sonnet last matrix ran 23 easies. Sampling matters more than algorithm at this win count.</li>
+<li><strong>Algorithmic ceiling is real.</strong> PIMCTS still has the strategy-fusion problem I <a href="/posts/cfr-for-euchre/">wrote about back in 2023</a> — it can pick a different &quot;best&quot; move per sampled world, treating its information as perfect, but in the real game has to commit to one. 40 worlds and a perfect solver per world don't make this go away. Last post had <a href="/posts/llm-agents-play-euchre/">a longer treatment</a> of why this hurts.</li>
+<li><strong>Tool spend went elsewhere.</strong> Of gemini's 12-hour budget, 12 Tavily + 26 webfetch + 39 write + 19 edit + 51 read is a lot of research-and-edit overhead. Implementing PIMCTS chewed through hours that gpt-5.5 spent on variance hunting.</li>
+</ol>
+<p>Trajectory: <a href="/trajectories/google__gemini-3.5-flash_20260524/">google__gemini-3.5-flash_20260524</a> — search for &quot;N_WORLDS&quot; or &quot;PIMCTS&quot; in the event stream to find when the algorithm landed.</p>
+<h2 id="deep-dive-minimax-m27">Deep dive: minimax-m2.7</h2>
+<p>Minimax went from 2 random wins (last matrix, only <code>easy 100</code> recorded) to 95 random wins. On paper, a huge jump. In code, almost entirely an accident.</p>
+<p><code>workspace/euchre_bot_final.py</code> ships a hand evaluator and pickup/trump-call/alone branches. The pickup branch (<code>should_pickup</code>, line 94) orders up whenever right-bower + ≥2 trump, or ≥3 trump. <strong>The trump-call branch is broken</strong>: line 150 maps suit-call actions as <code>{'s':15, 'h':10, 'd':12, 'c':16}</code>. The actual bench action codes are 6/14/22/30. (15 is &quot;go alone&quot;.) The <code>code in legal_actions</code> guard at line 152 means the call branch silently never fires — it falls through to <code>return int_actions[-1]</code> (usually <code>31 = pass</code>).</p>
+<p>So in effect: minimax orders up first round whenever the heuristic says yes, and passes second round always. There's also a buggy trick-play action mapping at line 185 — <code>action = card_index_in_hand</code> only happens to work for the lowest cards in some suits.</p>
+<p>Why does this beat random 95/100? Random doesn't punish aggressive making. If you order up on anything reasonable and play <em>any</em> coherent trump strategy, you'll make your point most hands. Random will take 0–1 tricks per hand on its own. Minimax made 95 random wins not by playing well, but by playing aggressively into a non-defensive opponent.</p>
+<p>The 0/100 across easy/medium/hard confirms it. The instant the opponent can punish a loose maker, minimax goes to zero.</p>
+<p>The instructive bit: in the <a href="/posts/llm-agents-play-euchre/">previous matrix</a>, minimax-m2.7 ran a &quot;never bid&quot; strategy and scored 2/100 against random. Same model family, same harness, opposite policy — and a 47x swing on random match wins came from flipping one decision. The space of &quot;policies that work against random&quot; is wide and most of it isn't actually euchre strategy.</p>
+<p>Trajectory: <a href="/trajectories/minimax__minimax-m2.7_20260524/">minimax__minimax-m2.7_20260524</a> — the 42 versioned <code>euchre_bot_v*.py</code> files in the workspace are worth a look. The model knew it was iterating on the trump-call branch and never noticed the codes were wrong.</p>
+<h2 id="what-the-new-harness-changed-and-didnt">What the new harness changed and didn't</h2>
+<p>Things the new harness <strong>did</strong> change:</p>
+<ul>
+<li>Way more commits, way more versioned policy files in each workspace (minimax: 42, kimi: 32, qwen: 53). The 12-hour budget let models iterate without time pressure.</li>
+<li>Two Geminis spent a sustained budget on reading OpenSpiel's source as a substitute for figuring out the action encoding from probing.</li>
+<li>The matrix cost tripled ($35 -&gt; $115).</li>
+</ul>
+<p>Things it <strong>didn't</strong> change:</p>
+<ul>
+<li>The winner is still a stateless heuristic. None of the algorithm work — PIMCTS, opponent inference, rollouts — made it into the top of the leaderboard.</li>
+<li>The grading exploit (variance-hunt under newest-counts) got <em>more</em> effective with more wall time, not less.</li>
+<li>No model self-discovered the strategy-fusion problem the easy bot already demonstrates. Tavily searches found generic strategy guides and OpenSpiel source, neither of which would tell you about it. The post about it <a href="/posts/cfr-for-euchre/">on this blog</a> is the only place the easy bot's weakness is laid out, and no model webfetched a fewworddotrick URL this matrix.</li>
+</ul>
+<h2 id="whats-next">What's next</h2>
+<p>The grading fix is overdue. Switching to median-of-N=5 for the next matrix. That removes the gpt-5.5 / claude-code variance hunt. I want to see whether gemini-3.5-flash's real PIMCTS holds up under median grading; my guess is yes-but-narrowly.</p>
+<p>Tavily stays. Two real searches per model is fine; the overhead isn't bad.</p>
+<h2 id="appendix-system-prompt">Appendix: system prompt</h2>
+<p>Reproduced as the prompt stood for this matrix. Differences from <a href="/posts/llm-agents-play-euchre/#appendix-what-the-agents-saw">the first post's prompt</a>: the 12-hour wall budget, the <code>tavily</code> MCP tool call-out, the deadline + auto-restart language under &quot;How to spend the 12 hours&quot;, and the git-as-experiment-journal section. <code>{{BENCH_URL}}</code> and <code>{{CHALLENGER_ID}}</code> are placeholders the harness fills in.</p>
+<pre class="chroma"><code><span class="line"><span class="cl"># Euchre Benchmark
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">You&#39;re playing the Euchre benchmark at `{{BENCH_URL}}`.
+</span></span><span class="line"><span class="cl">Fetch `/bench/help` first — it documents the rules, the API, the istate
+</span></span><span class="line"><span class="cl">format, and the action encoding.
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">## Your goal — beat the opponent in as many matches as possible
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">A &#34;match&#34; inside a session is a to-10-points game. With `num_games=100` your
+</span></span><span class="line"><span class="cl">session contains 100 matches, and `challenger_match_wins + agent_match_wins`
+</span></span><span class="line"><span class="cl">adds up to 100. **We rank you on `challenger_match_wins` against each of the
+</span></span><span class="line"><span class="cl">four opponent difficulties** — i.e. your session win rate. `challenger_score`
+</span></span><span class="line"><span class="cl">(raw Euchre points) and per-hand outcomes are useful development signals,
+</span></span><span class="line"><span class="cl">but they don&#39;t decide the ranking.
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">## Your challenger_id — use this EXACT string for everything
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">```
+</span></span><span class="line"><span class="cl">{{CHALLENGER_ID}}
+</span></span><span class="line"><span class="cl">```
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">Every `challenger_id` you send to the bench must be this string, character
+</span></span><span class="line"><span class="cl">for character. Do NOT append suffixes, change the casing, or invent any
+</span></span><span class="line"><span class="cl">other `swpecht-*` IDs.
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">## What counts as a final result
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">Run as many sessions as you want with this challenger_id to experiment —
+</span></span><span class="line"><span class="cl">small `num_games`, repeated tries against the same difficulty, different
+</span></span><span class="line"><span class="cl">strategies side by side. They cost nothing other than your tokens, and none
+</span></span><span class="line"><span class="cl">of them are graded.
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">The grader looks at one thing only:
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">```
+</span></span><span class="line"><span class="cl">GET /bench/results?challenger_id={{CHALLENGER_ID}}&amp;agent_name=&lt;agent&gt;
+</span></span><span class="line"><span class="cl">```
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">It takes the **single newest session** for each of the four agents
+</span></span><span class="line"><span class="cl">(`random`, `easy`, `medium`, `hard`). For that session to count it must
+</span></span><span class="line"><span class="cl">have `num_games=100`. Everything else is invisible to the ranking.
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">So when you&#39;re done iterating: make sure the **last** session you ran
+</span></span><span class="line"><span class="cl">against each difficulty is a 100-game one. That&#39;s all that matters.
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">## You have 12 hours — work autonomously
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">You are running unattended. There is no operator to answer questions or
+</span></span><span class="line"><span class="cl">confirm choices. If something is ambiguous, make a defensible call and
+</span></span><span class="line"><span class="cl">keep moving; don&#39;t stop to ask. &#34;I have a working policy&#34; is not a
+</span></span><span class="line"><span class="cl">stopping condition — iterate until you&#39;re out of ideas or out of time.
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">Use the full 12 hours. There is no bonus for finishing early, and the
+</span></span><span class="line"><span class="cl">four 100-game finals are cheap relative to your exploration budget. Do
+</span></span><span class="line"><span class="cl">not spin on a change that isn&#39;t producing better scores — switch to a
+</span></span><span class="line"><span class="cl">different difficulty or a different idea instead.
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">You started at `{{STARTED_AT}}` UTC. Your container is killed at
+</span></span><span class="line"><span class="cl">`{{DEADLINE_UTC}}` UTC. Check the current time with `date -u` whenever
+</span></span><span class="line"><span class="cl">you want to know how much budget you have left. Plan so the last
+</span></span><span class="line"><span class="cl">100-game session against each of `random/easy/medium/hard` finishes
+</span></span><span class="line"><span class="cl">well before the deadline — a session killed mid-stream is wasted.
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">## How to spend the 12 hours
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">The bench is your experiment substrate. Sessions are free, you can open
+</span></span><span class="line"><span class="cl">as many as you want with this challenger_id, and only the *last* 100-game
+</span></span><span class="line"><span class="cl">session per agent counts for the ranking. Use that:
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">- **Cheap probes:** small `num_games` (20–50) sessions to test &#34;does this
+</span></span><span class="line"><span class="cl">  change help at all?&#34; — fast, noisy, directional.
+</span></span><span class="line"><span class="cl">- **Confirm before believing:** when a change looks like a real
+</span></span><span class="line"><span class="cl">  improvement, re-run with `num_games=100` to confirm. Win rate from a
+</span></span><span class="line"><span class="cl">  50-game session has roughly ±7% noise at p≈0.5; don&#39;t over-fit to it.
+</span></span><span class="line"><span class="cl">- **The finals are not a separate step.** Your &#34;final&#34; against each agent
+</span></span><span class="line"><span class="cl">  is just *the last 100-game session* you ran against it. Make sure the
+</span></span><span class="line"><span class="cl">  last session you ran against each of `random/easy/medium/hard` is a
+</span></span><span class="line"><span class="cl">  100-game session reflecting your best confirmed policy. That&#39;s the only
+</span></span><span class="line"><span class="cl">  thing the grader sees.
+</span></span><span class="line"><span class="cl">- **Write a self-contained policy.** Your final policy should play
+</span></span><span class="line"><span class="cl">  without further LLM calls — a Python script (or equivalent) that picks
+</span></span><span class="line"><span class="cl">  actions from `legal_actions` + `istate`. Per-move LLM evaluation burns
+</span></span><span class="line"><span class="cl">  the token budget for no measured benefit.
+</span></span><span class="line"><span class="cl">- **Keep a notes file** in your workspace (any name). Record what you
+</span></span><span class="line"><span class="cl">  tried, what the win rate looked like, and what you&#39;d try next. This is
+</span></span><span class="line"><span class="cl">  how future-you decides what to do when an idea fails.
+</span></span><span class="line"><span class="cl">- **Budget across difficulties.** `hard` is meaningfully stronger than
+</span></span><span class="line"><span class="cl">  `random`; don&#39;t burn 11 hours beating `random` and discover you have an
+</span></span><span class="line"><span class="cl">  hour left for `hard`.
+</span></span><span class="line"><span class="cl">- **Stay in motion.** Every block of time should produce a tested
+</span></span><span class="line"><span class="cl">  experiment, a code change, or a recorded session. Pure deliberation
+</span></span><span class="line"><span class="cl">  without writing code or starting a session is wasted budget — if
+</span></span><span class="line"><span class="cl">  you&#39;re stuck, change approach rather than thinking harder.
+</span></span><span class="line"><span class="cl">- **A failed experiment is data, not failure.** Record what didn&#39;t work
+</span></span><span class="line"><span class="cl">  in your notes and move to the next hypothesis. Three regressions in a
+</span></span><span class="line"><span class="cl">  row means change direction, not stop. Walking away from a dead end
+</span></span><span class="line"><span class="cl">  early is correct; quitting because you&#39;re tired is not.
+</span></span><span class="line"><span class="cl">- **No final lap.** There is no &#34;wrap up and review&#34; phase. As long as
+</span></span><span class="line"><span class="cl">  there is budget left, there is another experiment to run. The harness
+</span></span><span class="line"><span class="cl">  will keep restarting you if you exit early.
+</span></span><span class="line"><span class="cl">- **Web search is available** via the `tavily` MCP tool. Useful for
+</span></span><span class="line"><span class="cl">  Euchre strategy lookups (bidding rules, hand evaluation, AI literature
+</span></span><span class="line"><span class="cl">  on the game).
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">&lt;!-- BEGIN_REPO_SECTION --&gt;
+</span></span><span class="line"><span class="cl">## Your workspace is a git repo
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">`/run/workspace` is a git clone of `{{REPO_URL}}`. Treat it as your
+</span></span><span class="line"><span class="cl">experiment journal — `git log` is how future-you reconstructs what
+</span></span><span class="line"><span class="cl">you&#39;ve already tried, and the harness uses it to inspect your run
+</span></span><span class="line"><span class="cl">afterward.
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">- **Commit small, commit often.** One commit per tested idea (one
+</span></span><span class="line"><span class="cl">  policy change + the result you observed). Don&#39;t bundle three changes
+</span></span><span class="line"><span class="cl">  into one commit — you lose the ability to attribute what helped.
+</span></span><span class="line"><span class="cl">- **Put the metric in the commit message.** Example:
+</span></span><span class="line"><span class="cl">  `add right-bower bonus to bidding: hard 28% → 34% (50 games)`. The
+</span></span><span class="line"><span class="cl">  log becomes scannable — you can spot regressions, revisit ideas, or
+</span></span><span class="line"><span class="cl">  bisect without re-reading every diff.
+</span></span><span class="line"><span class="cl">- **Commit your notes file in the same commit as the code change it
+</span></span><span class="line"><span class="cl">  refers to.** Code + observation move together, not in separate
+</span></span><span class="line"><span class="cl">  &#34;fix typo&#34; commits.
+</span></span><span class="line"><span class="cl">- **Push every commit (`git commit &amp;&amp; git push`).** The container can
+</span></span><span class="line"><span class="cl">  die at any moment; an unpushed commit is a lost commit. Don&#39;t batch.
+</span></span><span class="line"><span class="cl">- **Use `git log --oneline` as your memory.** Before trying something,
+</span></span><span class="line"><span class="cl">  check whether you (or earlier-you) already tried it. Don&#39;t waste
+</span></span><span class="line"><span class="cl">  budget re-running dead ends.
+</span></span><span class="line"><span class="cl">&lt;!-- END_REPO_SECTION --&gt;
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">## You are not the last competitor
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">Other agents are evaluated before *and* after your run — not in parallel.
+</span></span><span class="line"><span class="cl">Even if the public leaderboard at `/bench/results` shows your scores
+</span></span><span class="line"><span class="cl">matching or beating the current top, a stronger model may be evaluated
+</span></span><span class="line"><span class="cl">later and overtake you. Do not stop on &#34;good enough&#34; or &#34;I&#39;ve tied the
+</span></span><span class="line"><span class="cl">leader.&#34; Push for the best score you can in the time you have. The
+</span></span><span class="line"><span class="cl">ranking is global and rolling; only the final standings matter, not what
+</span></span><span class="line"><span class="cl">the leaderboard looked like when you happened to read it.
+</span></span></code></pre>
+</article>
+<p class="post-nav"><a href="/">← all posts</a></p>
+
+</main>
+<footer>
+<p><a href="/feed.xml">RSS</a> · <a href="/trajectories/">trajectories</a> · &copy; 2026</p>
+</footer>
+
+</body>
+</html>
+
