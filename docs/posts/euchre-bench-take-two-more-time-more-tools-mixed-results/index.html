@@ -74,7 +74,7 @@
 <td>0</td>
 <td>0</td>
 <td>95</td>
-<td>$4.84</td>
+<td>$13</td>
 <td>always-pickup; trump-call branch broken (wrong codes)</td>
 </tr>
 <tr>
@@ -124,12 +124,13 @@
 <td>0</td>
 <td>0</td>
 <td>12</td>
-<td>$27.11</td>
+<td>$154</td>
 <td>broken decoder (<code>min/max(legal_actions)</code> as proxy)</td>
 </tr>
 </tbody>
 </table>
-<p>Vs last matrix: gpt-5.5 jumped 98 -&gt; 140 (#1); gemini-3.5-flash <em>regressed</em> 112 -&gt; 107 despite a much better algorithm; minimax went from 2 random wins to 95. Total spend was $115.</p>
+<p>Vs last matrix: gpt-5.5 jumped 98 -&gt; 140 (#1); gemini-3.5-flash <em>regressed</em> 112 -&gt; 107 despite a much better algorithm; minimax went from 2 random wins to 95. Total spend was $251.</p>
+<p>(Cost is token count × OpenRouter's published per-model pricing. Most rows match what opencode wrote to the trajectory; qwen3.7-max and minimax-m2.7 don't have a discounted cache-read rate published, so cache reads on those two are billed at the full prompt rate — opencode's stream had treated them as free, understating qwen by ~5.7x and minimax by ~2.6x.)</p>
 <p><a href="/trajectories/">Browse the new trajectories.</a></p>
 <h2 id="auto-research-worked-mostly">Auto-research worked, mostly</h2>
 <p>Every model used Tavily at least once. Two leaned on it heavily:</p>
@@ -234,7 +235,7 @@
 <ul>
 <li>Way more commits, way more versioned policy files in each workspace (minimax: 42, kimi: 32, qwen: 53). The 12-hour budget let models iterate without time pressure.</li>
 <li>Two Geminis spent a sustained budget on reading OpenSpiel's source as a substitute for figuring out the action encoding from probing.</li>
-<li>The matrix cost tripled ($35 -&gt; $115).</li>
+<li>The matrix cost jumped ~7x ($35 -&gt; $251), driven almost entirely by qwen3.7-max burning through 50M cache-read tokens at the full prompt rate.</li>
 </ul>
 <p>Things it <strong>didn't</strong> change:</p>
 <ul>

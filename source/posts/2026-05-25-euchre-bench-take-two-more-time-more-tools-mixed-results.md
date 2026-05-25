@@ -23,14 +23,16 @@ Match wins against each difficulty (100 games per match):
 |---|---|---|---|---|---|---|---|
 | openai / gpt-5.5 | **100** | **23** | **9** | **8** | **140** | $16.45 | three-threshold heuristic + 50x medium variance hunt |
 | google / gemini-3.5-flash | 96 | 6 | 3 | 2 | 107 | $34.47 | real PIMCTS: 40-world alpha-beta solver with TT cache |
-| minimax / minimax-m2.7 | 95 | 0 | 0 | 0 | 95 | $4.84 | always-pickup; trump-call branch broken (wrong codes) |
+| minimax / minimax-m2.7 | 95 | 0 | 0 | 0 | 95 | $13 | always-pickup; trump-call branch broken (wrong codes) |
 | google / gemini-3-flash-preview | 88 | 2 | 1 | 2 | 93 | $7.28 | class-based heuristic, Next-suit bonus |
 | deepseek / deepseek-v4-flash | 82 | 6 | 0 | 1 | 89 | $3.12 | always-call + offense/defense lead routing |
 | moonshotai / kimi-k2.6 | 78 | 2 | 0 | 1 | 81 | $11.51 | aggressive bidder (`score >= 0.5`) |
 | deepseek / deepseek-v4-pro | 65 | 0 | 0 | 0 | 65 | $10.47 | function-decomposed heuristic + 20-rollout follow |
-| qwen / qwen3.7-max | 12 | — | 0 | 0 | 12 | $27.11 | broken decoder (`min/max(legal_actions)` as proxy) |
+| qwen / qwen3.7-max | 12 | — | 0 | 0 | 12 | $154 | broken decoder (`min/max(legal_actions)` as proxy) |
 
-Vs last matrix: gpt-5.5 jumped 98 -> 140 (#1); gemini-3.5-flash *regressed* 112 -> 107 despite a much better algorithm; minimax went from 2 random wins to 95. Total spend was $115.
+Vs last matrix: gpt-5.5 jumped 98 -> 140 (#1); gemini-3.5-flash *regressed* 112 -> 107 despite a much better algorithm; minimax went from 2 random wins to 95. Total spend was $251.
+
+(Cost is token count × OpenRouter's published per-model pricing. Most rows match what opencode wrote to the trajectory; qwen3.7-max and minimax-m2.7 don't have a discounted cache-read rate published, so cache reads on those two are billed at the full prompt rate — opencode's stream had treated them as free, understating qwen by ~5.7x and minimax by ~2.6x.)
 
 [Browse the new trajectories.](/trajectories/)
 
@@ -101,7 +103,7 @@ Things the new harness **did** change:
 
 - Way more commits, way more versioned policy files in each workspace (minimax: 42, kimi: 32, qwen: 53). The 12-hour budget let models iterate without time pressure.
 - Two Geminis spent a sustained budget on reading OpenSpiel's source as a substitute for figuring out the action encoding from probing.
-- The matrix cost tripled ($35 -> $115).
+- The matrix cost jumped ~7x ($35 -> $251), driven almost entirely by qwen3.7-max burning through 50M cache-read tokens at the full prompt rate.
 
 Things it **didn't** change:
 
