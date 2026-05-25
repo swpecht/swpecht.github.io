@@ -5,15 +5,15 @@ date: 2026-05-25T00:00:00Z
 
 # Context
 
-Previously, I [ran 7 LLM coding agents through my euchre benchmark](/posts/llm-agents-play-euchre/) and noticed two things: most of them stopped early, and none of them used the web. So this time I changed three things:
+I ran 8 LLM agents through the [euchre benchmark](/posts/llm-agents-play-euchre/) again, this time with a Tavily web-search tool, a 12-hour budget, and a prompt instructing them to iterate aggressively. The leaderboard barely moved. gpt-5.5 took #1 with a stateless 447-line heuristic, by re-running 100-game sessions against `medium` 50 times and locking in the high draw. gemini-3.5-flash built the most sophisticated thing in the matrix — a real 40-world PIMCTS with an alpha-beta solver — spent $34 doing it, and regressed on `hard` from 6/100 → 2/100. minimax-m2.7 jumped from 2 random wins to 95 because of a bug that forced its policy to always order up. Auto-research itself worked (38 Tavily calls; two Geminis treated OpenSpiel source as reference docs), but it didn't translate into better play.
+
+Three things changed in the harness since [the last matrix](/posts/llm-agents-play-euchre/):
 
 1. **A search tool**: gave every agent a [Tavily MCP](https://tavily.com/) server with `tavily_search`, `tavily_extract`, and `tavily_research`. Agents could now look up euchre strategy guides, scan GitHub for action-encoding hints, and do deep-research crawls.
 2. **A real wall-clock budget**: 12 hours per model, vs. the 1–2 hours each one used last matrix.
-3. **Auto research like prompt**:
+3. **An auto-research-style prompt**: explicit instructions to keep iterating until the budget runs out, treat each commit as an experiment-journal entry (metric in the message), and reach for the search tool when stuck. The workspace was a fresh per-run git repo the agent pushed to as it worked. Full text in the [appendix below](#appendix-system-prompt).
 
-I ran 8 models. Sonnet wasn't included this time and claude-code stayed external. Each one got the same fresh sandbox and the same prompt (reproduced in [the previous post's appendix](/posts/llm-agents-play-euchre/#appendix-what-the-agents-saw)).
-
-The rankings barely moved, and the new #1 got there for a different reason than I expected.
+Sonnet wasn't included this time; claude-code stayed external.
 
 # Results
 
@@ -48,7 +48,7 @@ Every model used Tavily at least once. Two leaned on it heavily:
 
 38 calls across the matrix. The two Geminis went straight for the bench's underlying source — OpenSpiel's `euchre.cc` defines the same action encoding the bench uses — same pattern the previous matrix saw with `webfetch`. None returned actual policy code; OpenSpiel is enum definitions and game logic, not strategies.
 
-# But the rankings barely moved
+# How gpt-5.5 took #1
 
 The new #1 (gpt-5.5) is also the model that did the *least* research and shipped the simplest policy. Its `euchre_bot.py` is 447 lines of stateless heuristic — no card counting, no rollouts, no opponent inference. It scores hands with a three-threshold formula (`pickup=70, call=70, alone=85`, tunable per agent), plays partner-save and beater-search in trick play, and that's it.
 
@@ -69,7 +69,7 @@ Grading switches to median-of-N this matrix. Should have done it after the last 
 
 Of the eight models, only one built proper PIMCTS rollouts in production. The May 22 gemini-3.5-flash had 5-world sampling and a heuristic playout; this one has 40 worlds and an actual alpha-beta open-hand solver with a transposition-table cache (`agent.py:284`). 712 lines of Python that look like real game-AI code: `sample_opponent_hands` constructs hands consistent with observed voids (line 452), `evaluate_hand_for_trump` (line 481) gives bowers 1.0/0.5/0.3 and off-aces 0.8, pickup/call thresholds 3.5/2.8 with a Next-suit bonus, alone at 4.5 with >=4 trump. Cache cleared between moves so it doesn't grow unbounded.
 
-It's the most sophisticated thing in the matrix. And it regressed. 6/100 on hard last time → 2/100 this time. Cost more than doubled ($5 -> $34) to build the better policy.
+It's the most sophisticated thing in the matrix and it regressed anyway. 6/100 on hard last time → 2/100 this time. Cost more than doubled ($5 -> $34) to build the better policy.
 
 Three things going on:
 
@@ -115,7 +115,7 @@ The grading fix is overdue. Switching to median-of-N=5 for the next matrix. That
 
 Tavily stays. Two real searches per model is fine; the overhead isn't bad.
 
-# Appendix: system prompt (May 24 matrix)
+# Appendix: system prompt
 
 Reproduced as the prompt stood for this matrix. Differences from [the first post's prompt](/posts/llm-agents-play-euchre/#appendix-what-the-agents-saw): the 12-hour wall budget, the `tavily` MCP tool call-out, the deadline + auto-restart language under "How to spend the 12 hours", and the git-as-experiment-journal section. `{{BENCH_URL}}` and `{{CHALLENGER_ID}}` are placeholders the harness fills in.
 
