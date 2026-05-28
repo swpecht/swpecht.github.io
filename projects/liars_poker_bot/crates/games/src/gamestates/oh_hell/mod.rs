@@ -28,6 +28,7 @@ use crate::{
 use self::actions::{OHAction, OHCard, OHSuit, OH_DECK, OH_DECK_SIZE};
 
 pub mod actions;
+pub mod processors;
 
 pub const NUM_PLAYERS: usize = 3;
 
@@ -79,6 +80,7 @@ impl OhHell {
             trick_winners: Vec::new(),
             tricks_won: [0; NUM_PLAYERS],
             cards_played: 0,
+            played_mask: 0,
             key: IStateKey::default(),
             play_order: Vec::new(),
         }
@@ -143,6 +145,13 @@ pub struct OhHellGameState {
     tricks_won: [u8; NUM_PLAYERS],
     cards_played: u8,
 
+    /// Bitmask of every card that has been played so far across all
+    /// completed tricks AND the in-progress trick. Maintained
+    /// incrementally on `apply_play` and `undo`, so consumers (e.g. the
+    /// open-hand solver's action processor) can query "what's visible
+    /// on the table" without scanning the action history.
+    played_mask: u64,
+
     /// Full action history (every action ever taken). Used for undo and
     /// to construct per-player istate keys.
     key: IStateKey,
@@ -182,6 +191,28 @@ impl OhHellGameState {
 
     pub fn get_hand(&self, player: Player) -> Vec<OHCard> {
         cards_from_mask(self.hands[player])
+    }
+
+    /// Bit mask of `player`'s current hand (zero-alloc). One bit per
+    /// `OHCard as u8`. Intended for the open-hand solver's hot path.
+    pub fn hand_mask(&self, player: Player) -> u64 {
+        self.hands[player]
+    }
+
+    /// Bit mask of every card on the table (played in completed tricks or
+    /// in the trick currently in progress). Updated incrementally so this
+    /// is O(1) regardless of game length.
+    pub fn played_mask(&self) -> u64 {
+        self.played_mask
+    }
+
+    /// Cards in the in-progress trick, in play order (length `num_in_trick`).
+    pub fn current_trick(&self) -> &[Option<OHCard>; NUM_PLAYERS] {
+        &self.trick_cards
+    }
+
+    pub fn num_in_trick(&self) -> usize {
+        self.num_in_trick as usize
     }
 
     fn deal_card(&mut self, player: Player, card: OHCard) {
@@ -298,6 +329,7 @@ impl OhHellGameState {
         let p = self.cur_player;
         self.remove_card(p, card);
         self.trick_cards[self.num_in_trick as usize] = Some(card);
+        self.played_mask |= 1u64 << (card as u8);
         self.num_in_trick += 1;
         self.cards_played += 1;
 
@@ -543,6 +575,50 @@ impl GameState for OhHellGameState {
         sorted
     }
 
+    /// Compact, search-relevant hash of the current state for use as a
+    /// transposition table key. Skips the (large) history blob in
+    /// `key`/`play_order` — the live `hands`/`trick_cards`/`tricks_won`
+    /// summary already captures everything alpha-beta cares about. Only
+    /// returns Some during the play phase (which is the only place the
+    /// open-hand solver caches).
+    fn transposition_table_hash(&self) -> Option<crate::istate::IsomorphicHash> {
+        if self.phase != OHPhase::Play {
+            return None;
+        }
+        // Don't cache mid-trick: the trick's partial state would push us
+        // into many near-identical entries with no real reuse.
+        if self.num_in_trick != 0 {
+            return None;
+        }
+
+        // FxHash-style mix. The state we feed in is fully redundant with
+        // the alpha-beta search tree at this point, so a non-cryptographic
+        // hash is fine — we just need low collisions.
+        const K: u64 = 0x517cc1b727220a95;
+        #[inline(always)]
+        fn mix(h: u64, x: u64) -> u64 {
+            (h.rotate_left(5) ^ x).wrapping_mul(K)
+        }
+
+        let mut h: u64 = 0;
+        h = mix(h, self.hands[0]);
+        h = mix(h, self.hands[1]);
+        h = mix(h, self.hands[2]);
+
+        // Pack the small per-player counters and trump suit into one word.
+        let trump = self.trump_suit.map(|s| s as u8).unwrap_or(255) as u64;
+        let bid_pack = (self.bids[0].unwrap_or(255) as u64)
+            | ((self.bids[1].unwrap_or(255) as u64) << 8)
+            | ((self.bids[2].unwrap_or(255) as u64) << 16)
+            | ((self.tricks_won[0] as u64) << 24)
+            | ((self.tricks_won[1] as u64) << 32)
+            | ((self.tricks_won[2] as u64) << 40)
+            | ((self.cur_player as u64 & 0xff) << 48)
+            | (trump << 56);
+        h = mix(h, bid_pack);
+        Some(h)
+    }
+
     fn undo(&mut self) {
         let last_player = self.play_order.pop().expect("non-empty play_order");
         let last_action = self.key.pop();
@@ -598,12 +674,14 @@ impl GameState for OhHellGameState {
                 self.trick_starter = self.play_order[start];
 
                 self.deal_card(last_player, card);
+                self.played_mask &= !(1u64 << (card as u8));
                 self.cur_player = last_player;
                 self.cards_played -= 1;
             } else {
                 self.num_in_trick -= 1;
                 self.trick_cards[self.num_in_trick as usize] = None;
                 self.deal_card(last_player, card);
+                self.played_mask &= !(1u64 << (card as u8));
                 self.cur_player = last_player;
                 self.cards_played -= 1;
             }

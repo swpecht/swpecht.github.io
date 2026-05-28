@@ -6,10 +6,12 @@
 //! random opponents' decisions are sampled from a single per-game RNG so
 //! results are reproducible.
 //!
-//! PIMCTS uses a `RandomRolloutEvaluator` (one random rollout per resampled
-//! world) so the sweep scales to large n_tricks. A stronger evaluator like
-//! `OpenHandSolver` produces sharper play but is intractable past ~n=4 for
-//! Oh Hell because there are no game-specific search optimizations.
+//! Evaluator selection:
+//!   OH_EVAL=random  → `RandomRolloutEvaluator` (default; one random rollout
+//!                     per resampled world). Fast at any n_tricks.
+//!   OH_EVAL=oh_hell → `OpenHandSolver::new_oh_hell()` with the OH-specific
+//!                     action processor and early termination. Sharper but
+//!                     slower; tractable through ~n=7.
 //!
 //! Run with:
 //!   cargo run --release --example oh_hell_baseline
@@ -23,7 +25,7 @@ use std::time::Instant;
 
 use card_platypus::{
     agents::Agent,
-    algorithms::{ismcts::RandomRolloutEvaluator, pimcts::PIMCTSBot},
+    algorithms::{ismcts::RandomRolloutEvaluator, open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot},
 };
 use games::{
     gamestates::oh_hell::{OhHell, NUM_PLAYERS},
@@ -42,10 +44,11 @@ fn main() {
     let n_games = parse_env("OH_GAMES", 60);
     let rollouts = parse_env("OH_ROLLOUTS", 25);
     let max_tricks = parse_env("OH_MAX_TRICKS", 10).min(10);
+    let evaluator = std::env::var("OH_EVAL").unwrap_or_else(|_| "random".to_string());
 
     println!(
-        "Oh Hell baseline: {} games/n_tricks, PIMCTS rollouts={}, n_tricks=1..={}",
-        n_games, rollouts, max_tricks
+        "Oh Hell baseline: {} games/n_tricks, PIMCTS rollouts={}, n_tricks=1..={}, eval={}",
+        n_games, rollouts, max_tricks, evaluator
     );
     println!(
         "{:>8} {:>10} {:>10} {:>10} {:>10} {:>10} {:>9}",
@@ -55,7 +58,7 @@ fn main() {
     for n_tricks in 1..=max_tricks {
         let start = Instant::now();
         let (pimcts_avg, rand_avg, wins, ties, losses) =
-            run_block(n_tricks, n_games, rollouts);
+            run_block(n_tricks, n_games, rollouts, &evaluator);
         let elapsed = start.elapsed().as_secs_f64();
         let g = n_games as f64;
         println!(
@@ -71,12 +74,29 @@ fn main() {
     }
 }
 
+#[derive(Clone, Copy)]
+enum Eval {
+    Random,
+    OhHell,
+}
+
+impl Eval {
+    fn from_str(s: &str) -> Self {
+        match s {
+            "oh_hell" | "oh" => Eval::OhHell,
+            _ => Eval::Random,
+        }
+    }
+}
+
 /// Returns (pimcts_avg, random_avg, wins, ties, losses).
 fn run_block(
     n_tricks: usize,
     n_games: usize,
     rollouts: usize,
+    evaluator: &str,
 ) -> (f64, f64, usize, usize, usize) {
+    let eval = Eval::from_str(evaluator);
     let mut pimcts_total = 0.0_f64;
     let mut random_total = 0.0_f64;
     let mut wins = 0usize;
@@ -90,11 +110,25 @@ fn run_block(
         // Rotate the PIMCTS seat across games.
         let pimcts_pos = game_idx % NUM_PLAYERS;
 
-        let mut agent = PIMCTSBot::new(
-            rollouts,
-            RandomRolloutEvaluator::new(1),
-            SeedableRng::seed_from_u64(seed.wrapping_add(1)),
-        );
+        // The two evaluator types don't share a common concrete type, so we
+        // dispatch inline. This keeps the example small without a trait
+        // object indirection on the hot path.
+        let mut random_agent = match eval {
+            Eval::Random => Some(PIMCTSBot::new(
+                rollouts,
+                RandomRolloutEvaluator::new(1),
+                SeedableRng::seed_from_u64(seed.wrapping_add(1)),
+            )),
+            Eval::OhHell => None,
+        };
+        let mut oh_hell_agent = match eval {
+            Eval::OhHell => Some(PIMCTSBot::new(
+                rollouts,
+                OpenHandSolver::new_oh_hell(),
+                SeedableRng::seed_from_u64(seed.wrapping_add(1)),
+            )),
+            Eval::Random => None,
+        };
 
         let mut gs = OhHell::new_state(n_tricks);
         // Random chance-node resolution (cards, face-up).
@@ -108,7 +142,11 @@ fn run_block(
         while !gs.is_terminal() {
             let cp = gs.cur_player();
             let a = if cp == pimcts_pos {
-                agent.step(&gs)
+                match (&mut random_agent, &mut oh_hell_agent) {
+                    (Some(a), _) => a.step(&gs),
+                    (_, Some(a)) => a.step(&gs),
+                    _ => unreachable!(),
+                }
             } else {
                 gs.legal_actions(&mut acts);
                 *acts.choose(&mut rng).expect("non-empty actions")
