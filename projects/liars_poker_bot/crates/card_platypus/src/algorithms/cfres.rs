@@ -15,6 +15,7 @@ use games::{
             isomorphic::EuchreNormalizer, processors::post_cards_played, Euchre, EuchreGameState,
         },
         kuhn_poker::{KPGameState, KuhnPoker},
+        oh_hell::{OhHell, OhHellGameState},
     },
     istate::{IStateNormalizer, NoOpNormalizer, NormalizedAction, NormalizedIstate},
     resample::ResampleFromInfoState,
@@ -63,6 +64,9 @@ pub const EUCHRE_MAX_ACTIONS: usize = 6;
 pub const BLUFF_MAX_ACTIONS: usize = 10;
 /// Max actions per slot for Kuhn Poker
 pub const KP_MAX_ACTIONS: usize = 6;
+/// Max actions per slot for Oh Hell. Bounded by max(n_tricks+1, n_tricks) ≤ 3
+/// for the 2-trick variant; pick a slack value of 8 to support future growth.
+pub const OH_MAX_ACTIONS: usize = 8;
 
 #[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct InfoState<const MAX_ACTIONS: usize> {
@@ -229,6 +233,49 @@ impl CFRES<BluffGameState, BLUFF_MAX_ACTIONS> {
             || Bluff::new_state(1, 1),
             NodeStore::new_bluff_11(None).unwrap(),
         )
+    }
+}
+
+impl CFRES<OhHellGameState, OH_MAX_ACTIONS> {
+    /// CFRES for Oh Hell. Uses a HashMap-backed store (no PHF
+    /// pre-enumeration) and a depth checker that hands off to an
+    /// `OpenHandSolver` rollout once `max_cards_played` cards have been
+    /// played. Mirrors the Euchre `max_cards_played` knob: pass `0` to
+    /// run CFR only on the bidding sub-game, or larger values to also
+    /// solve some opening tricks.
+    pub fn new_oh_hell(n_tricks: usize, max_cards_played: usize) -> Self {
+        let game_generator: fn() -> OhHellGameState = match n_tricks {
+            1 => || OhHell::new_state(1),
+            2 => || OhHell::new_state(2),
+            3 => || OhHell::new_state(3),
+            4 => || OhHell::new_state(4),
+            5 => || OhHell::new_state(5),
+            6 => || OhHell::new_state(6),
+            7 => || OhHell::new_state(7),
+            8 => || OhHell::new_state(8),
+            9 => || OhHell::new_state(9),
+            10 => || OhHell::new_state(10),
+            _ => panic!("unsupported n_tricks for CFRES Oh Hell: {}", n_tricks),
+        };
+
+        let mut rng: StdRng = SeedableRng::seed_from_u64(43);
+        let pimcts_seed = rng.random();
+        Self {
+            vector_pool: Pool::new(Vec::new),
+            game_generator,
+            infostates: Arc::new(Mutex::new(
+                NodeStore::new_oh_hell(None, n_tricks).unwrap(),
+            )),
+            depth_checker: Box::new(OhHellDepthChecker { max_cards_played }),
+            play_bot: PIMCTSBot::new(
+                50,
+                OpenHandSolver::default(),
+                SeedableRng::seed_from_u64(pimcts_seed),
+            ),
+            evaluator: OpenHandSolver::default(),
+            normalizer: Box::<NoOpNormalizer>::default(),
+            iteration: Arc::new(AtomicUsize::new(0)),
+        }
     }
 }
 
@@ -622,6 +669,21 @@ impl DepthChecker<EuchreGameState> for EuchreDepthChecker {
     }
 }
 
+/// Stops CFR descent once `max_cards_played` cards have been played. Set
+/// to 0 to limit CFR to the bidding sub-game (deal + face up + bids), with
+/// `OpenHandSolver` rollouts scoring every play-phase state.
+#[derive(Clone)]
+pub struct OhHellDepthChecker {
+    pub max_cards_played: usize,
+}
+
+impl DepthChecker<OhHellGameState> for OhHellDepthChecker {
+    fn is_max_depth(&self, gs: &OhHellGameState) -> bool {
+        use games::gamestates::oh_hell::OHPhase;
+        gs.phase() == OHPhase::Play && gs.cards_played() >= self.max_cards_played
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -633,6 +695,17 @@ mod tests {
 
         let mut alg = CFRES::new_kp();
         alg.train(10);
+    }
+
+    /// CFRES on full-deck Oh Hell, bidding-only mode (max_cards_played=0).
+    /// Smoke test: training completes and at least one info state gets
+    /// touched. Bidding-only keeps the istate space small enough that
+    /// MCCFR with a HashMap-backed store converges quickly.
+    #[test]
+    fn cfres_oh_hell_train_smoke() {
+        let mut alg = CFRES::new_oh_hell(2, 0);
+        alg.train(20);
+        assert!(alg.num_info_states() > 0);
     }
 
     // Reference in f64 — the true mathematical answer, used to verify the f32 closed form.

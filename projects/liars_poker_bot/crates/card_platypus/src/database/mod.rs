@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fs::OpenOptions,
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -12,7 +13,7 @@ use log::{debug, warn};
 use memmap2::MmapMut;
 
 use crate::algorithms::cfres::{
-    InfoState, BLUFF_MAX_ACTIONS, EUCHRE_MAX_ACTIONS, KP_MAX_ACTIONS,
+    InfoState, BLUFF_MAX_ACTIONS, EUCHRE_MAX_ACTIONS, KP_MAX_ACTIONS, OH_MAX_ACTIONS,
 };
 
 use self::indexer::Indexer;
@@ -23,13 +24,26 @@ const REMAP_INCREMENT: usize = 10_000_000;
 const INDEXER_NAME: &str = "indexer";
 const METADATA_NAME: &str = "meta";
 
-/// A performant, optionally disk-backed node storage system.
+/// Pluggable storage for CFR infostates. Two backings:
+///   - `Mmap`: a perfect-hash + mmap-backed array. Fast O(1) get/put, but
+///     requires pre-enumeration of every reachable infostate to build the
+///     PHF. Used for games where that enumeration is tractable
+///     (Kuhn Poker, Bluff(1,1), Euchre with isomorphic reduction).
+///   - `Hash`: a plain `HashMap`. Lazily populated, no pre-enumeration
+///     needed. Used for games whose istate space is too large to enumerate
+///     (e.g. Oh Hell with the full 52-card deck).
+pub enum NodeStore<const MAX_ACTIONS: usize> {
+    Mmap(MmapBacking<MAX_ACTIONS>),
+    Hash(HashMap<IStateKey, InfoState<MAX_ACTIONS>>),
+}
+
+/// Mmap + PHF backing for `NodeStore`.
 ///
 /// `MAX_ACTIONS` is the maximum number of actions stored per slot, which
 /// controls the on-disk size of each bucket. Each game gets a right-sized
 /// slot so Euchre (max 6 actions) doesn't pay Bluff's (max ~10 actions)
 /// memory overhead.
-pub struct NodeStore<const MAX_ACTIONS: usize> {
+pub struct MmapBacking<const MAX_ACTIONS: usize> {
     indexer: Indexer,
     mmap: MmapMut,
     path: Option<PathBuf>,
@@ -40,7 +54,7 @@ pub struct NodeStore<const MAX_ACTIONS: usize> {
     indexer_needs_save: bool,
 }
 
-impl<const MAX_ACTIONS: usize> NodeStore<MAX_ACTIONS> {
+impl<const MAX_ACTIONS: usize> MmapBacking<MAX_ACTIONS> {
     const BUCKET_SIZE: usize = std::mem::size_of::<InfoState<MAX_ACTIONS>>();
 
     pub fn get(&self, key: &IStateKey) -> Option<InfoState<MAX_ACTIONS>> {
@@ -60,7 +74,6 @@ impl<const MAX_ACTIONS: usize> NodeStore<MAX_ACTIONS> {
 
         let data = &self.mmap[start..start + Self::BUCKET_SIZE];
 
-        // Check if the data is uninitialized
         if data.iter().all(|&x| x == 0) {
             return None;
         }
@@ -85,14 +98,13 @@ impl<const MAX_ACTIONS: usize> NodeStore<MAX_ACTIONS> {
             debug!("resized mmap");
         }
 
-        // Track new entries for O(1) len()
         let was_empty = self.mmap[start..start + Self::BUCKET_SIZE]
             .iter()
             .all(|&x| x == 0);
 
         let value = [*value];
         let data = bytemuck::cast_slice::<InfoState<MAX_ACTIONS>, u8>(&value);
-        assert!(data.len() <= Self::BUCKET_SIZE); // if this is false, we're overflowing into another bucket
+        assert!(data.len() <= Self::BUCKET_SIZE);
         self.mmap[start..start + data.len()].copy_from_slice(data);
 
         if was_empty {
@@ -107,9 +119,6 @@ impl<const MAX_ACTIONS: usize> NodeStore<MAX_ACTIONS> {
             return anyhow::Ok(());
         };
 
-        // Only serialize the indexer when it was newly built (not loaded from disk).
-        // The PHF is immutable after construction so re-writing the 226MB JSON on every
-        // save was pure waste.
         if self.indexer_needs_save {
             let mut file = OpenOptions::new()
                 .write(true)
@@ -121,15 +130,50 @@ impl<const MAX_ACTIONS: usize> NodeStore<MAX_ACTIONS> {
             self.indexer_needs_save = false;
         }
 
-        // Persist the populated count so the next startup can skip the full mmap scan.
         save_metadata(&dir, self.populated_count.load(Ordering::Relaxed))?;
 
         anyhow::Ok(())
     }
 
-    /// Returns the number of populated items in the database. Not the total number of items
     pub fn len(&self) -> usize {
         self.populated_count.load(Ordering::Relaxed)
+    }
+
+    pub fn indexer_len(&self) -> usize {
+        self.indexer.len()
+    }
+}
+
+impl<const MAX_ACTIONS: usize> NodeStore<MAX_ACTIONS> {
+    pub fn get(&self, key: &IStateKey) -> Option<InfoState<MAX_ACTIONS>> {
+        match self {
+            NodeStore::Mmap(m) => m.get(key),
+            NodeStore::Hash(h) => h.get(key).copied(),
+        }
+    }
+
+    pub fn put(&mut self, key: &IStateKey, value: &InfoState<MAX_ACTIONS>) {
+        match self {
+            NodeStore::Mmap(m) => m.put(key, value),
+            NodeStore::Hash(h) => {
+                h.insert(*key, *value);
+            }
+        }
+    }
+
+    pub fn commit(&mut self) -> anyhow::Result<()> {
+        match self {
+            NodeStore::Mmap(m) => m.commit(),
+            // In-memory store: nothing to persist.
+            NodeStore::Hash(_) => Ok(()),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            NodeStore::Mmap(m) => m.len(),
+            NodeStore::Hash(h) => h.len(),
+        }
     }
 
     #[must_use]
@@ -137,16 +181,20 @@ impl<const MAX_ACTIONS: usize> NodeStore<MAX_ACTIONS> {
         self.len() == 0
     }
 
-    /// Returns the full size of the index, regardless of how many entries are populated
+    /// Total addressable index size. For HashMap-backed stores there is no
+    /// pre-allocated index, so this reports the same value as `len()`.
     pub fn indexer_len(&self) -> usize {
-        self.indexer.len()
+        match self {
+            NodeStore::Mmap(m) => m.indexer_len(),
+            NodeStore::Hash(h) => h.len(),
+        }
     }
 }
 
 impl NodeStore<EUCHRE_MAX_ACTIONS> {
     /// len is the number of infostates to provision for
     pub fn new_euchre(path: Option<&Path>, max_cards_played: usize) -> anyhow::Result<Self> {
-        let mmap = get_mmap(path, 20_000_000, Self::BUCKET_SIZE)
+        let mmap = get_mmap(path, 20_000_000, MmapBacking::<EUCHRE_MAX_ACTIONS>::BUCKET_SIZE)
             .context("failed to create mmap")?;
 
         let path = path.map(|x| x.to_path_buf());
@@ -161,19 +209,25 @@ impl NodeStore<EUCHRE_MAX_ACTIONS> {
             Indexer::euchre(max_cards_played)
         });
 
-        // Try loading the persisted count; fall back to a full mmap scan if missing.
         let populated_count = path
             .as_deref()
             .and_then(|p| load_metadata(p).ok())
-            .unwrap_or_else(|| count_populated(&mmap, &indexer, Self::BUCKET_SIZE));
+            .unwrap_or_else(|| {
+                count_populated(
+                    &mmap,
+                    &indexer,
+                    MmapBacking::<EUCHRE_MAX_ACTIONS>::BUCKET_SIZE,
+                    path.as_deref(),
+                )
+            });
 
-        Ok(Self {
+        Ok(NodeStore::Mmap(MmapBacking {
             indexer,
             mmap,
             path,
             populated_count: AtomicUsize::new(populated_count),
             indexer_needs_save,
-        })
+        }))
     }
 }
 
@@ -183,16 +237,16 @@ impl NodeStore<KP_MAX_ACTIONS> {
             bail!("serialization not supported for this game type")
         }
 
-        let mmap = get_mmap(path, 1_000, Self::BUCKET_SIZE)?;
+        let mmap = get_mmap(path, 1_000, MmapBacking::<KP_MAX_ACTIONS>::BUCKET_SIZE)?;
 
         let path = path.map(|x| x.to_path_buf());
-        Ok(Self {
+        Ok(NodeStore::Mmap(MmapBacking {
             indexer: Indexer::kuhn_poker(),
             mmap,
             path,
             populated_count: AtomicUsize::new(0),
             indexer_needs_save: false,
-        })
+        }))
     }
 }
 
@@ -201,16 +255,29 @@ impl NodeStore<BLUFF_MAX_ACTIONS> {
         if path.is_some() {
             bail!("serialization not supported for this game type")
         }
-        let mmap = get_mmap(path, 10_000, Self::BUCKET_SIZE)?;
+        let mmap = get_mmap(path, 10_000, MmapBacking::<BLUFF_MAX_ACTIONS>::BUCKET_SIZE)?;
 
         let path = path.map(|x| x.to_path_buf());
-        Ok(Self {
+        Ok(NodeStore::Mmap(MmapBacking {
             indexer: Indexer::bluff_11(),
             mmap,
             path,
             populated_count: AtomicUsize::new(0),
             indexer_needs_save: false,
-        })
+        }))
+    }
+}
+
+impl NodeStore<OH_MAX_ACTIONS> {
+    /// Oh Hell uses a HashMap-backed store: the full-deck istate space is
+    /// too large to enumerate up front for a perfect-hash index, but
+    /// MCCFR only touches a small subset of istates per training run, so
+    /// lazy population works well.
+    pub fn new_oh_hell(path: Option<&Path>, _n_tricks: usize) -> anyhow::Result<Self> {
+        if path.is_some() {
+            bail!("disk persistence not supported for Oh Hell store")
+        }
+        Ok(NodeStore::Hash(HashMap::new()))
     }
 }
 
@@ -225,7 +292,6 @@ fn get_mmap(dir: Option<&Path>, len: usize, bucket_size: usize) -> anyhow::Resul
             .open(dir.join("mmap"))
             .context("failed to create mmap file")?;
 
-        // Don't change file size unless it is less than the target size
         let target_size = (len * bucket_size) as u64;
         if file.metadata().context("failed to read file metadata")?.len() < target_size {
             file.set_len(target_size).context("failed to set length")?;
@@ -238,7 +304,6 @@ fn get_mmap(dir: Option<&Path>, len: usize, bucket_size: usize) -> anyhow::Resul
             .map_anon()?
     };
 
-    // Inform that re-ahead may not be useful
     mmap.advise(memmap2::Advice::Random)?;
     Ok(mmap)
 }
@@ -246,9 +311,10 @@ fn get_mmap(dir: Option<&Path>, len: usize, bucket_size: usize) -> anyhow::Resul
 /// Count the number of populated entries in an mmap by scanning every bucket.
 /// Expensive for large mmaps (60GB+ for three_card_played). Prefer loading
 /// the persisted count via `load_metadata` when available.
-fn count_populated(mmap: &MmapMut, indexer: &Indexer, bucket_size: usize) -> usize {
+fn count_populated(mmap: &MmapMut, indexer: &Indexer, bucket_size: usize, dir: Option<&Path>) -> usize {
     warn!(
-        "no persisted populated count found — scanning {} mmap entries (this may take minutes for large weight files)",
+        "no persisted populated count found for {} — scanning {} mmap entries (this may take minutes for large weight files)",
+        dir.map(|p| p.display().to_string()).unwrap_or_else(|| "<anonymous mmap>".to_string()),
         indexer.len()
     );
     let mut count = 0;

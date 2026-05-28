@@ -170,13 +170,18 @@ impl<G: GameState + ResampleFromInfoState + Send, E: Evaluator<G> + Clone + Sync
 #[cfg(test)]
 mod tests {
 
-    use games::gamestates::{
-        euchre::EuchreGameState,
-        kuhn_poker::{KPAction, KuhnPoker},
+    use games::{
+        gamestates::{
+            euchre::EuchreGameState,
+            kuhn_poker::{KPAction, KuhnPoker},
+            oh_hell::OhHell,
+        },
+        GameState,
     };
-    use rand::SeedableRng;
+    use rand::{rngs::StdRng, seq::IndexedRandom, SeedableRng};
 
     use crate::{
+        agents::Agent,
         algorithms::{ismcts::Evaluator, open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot},
         policy::Policy,
     };
@@ -206,6 +211,32 @@ mod tests {
         );
         let gs = KuhnPoker::from_actions(&[KPAction::King, KPAction::Jack]);
         assert_eq!(agent.evaluate(&gs), vec![1.0, -1.0]);
+    }
+
+    /// PIMCTS smoke test on Oh Hell: an agent can drive a full game to a
+    /// terminal state. Exercises resample_from_istate end-to-end.
+    #[test]
+    fn pimcts_oh_hell_full_game() {
+        use games::actions;
+        let mut rng: StdRng = SeedableRng::seed_from_u64(7);
+        let mut agent = PIMCTSBot::new(
+            8,
+            OpenHandSolver::default(),
+            SeedableRng::seed_from_u64(7),
+        );
+        let mut gs = OhHell::new_state(1);
+        // Drive chance nodes randomly.
+        while gs.is_chance_node() {
+            let a = actions!(gs);
+            let chosen = *a.choose(&mut rng).unwrap();
+            gs.apply_action(chosen);
+        }
+        // Then let PIMCTS play through bidding + the trick.
+        while !gs.is_terminal() {
+            let action = agent.step(&gs);
+            gs.apply_action(action);
+        }
+        assert!(gs.is_terminal());
     }
 
     #[test]

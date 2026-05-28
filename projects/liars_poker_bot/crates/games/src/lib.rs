@@ -140,6 +140,7 @@ mod tests {
             bluff::Bluff,
             euchre::{actions::EAction, isomorphic::normalize_euchre_istate, Euchre},
             kuhn_poker::KuhnPoker,
+            oh_hell::OhHell,
         },
         Game, GameState,
     };
@@ -149,6 +150,7 @@ mod tests {
         _test_actions_sorted(Euchre::game());
         _test_actions_sorted(Bluff::game(2, 2));
         _test_actions_sorted(KuhnPoker::game());
+        _test_actions_sorted(OhHell::game(2));
     }
 
     /// Helper function to ensure games always return actions in a sorted order.
@@ -188,6 +190,8 @@ mod tests {
         _test_undo_is_inverse(Bluff::game(1, 1));
         _test_undo_is_inverse(Bluff::game(2, 1));
         _test_undo_is_inverse(Bluff::game(2, 2));
+        _test_undo_is_inverse(OhHell::game(1));
+        _test_undo_is_inverse(OhHell::game(2));
     }
 
     fn _test_undo_is_inverse<G: GameState + PartialEq>(game: Game<G>) {
@@ -220,6 +224,8 @@ mod tests {
         _test_terminal_no_actions(Bluff::game(1, 1));
         _test_terminal_no_actions(Bluff::game(2, 1));
         _test_terminal_no_actions(Bluff::game(2, 2));
+        _test_terminal_no_actions(OhHell::game(1));
+        _test_terminal_no_actions(OhHell::game(2));
     }
 
     fn _test_terminal_no_actions<G: GameState>(game: Game<G>) {
