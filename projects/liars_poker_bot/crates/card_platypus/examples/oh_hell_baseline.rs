@@ -1,7 +1,6 @@
-//! Baseline benchmark: PIMCTS vs random in 3-player Oh Hell across
-//! n_tricks 1..=10.
+//! Baseline benchmark: PIMCTS vs random in Oh Hell across n_tricks 1..=10.
 //!
-//! Setup: each game has one PIMCTS player and two random players. The
+//! Setup: each game has one PIMCTS player and N-1 random players. The
 //! PIMCTS position rotates across games to remove seat bias. Cards and
 //! random opponents' decisions are sampled from a single per-game RNG so
 //! results are reproducible.
@@ -12,6 +11,21 @@
 //!   OH_EVAL=oh_hell → `OpenHandSolver::new_oh_hell()` with the OH-specific
 //!                     action processor and early termination. Sharper but
 //!                     slower; tractable through ~n=7.
+//!
+//! Output:
+//!   * Human-readable table to stdout.
+//!   * One `kestrel: …` metric line per n_tricks, suitable for piping
+//!     through `kestrel-tail`. The `step` field encodes n_tricks (the
+//!     reserved x-axis key Kestrel expects), and the experiment name is
+//!     the user-supplied argument to `kestrel-tail`. Run with e.g.
+//!
+//!       OH_PLAYERS=2 OH_EVAL=oh_hell \
+//!         cargo run --release --example oh_hell_baseline \
+//!         | ./kestrel-tail oh_hell_2p_ohs_n50_g200
+//!
+//!     Encode the config you want to track in the experiment name; pick
+//!     descriptive names so cross-experiment win-rate comparisons stay
+//!     legible.
 //!
 //! Run with:
 //!   cargo run --release --example oh_hell_baseline
@@ -62,15 +76,42 @@ fn main() {
             run_block(num_players, n_tricks, n_games, rollouts, &evaluator);
         let elapsed = start.elapsed().as_secs_f64();
         let g = n_games as f64;
+        let win_rate = wins as f64 / g;
+        let tie_rate = ties as f64 / g;
+        let loss_rate = losses as f64 / g;
+
+        // Human-readable row.
         println!(
             "{:>8} {:>10.3} {:>10.3} {:>9.1}% {:>9.1}% {:>9.1}% {:>9.2}",
             n_tricks,
             pimcts_avg,
             rand_avg,
-            100.0 * wins as f64 / g,
-            100.0 * ties as f64 / g,
-            100.0 * losses as f64 / g,
+            100.0 * win_rate,
+            100.0 * tie_rate,
+            100.0 * loss_rate,
             elapsed,
+        );
+
+        // Kestrel metric line. `step` is the reserved x-axis key — encode
+        // n_tricks there so plots line up across runs with the same span.
+        // `num_players` / `rollouts` etc. travel along as labels so a
+        // single experiment name (set on the kestrel-tail side) can still
+        // disambiguate scans where they vary mid-run, though the typical
+        // pattern is one experiment per (players, eval, rollouts) tuple.
+        println!(
+            "kestrel: step={} win_rate={:.6} tie_rate={:.6} loss_rate={:.6} \
+             pimcts_avg={:.6} random_avg={:.6} secs={:.4} \
+             num_players={} rollouts={} games={}",
+            n_tricks,
+            win_rate,
+            tie_rate,
+            loss_rate,
+            pimcts_avg,
+            rand_avg,
+            elapsed,
+            num_players,
+            rollouts,
+            n_games,
         );
     }
 }

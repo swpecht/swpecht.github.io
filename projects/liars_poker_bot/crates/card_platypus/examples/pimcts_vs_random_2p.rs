@@ -5,6 +5,12 @@
 //!
 //! Run with:
 //!   cargo run --release --example pimcts_vs_random_2p
+//!
+//! Each row emits a `kestrel: …` metric line so progress / win-rate can be
+//! tracked via `kestrel-tail`. Each row is a distinct experiment
+//! configuration (game + evaluator), so we use `step=row_index` purely as
+//! a positional x-axis; the (game, evaluator) labels travel along the
+//! metric line.
 
 use std::time::Instant;
 
@@ -47,29 +53,81 @@ fn main() {
         "secs"
     );
 
-    // ---- Kuhn poker (Random rollouts) ----
+    let mut step = 0u32;
+
     let start = Instant::now();
     let (pavg, ravg, w, t, l) = run_kuhn(n_games, rollouts);
     let elapsed = start.elapsed().as_secs_f64();
     print_row("kuhn+random", pavg, ravg, w, t, l, n_games, elapsed);
+    emit_kestrel(step, "kuhn", "random", pavg, ravg, w, t, l, n_games, rollouts, elapsed);
+    step += 1;
 
-    // ---- Kuhn poker (OpenHandSolver) ----
     let start = Instant::now();
     let (pavg, ravg, w, t, l) = run_kuhn_oh(n_games, rollouts);
     let elapsed = start.elapsed().as_secs_f64();
     print_row("kuhn+oh_solv", pavg, ravg, w, t, l, n_games, elapsed);
+    emit_kestrel(step, "kuhn", "oh_solver", pavg, ravg, w, t, l, n_games, rollouts, elapsed);
+    step += 1;
 
-    // ---- Bluff(2,2) (Random rollouts) ----
     let start = Instant::now();
     let (pavg, ravg, w, t, l) = run_bluff(n_games, rollouts);
     let elapsed = start.elapsed().as_secs_f64();
     print_row("bluff22+rand", pavg, ravg, w, t, l, n_games, elapsed);
+    emit_kestrel(step, "bluff22", "random", pavg, ravg, w, t, l, n_games, rollouts, elapsed);
+    step += 1;
 
-    // ---- Bluff(2,2) (OpenHandSolver) ----
     let start = Instant::now();
     let (pavg, ravg, w, t, l) = run_bluff_oh(n_games, rollouts);
     let elapsed = start.elapsed().as_secs_f64();
     print_row("bluff22+ohs", pavg, ravg, w, t, l, n_games, elapsed);
+    emit_kestrel(step, "bluff22", "oh_solver", pavg, ravg, w, t, l, n_games, rollouts, elapsed);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_kestrel(
+    step: u32,
+    game: &str,
+    evaluator: &str,
+    pavg: f64,
+    ravg: f64,
+    w: usize,
+    t: usize,
+    l: usize,
+    n_games: usize,
+    rollouts: usize,
+    elapsed: f64,
+) {
+    let g = n_games as f64;
+    // Kestrel parses VALUE as a float, so string labels go in the experiment
+    // name (kestrel-tail arg) rather than here. We still emit `game_id` and
+    // `eval_id` as integer-encoded labels so within-run sweeps stay
+    // disambiguable if the user picks one umbrella experiment name.
+    let game_id = match game {
+        "kuhn" => 0,
+        "bluff22" => 1,
+        _ => -1,
+    };
+    let eval_id = match evaluator {
+        "random" => 0,
+        "oh_solver" => 1,
+        _ => -1,
+    };
+    println!(
+        "kestrel: step={} win_rate={:.6} tie_rate={:.6} loss_rate={:.6} \
+         pimcts_avg={:.6} random_avg={:.6} secs={:.4} \
+         game_id={} eval_id={} games={} rollouts={}",
+        step,
+        w as f64 / g,
+        t as f64 / g,
+        l as f64 / g,
+        pavg,
+        ravg,
+        elapsed,
+        game_id,
+        eval_id,
+        n_games,
+        rollouts,
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
