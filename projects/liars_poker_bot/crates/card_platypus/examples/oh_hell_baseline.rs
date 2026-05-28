@@ -28,7 +28,7 @@ use card_platypus::{
     algorithms::{ismcts::RandomRolloutEvaluator, open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot},
 };
 use games::{
-    gamestates::oh_hell::{OhHell, NUM_PLAYERS},
+    gamestates::oh_hell::OhHell,
     GameState,
 };
 use rand::{rngs::StdRng, seq::IndexedRandom, SeedableRng};
@@ -44,11 +44,12 @@ fn main() {
     let n_games = parse_env("OH_GAMES", 60);
     let rollouts = parse_env("OH_ROLLOUTS", 25);
     let max_tricks = parse_env("OH_MAX_TRICKS", 10).min(10);
+    let num_players = parse_env("OH_PLAYERS", 3);
     let evaluator = std::env::var("OH_EVAL").unwrap_or_else(|_| "random".to_string());
 
     println!(
-        "Oh Hell baseline: {} games/n_tricks, PIMCTS rollouts={}, n_tricks=1..={}, eval={}",
-        n_games, rollouts, max_tricks, evaluator
+        "Oh Hell baseline: {} players, {} games/n_tricks, PIMCTS rollouts={}, n_tricks=1..={}, eval={}",
+        num_players, n_games, rollouts, max_tricks, evaluator
     );
     println!(
         "{:>8} {:>10} {:>10} {:>10} {:>10} {:>10} {:>9}",
@@ -58,7 +59,7 @@ fn main() {
     for n_tricks in 1..=max_tricks {
         let start = Instant::now();
         let (pimcts_avg, rand_avg, wins, ties, losses) =
-            run_block(n_tricks, n_games, rollouts, &evaluator);
+            run_block(num_players, n_tricks, n_games, rollouts, &evaluator);
         let elapsed = start.elapsed().as_secs_f64();
         let g = n_games as f64;
         println!(
@@ -91,6 +92,7 @@ impl Eval {
 
 /// Returns (pimcts_avg, random_avg, wins, ties, losses).
 fn run_block(
+    num_players: usize,
     n_tricks: usize,
     n_games: usize,
     rollouts: usize,
@@ -108,7 +110,7 @@ fn run_block(
         let mut rng: StdRng = SeedableRng::seed_from_u64(seed);
 
         // Rotate the PIMCTS seat across games.
-        let pimcts_pos = game_idx % NUM_PLAYERS;
+        let pimcts_pos = game_idx % num_players;
 
         // The two evaluator types don't share a common concrete type, so we
         // dispatch inline. This keeps the example small without a trait
@@ -130,7 +132,7 @@ fn run_block(
             Eval::Random => None,
         };
 
-        let mut gs = OhHell::new_state(n_tricks);
+        let mut gs = OhHell::new_state(num_players, n_tricks);
         // Random chance-node resolution (cards, face-up).
         let mut acts = Vec::new();
         while gs.is_chance_node() {
@@ -154,7 +156,7 @@ fn run_block(
             gs.apply_action(a);
         }
 
-        let scores: Vec<f64> = (0..NUM_PLAYERS).map(|p| gs.evaluate(p)).collect();
+        let scores: Vec<f64> = (0..num_players).map(|p| gs.evaluate(p)).collect();
         pimcts_total += scores[pimcts_pos];
         for (p, &s) in scores.iter().enumerate() {
             if p != pimcts_pos {
@@ -163,7 +165,7 @@ fn run_block(
         }
 
         let pimcts_score = scores[pimcts_pos];
-        let max_other = (0..NUM_PLAYERS)
+        let max_other = (0..num_players)
             .filter(|p| *p != pimcts_pos)
             .map(|p| scores[p])
             .fold(f64::NEG_INFINITY, f64::max);
@@ -178,6 +180,6 @@ fn run_block(
     }
 
     let g = n_games as f64;
-    let random_avg = random_total / (g * (NUM_PLAYERS as f64 - 1.0));
+    let random_avg = random_total / (g * (num_players as f64 - 1.0));
     (pimcts_total / g, random_avg, wins, ties, losses)
 }

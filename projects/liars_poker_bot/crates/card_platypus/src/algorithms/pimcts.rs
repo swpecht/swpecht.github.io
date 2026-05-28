@@ -224,7 +224,7 @@ mod tests {
             OpenHandSolver::default(),
             SeedableRng::seed_from_u64(7),
         );
-        let mut gs = OhHell::new_state(1);
+        let mut gs = OhHell::new_state(3, 1);
         // Drive chance nodes randomly.
         while gs.is_chance_node() {
             let a = actions!(gs);

@@ -26,6 +26,8 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         max_depth_for_tt: 255,
         action_processor: |_: &EuchreGameState, _: &mut Vec<Action>| {},
         can_early_terminate: |_: &EuchreGameState| false,
+        is_maximizer: |m, c| m % 2 == c % 2,
+        team_id_of: |p| (p % 2) as u8,
     });
     group.bench_function("euchre solver: no optimizations", |b| {
         b.iter(|| evaluate_games(&mut evaluator, &mut rng))
@@ -38,6 +40,8 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         max_depth_for_tt: 255,
         action_processor: |_: &EuchreGameState, _: &mut Vec<Action>| {},
         can_early_terminate: |_: &EuchreGameState| false,
+        is_maximizer: |m, c| m % 2 == c % 2,
+        team_id_of: |p| (p % 2) as u8,
     });
     group.bench_function("euchre solver: add transposition table", |b| {
         b.iter(|| evaluate_games(&mut evaluator, &mut rng))
@@ -50,6 +54,8 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         max_depth_for_tt: 255,
         action_processor: |_: &EuchreGameState, _: &mut Vec<Action>| {},
         can_early_terminate: |_: &EuchreGameState| false,
+        is_maximizer: |m, c| m % 2 == c % 2,
+        team_id_of: |p| (p % 2) as u8,
     });
     group.bench_function("euchre solver: add isometric representation", |b| {
         b.iter(|| evaluate_games(&mut evaluator, &mut rng))
@@ -61,6 +67,8 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         max_depth_for_tt: 255,
         action_processor: |_: &EuchreGameState, _: &mut Vec<Action>| {},
         can_early_terminate: euchre_early_terminate,
+        is_maximizer: |m, c| m % 2 == c % 2,
+        team_id_of: |p| (p % 2) as u8,
     });
     group.bench_function("euchre solver: add early termination", |b| {
         b.iter(|| evaluate_games(&mut evaluator, &mut rng))

@@ -243,19 +243,26 @@ impl CFRES<OhHellGameState, OH_MAX_ACTIONS> {
     /// played. Mirrors the Euchre `max_cards_played` knob: pass `0` to
     /// run CFR only on the bidding sub-game, or larger values to also
     /// solve some opening tricks.
-    pub fn new_oh_hell(n_tricks: usize, max_cards_played: usize) -> Self {
-        let game_generator: fn() -> OhHellGameState = match n_tricks {
-            1 => || OhHell::new_state(1),
-            2 => || OhHell::new_state(2),
-            3 => || OhHell::new_state(3),
-            4 => || OhHell::new_state(4),
-            5 => || OhHell::new_state(5),
-            6 => || OhHell::new_state(6),
-            7 => || OhHell::new_state(7),
-            8 => || OhHell::new_state(8),
-            9 => || OhHell::new_state(9),
-            10 => || OhHell::new_state(10),
-            _ => panic!("unsupported n_tricks for CFRES Oh Hell: {}", n_tricks),
+    pub fn new_oh_hell(num_players: usize, n_tricks: usize, max_cards_played: usize) -> Self {
+        let game_generator: fn() -> OhHellGameState = match (num_players, n_tricks) {
+            (2, 1) => || OhHell::new_state(2, 1),
+            (2, 2) => || OhHell::new_state(2, 2),
+            (2, 3) => || OhHell::new_state(2, 3),
+            (2, 4) => || OhHell::new_state(2, 4),
+            (2, 5) => || OhHell::new_state(2, 5),
+            (2, 6) => || OhHell::new_state(2, 6),
+            (3, 1) => || OhHell::new_state(3, 1),
+            (3, 2) => || OhHell::new_state(3, 2),
+            (3, 3) => || OhHell::new_state(3, 3),
+            (3, 4) => || OhHell::new_state(3, 4),
+            (3, 5) => || OhHell::new_state(3, 5),
+            (3, 6) => || OhHell::new_state(3, 6),
+            (4, 1) => || OhHell::new_state(4, 1),
+            (4, 2) => || OhHell::new_state(4, 2),
+            _ => panic!(
+                "unsupported (num_players, n_tricks) for CFRES Oh Hell: ({}, {})",
+                num_players, n_tricks
+            ),
         };
 
         let mut rng: StdRng = SeedableRng::seed_from_u64(43);
@@ -703,7 +710,7 @@ mod tests {
     /// MCCFR with a HashMap-backed store converges quickly.
     #[test]
     fn cfres_oh_hell_train_smoke() {
-        let mut alg = CFRES::new_oh_hell(2, 0);
+        let mut alg = CFRES::new_oh_hell(3, 2, 0);
         alg.train(20);
         assert!(alg.num_info_states() > 0);
     }

@@ -529,7 +529,7 @@ mod tests {
         gamestates::{
             bluff::{Bluff, BluffActions, Dice},
             kuhn_poker::{KPAction, KuhnPoker},
-            oh_hell::{processors::oh_hell_early_terminate, OhHell, NUM_PLAYERS},
+            oh_hell::{processors::oh_hell_early_terminate, OhHell},
         },
         GameState,
     };
@@ -666,7 +666,7 @@ mod tests {
         let mut rng: StdRng = SeedableRng::seed_from_u64(0xC0DE);
         for n_tricks in 1..=3 {
             for trial in 0..30 {
-                let mut gs = OhHell::new_state(n_tricks);
+                let mut gs = OhHell::new_state(3, n_tricks);
                 drive_to_play(&mut gs, &mut rng);
 
                 // Sample a few depths into the play phase so we test both
@@ -685,7 +685,7 @@ mod tests {
                     continue;
                 }
 
-                for p in 0..NUM_PLAYERS {
+                for p in 0..3 {
                     let mut baseline = OpenHandSolver::default();
                     let mut tuned = OpenHandSolver::new_oh_hell();
                     let v_default = baseline.evaluate_player(&gs, p);
@@ -711,7 +711,7 @@ mod tests {
         //   P1 bid 2 but won 0 with 1 trick left (can't make, locked at 0).
         //   P2 bid 2 but won 0 with 1 trick left (can't make, locked at 0).
         use games::gamestates::oh_hell::actions::{OHAction, OHCard};
-        let mut gs = OhHell::new_state(2);
+        let mut gs = OhHell::new_state(3, 2);
         // Deals: P0=9s,Ts ; P1=9c,Tc ; P2=9h,Th  (order: P0,P1,P2 x2)
         let deals = [
             OHCard::NS, OHCard::NC, OHCard::NH,
@@ -737,7 +737,7 @@ mod tests {
         assert!(!gs.is_terminal());
         assert!(oh_hell_early_terminate(&gs));
 
-        for p in 0..NUM_PLAYERS {
+        for p in 0..3 {
             let mut baseline = OpenHandSolver::default();
             let mut tuned = OpenHandSolver::new_oh_hell();
             let v_default = baseline.evaluate_player(&gs, p);
@@ -782,7 +782,7 @@ mod tests {
         // for this particular scenario the bidding-stage value may agree,
         // but the *search tree* explored will differ. We assert that the
         // values from both algorithms match on the deterministic outcome.
-        let mut gs = OhHell::new_state(2);
+        let mut gs = OhHell::new_state(3, 2);
         let deals = [
             OHCard::NS, OHCard::_2S, OHCard::KS,
             OHCard::AS, OHCard::TC, OHCard::QC,
@@ -806,7 +806,7 @@ mod tests {
         // Sanity: both algorithms return SOME numeric value without panicking,
         // and the value sits inside the legal score range. Differences (when
         // they exist) just confirm the algorithm choice matters.
-        for p in 0..NUM_PLAYERS {
+        for p in 0..3 {
             let vp = paranoid.evaluate_player(&gs, p);
             let vt = team_based.evaluate_player(&gs, p);
             assert!(
@@ -825,7 +825,7 @@ mod tests {
     #[test]
     fn oh_hell_solver_deterministic() {
         let mut rng: StdRng = SeedableRng::seed_from_u64(7);
-        let mut gs = OhHell::new_state(2);
+        let mut gs = OhHell::new_state(3, 2);
         drive_to_play(&mut gs, &mut rng);
 
         let mut solver = OpenHandSolver::new_oh_hell();

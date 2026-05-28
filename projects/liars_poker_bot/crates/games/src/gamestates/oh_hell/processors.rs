@@ -12,7 +12,7 @@
 use crate::{
     gamestates::oh_hell::{
         actions::{OHAction, OHCard, OHSuit, OH_DECK},
-        OhHellGameState, NUM_PLAYERS,
+        OhHellGameState,
     },
     Action, GameState,
 };
@@ -67,35 +67,29 @@ pub fn oh_hell_early_terminate(gs: &OhHellGameState) -> bool {
         return false;
     }
 
+    let np = gs.num_players();
     let total_tricks = gs.n_tricks();
-    // Tricks remaining = total tricks minus completed ones. Mid-trick still
-    // counts as not-yet-completed.
-    let completed_tricks = gs.cards_played() / NUM_PLAYERS;
+    let completed_tricks = gs.cards_played() / np;
     let tricks_remaining = total_tricks - completed_tricks;
 
     let bids = gs.bids();
     let tricks_won = gs.tricks_won();
 
-    for p in 0..NUM_PLAYERS {
+    for p in 0..np {
         let Some(bid) = bids[p] else {
             return false;
         };
         let bid = bid as usize;
         let won = tricks_won[p] as usize;
-        // Already busted (over bid) → score locked at 0.
         if won > bid {
             continue;
         }
-        // Already made bid exactly and can't take any more tricks → safe at
-        // 10+bid. (If `tricks_remaining == 0` we'd be terminal.)
         if won == bid && tricks_remaining == 0 {
             continue;
         }
-        // Can no longer reach bid → score locked at 0.
         if won + tricks_remaining < bid {
             continue;
         }
-        // This player's final score is still in flux.
         return false;
     }
     true
@@ -134,7 +128,7 @@ fn remove_equivalent_cards(gs: &OhHellGameState, actions: &mut Vec<Action>) {
     let cur_hand = gs.hand_mask(cur_player);
     // Visible = played-so-far + face-up.
     let visible = gs.played_mask() | gs.face_up().map(|c| 1u64 << (c as u8)).unwrap_or(0);
-    let all_other_hands = (0..NUM_PLAYERS)
+    let all_other_hands = (0..gs.num_players())
         .filter(|p| *p != cur_player)
         .fold(0u64, |a, p| a | gs.hand_mask(p));
     let chain_breaker = all_other_hands | visible;
@@ -167,7 +161,7 @@ fn order_promising_moves_first(gs: &OhHellGameState, actions: &mut Vec<Action>) 
     let cur_player = gs.cur_player();
     let cur_hand = gs.hand_mask(cur_player);
     let visible = gs.played_mask() | gs.face_up().map(|c| 1u64 << (c as u8)).unwrap_or(0);
-    let all_other_hands = (0..NUM_PLAYERS)
+    let all_other_hands = (0..gs.num_players())
         .filter(|p| *p != cur_player)
         .fold(0u64, |a, p| a | gs.hand_mask(p));
 
@@ -213,7 +207,7 @@ mod tests {
 
     fn fixture() -> OhHellGameState {
         // From oh_hell module tests, but used here for processor checks.
-        let mut gs = OhHell::new_state(2);
+        let mut gs = OhHell::new_state(3, 2);
         // P0: NS, TS / P1: JS, QS / P2: KS, NC / face up TC (clubs trump)
         let order = [
             OHCard::NS, OHCard::JS, OHCard::KS,
@@ -238,7 +232,7 @@ mod tests {
     #[test]
     fn early_terminate_true_when_all_busted() {
         // Build a state where everyone has overshot their bid of 0.
-        let mut gs = OhHell::new_state(1);
+        let mut gs = OhHell::new_state(3, 1);
         // Deal P0: 9s, P1: 9c, P2: 9h, face up 9d (diamonds trump)
         gs.apply_action(OHAction::Card(OHCard::NS).into());
         gs.apply_action(OHAction::Card(OHCard::NC).into());
@@ -261,7 +255,7 @@ mod tests {
     fn equivalent_cards_collapse_to_one() {
         // Construct a play-phase state where the current player holds two
         // cards in the same suit with no chain-breakers between them.
-        let mut gs = OhHell::new_state(2);
+        let mut gs = OhHell::new_state(3, 2);
         // Hands:
         //   P0: 9s, Ts  (consecutive spades, no breakers — should collapse)
         //   P1: 9h, Th  (off-suit so won't impact)
@@ -294,7 +288,7 @@ mod tests {
     fn ace_kept_when_chain_breaker_blocks() {
         // P0 holds 9s and Js; P1 holds Ts (chain breaker between).
         // 9s and Js are NOT equivalent — Js can beat Ts, 9s can't.
-        let mut gs = OhHell::new_state(2);
+        let mut gs = OhHell::new_state(3, 2);
         let order = [
             OHCard::NS, OHCard::TS, OHCard::NH,
             OHCard::JS, OHCard::QS, OHCard::TH,

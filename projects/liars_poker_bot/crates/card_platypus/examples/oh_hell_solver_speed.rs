@@ -64,7 +64,7 @@ fn main() {
         let mut attempts = 0;
         while states.len() < trials && attempts < trials * 5 {
             attempts += 1;
-            let mut gs = OhHell::new_state(n_tricks);
+            let mut gs = OhHell::new_state(3, n_tricks);
             drive_to_play_phase(&mut gs, &mut rng);
             if !gs.is_terminal() {
                 states.push(gs);

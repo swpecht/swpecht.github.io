@@ -1,13 +1,15 @@
-//! Oh Hell (a.k.a. Oh Pshaw, Bust, Blackout). 3-player full-deck variant.
+//! Oh Hell (a.k.a. Oh Pshaw, Bust, Blackout). Multi-player full-deck variant.
 //!
 //! Reference: <https://en.wikipedia.org/wiki/Oh_hell>
 //!
 //! Rules implemented here:
-//! - 3 players, standard 52-card deck.
+//! - Configurable player count (2..=`MAX_PLAYERS`), standard 52-card deck.
 //! - `n_tricks` cards dealt to each player, one card flipped as trump.
-//!   Bound: `MAX_TRICKS = 10` (limited by the 64-action `IStateKey`).
-//! - Player 0 (eldest hand) bids first, then 1, then 2. Bids are public
-//!   integers in [0, n_tricks].
+//!   Total IStateKey actions = `2 * num_players * n_tricks + 1 + num_players`,
+//!   so the legal n_tricks range scales with the player count (≤15 for 2
+//!   players, ≤10 for 3, ≤8 for 4, etc.).
+//! - Player 0 (eldest hand) bids first, then 1, 2, ... in turn. Bids are
+//!   public integers in [0, n_tricks].
 //! - Player 0 leads the first trick; trick winner leads the next.
 //! - Must follow lead suit if possible; otherwise may play any card.
 //!   Highest trump beats; if no trump played, highest of lead suit wins.
@@ -30,12 +32,19 @@ use self::actions::{OHAction, OHCard, OHSuit, OH_DECK, OH_DECK_SIZE};
 pub mod actions;
 pub mod processors;
 
-pub const NUM_PLAYERS: usize = 3;
+/// Compile-time upper bound on the player count. Stored arrays
+/// (`hands`, `bids`, `trick_cards`, `tricks_won`) are sized to this; the
+/// runtime `num_players` field selects how many slots are live.
+pub const MAX_PLAYERS: usize = 7;
 
-/// Maximum tricks per hand supported. Bounded by the 64-action IStateKey:
-/// total actions per hand = 3 * n_tricks (deal) + 1 (face up) + 3 (bids) +
-/// 3 * n_tricks (play) = 6 * n_tricks + 4. Solving for ≤ 64 gives 10.
-pub const MAX_TRICKS: usize = 10;
+/// Compute the maximum supported `n_tricks` for a given `num_players`.
+/// Bounded by the 64-action IStateKey: total actions per hand =
+/// `2 * num_players * n_tricks + num_players + 1`.
+pub const fn max_tricks_for(num_players: usize) -> usize {
+    // (64 - num_players - 1) / (2 * num_players), integer division.
+    let budget = 64 - num_players - 1;
+    budget / (2 * num_players)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum OHPhase {
@@ -50,35 +59,44 @@ pub enum OHPhase {
 pub struct OhHell {}
 
 impl OhHell {
-    pub fn new_state(n_tricks: usize) -> OhHellGameState {
-        assert!(n_tricks >= 1, "n_tricks must be at least 1");
+    pub fn new_state(num_players: usize, n_tricks: usize) -> OhHellGameState {
         assert!(
-            n_tricks <= MAX_TRICKS,
-            "n_tricks {} exceeds MAX_TRICKS {}",
+            (2..=MAX_PLAYERS).contains(&num_players),
+            "num_players {} must be in 2..={}",
+            num_players,
+            MAX_PLAYERS
+        );
+        assert!(n_tricks >= 1, "n_tricks must be at least 1");
+        let max_tricks = max_tricks_for(num_players);
+        assert!(
+            n_tricks <= max_tricks,
+            "n_tricks {} exceeds the max for {} players ({})",
             n_tricks,
-            MAX_TRICKS
+            num_players,
+            max_tricks
         );
         assert!(
-            NUM_PLAYERS * n_tricks + 1 <= OH_DECK_SIZE,
+            num_players * n_tricks + 1 <= OH_DECK_SIZE,
             "deck too small for {} tricks * {} players",
             n_tricks,
-            NUM_PLAYERS
+            num_players
         );
 
         OhHellGameState {
+            num_players: num_players as u8,
             n_tricks: n_tricks as u8,
             cur_player: 0,
             phase: OHPhase::DealHands,
-            hands: [0; NUM_PLAYERS],
+            hands: [0; MAX_PLAYERS],
             face_up: None,
             trump_suit: None,
-            bids: [None; NUM_PLAYERS],
+            bids: [None; MAX_PLAYERS],
             num_bids: 0,
-            trick_cards: [None; NUM_PLAYERS],
+            trick_cards: [None; MAX_PLAYERS],
             num_in_trick: 0,
             trick_starter: 0,
             trick_winners: Vec::new(),
-            tricks_won: [0; NUM_PLAYERS],
+            tricks_won: [0; MAX_PLAYERS],
             cards_played: 0,
             played_mask: 0,
             key: IStateKey::default(),
@@ -86,32 +104,58 @@ impl OhHell {
         }
     }
 
-    pub fn game(n_tricks: usize) -> Game<OhHellGameState> {
-        // Compile-time-friendly closure for each supported n_tricks.
-        let new_f: fn() -> OhHellGameState = match n_tricks {
-            1 => || OhHell::new_state(1),
-            2 => || OhHell::new_state(2),
-            3 => || OhHell::new_state(3),
-            4 => || OhHell::new_state(4),
-            5 => || OhHell::new_state(5),
-            6 => || OhHell::new_state(6),
-            7 => || OhHell::new_state(7),
-            8 => || OhHell::new_state(8),
-            9 => || OhHell::new_state(9),
-            10 => || OhHell::new_state(10),
-            _ => panic!("unsupported n_tricks: {}", n_tricks),
+    /// Build a `Game<OhHellGameState>` for the given `(num_players, n_tricks)`.
+    /// `Game::new` requires a function pointer, so we dispatch to one of a
+    /// pre-enumerated set of closures. Supported: 2 ≤ num_players ≤ 7,
+    /// 1 ≤ n_tricks ≤ `max_tricks_for(num_players)`.
+    pub fn game(num_players: usize, n_tricks: usize) -> Game<OhHellGameState> {
+        let new_f: fn() -> OhHellGameState = match (num_players, n_tricks) {
+            (2, 1) => || OhHell::new_state(2, 1),
+            (2, 2) => || OhHell::new_state(2, 2),
+            (2, 3) => || OhHell::new_state(2, 3),
+            (2, 4) => || OhHell::new_state(2, 4),
+            (2, 5) => || OhHell::new_state(2, 5),
+            (2, 6) => || OhHell::new_state(2, 6),
+            (2, 7) => || OhHell::new_state(2, 7),
+            (2, 8) => || OhHell::new_state(2, 8),
+            (2, 9) => || OhHell::new_state(2, 9),
+            (2, 10) => || OhHell::new_state(2, 10),
+            (3, 1) => || OhHell::new_state(3, 1),
+            (3, 2) => || OhHell::new_state(3, 2),
+            (3, 3) => || OhHell::new_state(3, 3),
+            (3, 4) => || OhHell::new_state(3, 4),
+            (3, 5) => || OhHell::new_state(3, 5),
+            (3, 6) => || OhHell::new_state(3, 6),
+            (3, 7) => || OhHell::new_state(3, 7),
+            (3, 8) => || OhHell::new_state(3, 8),
+            (3, 9) => || OhHell::new_state(3, 9),
+            (3, 10) => || OhHell::new_state(3, 10),
+            (4, 1) => || OhHell::new_state(4, 1),
+            (4, 2) => || OhHell::new_state(4, 2),
+            (4, 3) => || OhHell::new_state(4, 3),
+            (4, 4) => || OhHell::new_state(4, 4),
+            (4, 5) => || OhHell::new_state(4, 5),
+            (4, 6) => || OhHell::new_state(4, 6),
+            (4, 7) => || OhHell::new_state(4, 7),
+            _ => panic!(
+                "unsupported (num_players, n_tricks) combination: ({}, {})",
+                num_players, n_tricks
+            ),
         };
         Game {
             new: Box::new(new_f),
-            max_players: NUM_PLAYERS,
-            // 52 cards + (n_tricks + 1) bid options. Generous upper bound.
+            max_players: num_players,
             max_actions: OH_DECK_SIZE + n_tricks + 1,
         }
     }
 
     /// Construct a state from a sequence of actions. Useful for tests.
-    pub fn from_actions(n_tricks: usize, actions: &[OHAction]) -> OhHellGameState {
-        let mut gs = OhHell::new_state(n_tricks);
+    pub fn from_actions(
+        num_players: usize,
+        n_tricks: usize,
+        actions: &[OHAction],
+    ) -> OhHellGameState {
+        let mut gs = OhHell::new_state(num_players, n_tricks);
         for &a in actions {
             gs.apply_action(a.into());
         }
@@ -121,28 +165,31 @@ impl OhHell {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct OhHellGameState {
+    /// Number of players in this hand (2..=MAX_PLAYERS).
+    num_players: u8,
     n_tricks: u8,
     cur_player: Player,
     phase: OHPhase,
 
     /// Bitmask of cards held in each player's hand, indexed by `OHCard as u8`.
     /// 52-bit mask packed into u64 (bits 0..52 used).
-    hands: [u64; NUM_PLAYERS],
+    /// Only the first `num_players` slots are live.
+    hands: [u64; MAX_PLAYERS],
     face_up: Option<OHCard>,
     trump_suit: Option<OHSuit>,
 
-    bids: [Option<u8>; NUM_PLAYERS],
+    bids: [Option<u8>; MAX_PLAYERS],
     num_bids: u8,
 
     /// Cards in the trick currently in progress (slot per position in the
-    /// trick — 0 = trick starter, 1 = next, 2 = last).
-    trick_cards: [Option<OHCard>; NUM_PLAYERS],
+    /// trick — 0 = trick starter, 1 = next, ...).
+    trick_cards: [Option<OHCard>; MAX_PLAYERS],
     num_in_trick: u8,
     trick_starter: Player,
 
     /// Winner of each completed trick, in order.
     trick_winners: Vec<Player>,
-    tricks_won: [u8; NUM_PLAYERS],
+    tricks_won: [u8; MAX_PLAYERS],
     cards_played: u8,
 
     /// Bitmask of every card that has been played so far across all
@@ -177,12 +224,12 @@ impl OhHellGameState {
         self.face_up
     }
 
-    pub fn bids(&self) -> [Option<u8>; NUM_PLAYERS] {
-        self.bids
+    pub fn bids(&self) -> &[Option<u8>] {
+        &self.bids[..self.num_players as usize]
     }
 
-    pub fn tricks_won(&self) -> [u8; NUM_PLAYERS] {
-        self.tricks_won
+    pub fn tricks_won(&self) -> &[u8] {
+        &self.tricks_won[..self.num_players as usize]
     }
 
     pub fn cards_played(&self) -> usize {
@@ -207,8 +254,8 @@ impl OhHellGameState {
     }
 
     /// Cards in the in-progress trick, in play order (length `num_in_trick`).
-    pub fn current_trick(&self) -> &[Option<OHCard>; NUM_PLAYERS] {
-        &self.trick_cards
+    pub fn current_trick(&self) -> &[Option<OHCard>] {
+        &self.trick_cards[..self.num_players as usize]
     }
 
     pub fn num_in_trick(&self) -> usize {
@@ -289,15 +336,16 @@ impl OhHellGameState {
     }
 
     fn apply_deal_hands(&mut self, card: OHCard) {
+        let np = self.num_players as usize;
         let p = self.cur_player;
         self.deal_card(p, card);
 
         let dealt_so_far = self.key.len() + 1;
-        if dealt_so_far == NUM_PLAYERS * self.n_tricks as usize {
+        if dealt_so_far == np * self.n_tricks as usize {
             self.phase = OHPhase::DealFaceUp;
             self.cur_player = 0;
         } else {
-            self.cur_player = (p + 1) % NUM_PLAYERS;
+            self.cur_player = (p + 1) % np;
         }
     }
 
@@ -309,23 +357,25 @@ impl OhHellGameState {
     }
 
     fn apply_bid(&mut self, n: u8) {
+        let np = self.num_players as usize;
         debug_assert!(n <= self.n_tricks, "bid out of range");
         let p = self.cur_player;
         debug_assert!(self.bids[p].is_none());
         self.bids[p] = Some(n);
         self.num_bids += 1;
 
-        if self.num_bids as usize == NUM_PLAYERS {
+        if self.num_bids as usize == np {
             self.phase = OHPhase::Play;
             self.cur_player = 0;
             self.trick_starter = 0;
             self.num_in_trick = 0;
         } else {
-            self.cur_player = (p + 1) % NUM_PLAYERS;
+            self.cur_player = (p + 1) % np;
         }
     }
 
     fn apply_play(&mut self, card: OHCard) {
+        let np = self.num_players as usize;
         let p = self.cur_player;
         self.remove_card(p, card);
         self.trick_cards[self.num_in_trick as usize] = Some(card);
@@ -333,45 +383,46 @@ impl OhHellGameState {
         self.num_in_trick += 1;
         self.cards_played += 1;
 
-        if self.num_in_trick as usize == NUM_PLAYERS {
+        if self.num_in_trick as usize == np {
             let winner = self.trick_winner();
             self.trick_winners.push(winner);
             self.tricks_won[winner] += 1;
-            self.trick_cards = [None; NUM_PLAYERS];
+            self.trick_cards = [None; MAX_PLAYERS];
             self.num_in_trick = 0;
             self.trick_starter = winner;
             self.cur_player = winner;
 
-            if self.cards_played as usize == NUM_PLAYERS * self.n_tricks as usize {
+            if self.cards_played as usize == np * self.n_tricks as usize {
                 self.phase = OHPhase::Terminal;
             }
         } else {
-            self.cur_player = (p + 1) % NUM_PLAYERS;
+            self.cur_player = (p + 1) % np;
         }
     }
 
     /// Determine the winner of the just-completed trick.
     fn trick_winner(&self) -> Player {
+        let np = self.num_players as usize;
         let trump = self.trump_suit.expect("trump must be set in play phase");
         let lead = self.trick_cards[0].expect("trick has plays").suit();
 
         let mut best_pos = 0usize;
         let mut best_card = self.trick_cards[0].unwrap();
-        for i in 1..NUM_PLAYERS {
+        for i in 1..np {
             let c = self.trick_cards[i].expect("trick fully played");
             if beats(c, best_card, lead, trump) {
                 best_card = c;
                 best_pos = i;
             }
         }
-        (self.trick_starter + best_pos) % NUM_PLAYERS
+        (self.trick_starter + best_pos) % np
     }
 
     /// Build the score vector. Each player who made their bid exactly scores
-    /// `10 + bid`; everyone else gets 0.
-    fn raw_scores(&self) -> [f64; NUM_PLAYERS] {
-        let mut out = [0.0; NUM_PLAYERS];
-        for p in 0..NUM_PLAYERS {
+    /// `10 + bid`; everyone else gets 0. Slots beyond `num_players` are 0.
+    fn raw_scores(&self) -> [f64; MAX_PLAYERS] {
+        let mut out = [0.0; MAX_PLAYERS];
+        for p in 0..(self.num_players as usize) {
             let bid = self.bids[p].expect("bids set when evaluating");
             if self.tricks_won[p] == bid {
                 out[p] = 10.0 + bid as f64;
@@ -467,14 +518,16 @@ impl GameState for OhHellGameState {
 
     fn evaluate(&self, p: Player) -> f64 {
         assert!(self.is_terminal(), "evaluate called on non-terminal");
+        let np = self.num_players as usize;
         let scores = self.raw_scores();
-        let mean: f64 = scores.iter().sum::<f64>() / NUM_PLAYERS as f64;
+        let mean: f64 = scores[..np].iter().sum::<f64>() / np as f64;
         scores[p] - mean
     }
 
     fn istate_key(&self, player: Player) -> IStateKey {
+        let np = self.num_players as usize;
         let mut k = IStateKey::default();
-        let deal_count = NUM_PLAYERS * self.n_tricks as usize;
+        let deal_count = np * self.n_tricks as usize;
         for (i, (p, a)) in self.play_order.iter().zip(self.key.iter()).enumerate() {
             let visible = if i < deal_count {
                 *p == player
@@ -491,6 +544,7 @@ impl GameState for OhHellGameState {
     }
 
     fn istate_string(&self, player: Player) -> String {
+        let np = self.num_players as usize;
         let k = self.istate_key(player);
         let mut s = String::new();
         let n_hand = self.n_tricks as usize;
@@ -511,7 +565,7 @@ impl GameState for OhHellGameState {
 
         // Bids
         let bids_start = face_up_idx + 1;
-        let bids_end = (bids_start + NUM_PLAYERS).min(k.len());
+        let bids_end = (bids_start + np).min(k.len());
         if bids_end > bids_start {
             s.push('|');
             for i in bids_start..bids_end {
@@ -519,12 +573,12 @@ impl GameState for OhHellGameState {
             }
         }
 
-        // Plays, broken into tricks of NUM_PLAYERS cards
-        let plays_start = bids_start + NUM_PLAYERS;
+        // Plays, broken into tricks of np cards.
+        let plays_start = bids_start + np;
         if k.len() > plays_start {
             let mut i = plays_start;
             while i < k.len() {
-                if (i - plays_start) % NUM_PLAYERS == 0 {
+                if (i - plays_start) % np == 0 {
                     s.push('|');
                 }
                 write!(s, "{}", OHAction::from(k[i])).unwrap();
@@ -544,7 +598,7 @@ impl GameState for OhHellGameState {
     }
 
     fn num_players(&self) -> usize {
-        NUM_PLAYERS
+        self.num_players as usize
     }
 
     fn cur_player(&self) -> Player {
@@ -554,18 +608,19 @@ impl GameState for OhHellGameState {
     fn key(&self) -> IStateKey {
         // Canonicalize deal order: sort each player's deal segment so isomorphic
         // states share a key.
+        let np = self.num_players as usize;
         let mut sorted = self.key;
-        let deal_count = NUM_PLAYERS * self.n_tricks as usize;
-        if sorted.len() >= NUM_PLAYERS {
-            for p in 0..NUM_PLAYERS {
+        let deal_count = np * self.n_tricks as usize;
+        if sorted.len() >= np {
+            for p in 0..np {
                 let mut cards: Vec<Action> = (0..self.n_tricks as usize)
-                    .map(|t| t * NUM_PLAYERS + p)
+                    .map(|t| t * np + p)
                     .filter(|i| *i < deal_count.min(sorted.len()))
                     .map(|i| sorted[i])
                     .collect();
                 cards.sort();
                 for (t, a) in cards.iter().enumerate() {
-                    let idx = t * NUM_PLAYERS + p;
+                    let idx = t * np + p;
                     if idx < sorted.len() {
                         sorted[idx] = *a;
                     }
@@ -600,32 +655,33 @@ impl GameState for OhHellGameState {
             (h.rotate_left(5) ^ x).wrapping_mul(K)
         }
 
+        let np = self.num_players as usize;
         let mut h: u64 = 0;
-        h = mix(h, self.hands[0]);
-        h = mix(h, self.hands[1]);
-        h = mix(h, self.hands[2]);
-
-        // Pack the small per-player counters and trump suit into one word.
+        for p in 0..np {
+            h = mix(h, self.hands[p]);
+        }
+        for p in 0..np {
+            h = mix(
+                h,
+                (self.bids[p].unwrap_or(255) as u64) | ((self.tricks_won[p] as u64) << 8),
+            );
+        }
         let trump = self.trump_suit.map(|s| s as u8).unwrap_or(255) as u64;
-        let bid_pack = (self.bids[0].unwrap_or(255) as u64)
-            | ((self.bids[1].unwrap_or(255) as u64) << 8)
-            | ((self.bids[2].unwrap_or(255) as u64) << 16)
-            | ((self.tricks_won[0] as u64) << 24)
-            | ((self.tricks_won[1] as u64) << 32)
-            | ((self.tricks_won[2] as u64) << 40)
-            | ((self.cur_player as u64 & 0xff) << 48)
-            | (trump << 56);
-        h = mix(h, bid_pack);
+        let tail = (self.cur_player as u64 & 0xff)
+            | ((self.num_players as u64) << 8)
+            | (trump << 16);
+        h = mix(h, tail);
         Some(h)
     }
 
     fn undo(&mut self) {
+        let np = self.num_players as usize;
         let last_player = self.play_order.pop().expect("non-empty play_order");
         let last_action = self.key.pop();
         let oa = OHAction::from(last_action);
 
         let n_after = self.key.len();
-        let deal_count = NUM_PLAYERS * self.n_tricks as usize;
+        let deal_count = np * self.n_tricks as usize;
 
         if n_after < deal_count {
             // Was a hand-deal action.
@@ -640,7 +696,7 @@ impl GameState for OhHellGameState {
             self.trump_suit = None;
             self.phase = OHPhase::DealFaceUp;
             self.cur_player = last_player;
-        } else if n_after < deal_count + 1 + NUM_PLAYERS {
+        } else if n_after < deal_count + 1 + np {
             // Was a bidding action.
             if let OHAction::Bid(_) = oa {
                 self.bids[last_player] = None;
@@ -660,9 +716,9 @@ impl GameState for OhHellGameState {
                 let winner = self.trick_winners.pop().expect("trick winners non-empty");
                 self.tricks_won[winner] -= 1;
 
-                let plays_remaining = NUM_PLAYERS - 1;
+                let plays_remaining = np - 1;
                 self.num_in_trick = plays_remaining as u8;
-                self.trick_cards = [None; NUM_PLAYERS];
+                self.trick_cards = [None; MAX_PLAYERS];
                 let start = self.key.len() - plays_remaining;
                 for i in 0..plays_remaining {
                     let a = self.key[start + i];
@@ -692,15 +748,16 @@ impl GameState for OhHellGameState {
 impl Display for OhHellGameState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // [Hands]|FaceUp|Bids|Trick1|Trick2|...
-        let deal_count = NUM_PLAYERS * self.n_tricks as usize;
+        let np = self.num_players as usize;
+        let deal_count = np * self.n_tricks as usize;
         let n_hand = self.n_tricks as usize;
 
-        for p in 0..NUM_PLAYERS {
+        for p in 0..np {
             if p > 0 {
                 f.write_char('|')?;
             }
             let mut cards: Vec<OHCard> = (0..n_hand)
-                .map(|t| t * NUM_PLAYERS + p)
+                .map(|t| t * np + p)
                 .filter(|i| *i < self.key.len().min(deal_count))
                 .filter_map(|i| match OHAction::from(self.key[i]) {
                     OHAction::Card(c) => Some(c),
@@ -723,7 +780,7 @@ impl Display for OhHellGameState {
         }
 
         let bids_start = deal_count + 1;
-        let bids_end = (bids_start + NUM_PLAYERS).min(self.key.len());
+        let bids_end = (bids_start + np).min(self.key.len());
         if bids_end > bids_start {
             f.write_char('|')?;
             for i in bids_start..bids_end {
@@ -731,10 +788,10 @@ impl Display for OhHellGameState {
             }
         }
 
-        let plays_start = bids_start + NUM_PLAYERS;
+        let plays_start = bids_start + np;
         let mut i = plays_start;
         while i < self.key.len() {
-            if (i - plays_start) % NUM_PLAYERS == 0 {
+            if (i - plays_start) % np == 0 {
                 f.write_char('|')?;
             }
             write!(f, "{}", OHAction::from(self.key[i]))?;
@@ -762,13 +819,14 @@ impl ResampleFromInfoState for OhHellGameState {
     /// 4. Replay the entire action history against a fresh state, swapping
     ///    in the resampled cards for the other players' deal actions.
     fn resample_from_istate<T: rand::Rng>(&self, player: Player, rng: &mut T) -> Self {
+        let np = self.num_players as usize;
         let n_tricks = self.n_tricks as usize;
-        let deal_count = NUM_PLAYERS * n_tricks;
+        let deal_count = np * n_tricks;
 
         // ---- 1. Gather public info ----
 
         let player_initial_cards: Vec<OHCard> = (0..n_tricks)
-            .map(|t| t * NUM_PLAYERS + player)
+            .map(|t| t * np + player)
             .filter(|i| *i < self.key.len().min(deal_count))
             .filter_map(|i| match OHAction::from(self.key[i]) {
                 OHAction::Card(c) => Some(c),
@@ -792,11 +850,11 @@ impl ResampleFromInfoState for OhHellGameState {
 
         // Per-player publicly-played cards and forbidden-suits inferred from
         // follow-suit failures.
-        let mut played_mask = [0u64; NUM_PLAYERS];
-        let plays_start = deal_count + 1 + NUM_PLAYERS;
+        let mut played_mask = [0u64; MAX_PLAYERS];
+        let plays_start = deal_count + 1 + np;
         let mut trick_lead_suit: Option<OHSuit> = None;
         let mut trick_pos: usize = 0;
-        let mut forbidden_suits: [u8; NUM_PLAYERS] = [0; NUM_PLAYERS];
+        let mut forbidden_suits: [u8; MAX_PLAYERS] = [0; MAX_PLAYERS];
 
         for i in plays_start..self.key.len() {
             let actor = self.play_order[i];
@@ -813,7 +871,7 @@ impl ResampleFromInfoState for OhHellGameState {
                 }
             }
             trick_pos += 1;
-            if trick_pos == NUM_PLAYERS {
+            if trick_pos == np {
                 trick_pos = 0;
                 trick_lead_suit = None;
             }
@@ -823,8 +881,8 @@ impl ResampleFromInfoState for OhHellGameState {
 
         let played_count_p = |p: Player| -> usize { played_mask[p].count_ones() as usize };
 
-        let mut budgets: [usize; NUM_PLAYERS] = [0; NUM_PLAYERS];
-        for q in 0..NUM_PLAYERS {
+        let mut budgets: [usize; MAX_PLAYERS] = [0; MAX_PLAYERS];
+        for q in 0..np {
             if q != player {
                 budgets[q] = n_tricks.saturating_sub(played_count_p(q));
             }
@@ -832,14 +890,14 @@ impl ResampleFromInfoState for OhHellGameState {
 
         let revealed: u64 = player_initial_mask
             | face_up_mask
-            | played_mask.iter().fold(0u64, |a, b| a | b);
+            | played_mask[..np].iter().fold(0u64, |a, b| a | b);
         let unknown_pool: Vec<OHCard> = OH_DECK
             .iter()
             .copied()
             .filter(|c| revealed & (1u64 << (*c as u8)) == 0)
             .collect();
 
-        let total_budget: usize = budgets.iter().sum();
+        let total_budget: usize = budgets[..np].iter().sum();
         debug_assert!(
             total_budget <= unknown_pool.len(),
             "constraint inference failure: need {} cards, pool has {}",
@@ -849,11 +907,9 @@ impl ResampleFromInfoState for OhHellGameState {
 
         // ---- 3. Constraint-propagating backtracking solver ----
 
-        // Fail-fast per-suit feasibility check (necessary condition for any
-        // assignment to exist). If the public history is consistent this
-        // always passes; treat a failure here as a bug.
         debug_assert!(
             per_suit_feasibility(
+                np,
                 &unknown_pool,
                 &budgets,
                 &forbidden_suits,
@@ -863,20 +919,18 @@ impl ResampleFromInfoState for OhHellGameState {
             "constraint inference produced an infeasible per-suit assignment"
         );
 
-        // Reorder pool so cards in the most-constrained suit come first
-        // (fewer eligible players ⇒ smaller branching factor). Within a
-        // suit, shuffle for randomness. This is a constraint-propagation
-        // heuristic that drastically prunes the search tree.
         let pool_order = build_constrained_pool_order(
+            np,
             &unknown_pool,
             &forbidden_suits,
             player,
             rng,
         );
 
-        let mut assignment: [Vec<OHCard>; NUM_PLAYERS] = Default::default();
+        let mut assignment: [Vec<OHCard>; MAX_PLAYERS] = Default::default();
 
         let success = solve_assignment(
+            np,
             &mut assignment,
             &budgets,
             &forbidden_suits,
@@ -896,8 +950,8 @@ impl ResampleFromInfoState for OhHellGameState {
         // For each other player, deal their already-played cards FIRST (so
         // subsequent play actions remain legal), then their assigned hidden
         // cards. For `player`, reuse the exact initial deal in original order.
-        let mut deal_pool: [Vec<OHCard>; NUM_PLAYERS] = Default::default();
-        for q in 0..NUM_PLAYERS {
+        let mut deal_pool: [Vec<OHCard>; MAX_PLAYERS] = Default::default();
+        for q in 0..np {
             if q == player {
                 deal_pool[q] = player_initial_cards.clone();
             } else {
@@ -911,7 +965,7 @@ impl ResampleFromInfoState for OhHellGameState {
             }
         }
 
-        let mut ngs = OhHell::new_state(n_tricks);
+        let mut ngs = OhHell::new_state(np, n_tricks);
 
         for i in 0..self.key.len() {
             let orig_actor = self.play_order[i];
@@ -939,9 +993,10 @@ impl ResampleFromInfoState for OhHellGameState {
 /// stock capacity. Catches inference contradictions before we even begin
 /// backtracking.
 fn per_suit_feasibility(
+    num_players: usize,
     pool: &[OHCard],
-    budgets: &[usize; NUM_PLAYERS],
-    forbidden: &[u8; NUM_PLAYERS],
+    budgets: &[usize; MAX_PLAYERS],
+    forbidden: &[u8; MAX_PLAYERS],
     needed: usize,
     skip_player: Player,
 ) -> bool {
@@ -950,7 +1005,7 @@ fn per_suit_feasibility(
         let bit = suit_bit(suit);
         let cards_in_suit = pool.iter().filter(|c| c.suit() == suit).count();
         let mut eligible_slots: usize = 0;
-        for p in 0..NUM_PLAYERS {
+        for p in 0..num_players {
             if p == skip_player {
                 continue;
             }
@@ -970,18 +1025,18 @@ fn per_suit_feasibility(
 /// heuristic: deciding constrained variables first prunes huge subtrees.
 /// Within a constraint tier, randomize for unbiased resampling.
 fn build_constrained_pool_order<T: rand::Rng>(
+    num_players: usize,
     pool: &[OHCard],
-    forbidden: &[u8; NUM_PLAYERS],
+    forbidden: &[u8; MAX_PLAYERS],
     skip_player: Player,
     rng: &mut T,
 ) -> Vec<OHCard> {
     use rand::seq::SliceRandom;
 
-    // Eligible-player count per suit.
     let mut eligible_count = [0u8; 4];
     for (i, suit) in OHSuit::ALL.iter().enumerate() {
         let bit = suit_bit(*suit);
-        for p in 0..NUM_PLAYERS {
+        for p in 0..num_players {
             if p == skip_player {
                 continue;
             }
@@ -991,8 +1046,6 @@ fn build_constrained_pool_order<T: rand::Rng>(
         }
     }
 
-    // Group cards by suit, then concatenate groups in ascending eligibility
-    // order. Each group is shuffled internally for randomness.
     let mut groups: [Vec<OHCard>; 4] = Default::default();
     for &c in pool {
         groups[c.suit() as usize].push(c);
@@ -1021,9 +1074,10 @@ fn build_constrained_pool_order<T: rand::Rng>(
 ///   3. Tries assigning the current pool card to each eligible player,
 ///      then tries placing it in the stock.
 fn solve_assignment(
-    assignment: &mut [Vec<OHCard>; NUM_PLAYERS],
-    budgets: &[usize; NUM_PLAYERS],
-    forbidden: &[u8; NUM_PLAYERS],
+    num_players: usize,
+    assignment: &mut [Vec<OHCard>; MAX_PLAYERS],
+    budgets: &[usize; MAX_PLAYERS],
+    forbidden: &[u8; MAX_PLAYERS],
     pool: &[OHCard],
     pool_pos: usize,
     needed: usize,
@@ -1050,7 +1104,7 @@ fn solve_assignment(
             continue;
         }
         let mut eligible_slots: usize = 0;
-        for p in 0..NUM_PLAYERS {
+        for p in 0..num_players {
             if p == skip_player {
                 continue;
             }
@@ -1068,7 +1122,7 @@ fn solve_assignment(
     let bit = suit_bit(card.suit());
 
     // Try assigning to each eligible player.
-    for p in 0..NUM_PLAYERS {
+    for p in 0..num_players {
         if p == skip_player {
             continue;
         }
@@ -1080,6 +1134,7 @@ fn solve_assignment(
         }
         assignment[p].push(card);
         if solve_assignment(
+            num_players,
             assignment,
             budgets,
             forbidden,
@@ -1097,6 +1152,7 @@ fn solve_assignment(
     // pool *without* this card can still cover the budget.
     if remaining - 1 >= needed
         && solve_assignment(
+            num_players,
             assignment,
             budgets,
             forbidden,
@@ -1127,23 +1183,23 @@ mod tests {
 
     #[test]
     fn fresh_state_in_dealing_phase() {
-        let gs = OhHell::new_state(2);
+        let gs = OhHell::new_state(3, 2);
         assert_eq!(gs.phase(), OHPhase::DealHands);
         assert!(gs.is_chance_node());
         assert!(!gs.is_terminal());
-        assert_eq!(gs.num_players(), NUM_PLAYERS);
+        assert_eq!(gs.num_players(), 3);
     }
 
     #[test]
     fn dealing_legal_actions_are_remaining_cards() {
-        let gs = OhHell::new_state(2);
+        let gs = OhHell::new_state(3, 2);
         let a = actions!(gs);
         assert_eq!(a.len(), OH_DECK_SIZE, "fresh deck should have 52 cards");
     }
 
     #[test]
     fn dealing_does_not_repeat_cards() {
-        let mut gs = OhHell::new_state(2);
+        let mut gs = OhHell::new_state(3, 2);
         let cards = [
             OHCard::NS, OHCard::TS, OHCard::JS, OHCard::QS, OHCard::KS, OHCard::NC,
         ];
@@ -1159,7 +1215,7 @@ mod tests {
     }
 
     fn deal_and_face_up(n_tricks: usize) -> OhHellGameState {
-        let mut gs = OhHell::new_state(n_tricks);
+        let mut gs = OhHell::new_state(3, n_tricks);
         // Deal sequentially from OH_DECK; face up takes the next one.
         let mut idx = 0;
         while gs.phase() == OHPhase::DealHands {
@@ -1217,7 +1273,7 @@ mod tests {
     ///   P2: KS, NC  (Ks, 9c)
     /// Face up: TC (trump = Clubs)
     fn fixture_clubs_trump() -> OhHellGameState {
-        let mut gs = OhHell::new_state(2);
+        let mut gs = OhHell::new_state(3, 2);
         let order = [
             OHCard::NS, OHCard::JS, OHCard::KS,
             OHCard::TS, OHCard::QS, OHCard::NC,
@@ -1276,14 +1332,14 @@ mod tests {
         gs.apply_action(OHAction::Card(OHCard::JS).into());
         assert!(gs.is_terminal());
         assert_eq!(gs.tricks_won(), [0, 0, 2]);
-        for p in 0..NUM_PLAYERS {
+        for p in 0..3 {
             assert_eq!(gs.evaluate(p), 0.0);
         }
     }
 
     #[test]
     fn making_your_bid_pays_off() {
-        let mut gs = OhHell::new_state(1);
+        let mut gs = OhHell::new_state(3, 1);
         gs.apply_action(OHAction::Card(OHCard::NS).into());
         gs.apply_action(OHAction::Card(OHCard::TS).into());
         gs.apply_action(OHAction::Card(OHCard::KS).into());
@@ -1309,7 +1365,7 @@ mod tests {
     fn off_suit_high_card_loses() {
         // n=1 trick. P0 leads 9s, P1 plays AH (off-suit, off-trump),
         // P2 plays TS. Trump is clubs (from face-up), so AH cannot win.
-        let mut gs = OhHell::new_state(1);
+        let mut gs = OhHell::new_state(3, 1);
         gs.apply_action(OHAction::Card(OHCard::NS).into()); // P0
         gs.apply_action(OHAction::Card(OHCard::AH).into()); // P1
         gs.apply_action(OHAction::Card(OHCard::TS).into()); // P2
@@ -1333,7 +1389,7 @@ mod tests {
         // n=1 trick. Face up TC (trump = clubs). P0 leads AS (lead = spades).
         // P1 plays 2C (trump). P2 plays KS (highest spade).
         // 2C should win because it's trump.
-        let mut gs = OhHell::new_state(1);
+        let mut gs = OhHell::new_state(3, 1);
         gs.apply_action(OHAction::Card(OHCard::AS).into()); // P0
         gs.apply_action(OHAction::Card(OHCard::_2C).into()); // P1
         gs.apply_action(OHAction::Card(OHCard::KS).into()); // P2
@@ -1369,7 +1425,7 @@ mod tests {
     fn undo_round_trip_random() {
         let mut rng: StdRng = SeedableRng::seed_from_u64(0xCAFE);
         for _ in 0..100 {
-            let mut gs = OhHell::new_state(2);
+            let mut gs = OhHell::new_state(3, 2);
             while !gs.is_terminal() {
                 let a = actions!(gs);
                 assert!(!a.is_empty());
@@ -1391,7 +1447,7 @@ mod tests {
     fn legal_actions_always_sorted() {
         let mut rng: StdRng = SeedableRng::seed_from_u64(7);
         for _ in 0..30 {
-            let mut gs = OhHell::new_state(2);
+            let mut gs = OhHell::new_state(3, 2);
             while !gs.is_terminal() {
                 let a = actions!(gs);
                 let mut sorted = a.clone();
@@ -1419,7 +1475,7 @@ mod tests {
         use std::collections::HashSet;
         let mut rng: StdRng = SeedableRng::seed_from_u64(101);
         for _ in 0..30 {
-            let mut gs = OhHell::new_state(2);
+            let mut gs = OhHell::new_state(3, 2);
             while gs.is_chance_node() {
                 let a = actions!(gs);
                 gs.apply_action(*a.choose(&mut rng).unwrap());
@@ -1452,13 +1508,13 @@ mod tests {
     fn evaluate_is_zero_sum() {
         let mut rng: StdRng = SeedableRng::seed_from_u64(99);
         for _ in 0..50 {
-            let mut gs = OhHell::new_state(2);
+            let mut gs = OhHell::new_state(3, 2);
             while !gs.is_terminal() {
                 let a = actions!(gs);
                 let action = *a.choose(&mut rng).unwrap();
                 gs.apply_action(action);
             }
-            let total: f64 = (0..NUM_PLAYERS).map(|p| gs.evaluate(p)).sum();
+            let total: f64 = (0..3).map(|p| gs.evaluate(p)).sum();
             assert!(total.abs() < 1e-9, "scores not zero-sum: {}", total);
         }
     }
@@ -1471,7 +1527,7 @@ mod tests {
         // resample with no follow-suit constraints.
         let mut rng: StdRng = SeedableRng::seed_from_u64(13);
         for _ in 0..20 {
-            let mut gs = OhHell::new_state(2);
+            let mut gs = OhHell::new_state(3, 2);
             while gs.is_chance_node() {
                 let a = actions!(gs);
                 gs.apply_action(*a.choose(&mut rng).unwrap());
@@ -1481,7 +1537,7 @@ mod tests {
                 let a = actions!(gs);
                 gs.apply_action(*a.choose(&mut rng).unwrap());
             }
-            for p in 0..NUM_PLAYERS {
+            for p in 0..3 {
                 let orig = gs.istate_key(p);
                 for _ in 0..10 {
                     let resampled = gs.resample_from_istate(p, &mut rng);
@@ -1496,7 +1552,7 @@ mod tests {
         // Walk forward through play, sampling at every decision point.
         let mut rng: StdRng = SeedableRng::seed_from_u64(31);
         for _ in 0..20 {
-            let mut gs = OhHell::new_state(2);
+            let mut gs = OhHell::new_state(3, 2);
             while gs.is_chance_node() {
                 let a = actions!(gs);
                 gs.apply_action(*a.choose(&mut rng).unwrap());
@@ -1519,7 +1575,7 @@ mod tests {
     /// Backtracking must avoid giving P1 any spade cards.
     #[test]
     fn resample_respects_follow_suit_constraint() {
-        let mut gs = OhHell::new_state(2);
+        let mut gs = OhHell::new_state(3, 2);
         // Deal:
         //   P0: NS, TS  (spades, in order via deal positions 0, 3)
         //   P1: NH, TH  (hearts only — so cannot follow spades)
@@ -1565,7 +1621,7 @@ mod tests {
     #[test]
     fn resample_works_for_larger_game() {
         let mut rng: StdRng = SeedableRng::seed_from_u64(5);
-        let mut gs = OhHell::new_state(5);
+        let mut gs = OhHell::new_state(3, 5);
         while gs.is_chance_node() {
             let a = actions!(gs);
             gs.apply_action(*a.choose(&mut rng).unwrap());
@@ -1583,12 +1639,145 @@ mod tests {
             gs.apply_action(*a.choose(&mut rng).unwrap());
         }
         // Now resample for each player.
-        for p in 0..NUM_PLAYERS {
+        for p in 0..3 {
             let orig = gs.istate_key(p);
             for _ in 0..5 {
                 let r = gs.resample_from_istate(p, &mut rng);
                 assert_eq!(r.istate_key(p), orig);
             }
         }
+    }
+
+    // ---------------- 2-player Oh Hell ----------------
+
+    #[test]
+    fn two_player_basic_phases() {
+        let gs = OhHell::new_state(2, 5);
+        assert_eq!(gs.num_players(), 2);
+        assert_eq!(gs.n_tricks(), 5);
+        assert_eq!(gs.phase(), OHPhase::DealHands);
+    }
+
+    #[test]
+    fn two_player_full_game_terminal_and_scoring() {
+        // 2 players, 1 trick.
+        //   P0: 9s,  P1: 9c, face up 9h (hearts trump).
+        //   Bids: P0=0, P1=1. P0 leads 9s. P1 has no spades and no hearts;
+        //   plays 9c. 9s is lead-suit highest → P0 wins.
+        //   Final: P0 won 1 (bid 0) → bust → 0. P1 won 0 (bid 1) → 0.
+        let mut gs = OhHell::new_state(2, 1);
+        gs.apply_action(OHAction::Card(OHCard::NS).into()); // P0 deal
+        gs.apply_action(OHAction::Card(OHCard::NC).into()); // P1 deal
+        gs.apply_action(OHAction::Card(OHCard::NH).into()); // face up
+        gs.apply_action(OHAction::Bid(0).into()); // P0
+        gs.apply_action(OHAction::Bid(1).into()); // P1
+        gs.apply_action(OHAction::Card(OHCard::NS).into()); // P0 leads
+        gs.apply_action(OHAction::Card(OHCard::NC).into()); // P1 follows
+        assert!(gs.is_terminal());
+        assert_eq!(gs.tricks_won(), &[1, 0][..]);
+        // Both score 0 (mean = 0), so evaluate is 0 for both.
+        assert_eq!(gs.evaluate(0), 0.0);
+        assert_eq!(gs.evaluate(1), 0.0);
+    }
+
+    #[test]
+    fn two_player_both_make_bid() {
+        // P0 bids 1, wins 1 → 11. P1 bids 0, wins 0 → 10.
+        // Mean = 10.5. evaluate(0) = 0.5, evaluate(1) = -0.5. Zero-sum.
+        let mut gs = OhHell::new_state(2, 1);
+        gs.apply_action(OHAction::Card(OHCard::NS).into());
+        gs.apply_action(OHAction::Card(OHCard::NC).into());
+        gs.apply_action(OHAction::Card(OHCard::NH).into());
+        gs.apply_action(OHAction::Bid(1).into());
+        gs.apply_action(OHAction::Bid(0).into());
+        gs.apply_action(OHAction::Card(OHCard::NS).into());
+        gs.apply_action(OHAction::Card(OHCard::NC).into());
+        assert!(gs.is_terminal());
+        assert_eq!(gs.tricks_won(), &[1, 0][..]);
+        assert!((gs.evaluate(0) - 0.5).abs() < 1e-9);
+        assert!((gs.evaluate(1) + 0.5).abs() < 1e-9);
+        assert!((gs.evaluate(0) + gs.evaluate(1)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn two_player_undo_round_trip_random() {
+        let mut rng: StdRng = SeedableRng::seed_from_u64(0xBEEF);
+        for _ in 0..50 {
+            let mut gs = OhHell::new_state(2, 3);
+            while !gs.is_terminal() {
+                let a = actions!(gs);
+                assert!(!a.is_empty());
+                let action = *a.choose(&mut rng).unwrap();
+                let before = gs.clone();
+                gs.apply_action(action);
+                let mut tmp = gs.clone();
+                tmp.undo();
+                assert_eq!(
+                    tmp, before,
+                    "2-player undo broken at state {}",
+                    before
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn two_player_resample_preserves_istate() {
+        let mut rng: StdRng = SeedableRng::seed_from_u64(0xF00D);
+        for _ in 0..20 {
+            let mut gs = OhHell::new_state(2, 3);
+            while gs.is_chance_node() {
+                let a = actions!(gs);
+                gs.apply_action(*a.choose(&mut rng).unwrap());
+            }
+            while !gs.is_terminal() {
+                let p = gs.cur_player();
+                let orig = gs.istate_key(p);
+                for _ in 0..3 {
+                    let r = gs.resample_from_istate(p, &mut rng);
+                    assert_eq!(r.istate_key(p), orig);
+                }
+                let a = actions!(gs);
+                gs.apply_action(*a.choose(&mut rng).unwrap());
+            }
+        }
+    }
+
+    #[test]
+    fn two_player_zero_sum_evaluation() {
+        let mut rng: StdRng = SeedableRng::seed_from_u64(0xD06);
+        for _ in 0..30 {
+            let mut gs = OhHell::new_state(2, 3);
+            while !gs.is_terminal() {
+                let a = actions!(gs);
+                gs.apply_action(*a.choose(&mut rng).unwrap());
+            }
+            let total: f64 = (0..2).map(|p| gs.evaluate(p)).sum();
+            assert!(total.abs() < 1e-9, "2-player scores not zero-sum: {}", total);
+        }
+    }
+
+    #[test]
+    fn two_player_max_tricks_supported() {
+        // With 2 players, max_tricks_for is 15 cards (deck of 52, 1 face up).
+        assert_eq!(max_tricks_for(2), 15);
+        assert_eq!(max_tricks_for(3), 10);
+        assert_eq!(max_tricks_for(4), 7);
+    }
+
+    #[test]
+    fn two_player_legal_bids_include_zero_to_n_tricks() {
+        // 2 players, 4 tricks; after dealing + face up, P0 to bid → 5 options (0..=4).
+        let mut gs = OhHell::new_state(2, 4);
+        let mut acts = Vec::new();
+        // Deal 8 cards.
+        for c in OH_DECK.iter().take(8) {
+            gs.apply_action(OHAction::Card(*c).into());
+        }
+        // Face up.
+        gs.apply_action(OHAction::Card(OH_DECK[8]).into());
+        assert_eq!(gs.phase(), OHPhase::Bidding);
+        gs.legal_actions(&mut acts);
+        assert_eq!(acts.len(), 5);
     }
 }
