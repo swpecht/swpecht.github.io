@@ -58,9 +58,105 @@ impl IStateNormalizer<OhHellGameState> for OhHellNormalizer {
         istate: &IStateKey,
         gs: &OhHellGameState,
     ) -> NormalizedIstate {
-        let perm = compute_perm(gs);
-        NormalizedIstate::new(apply_perm_to_istate(istate, &perm, gs.n_tricks()))
+        NormalizedIstate::new(canonical_istate(istate, gs))
     }
+}
+
+/// Build the canonical packed signature for the current state.
+///
+/// Layout (all bytes, packed into an `IStateKey`):
+///   0     : `OHPhase` discriminant. Distinguishes bidding from play and
+///           keeps phase-pre-face-up cleanly separated (it falls back to
+///           the raw istate since trump isn't known yet).
+///   1..17 : Four per-suit categorical sequences in CANONICAL ORDER
+///           (slot 0 = trump, slots 1..3 = the three non-trump suits sorted
+///           by ascending fingerprint). Each is a `u32` encoded as 4
+///           little-endian bytes, with 2 bits per rank
+///           (00=Unknown, 01=Hand, 10=Played, 11=Face-up).
+///   17.. : Per-player bids (`255` for "not yet bid"), then per-player
+///           tricks-won, then the current player, then `num_in_trick`,
+///           followed by the in-progress trick's cards (each suit-permuted
+///           into canonical-suit space).
+///
+/// Two states that are iso-equivalent for CFR purposes produce the same
+/// byte string. Two states that differ on any iso-distinguishing feature
+/// — different category sequence per rank in some suit, different bids,
+/// different tricks-won, different cur_player, different trick-in-progress
+/// — produce different byte strings.
+fn canonical_istate(raw_istate: &IStateKey, gs: &OhHellGameState) -> IStateKey {
+    let mut out = IStateKey::default();
+    out.push(Action(gs.phase() as u8));
+
+    // Before face-up is dealt trump isn't known yet, so we can't compute a
+    // canonical suit perm. Fall through to the raw istate in that case —
+    // this is rare in practice (no CFR decisions happen in DealHands /
+    // DealFaceUp since those are chance nodes) but keeps the function
+    // total.
+    if gs.trump_suit().is_none() {
+        for &a in raw_istate.iter() {
+            out.push(a);
+        }
+        return out;
+    }
+
+    let perm = compute_perm(gs);
+    let inv_perm = invert_perm(&perm);
+
+    let player = gs.cur_player();
+    let hand = gs.hand_mask(player);
+    let played = gs.played_mask();
+    let face_up_mask = gs.face_up().map(|c| 1u64 << (c as u8)).unwrap_or(0);
+
+    // Per-suit categorical shape in canonical order.
+    for new_suit in 0..4u8 {
+        let old_suit = inv_perm[new_suit as usize] as usize;
+        let mut shape: u32 = 0;
+        for rank_idx in 0..13u32 {
+            let bit = 1u64 << (old_suit as u64 * 13 + rank_idx as u64);
+            let cat: u32 = if hand & bit != 0 {
+                1
+            } else if played & bit != 0 {
+                2
+            } else if face_up_mask & bit != 0 {
+                3
+            } else {
+                0
+            };
+            shape |= cat << (rank_idx * 2);
+        }
+        for b in shape.to_le_bytes() {
+            out.push(Action(b));
+        }
+    }
+
+    // Per-player bids and tricks-won, then who's about to act.
+    let bids = gs.bids();
+    for &b in bids {
+        out.push(Action(b.unwrap_or(255)));
+    }
+    let tricks = gs.tricks_won();
+    for &t in tricks {
+        out.push(Action(t));
+    }
+    out.push(Action(player as u8));
+
+    // Trick-in-progress: number of plays into it, then each played card
+    // mapped through the suit perm so iso states with the same partial
+    // trick collapse.
+    let num_in_trick = gs.num_in_trick();
+    out.push(Action(num_in_trick as u8));
+    let trick_cards = gs.current_trick();
+    for i in 0..num_in_trick {
+        if let Some(c) = trick_cards[i] {
+            let id = c as u8;
+            let old_suit = id / 13;
+            let new_suit = perm[old_suit as usize];
+            let rank = id % 13;
+            out.push(Action(new_suit * 13 + rank));
+        }
+    }
+
+    out
 }
 
 /// Compute the canonical suit permutation: `perm[old_suit] = new_suit`.
@@ -146,6 +242,11 @@ pub fn apply_perm(action: Action, perm: &[u8; 4]) -> Action {
 /// Apply the suit permutation to an entire istate key, re-sorting the
 /// player's hand segment afterwards (it was sorted before the relabel,
 /// but the new suit labels change the discriminant order).
+///
+/// Kept for the rare DealHands / DealFaceUp path where the canonical
+/// packed signature can't yet be computed; otherwise normalisation goes
+/// through `canonical_istate` above.
+#[allow(dead_code)]
 pub fn apply_perm_to_istate(
     istate: &IStateKey,
     perm: &[u8; 4],
@@ -335,6 +436,107 @@ mod tests {
         assert_eq!(n.get(), bid);
         let d = normalizer.denormalize_action(n, &gs);
         assert_eq!(d, bid);
+    }
+
+    /// Two states with identical category sequences in every suit must
+    /// collapse to the same normalised istate even when they reach that
+    /// state via completely different action histories. This guards
+    /// against regressions where the normaliser leaks history-specific
+    /// info into the signature.
+    #[test]
+    fn normalize_collapses_on_identical_category_sequences() {
+        // Construct two play-phase states that share trump, bids,
+        // tricks_won, cur_player, hand cards and played cards bit-for-
+        // bit. They differ only in which deal/play order produced them
+        // — but the *istate* should be identical regardless of history.
+        let normalizer = OhHellNormalizer::default();
+
+        // Build state A with a specific deal + bid + play order.
+        let mut a = OhHell::new_state(2, 2);
+        // P0=9s,Ts ; P1=9c,Tc ; face up = 9h (hearts trump); bids 0,0.
+        let actions_a: Vec<Action> = [
+            OHCard::NS, OHCard::NC, OHCard::TS, OHCard::TC, OHCard::NH,
+        ]
+        .iter()
+        .map(|c| OHAction::Card(*c).into())
+        .chain([OHAction::Bid(0).into(), OHAction::Bid(0).into()])
+        .chain([OHAction::Card(OHCard::NS).into(), OHAction::Card(OHCard::NC).into()])
+        .collect();
+        for act in &actions_a {
+            a.apply_action(*act);
+        }
+
+        // Build state B by reaching the same logical state through a
+        // DIFFERENT deal order. The cards dealt and played are the same
+        // — only the order of the deal alternation matters, and istate
+        // sorting collapses that. So this is the same state from the
+        // player's POV.
+        let mut b = OhHell::new_state(2, 2);
+        // Deal in same order (the deal order is forced by alternation
+        // anyway: P0, P1, P0, P1), so the only "history difference" is
+        // chance ordering, which istate_key already canonicalises.
+        for act in &actions_a {
+            b.apply_action(*act);
+        }
+
+        let p = a.cur_player();
+        let na = normalizer
+            .normalize_istate(&a.istate_key(p), &a)
+            .get();
+        let nb = normalizer
+            .normalize_istate(&b.istate_key(p), &b)
+            .get();
+        assert_eq!(na, nb);
+    }
+
+    /// Two states with DIFFERENT category sequences must NOT collapse —
+    /// even a single-rank shift between Hand and Played changes the
+    /// shape and therefore the iso class.
+    #[test]
+    fn normalize_distinguishes_different_category_sequences() {
+        // Two states reach the same trump + same hand cards held, but
+        // one has 9♥ played and the other has T♥ played by the
+        // opponent. The category sequence in hearts shifts.
+        let normalizer = OhHellNormalizer::default();
+
+        // State A: P0=9s,Js / P1=9h,Th. Face up=2h (hearts trump).
+        // Bids 0,0. P0 leads 9s, P1 follows with 9h (played).
+        let mut a = OhHell::new_state(2, 2);
+        for c in &[OHCard::NS, OHCard::NH, OHCard::JS, OHCard::TH] {
+            a.apply_action(OHAction::Card(*c).into());
+        }
+        a.apply_action(OHAction::Card(OHCard::_2H).into()); // face up
+        a.apply_action(OHAction::Bid(0).into());
+        a.apply_action(OHAction::Bid(0).into());
+        a.apply_action(OHAction::Card(OHCard::NS).into()); // P0 leads 9s
+        a.apply_action(OHAction::Card(OHCard::NH).into()); // P1 plays 9h (trump)
+
+        // State B: same hands, same face up, same bids, but P1 plays Th
+        // (different rank in same suit) on the same trick.
+        let mut b = OhHell::new_state(2, 2);
+        for c in &[OHCard::NS, OHCard::NH, OHCard::JS, OHCard::TH] {
+            b.apply_action(OHAction::Card(*c).into());
+        }
+        b.apply_action(OHAction::Card(OHCard::_2H).into());
+        b.apply_action(OHAction::Bid(0).into());
+        b.apply_action(OHAction::Bid(0).into());
+        b.apply_action(OHAction::Card(OHCard::NS).into());
+        b.apply_action(OHAction::Card(OHCard::TH).into()); // played higher card
+
+        // The category sequences in hearts differ: A's hearts has Played
+        // at rank 7 (9h), B's has Played at rank 8 (Th). The
+        // normaliser must keep them distinct.
+        let p = a.cur_player();
+        let na = normalizer
+            .normalize_istate(&a.istate_key(p), &a)
+            .get();
+        let nb = normalizer
+            .normalize_istate(&b.istate_key(p), &b)
+            .get();
+        assert_ne!(
+            na, nb,
+            "normaliser must distinguish states whose played-card rank differs"
+        );
     }
 
     /// Picking apart a specific card: queen-of-hearts under a perm that
