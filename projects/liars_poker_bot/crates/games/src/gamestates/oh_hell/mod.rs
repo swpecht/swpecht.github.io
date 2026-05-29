@@ -432,14 +432,22 @@ impl OhHellGameState {
     }
 }
 
-fn mask_for_suit(suit: OHSuit) -> u64 {
-    let mut m = 0u64;
-    for &c in &OH_DECK {
-        if c.suit() == suit {
-            m |= 1u64 << (c as u8);
-        }
+/// Per-suit card masks indexed by `OHSuit as u8` (Spades, Clubs, Hearts,
+/// Diamonds). 13 bits set per suit in their canonical positions within
+/// the 52-card deck.
+pub(super) const SUIT_MASK: [u64; 4] = {
+    let mut out = [0u64; 4];
+    let mut i = 0;
+    while i < OH_DECK_SIZE {
+        let suit_idx = (i / 13) as usize;
+        out[suit_idx] |= 1u64 << i;
+        i += 1;
     }
-    m
+    out
+};
+
+fn mask_for_suit(suit: OHSuit) -> u64 {
+    SUIT_MASK[suit as usize]
 }
 
 /// Bit flag for a suit (used in `forbidden_suits` masks).
@@ -630,46 +638,104 @@ impl GameState for OhHellGameState {
         sorted
     }
 
-    /// Compact, search-relevant hash of the current state for use as a
-    /// transposition table key. Skips the (large) history blob in
-    /// `key`/`play_order` — the live `hands`/`trick_cards`/`tricks_won`
-    /// summary already captures everything alpha-beta cares about. Only
-    /// returns Some during the play phase (which is the only place the
-    /// open-hand solver caches).
+    /// Isomorphic transposition table hash. Two states that are
+    /// equivalent under the open-hand alpha-beta search produce the same
+    /// hash, so the TT cache shares entries across symmetry classes.
+    ///
+    /// Symmetries exploited (only valid at start-of-trick, which is the
+    /// only time we cache anyway):
+    ///   * **Non-trump suit permutation**: the three non-trump suits are
+    ///     functionally interchangeable when no lead suit is in play. The
+    ///     trump suit's signature is fixed in slot 0; the other three
+    ///     suits' signatures are sorted ascending.
+    ///   * **Rank compaction within a suit**: only the relative rank
+    ///     among in-play cards matters for trick-taking outcomes. We walk
+    ///     in-play cards in ascending absolute-rank order and record the
+    ///     owner at each position; absolute rank labels drop out.
+    ///
+    /// Player identity and trump-suit identity are *not* canonicalised:
+    /// bids, tricks-won and seat order make players distinguishable, and
+    /// trump suit changes the value of every other card so it can't be
+    /// swapped.
     fn transposition_table_hash(&self) -> Option<crate::istate::IsomorphicHash> {
         if self.phase != OHPhase::Play {
             return None;
         }
-        // Don't cache mid-trick: the trick's partial state would push us
-        // into many near-identical entries with no real reuse.
+        // Mid-trick caching isn't supported: the trick's partial state
+        // would push us into many near-identical entries with no real
+        // reuse, plus the lead-suit symmetry doesn't hold here.
         if self.num_in_trick != 0 {
             return None;
         }
 
-        // FxHash-style mix. The state we feed in is fully redundant with
-        // the alpha-beta search tree at this point, so a non-cryptographic
-        // hash is fine — we just need low collisions.
+        let np = self.num_players as usize;
+        let trump = self.trump_suit.expect("trump set in Play");
+        let face_up_mask = self.face_up.map(|c| 1u64 << (c as u8)).unwrap_or(0);
+        let used_mask = self.played_mask | face_up_mask;
+
+        // Per-suit signature: 4 bits per in-play card encoding the owner
+        // (0..np for players, np for stock), in ascending absolute-rank
+        // order. With 13 cards per suit this is at most 52 bits, fits in
+        // a u64.
+        let mut suit_sigs = [0u64; 4];
+        for (suit_idx, sig) in suit_sigs.iter_mut().enumerate() {
+            let suit_full = SUIT_MASK[suit_idx];
+            let in_play = suit_full & !used_mask;
+
+            let mut s = 0u64;
+            let mut pos: u32 = 0;
+            let mut m = in_play;
+            while m != 0 {
+                let card_bit = m & m.wrapping_neg();
+                m &= m - 1;
+                let mut owner = np as u64;
+                for p in 0..np {
+                    if self.hands[p] & card_bit != 0 {
+                        owner = p as u64;
+                        break;
+                    }
+                }
+                s |= owner << (pos * 4);
+                pos += 1;
+            }
+            *sig = s;
+        }
+
+        // Trump's signature goes in slot 0; the three non-trump
+        // signatures sort ascending so any permutation collapses.
+        let trump_sig = suit_sigs[trump as usize];
+        let mut other = [0u64; 3];
+        let mut idx = 0;
+        for s in 0..4 {
+            if s != trump as usize {
+                other[idx] = suit_sigs[s];
+                idx += 1;
+            }
+        }
+        other.sort();
+
         const K: u64 = 0x517cc1b727220a95;
         #[inline(always)]
         fn mix(h: u64, x: u64) -> u64 {
             (h.rotate_left(5) ^ x).wrapping_mul(K)
         }
 
-        let np = self.num_players as usize;
         let mut h: u64 = 0;
+        h = mix(h, trump_sig);
+        h = mix(h, other[0]);
+        h = mix(h, other[1]);
+        h = mix(h, other[2]);
+
+        // Per-player counters and the seat we're cycling on.
+        let mut bid_pack = 0u64;
+        let mut tricks_pack = 0u64;
         for p in 0..np {
-            h = mix(h, self.hands[p]);
+            bid_pack |= (self.bids[p].unwrap_or(255) as u64) << (p * 8);
+            tricks_pack |= (self.tricks_won[p] as u64) << (p * 8);
         }
-        for p in 0..np {
-            h = mix(
-                h,
-                (self.bids[p].unwrap_or(255) as u64) | ((self.tricks_won[p] as u64) << 8),
-            );
-        }
-        let trump = self.trump_suit.map(|s| s as u8).unwrap_or(255) as u64;
-        let tail = (self.cur_player as u64 & 0xff)
-            | ((self.num_players as u64) << 8)
-            | (trump << 16);
+        h = mix(h, bid_pack);
+        h = mix(h, tricks_pack);
+        let tail = (self.cur_player as u64 & 0xff) | ((self.num_players as u64) << 8);
         h = mix(h, tail);
         Some(h)
     }
@@ -1763,6 +1829,142 @@ mod tests {
         assert_eq!(max_tricks_for(2), 15);
         assert_eq!(max_tricks_for(3), 10);
         assert_eq!(max_tricks_for(4), 7);
+    }
+
+    // ---------------- Isomorphic TT hash ----------------
+
+    /// Helper: drive a 2-player 2-trick game through random chance +
+    /// bidding into the play phase at a start-of-trick boundary, then
+    /// return the resulting state so iso-hash tests can manipulate it.
+    fn play_start_state(seed: u64) -> OhHellGameState {
+        let mut rng: StdRng = SeedableRng::seed_from_u64(seed);
+        let mut gs = OhHell::new_state(2, 2);
+        while gs.is_chance_node() {
+            let a = actions!(gs);
+            gs.apply_action(*a.choose(&mut rng).unwrap());
+        }
+        while gs.phase() == OHPhase::Bidding {
+            let a = actions!(gs);
+            gs.apply_action(*a.choose(&mut rng).unwrap());
+        }
+        gs
+    }
+
+    /// Swap all bits of two suits in a 52-bit mask (each suit owns 13
+    /// consecutive bits at offset `suit_idx * 13`).
+    fn swap_suit_bits_in_mask(m: u64, a: u8, b: u8) -> u64 {
+        let base_a = (a as u64) * 13;
+        let base_b = (b as u64) * 13;
+        let mask_a = (((1u64 << 13) - 1) << base_a);
+        let mask_b = (((1u64 << 13) - 1) << base_b);
+        let bits_a = (m & mask_a) >> base_a;
+        let bits_b = (m & mask_b) >> base_b;
+        let cleared = m & !(mask_a | mask_b);
+        cleared | (bits_a << base_b) | (bits_b << base_a)
+    }
+
+    /// Apply a non-trump suit swap to a play-phase state. Both hands and
+    /// the played_mask have the bits of the two suits exchanged.
+    fn permute_two_nontrump_suits(gs: &OhHellGameState, a: OHSuit, b: OHSuit) -> OhHellGameState {
+        assert_ne!(a, b);
+        assert_ne!(Some(a), gs.trump_suit);
+        assert_ne!(Some(b), gs.trump_suit);
+        let mut out = gs.clone();
+        let ai = a as u8;
+        let bi = b as u8;
+        for p in 0..(gs.num_players as usize) {
+            out.hands[p] = swap_suit_bits_in_mask(gs.hands[p], ai, bi);
+        }
+        out.played_mask = swap_suit_bits_in_mask(gs.played_mask, ai, bi);
+        out
+    }
+
+    /// Iso hash must be the same when two non-trump suits are swapped —
+    /// they're interchangeable at start-of-trick.
+    #[test]
+    fn iso_hash_collapses_nontrump_suit_swap() {
+        for seed in 0..30u64 {
+            let gs = play_start_state(seed);
+            let trump = gs.trump_suit.unwrap();
+            // Pick two non-trump suits.
+            let nontrumps: Vec<OHSuit> =
+                OHSuit::ALL.iter().copied().filter(|s| *s != trump).collect();
+            let permuted = permute_two_nontrump_suits(&gs, nontrumps[0], nontrumps[1]);
+            assert_eq!(
+                gs.transposition_table_hash(),
+                permuted.transposition_table_hash(),
+                "iso hash should not depend on non-trump suit labels (seed={})",
+                seed
+            );
+        }
+    }
+
+    /// Changing the trump suit (with the same card distribution) must
+    /// produce a *different* iso hash — trump isn't interchangeable.
+    #[test]
+    fn iso_hash_separates_trump_change() {
+        let gs = play_start_state(42);
+        let mut alt = gs.clone();
+        // Pick a non-trump suit and make it trump instead.
+        let alt_trump = OHSuit::ALL
+            .iter()
+            .copied()
+            .find(|s| Some(*s) != gs.trump_suit)
+            .unwrap();
+        alt.trump_suit = Some(alt_trump);
+        assert_ne!(
+            gs.transposition_table_hash(),
+            alt.transposition_table_hash(),
+            "iso hash must distinguish different trump suits"
+        );
+    }
+
+    /// Moving a card from one player to another must change the iso
+    /// hash — player identity isn't interchangeable.
+    #[test]
+    fn iso_hash_separates_owner_change() {
+        let gs = play_start_state(11);
+        // Find any card P0 holds and move it to P1's hand on a clone.
+        let p0_hand = gs.hands[0];
+        assert!(p0_hand != 0);
+        let card_bit = p0_hand & p0_hand.wrapping_neg();
+        let mut alt = gs.clone();
+        alt.hands[0] &= !card_bit;
+        alt.hands[1] |= card_bit;
+        assert_ne!(
+            gs.transposition_table_hash(),
+            alt.transposition_table_hash(),
+            "iso hash must distinguish a card moving from P0 to P1"
+        );
+    }
+
+    /// Changing a bid must change the iso hash — bidding state is part
+    /// of scoring and isn't part of the iso symmetry.
+    #[test]
+    fn iso_hash_separates_bid_change() {
+        let gs = play_start_state(101);
+        let original_bid = gs.bids[0].expect("bid set in play");
+        let mut alt = gs.clone();
+        alt.bids[0] = Some(if original_bid == 0 { 1 } else { 0 });
+        assert_ne!(
+            gs.transposition_table_hash(),
+            alt.transposition_table_hash(),
+            "iso hash must distinguish different bids"
+        );
+    }
+
+    /// Iso hash returns `None` during bidding (consistent with the old
+    /// behaviour — TT only caches play-phase states).
+    #[test]
+    fn iso_hash_none_during_bidding() {
+        let mut rng: StdRng = SeedableRng::seed_from_u64(0);
+        let mut gs = OhHell::new_state(2, 2);
+        while gs.is_chance_node() {
+            let a = actions!(gs);
+            gs.apply_action(*a.choose(&mut rng).unwrap());
+        }
+        assert_eq!(gs.phase(), OHPhase::Bidding);
+        assert_eq!(gs.transposition_table_hash(), None);
     }
 
     #[test]
