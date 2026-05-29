@@ -15,7 +15,7 @@ use games::{
             isomorphic::EuchreNormalizer, processors::post_cards_played, Euchre, EuchreGameState,
         },
         kuhn_poker::{KPGameState, KuhnPoker},
-        oh_hell::{OhHell, OhHellGameState},
+        oh_hell::{isomorphic::OhHellNormalizer, OhHell, OhHellGameState},
     },
     istate::{IStateNormalizer, NoOpNormalizer, NormalizedAction, NormalizedIstate},
     resample::ResampleFromInfoState,
@@ -289,7 +289,11 @@ impl CFRES<OhHellGameState, OH_MAX_ACTIONS> {
                 SeedableRng::seed_from_u64(pimcts_seed),
             ),
             evaluator: OpenHandSolver::default(),
-            normalizer: Box::<NoOpNormalizer>::default(),
+            // Iso-canonicalising normaliser: collapses CFR istates that
+            // differ only by non-trump suit permutation. See
+            // games/src/gamestates/oh_hell/isomorphic.rs for the perm
+            // logic and its correctness gates.
+            normalizer: Box::<OhHellNormalizer>::default(),
             iteration: Arc::new(AtomicUsize::new(0)),
         }
     }

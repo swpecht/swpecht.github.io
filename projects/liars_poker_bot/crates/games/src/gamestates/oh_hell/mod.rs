@@ -30,6 +30,7 @@ use crate::{
 use self::actions::{OHAction, OHCard, OHSuit, OH_DECK, OH_DECK_SIZE};
 
 pub mod actions;
+pub mod isomorphic;
 pub mod processors;
 
 /// Compile-time upper bound on the player count. Stored arrays
