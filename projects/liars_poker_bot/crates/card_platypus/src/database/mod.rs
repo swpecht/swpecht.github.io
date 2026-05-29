@@ -31,10 +31,71 @@ const METADATA_NAME: &str = "meta";
 ///     (Kuhn Poker, Bluff(1,1), Euchre with isomorphic reduction).
 ///   - `Hash`: a plain `HashMap`. Lazily populated, no pre-enumeration
 ///     needed. Used for games whose istate space is too large to enumerate
-///     (e.g. Oh Hell with the full 52-card deck).
+///     (e.g. Oh Hell with the full 52-card deck). Optionally backed by a
+///     MessagePack file on disk for checkpoint / resume.
 pub enum NodeStore<const MAX_ACTIONS: usize> {
     Mmap(MmapBacking<MAX_ACTIONS>),
-    Hash(HashMap<IStateKey, InfoState<MAX_ACTIONS>>),
+    Hash(HashBacking<MAX_ACTIONS>),
+}
+
+/// In-memory infostate store with optional disk persistence. `commit()`
+/// serialises the `HashMap` to `path` via MessagePack; the constructor
+/// hydrates from `path` if the file exists.
+pub struct HashBacking<const MAX_ACTIONS: usize> {
+    map: HashMap<IStateKey, InfoState<MAX_ACTIONS>>,
+    path: Option<PathBuf>,
+}
+
+impl<const MAX_ACTIONS: usize> HashBacking<MAX_ACTIONS> {
+    /// New empty store (with optional save path). If `path` exists, hydrate
+    /// from it; otherwise start with an empty map.
+    pub fn new(path: Option<PathBuf>) -> anyhow::Result<Self> {
+        let mut map = HashMap::new();
+        if let Some(p) = path.as_ref() {
+            if p.exists() {
+                let bytes = std::fs::read(p)
+                    .with_context(|| format!("reading {}", p.display()))?;
+                map = rmp_serde::from_slice(&bytes)
+                    .with_context(|| format!("decoding {}", p.display()))?;
+                debug!("HashBacking: loaded {} infostates from {}", map.len(), p.display());
+            }
+        }
+        Ok(Self { map, path })
+    }
+
+    pub fn get(&self, key: &IStateKey) -> Option<InfoState<MAX_ACTIONS>> {
+        self.map.get(key).copied()
+    }
+
+    pub fn put(&mut self, key: &IStateKey, value: &InfoState<MAX_ACTIONS>) {
+        self.map.insert(*key, *value);
+    }
+
+    pub fn len(&self) -> usize {
+        self.map.len()
+    }
+
+    /// Serialise to disk if a path was provided. Writes via a `.tmp` file
+    /// + rename so a half-written checkpoint can't replace a good one.
+    pub fn commit(&self) -> anyhow::Result<()> {
+        let Some(path) = self.path.as_ref() else {
+            return Ok(());
+        };
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent)
+                    .with_context(|| format!("creating dir {}", parent.display()))?;
+            }
+        }
+        let bytes = rmp_serde::to_vec(&self.map)
+            .context("encoding HashBacking map")?;
+        let tmp = path.with_extension("tmp");
+        std::fs::write(&tmp, &bytes)
+            .with_context(|| format!("writing {}", tmp.display()))?;
+        std::fs::rename(&tmp, path)
+            .with_context(|| format!("renaming {} -> {}", tmp.display(), path.display()))?;
+        Ok(())
+    }
 }
 
 /// Mmap + PHF backing for `NodeStore`.
@@ -148,24 +209,21 @@ impl<const MAX_ACTIONS: usize> NodeStore<MAX_ACTIONS> {
     pub fn get(&self, key: &IStateKey) -> Option<InfoState<MAX_ACTIONS>> {
         match self {
             NodeStore::Mmap(m) => m.get(key),
-            NodeStore::Hash(h) => h.get(key).copied(),
+            NodeStore::Hash(h) => h.get(key),
         }
     }
 
     pub fn put(&mut self, key: &IStateKey, value: &InfoState<MAX_ACTIONS>) {
         match self {
             NodeStore::Mmap(m) => m.put(key, value),
-            NodeStore::Hash(h) => {
-                h.insert(*key, *value);
-            }
+            NodeStore::Hash(h) => h.put(key, value),
         }
     }
 
     pub fn commit(&mut self) -> anyhow::Result<()> {
         match self {
             NodeStore::Mmap(m) => m.commit(),
-            // In-memory store: nothing to persist.
-            NodeStore::Hash(_) => Ok(()),
+            NodeStore::Hash(h) => h.commit(),
         }
     }
 
@@ -273,11 +331,14 @@ impl NodeStore<OH_MAX_ACTIONS> {
     /// too large to enumerate up front for a perfect-hash index, but
     /// MCCFR only touches a small subset of istates per training run, so
     /// lazy population works well.
+    ///
+    /// When `path` is `Some` the constructor hydrates from disk if the
+    /// file exists, and a later `commit()` will write the in-memory map
+    /// back (MessagePack via `rmp-serde`). When `path` is `None` the
+    /// store is purely in-memory.
     pub fn new_oh_hell(path: Option<&Path>, _n_tricks: usize) -> anyhow::Result<Self> {
-        if path.is_some() {
-            bail!("disk persistence not supported for Oh Hell store")
-        }
-        Ok(NodeStore::Hash(HashMap::new()))
+        let owned = path.map(|p| p.to_path_buf());
+        Ok(NodeStore::Hash(HashBacking::new(owned)?))
     }
 }
 

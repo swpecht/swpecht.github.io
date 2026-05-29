@@ -20,6 +20,9 @@
 //!   CFR_REPORT_PCT     report every this % of iters (5.0)
 //!   CFR_EVAL_GAMES     evaluation games per report (200)
 //!   CFR_MAX_CARDS      OhHellDepthChecker max_cards_played (100 → full)
+//!   CFR_SAVE_PATH      optional MessagePack file. When set, infostates
+//!                      are loaded on startup (if the file exists) and
+//!                      flushed after every report so training can resume.
 //!
 //! Example invocation (with kestrel-tail):
 //!
@@ -27,7 +30,7 @@
 //!     | ./kestrel-tail oh_hell_cfr_2p_2t_50k \
 //!         --tag oh_hell --tag cfr --tag 2p --tag 2tricks
 
-use std::time::Instant;
+use std::{path::PathBuf, time::Instant};
 
 use card_platypus::{
     agents::Agent,
@@ -61,20 +64,22 @@ fn main() {
     let report_pct: f64 = parse_env("CFR_REPORT_PCT", 5.0);
     let eval_games: usize = parse_env("CFR_EVAL_GAMES", 200);
     let max_cards: usize = parse_env("CFR_MAX_CARDS", 100);
+    let save_path: Option<PathBuf> = std::env::var("CFR_SAVE_PATH").ok().map(PathBuf::from);
 
     let report_every = (((total_iters as f64) * (report_pct / 100.0)) as usize).max(1);
 
     println!(
         "CFR Oh Hell: {} players, {} tricks, total_iters={}, report every {} iters \
-         ({:.1}%), eval_games/report={}, max_cards_played={}",
-        n_players, n_tricks, total_iters, report_every, report_pct, eval_games, max_cards
+         ({:.1}%), eval_games/report={}, max_cards_played={}, save_path={:?}",
+        n_players, n_tricks, total_iters, report_every, report_pct, eval_games, max_cards,
+        save_path,
     );
     println!(
         "{:>10} {:>8} {:>8} {:>10} {:>9} {:>9} {:>9} {:>10}",
         "iter", "time_s", "pct", "score_v_rand", "win%", "tie%", "loss%", "info_states"
     );
 
-    let mut cfr: OhCfres = CFRES::new_oh_hell(n_players, n_tricks, max_cards);
+    let mut cfr: OhCfres = CFRES::new_oh_hell(n_players, n_tricks, max_cards, save_path.as_deref());
 
     let start = Instant::now();
 
@@ -88,6 +93,11 @@ fn main() {
         cfr.train(chunk);
         done += chunk;
         report(&mut cfr, n_players, n_tricks, eval_games, done, total_iters, &start);
+        if save_path.is_some() {
+            if let Err(e) = cfr.save() {
+                eprintln!("checkpoint save failed: {:#}", e);
+            }
+        }
     }
 
     let elapsed = start.elapsed().as_secs_f64();
@@ -96,6 +106,14 @@ fn main() {
         elapsed,
         cfr.num_info_states()
     );
+
+    if let Some(p) = save_path.as_ref() {
+        if let Err(e) = cfr.save() {
+            eprintln!("final save failed: {:#}", e);
+        } else {
+            println!("Saved final weights to {}", p.display());
+        }
+    }
 }
 
 fn report(

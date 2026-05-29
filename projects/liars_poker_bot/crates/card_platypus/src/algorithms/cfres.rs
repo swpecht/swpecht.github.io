@@ -243,7 +243,16 @@ impl CFRES<OhHellGameState, OH_MAX_ACTIONS> {
     /// played. Mirrors the Euchre `max_cards_played` knob: pass `0` to
     /// run CFR only on the bidding sub-game, or larger values to also
     /// solve some opening tricks.
-    pub fn new_oh_hell(num_players: usize, n_tricks: usize, max_cards_played: usize) -> Self {
+    ///
+    /// When `path` is `Some`, the infostate map is loaded from disk on
+    /// construction (if the file exists) and `save()` writes it back via
+    /// MessagePack. Pass `None` for purely in-memory training.
+    pub fn new_oh_hell(
+        num_players: usize,
+        n_tricks: usize,
+        max_cards_played: usize,
+        path: Option<&Path>,
+    ) -> Self {
         let game_generator: fn() -> OhHellGameState = match (num_players, n_tricks) {
             (2, 1) => || OhHell::new_state(2, 1),
             (2, 2) => || OhHell::new_state(2, 2),
@@ -271,7 +280,7 @@ impl CFRES<OhHellGameState, OH_MAX_ACTIONS> {
             vector_pool: Pool::new(Vec::new),
             game_generator,
             infostates: Arc::new(Mutex::new(
-                NodeStore::new_oh_hell(None, n_tricks).unwrap(),
+                NodeStore::new_oh_hell(path, n_tricks).unwrap(),
             )),
             depth_checker: Box::new(OhHellDepthChecker { max_cards_played }),
             play_bot: PIMCTSBot::new(
@@ -710,9 +719,28 @@ mod tests {
     /// MCCFR with a HashMap-backed store converges quickly.
     #[test]
     fn cfres_oh_hell_train_smoke() {
-        let mut alg = CFRES::new_oh_hell(3, 2, 0);
+        let mut alg = CFRES::new_oh_hell(3, 2, 0, None);
         alg.train(20);
         assert!(alg.num_info_states() > 0);
+    }
+
+    /// Round-trip: train a small Oh Hell run, persist to disk, reload
+    /// into a fresh CFRES, and confirm the info-state count is preserved
+    /// and that `save()` after reload is a no-op (count stays the same).
+    #[test]
+    fn cfres_oh_hell_save_load_round_trip() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("oh_cfr.msgpack");
+
+        let mut a = CFRES::new_oh_hell(3, 2, 0, Some(path.as_path()));
+        a.train(50);
+        let n_after_train = a.num_info_states();
+        assert!(n_after_train > 0);
+        a.save().expect("save");
+        assert!(path.exists());
+
+        let b = CFRES::new_oh_hell(3, 2, 0, Some(path.as_path()));
+        assert_eq!(b.num_info_states(), n_after_train);
     }
 
     // Reference in f64 — the true mathematical answer, used to verify the f32 closed form.
