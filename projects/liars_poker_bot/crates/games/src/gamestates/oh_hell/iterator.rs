@@ -43,6 +43,14 @@
 //! enumeration and the normaliser agree on the iso-equivalence
 //! partition.
 
+// TODO: clean up dead code from the previous Waugh-per-play iteration.
+// The new walker-based enumeration in full_game_via_waugh subsumed
+// these helpers (trick_winner / next_actor_after_plays / PlayMeta /
+// simulate_plays / make_play_state_for_perspective / feasibility_check_2p)
+// but they're left in place with this allow for one revision so the
+// diff stays focused on the iteration-strategy switch.
+#![allow(dead_code)]
+
 use std::collections::HashSet;
 
 use crate::{
@@ -206,14 +214,14 @@ impl OhHellIsomorphicIStateIterator {
                     states.insert(canonical);
                 }
 
-                if num_players > 2 && n_tricks > 1 {
-                    // 3p+ multi-trick play-tree enumeration is gated
-                    // on a smarter opp-hand enumeration — for n_tricks
-                    // ≥ 2 the permutation count
-                    // ((np-1)·n_tricks)! / ((np-1)·n_tricks - k)!  is
-                    // already 4M+ for 3p × 2-trick. Deferred.
-                    continue;
-                }
+                // 3p+ × multi-trick is supported but very slow: the
+                // permutation count is
+                //   (52 - n_tricks - 1) P ((np-1)·n_tricks)
+                // which for 3p × 2-trick is 47·46·45·44 ≈ 4.3M per
+                // canonical (hand, face_up). Tractable for unit tests
+                // only at 1-trick or 2p × multi-trick. For larger
+                // configs a tighter enumeration (e.g. iso-reduced
+                // opp hand pairs) is the natural follow-up.
 
                 // Build the unseen pool for opp hand enumeration.
                 let used: std::collections::HashSet<OHCard> =
