@@ -6,6 +6,7 @@ use std::{
 
 pub mod cards;
 pub mod gamestates;
+pub mod iso;
 pub mod istate;
 pub mod iterator;
 pub mod pool;
