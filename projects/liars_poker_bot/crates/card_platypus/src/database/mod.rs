@@ -358,14 +358,11 @@ impl NodeStore<OH_MAX_ACTIONS> {
         num_players: usize,
         n_tricks: usize,
     ) -> anyhow::Result<Self> {
-        // Initial mmap sizing: a generous overprovision so we don't
-        // pay for a `remap` on the first few writes. Bidding-only iso
-        // class counts top out at ~1.3M for 3p × 3-trick and shrink
-        // sharply for smaller configs; 5M slots covers everything
-        // we'd reasonably train on.
-        let mmap = get_mmap(path, 5_000_000, MmapBacking::<OH_MAX_ACTIONS>::BUCKET_SIZE)
-            .context("failed to create OH mmap")?;
-
+        // Build / load the indexer first so we can size the mmap to
+        // exactly the iso class count (`indexer.len()`) — no
+        // overprovisioning. This drops resident pages by ~10× on
+        // configs where the PHF distributes the touched slots
+        // sparsely across an oversized mmap.
         let path = path.map(|x| x.to_path_buf());
         let mut indexer_needs_save = false;
         let indexer = load_indexer(path.as_deref()).unwrap_or_else(|x| {
@@ -377,6 +374,13 @@ impl NodeStore<OH_MAX_ACTIONS> {
             indexer_needs_save = true;
             Indexer::oh_hell_bidding(num_players, n_tricks)
         });
+
+        let mmap = get_mmap(
+            path.as_deref(),
+            indexer.len(),
+            MmapBacking::<OH_MAX_ACTIONS>::BUCKET_SIZE,
+        )
+        .context("failed to create OH mmap")?;
 
         let populated_count = path
             .as_deref()
