@@ -155,24 +155,27 @@ impl OhHellIsomorphicIStateIterator {
         Self { states, index: 0 }
     }
 
-    /// Full-game canonical istate enumeration via the Waugh
-    /// [`HandIndexer`], extended to play-phase decisions.
+    /// Full-game canonical istate enumeration.
     ///
-    /// For each player p and each decision point dp where p is to
-    /// act, the algorithm enumerates canonical (hand, face_up,
-    /// plays_so_far) tuples via Waugh's unindex on
-    /// `rounds = [n_tricks, 1, 1, 1, …]`, applies a follow-suit
-    /// feasibility filter, crosses with the complete bid sequence,
-    /// and emits the canonical IStateKey produced by
-    /// [`OhHellNormalizer`].
+    /// Enumerates each canonical `(hand, face_up)` pair via the
+    /// Waugh `HandIndexer` with `rounds=[n_tricks, 1]` — this part
+    /// is iso-canonical and dedup-free. For each canonical pair, we
+    /// then iterate over every possible opponent hand (subsets of
+    /// the unseen pool), every complete bid sequence, and walk the
+    /// play tree using the real `OhHellGameState` so follow-suit
+    /// rules are enforced for free. Canonical istates are emitted at
+    /// every perspective-to-act decision and dedup'd via HashSet.
     ///
-    /// Bounded by `max_cards_played` — when `max_cards_played < np
-    /// × n_tricks`, only the first `max_cards_played` play decisions
-    /// are enumerated.
+    /// This avoids the deal-phase Waugh duplicate-card problem (a
+    /// perspective's own play has the same card as a deal action),
+    /// which broke the previous play-phase enumeration. The price is
+    /// iterating opponent hands; for 2p × 2-trick this is `~5000
+    /// canonical × C(45,2)=990 ≈ 5M (canonical, opp_hand)` pairs —
+    /// tractable.
     ///
-    /// **Current scope**: implemented and tested for `n_tricks == 1`.
-    /// Multi-trick support requires the follow-suit feasibility
-    /// filter (next phase).
+    /// **Scope**: implemented for 2p. 3p+ requires iterating over
+    /// `(opp1_hand, opp2_hand)` jointly with proper iso reduction —
+    /// follow-up work.
     pub fn full_game_via_waugh(
         num_players: usize,
         n_tricks: usize,
@@ -183,71 +186,85 @@ impl OhHellIsomorphicIStateIterator {
         let normalizer = OhHellNormalizer;
         let mut states: HashSet<IStateKey> = HashSet::new();
 
-        let total_plays = num_players * n_tricks;
-        let plays_in_indexer = max_cards_played.min(total_plays);
-        let mut rounds_spec: Vec<u8> = vec![n_tricks as u8, 1];
-        for _ in 0..plays_in_indexer {
-            rounds_spec.push(1);
-        }
-        let indexer = HandIndexer::init(&rounds_spec).expect("indexer init");
+        let indexer = HandIndexer::init(&[n_tricks as u8, 1])
+            .expect("indexer init for (hand, face_up)");
 
         for p in 0..num_players {
-            // -------------------- bidding istates --------------------
-            // Same enumeration as `bidding_only_via_waugh` for seat p.
             for waugh_idx in 0..indexer.size(1) {
                 let cards = indexer.unindex(1, waugh_idx).expect("unindex");
                 let oh_cards = waugh_to_oh(&cards);
-                let hand = &oh_cards[..n_tricks];
+                let hand: Vec<OHCard> = oh_cards[..n_tricks].to_vec();
                 let face_up = oh_cards[n_tricks];
+
+                // ---- bidding istates ----
                 for prior_bids in PriorBidSequences::new(p, n_tricks) {
                     let gs = make_bidding_state_for_perspective(
-                        num_players, n_tricks, hand, face_up, &prior_bids, p,
+                        num_players, n_tricks, &hand, face_up, &prior_bids, p,
                     );
                     let raw = gs.istate_key(p);
                     let canonical = normalizer.normalize_istate(&raw, &gs).get();
                     states.insert(canonical);
                 }
-            }
 
-            // -------------------- play istates --------------------
-            // For each (hand, face_up, plays_so_far) iso class at
-            // some round R = 1 + k_plays: if p is the next actor
-            // after k_plays, build the gamestate for every complete
-            // bid sequence and emit the canonical istate.
-            for k_plays in 0..plays_in_indexer {
-                let waugh_round = 1 + k_plays;
-                if waugh_round >= indexer.rounds {
+                if num_players > 2 && n_tricks > 1 {
+                    // 3p+ multi-trick play-tree enumeration is gated
+                    // on a smarter opp-hand enumeration — for n_tricks
+                    // ≥ 2 the permutation count
+                    // ((np-1)·n_tricks)! / ((np-1)·n_tricks - k)!  is
+                    // already 4M+ for 3p × 2-trick. Deferred.
                     continue;
                 }
-                for waugh_idx in 0..indexer.size(waugh_round) {
-                    let cards = indexer.unindex(waugh_round, waugh_idx).expect("unindex");
-                    let oh_cards = waugh_to_oh(&cards);
-                    let hand = &oh_cards[..n_tricks];
-                    let face_up = oh_cards[n_tricks];
-                    let plays_so_far: Vec<OHCard> = oh_cards[n_tricks + 1..].to_vec();
 
-                    let trump_suit = face_up.suit();
-                    let actor = next_actor_after_plays(
-                        num_players, n_tricks, &plays_so_far, trump_suit,
-                    );
-                    if actor != Some(p) {
-                        continue;
-                    }
+                // Build the unseen pool for opp hand enumeration.
+                let used: std::collections::HashSet<OHCard> =
+                    std::iter::once(face_up).chain(hand.iter().copied()).collect();
+                let unseen: Vec<OHCard> = OH_DECK
+                    .iter()
+                    .copied()
+                    .filter(|c| !used.contains(c))
+                    .collect();
 
-                    // Feasibility is now enforced inside
-                    // `make_play_state_for_perspective` via the
-                    // multi-trick 2p filter; for 3p+ × multi-trick
-                    // the constructor returns None and the istate is
-                    // skipped.
-                    for all_bids in PriorBidSequences::new(num_players, n_tricks) {
-                        let gs_opt = make_play_state_for_perspective(
-                            num_players, n_tricks, hand, face_up, &all_bids, &plays_so_far, p,
-                        );
-                        if let Some(gs) = gs_opt {
-                            let raw = gs.istate_key(p);
-                            let canonical = normalizer.normalize_istate(&raw, &gs).get();
-                            states.insert(canonical);
+                let n_opps = num_players - 1;
+                let total_opp_cards = n_opps * n_tricks;
+
+                // ---- play istates ----
+                // Enumerate length-`total_opp_cards` permutations of
+                // unseen, distribute them across opp seats in seat
+                // order (each gets `n_tricks` cards), and walk the play
+                // tree per assignment × bid sequence.
+                for opp_perm in permutations_of_k(total_opp_cards, &unseen) {
+                    let mut opp_hands: Vec<Vec<OHCard>> = vec![Vec::new(); num_players];
+                    let mut offset = 0;
+                    for q in 0..num_players {
+                        if q == p {
+                            continue;
                         }
+                        opp_hands[q] = opp_perm[offset..offset + n_tricks].to_vec();
+                        offset += n_tricks;
+                    }
+                    for all_bids in PriorBidSequences::new(num_players, n_tricks) {
+                        let mut gs = OhHell::new_state(num_players, n_tricks);
+                        for t in 0..n_tricks {
+                            for player in 0..num_players {
+                                let card = if player == p {
+                                    hand[t]
+                                } else {
+                                    opp_hands[player][t]
+                                };
+                                gs.apply_action(OHAction::Card(card).into());
+                            }
+                        }
+                        gs.apply_action(OHAction::Card(face_up).into());
+                        for &b in &all_bids {
+                            gs.apply_action(OHAction::Bid(b).into());
+                        }
+                        walk_play_tree_emit(
+                            &mut gs,
+                            p,
+                            max_cards_played,
+                            &normalizer,
+                            &mut states,
+                        );
                     }
                 }
             }
@@ -599,6 +616,116 @@ fn next_actor_after_plays(
         leader = trick_winner(trick, trump_suit, leader, np);
     }
     Some((leader + pos_in_current_trick) % np)
+}
+
+/// Walk the play tree from `gs` (post-bid state) and emit canonical
+/// IStateKeys at every decision where `cur_player == perspective`.
+/// Uses the gamestate's real `legal_actions` (follow-suit enforced)
+/// and `apply_action`/`undo` so we can't accidentally walk an illegal
+/// sequence.
+fn walk_play_tree_emit(
+    gs: &mut OhHellGameState,
+    perspective: usize,
+    max_cards_played: usize,
+    normalizer: &OhHellNormalizer,
+    states: &mut std::collections::HashSet<IStateKey>,
+) {
+    if gs.is_terminal() {
+        return;
+    }
+    if gs.phase() != OHPhase::Play {
+        return;
+    }
+    if gs.cards_played() >= max_cards_played {
+        return;
+    }
+    if gs.cur_player() == perspective {
+        let raw = gs.istate_key(perspective);
+        let canonical = normalizer.normalize_istate(&raw, gs).get();
+        states.insert(canonical);
+    }
+    let mut acts = Vec::new();
+    gs.legal_actions(&mut acts);
+    for a in acts {
+        gs.apply_action(a);
+        walk_play_tree_emit(gs, perspective, max_cards_played, normalizer, states);
+        gs.undo();
+    }
+}
+
+/// Yield every length-k permutation of `cards` (ordered, distinct
+/// indices). For 2p we'd waste a factor of n_tricks! relative to
+/// combinations, but the simplification of treating all opps
+/// uniformly is worth it; n_opps>1 needs ordered assignment anyway.
+fn permutations_of_k(k: usize, cards: &[OHCard]) -> Vec<Vec<OHCard>> {
+    let mut out = Vec::new();
+    if k == 0 {
+        return vec![Vec::new()];
+    }
+    if k > cards.len() {
+        return out;
+    }
+    let mut current = Vec::with_capacity(k);
+    let mut used = vec![false; cards.len()];
+    perm_helper(k, cards, &mut current, &mut used, &mut out);
+    out
+}
+
+fn perm_helper(
+    k: usize,
+    cards: &[OHCard],
+    current: &mut Vec<OHCard>,
+    used: &mut [bool],
+    out: &mut Vec<Vec<OHCard>>,
+) {
+    if current.len() == k {
+        out.push(current.clone());
+        return;
+    }
+    for i in 0..cards.len() {
+        if used[i] {
+            continue;
+        }
+        current.push(cards[i]);
+        used[i] = true;
+        perm_helper(k, cards, current, used, out);
+        used[i] = false;
+        current.pop();
+    }
+}
+
+/// Yield every k-card subset of `cards` as a Vec<OHCard>.
+#[allow(dead_code)]
+fn k_subsets_of_cards(k: usize, cards: &[OHCard]) -> Vec<Vec<OHCard>> {
+    if k == 0 {
+        return vec![Vec::new()];
+    }
+    if k > cards.len() {
+        return Vec::new();
+    }
+    let n = cards.len();
+    let mut out = Vec::new();
+    let mut idx: Vec<usize> = (0..k).collect();
+    loop {
+        out.push(idx.iter().map(|&i| cards[i]).collect());
+        let mut i = k;
+        let mut done = true;
+        while i > 0 {
+            i -= 1;
+            if idx[i] < n - (k - i) {
+                idx[i] += 1;
+                for j in (i + 1)..k {
+                    idx[j] = idx[j - 1] + 1;
+                }
+                done = false;
+                break;
+            }
+        }
+        if done {
+            break;
+        }
+    }
+    out
 }
 
 /// Per-play metadata derived from simulating the trick sequence
@@ -1213,25 +1340,17 @@ mod tests {
     ///     (round-tripping through `OhHellNormalizer` is identity).
     /// Smoke + count pin for the multi-trick path. 2p × 2-trick.
     ///
-    /// The enumerator output is a strict superset of the OH-walker
-    /// set: Waugh's per-round suit configuration sort doesn't fully
-    /// fold OH's cross-round suit-permutation symmetry (a
-    /// Hearts↔Diamonds swap that moves which *round* each suit
-    /// appears in lands in different Waugh canonicals even though
-    /// the canonical OH istate after `OhHellNormalizer` is the same).
+    /// **The new enumerator** (post the "iterate opp_hand × walk play
+    /// tree" refactor) is functionally correct for the PHF use case:
+    /// every CFR-queried istate is in the emitted set, so the mmap
+    /// works end-to-end. The earlier MCCFR HashBacking saturation
+    /// (~982k) reflected sampling-limited coverage, not the true iso
+    /// class cardinality — for that to be the true count, a 300M-
+    /// emission run would have needed ~305 visits per class, which is
+    /// inconsistent with the deal-tree branching factor.
     ///
-    /// For the disk-backed mmap PHF use case this is fine —
-    /// `walker_set ⊆ waugh_set`, so every CFR-queried key still
-    /// resolves to a valid PHF slot; extras just allocate unused
-    /// capacity. For a strictly minimal PHF you'd want to either
-    ///   (a) emit only istates that round-trip through
-    ///       `OhHellNormalizer` to themselves (a second canonical
-    ///       pass), or
-    ///   (b) build the PHF over the walker output instead (slow but
-    ///       tight).
-    ///
-    /// Pinned count: 1,732,744. Drift here means either the
-    /// `OhHellNormalizer` partition changed or the Waugh enumeration
+    /// Pinned count: 113,904,037. Drift here means either the
+    /// `OhHellNormalizer` partition changed or the play-tree walker
     /// changed; either case warrants investigation.
     #[test]
     fn full_game_via_waugh_2p_2trick_smoke_and_uniqueness() {
@@ -1250,7 +1369,7 @@ mod tests {
         );
         assert_eq!(
             unique.len(),
-            1_732_744,
+            113_904_037,
             "iso class count drifted from the pinned 2p × 2-trick value"
         );
     }
