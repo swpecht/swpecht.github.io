@@ -25,18 +25,14 @@
 //!                      file exists) and flushed after every report
 //!                      so training can resume.
 //!   CFR_MMAP_DIR       optional directory for disk-backed mmap + PHF
-//!                      storage (bidding-only mode). When set,
-//!                      overrides CFR_SAVE_PATH; requires
-//!                      CFR_MAX_CARDS=0. Builds the PHF on first
-//!                      startup and writes it to `<dir>/indexer`;
-//!                      the mmap goes to `<dir>/mmap` and the
-//!                      populated count to `<dir>/meta`.
-//!   CFR_FULL_MMAP_DIR  same as CFR_MMAP_DIR but for **full-game** CFR
-//!                      (bidding + play phase enumeration). The PHF
-//!                      is built over the Waugh-based full-game
-//!                      iterator; this can take a long time for
-//!                      larger configs (~7 min for 2p × 2-trick at
-//!                      ~1.7M iso classes).
+//!                      storage. When set, overrides CFR_SAVE_PATH;
+//!                      CFR_MAX_CARDS=0 gives bidding-only training,
+//!                      larger values include play decisions through
+//!                      that depth (rest hands off to OpenHandSolver
+//!                      rollouts). Builds the PHF on first startup
+//!                      and writes it to `<dir>/indexer`; the mmap
+//!                      goes to `<dir>/mmap` and the populated count
+//!                      to `<dir>/meta`.
 //!
 //! Example invocation (with kestrel-tail):
 //!
@@ -81,20 +77,6 @@ fn main() {
     let max_cards: usize = parse_env("CFR_MAX_CARDS", 100);
     let save_path: Option<PathBuf> = std::env::var("CFR_SAVE_PATH").ok().map(PathBuf::from);
     let mmap_dir: Option<PathBuf> = std::env::var("CFR_MMAP_DIR").ok().map(PathBuf::from);
-    let full_mmap_dir: Option<PathBuf> =
-        std::env::var("CFR_FULL_MMAP_DIR").ok().map(PathBuf::from);
-
-    if mmap_dir.is_some() && max_cards != 0 {
-        eprintln!(
-            "CFR_MMAP_DIR requires CFR_MAX_CARDS=0 (bidding-only); got CFR_MAX_CARDS={}",
-            max_cards
-        );
-        std::process::exit(2);
-    }
-    if mmap_dir.is_some() && full_mmap_dir.is_some() {
-        eprintln!("CFR_MMAP_DIR and CFR_FULL_MMAP_DIR are mutually exclusive");
-        std::process::exit(2);
-    }
 
     let report_every = (((total_iters as f64) * (report_pct / 100.0)) as usize).max(1);
 
@@ -110,10 +92,8 @@ fn main() {
         "rss_mb", "B/istate"
     );
 
-    let mut cfr: OhCfres = if let Some(dir) = full_mmap_dir.as_deref() {
-        CFRES::new_oh_hell_full_game_mmap(n_players, n_tricks, max_cards, Some(dir))
-    } else if let Some(dir) = mmap_dir.as_deref() {
-        CFRES::new_oh_hell_bidding_mmap(n_players, n_tricks, Some(dir))
+    let mut cfr: OhCfres = if let Some(dir) = mmap_dir.as_deref() {
+        CFRES::new_oh_hell_mmap(n_players, n_tricks, max_cards, Some(dir))
     } else {
         CFRES::new_oh_hell(n_players, n_tricks, max_cards, save_path.as_deref())
     };
@@ -130,7 +110,7 @@ fn main() {
         cfr.train(chunk);
         done += chunk;
         report(&mut cfr, n_players, n_tricks, eval_games, done, total_iters, &start);
-        if save_path.is_some() || mmap_dir.is_some() || full_mmap_dir.is_some() {
+        if save_path.is_some() || mmap_dir.is_some() {
             if let Err(e) = cfr.save() {
                 eprintln!("checkpoint save failed: {:#}", e);
             }
@@ -144,10 +124,7 @@ fn main() {
         cfr.num_info_states()
     );
 
-    let final_save_target = full_mmap_dir
-        .as_ref()
-        .or(mmap_dir.as_ref())
-        .or(save_path.as_ref());
+    let final_save_target = mmap_dir.as_ref().or(save_path.as_ref());
     if let Some(p) = final_save_target {
         if let Err(e) = cfr.save() {
             eprintln!("final save failed: {:#}", e);

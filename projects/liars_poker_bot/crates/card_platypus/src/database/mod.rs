@@ -408,55 +408,6 @@ impl NodeStore<OH_MAX_ACTIONS> {
         }))
     }
 
-    pub fn new_oh_hell_bidding_mmap(
-        path: Option<&Path>,
-        num_players: usize,
-        n_tricks: usize,
-    ) -> anyhow::Result<Self> {
-        // Build / load the indexer first so we can size the mmap to
-        // exactly the iso class count (`indexer.len()`) — no
-        // overprovisioning. This drops resident pages by ~10× on
-        // configs where the PHF distributes the touched slots
-        // sparsely across an oversized mmap.
-        let path = path.map(|x| x.to_path_buf());
-        let mut indexer_needs_save = false;
-        let indexer = load_indexer(path.as_deref()).unwrap_or_else(|x| {
-            warn!(
-                "failed to load OH bidding indexer from {:?}: {} — rebuilding",
-                path.as_deref(),
-                x
-            );
-            indexer_needs_save = true;
-            Indexer::oh_hell_bidding(num_players, n_tricks)
-        });
-
-        let mmap = get_mmap(
-            path.as_deref(),
-            indexer.len(),
-            MmapBacking::<OH_MAX_ACTIONS>::BUCKET_SIZE,
-        )
-        .context("failed to create OH mmap")?;
-
-        let populated_count = path
-            .as_deref()
-            .and_then(|p| load_metadata(p).ok())
-            .unwrap_or_else(|| {
-                count_populated(
-                    &mmap,
-                    &indexer,
-                    MmapBacking::<OH_MAX_ACTIONS>::BUCKET_SIZE,
-                    path.as_deref(),
-                )
-            });
-
-        Ok(NodeStore::Mmap(MmapBacking {
-            indexer,
-            mmap,
-            path,
-            populated_count: AtomicUsize::new(populated_count),
-            indexer_needs_save,
-        }))
-    }
 }
 
 fn get_mmap(dir: Option<&Path>, len: usize, bucket_size: usize) -> anyhow::Result<MmapMut> {

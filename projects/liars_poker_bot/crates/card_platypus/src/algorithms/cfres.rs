@@ -261,36 +261,25 @@ impl CFRES<OhHellGameState, OH_MAX_ACTIONS> {
         )
     }
 
-    /// Disk-backed mmap + PHF variant for Oh Hell **bidding-only**
-    /// training. Force `max_cards_played = 0` so the play phase
-    /// always hands off to `OpenHandSolver` rollouts (matching Euchre's
-    /// production setup), and route storage through
-    /// [`NodeStore::new_oh_hell_bidding_mmap`].
+    /// Disk-backed mmap + PHF variant for Oh Hell. Routes storage
+    /// through [`NodeStore::new_oh_hell_full_game_mmap`], which
+    /// builds the PHF over the canonical bidding + play-phase iso
+    /// classes enumerated by the Waugh-based iterator.
+    ///
+    /// `max_cards_played` controls how deep into the play tree CFR
+    /// trains:
+    ///   * `0` — bidding-only; the walker returns at the start of
+    ///     play before emitting any play istate. Equivalent to the
+    ///     pre-unification `new_oh_hell_bidding_mmap`.
+    ///   * larger values — CFR also trains the first `max_cards_played`
+    ///     play decisions; everything beyond hands off to
+    ///     `OpenHandSolver` rollouts (matching Euchre's production
+    ///     setup).
     ///
     /// `path` is the directory holding the indexer + mmap + metadata
     /// files. `path = None` gets an anonymous in-memory mmap (still
     /// PHF-indexed, just not persisted on shutdown).
-    pub fn new_oh_hell_bidding_mmap(
-        num_players: usize,
-        n_tricks: usize,
-        path: Option<&Path>,
-    ) -> Self {
-        let store = NodeStore::new_oh_hell_bidding_mmap(path, num_players, n_tricks)
-            .expect("failed to build OH bidding mmap node store");
-        Self::new_oh_hell_with_store(num_players, n_tricks, 0, store)
-    }
-
-    /// Disk-backed mmap + PHF variant for Oh Hell **full-game**
-    /// training. Routes storage through
-    /// [`NodeStore::new_oh_hell_full_game_mmap`], which builds the
-    /// PHF over the canonical bidding + play-phase iso classes
-    /// enumerated by the Waugh-based iterator.
-    ///
-    /// `max_cards_played` controls how deep into the play tree CFR
-    /// trains (play decisions past this point still hand off to
-    /// `OpenHandSolver` rollouts). Pass `100` (or any value ≥
-    /// `np × n_tricks`) for full coverage.
-    pub fn new_oh_hell_full_game_mmap(
+    pub fn new_oh_hell_mmap(
         num_players: usize,
         n_tricks: usize,
         max_cards_played: usize,
@@ -299,7 +288,7 @@ impl CFRES<OhHellGameState, OH_MAX_ACTIONS> {
         let store = NodeStore::new_oh_hell_full_game_mmap(
             path, num_players, n_tricks, max_cards_played,
         )
-        .expect("failed to build OH full-game mmap node store");
+        .expect("failed to build OH mmap node store");
         Self::new_oh_hell_with_store(num_players, n_tricks, max_cards_played, store)
     }
 
@@ -786,9 +775,9 @@ mod tests {
     /// confirm the disk-backed store touches at least one infostate
     /// per training step.
     #[test]
-    fn cfres_oh_hell_bidding_mmap_smoke() {
+    fn cfres_oh_hell_mmap_bidding_smoke() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let mut alg = CFRES::new_oh_hell_bidding_mmap(2, 1, Some(dir.path()));
+        let mut alg = CFRES::new_oh_hell_mmap(2, 1, 0, Some(dir.path()));
         alg.train(20);
         assert!(
             alg.num_info_states() > 0,
@@ -806,9 +795,9 @@ mod tests {
     /// preserved (the indexer is loaded from disk; the populated
     /// count is read from `meta`).
     #[test]
-    fn cfres_oh_hell_bidding_mmap_round_trip() {
+    fn cfres_oh_hell_mmap_bidding_round_trip() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let mut a = CFRES::new_oh_hell_bidding_mmap(2, 1, Some(dir.path()));
+        let mut a = CFRES::new_oh_hell_mmap(2, 1, 0, Some(dir.path()));
         a.train(50);
         let n_after_train = a.num_info_states();
         assert!(n_after_train > 0);
@@ -817,7 +806,7 @@ mod tests {
         // Fresh CFRES reading the same directory should see the same
         // populated count (the indexer is rehydrated from `indexer`,
         // the count from `meta`).
-        let b = CFRES::new_oh_hell_bidding_mmap(2, 1, Some(dir.path()));
+        let b = CFRES::new_oh_hell_mmap(2, 1, 0, Some(dir.path()));
         assert_eq!(b.num_info_states(), n_after_train);
     }
 

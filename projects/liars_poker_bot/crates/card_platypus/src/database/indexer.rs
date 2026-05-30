@@ -107,39 +107,12 @@ impl Indexer {
         }
     }
 
-    /// Build a PHF over the bidding-phase iso classes for Oh Hell with
-    /// `(num_players, n_tricks)`. Used by the disk-backed
-    /// [`crate::database::NodeStore`] variant that targets bidding-
-    /// only CFR (play phase delegated to `OpenHandSolver`).
-    ///
-    /// The iterator streams canonical IStateKeys via the hand-rolled
-    /// `bidding_only` enumeration (Waugh-cross-checked) so we never
-    /// hold the full set in a HashSet during PHF construction —
-    /// MMapVec spools to disk if it doesn't fit in RAM.
-    pub fn oh_hell_bidding(num_players: usize, n_tricks: usize) -> Self {
-        let istate_iter = OhHellIsomorphicIStateIterator::bidding_only(num_players, n_tricks);
-        let istates = MMapVec::from_iter(istate_iter);
-        let phf = Mphf::new(GAMMA, &istates);
-        Self {
-            phf,
-            shard_len: istates.len(),
-            num_shards: 1,
-            sharder: Sharder::NoOp,
-        }
-    }
-
-    /// Build a PHF over the **full-game** iso classes for Oh Hell with
-    /// `(num_players, n_tricks, max_cards_played)`. Enumerates every
-    /// canonical bidding + play-phase decision point via the Waugh-
-    /// based iterator with the multi-trick feasibility filter applied.
-    ///
-    /// Note that for multi-trick configs the Waugh enumerator emits a
-    /// strict superset of the walker's iso set (Waugh's per-round
-    /// configuration sort doesn't fully fold OH's cross-round suit
-    /// symmetry). For the PHF use case this is sound — the extra
-    /// slots are simply never queried by CFR — but it does inflate
-    /// the mmap footprint relative to the minimal set. The
-    /// "tighten-via-round-trip" pass is the natural follow-up.
+    /// Build a PHF over OH iso classes through the play-phase depth
+    /// `max_cards_played`. Passing `max_cards_played = 0` gives the
+    /// bidding-only PHF (the walker returns at the start of play
+    /// before emitting). Same construction code path for both, which
+    /// is the simplification the bidding-only-vs-full-game split used
+    /// to obscure.
     pub fn oh_hell_full_game(
         num_players: usize,
         n_tricks: usize,
