@@ -47,10 +47,11 @@ use std::collections::HashSet;
 
 use crate::{
     gamestates::oh_hell::{
-        actions::{BID_BASE, OHAction, OHSuit},
+        actions::{BID_BASE, OHAction, OHCard, OHSuit, OH_DECK},
         isomorphic::OhHellNormalizer,
         OhHell, OhHellGameState, OHPhase,
     },
+    iso::hand_indexer::HandIndexer,
     istate::{IStateKey, IStateNormalizer},
     Action, GameState,
 };
@@ -87,6 +88,69 @@ impl OhHellIsomorphicIStateIterator {
             }
         }
         // Sort so the Mphf construction is deterministic across runs.
+        states.sort();
+        Self { states, index: 0 }
+    }
+
+    /// Direct canonical enumeration of bidding-phase istates **via the
+    /// Waugh 2013 hand-isomorphism algorithm** ([`HandIndexer`]).
+    ///
+    /// Functionally equivalent to [`Self::bidding_only`] — produces the
+    /// same set of canonical [`IStateKey`]s — but uses the
+    /// well-studied colex-based indexer instead of OH-specific hand
+    /// enumeration logic. Sanity-checked against `bidding_only` in
+    /// `tests::bidding_only_via_waugh_matches_hand_rolled`.
+    ///
+    /// Currently slower than [`Self::bidding_only`] because each
+    /// emitted istate goes through a full gamestate construction +
+    /// `OhHellNormalizer::normalize_istate` (versus building the
+    /// canonical IStateKey directly). That overhead is fine for
+    /// validation; production callers will want a fast direct-encode
+    /// variant once the algorithm is proven equivalent.
+    pub fn bidding_only_via_waugh(num_players: usize, n_tricks: usize) -> Self {
+        let indexer =
+            HandIndexer::init(&[n_tricks as u8, 1]).expect("indexer init for OH bidding");
+        let total = indexer.size(1);
+        let normalizer = OhHellNormalizer;
+
+        let mut states = Vec::new();
+        for waugh_idx in 0..total {
+            let waugh_cards = indexer.unindex(1, waugh_idx).expect("unindex in range");
+            // Convert Waugh card encoding `(rank << 2) | suit` to OH
+            // discriminant `suit * 13 + rank`.
+            let oh_cards: Vec<OHCard> = waugh_cards
+                .iter()
+                .map(|&w| {
+                    let suit = w & 3;
+                    let rank = w >> 2;
+                    OHCard::from_index(suit * 13 + rank).expect("valid OH card")
+                })
+                .collect();
+            let hand: Vec<OHCard> = oh_cards[..n_tricks].to_vec();
+            let face_up = oh_cards[n_tricks];
+
+            // Cross with (player seat × prior bid sequence). For each
+            // combination construct a representative gamestate (any
+            // dummy cards for non-perspective players that don't
+            // collide with the perspective hand / face-up will do —
+            // the normaliser collapses them out of the istate
+            // anyway), then read off the canonical istate.
+            for p in 0..num_players {
+                for prior_bids in PriorBidSequences::new(p, n_tricks) {
+                    let gs = make_bidding_state_for_perspective(
+                        num_players,
+                        n_tricks,
+                        &hand,
+                        face_up,
+                        &prior_bids,
+                        p,
+                    );
+                    let raw = gs.istate_key(p);
+                    let canonical = normalizer.normalize_istate(&raw, &gs).get();
+                    states.push(canonical);
+                }
+            }
+        }
         states.sort();
         Self { states, index: 0 }
     }
@@ -356,6 +420,56 @@ impl Iterator for PriorBidSequences {
     }
 }
 
+/// Build a bidding-phase gamestate where seat `perspective` holds the
+/// `hand` cards, `face_up` has been dealt, and `prior_bids` (length
+/// `perspective`) have been played by seats 0..perspective. Non-
+/// perspective seats receive arbitrary dummy cards that don't collide
+/// with the perspective hand or face-up — the OH normaliser collapses
+/// those out of the perspective's istate, so any choice works as long
+/// as it produces a *valid* gamestate.
+///
+/// Used by [`OhHellIsomorphicIStateIterator::bidding_only_via_waugh`]
+/// to materialise the normaliser's canonical istate from a Waugh
+/// canonical (hand, face_up) tuple.
+fn make_bidding_state_for_perspective(
+    num_players: usize,
+    n_tricks: usize,
+    hand: &[OHCard],
+    face_up: OHCard,
+    prior_bids: &[u8],
+    perspective: usize,
+) -> OhHellGameState {
+    let mut gs = OhHell::new_state(num_players, n_tricks);
+
+    // Dummies: anything not in hand and not the face-up.
+    let mut dummies: Vec<OHCard> = OH_DECK
+        .iter()
+        .copied()
+        .filter(|c| *c != face_up && !hand.contains(c))
+        .collect();
+    let mut hand_iter = hand.iter().copied();
+
+    for t in 0..n_tricks {
+        for p in 0..num_players {
+            let card = if p == perspective {
+                hand_iter.next().expect("hand has n_tricks cards")
+            } else {
+                dummies.pop().expect("enough dummies for opponents")
+            };
+            // Order of cards within a player's hand doesn't matter for
+            // the istate (it gets sorted by the normaliser) but the OH
+            // gamestate's `apply_action` expects a Card action.
+            let _ = t; // silence unused-variable lint
+            gs.apply_action(OHAction::Card(card).into());
+        }
+    }
+    gs.apply_action(OHAction::Card(face_up).into());
+    for &b in prior_bids {
+        gs.apply_action(OHAction::Bid(b).into());
+    }
+    gs
+}
+
 // =====================================================================
 // Walker + HashSet enumeration (full-game mode)
 // =====================================================================
@@ -533,6 +647,52 @@ mod tests {
             "walker count {} suspiciously large for 2p 1-trick",
             n
         );
+    }
+
+    /// Critical cross-check: the Waugh-based enumerator and the
+    /// hand-rolled enumerator produce **exactly the same set** of
+    /// canonical [`IStateKey`]s — bit-for-bit. Validates that the
+    /// Waugh algorithm's iso-equivalence partition agrees with
+    /// `OhHellNormalizer`'s partition.
+    #[test]
+    fn bidding_only_via_waugh_matches_hand_rolled_2p_1trick() {
+        let hand_rolled: HashSet<IStateKey> =
+            OhHellIsomorphicIStateIterator::bidding_only(2, 1).collect();
+        let via_waugh: HashSet<IStateKey> =
+            OhHellIsomorphicIStateIterator::bidding_only_via_waugh(2, 1).collect();
+        assert_eq!(
+            hand_rolled.len(),
+            via_waugh.len(),
+            "Waugh and hand-rolled produced different counts"
+        );
+        assert_eq!(
+            hand_rolled, via_waugh,
+            "Waugh and hand-rolled produced different sets — \
+             iso-partition disagreement"
+        );
+    }
+
+    /// Same cross-check at 3-trick scale: the expected set size is
+    /// 315,965 for 2p.
+    #[test]
+    fn bidding_only_via_waugh_matches_hand_rolled_2p_3trick() {
+        let hand_rolled: HashSet<IStateKey> =
+            OhHellIsomorphicIStateIterator::bidding_only(2, 3).collect();
+        let via_waugh: HashSet<IStateKey> =
+            OhHellIsomorphicIStateIterator::bidding_only_via_waugh(2, 3).collect();
+        assert_eq!(hand_rolled.len(), 315_965);
+        assert_eq!(via_waugh.len(), hand_rolled.len());
+        assert_eq!(hand_rolled, via_waugh);
+    }
+
+    /// 3p × 1-trick: cross-check at a 3-player config.
+    #[test]
+    fn bidding_only_via_waugh_matches_hand_rolled_3p_1trick() {
+        let hand_rolled: HashSet<IStateKey> =
+            OhHellIsomorphicIStateIterator::bidding_only(3, 1).collect();
+        let via_waugh: HashSet<IStateKey> =
+            OhHellIsomorphicIStateIterator::bidding_only_via_waugh(3, 1).collect();
+        assert_eq!(hand_rolled, via_waugh);
     }
 
     /// Sanity: emitted istates are unique.
