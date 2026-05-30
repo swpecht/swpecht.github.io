@@ -37,6 +37,7 @@ use card_platypus::{
     algorithms::{
         cfres::{self, CFRES, OH_MAX_ACTIONS},
     },
+    diag::process_memory,
 };
 use games::{
     gamestates::oh_hell::{OhHell, OhHellGameState},
@@ -75,8 +76,9 @@ fn main() {
         save_path,
     );
     println!(
-        "{:>10} {:>8} {:>8} {:>10} {:>9} {:>9} {:>9} {:>10}",
-        "iter", "time_s", "pct", "score_v_rand", "win%", "tie%", "loss%", "info_states"
+        "{:>10} {:>8} {:>8} {:>10} {:>9} {:>9} {:>9} {:>10} {:>9} {:>9}",
+        "iter", "time_s", "pct", "score_v_rand", "win%", "tie%", "loss%", "info_states",
+        "rss_mb", "B/istate"
     );
 
     let mut cfr: OhCfres = CFRES::new_oh_hell(n_players, n_tricks, max_cards, save_path.as_deref());
@@ -127,11 +129,22 @@ fn report(
 ) {
     let elapsed = start.elapsed().as_secs_f64();
     let pct = 100.0 * (done as f64) / (total_iters as f64);
+    let info_states = cfr.num_info_states();
 
     let eval = evaluate_vs_random(cfr, n_players, n_tricks, eval_games, done as u64);
 
+    let mem = process_memory();
+    let (rss_mb, peak_rss_mb, vsize_mb) = mem
+        .map(|m| (m.rss_mb(), m.peak_rss_mb(), m.vsize_mb()))
+        .unwrap_or((-1.0, -1.0, -1.0));
+    let bytes_per_istate = if info_states > 0 && rss_mb >= 0.0 {
+        rss_mb * 1024.0 * 1024.0 / info_states as f64
+    } else {
+        -1.0
+    };
+
     println!(
-        "{:>10} {:>8.2} {:>7.1}% {:>10.3} {:>8.1}% {:>8.1}% {:>8.1}% {:>10}",
+        "{:>10} {:>8.2} {:>7.1}% {:>10.3} {:>8.1}% {:>8.1}% {:>8.1}% {:>10} {:>9.1} {:>9.1}",
         done,
         elapsed,
         pct,
@@ -139,26 +152,40 @@ fn report(
         100.0 * eval.win_rate,
         100.0 * eval.tie_rate,
         100.0 * eval.loss_rate,
-        cfr.num_info_states(),
+        info_states,
+        rss_mb,
+        bytes_per_istate,
     );
 
-    // Iteration-axis metrics.
+    // Iteration-axis metrics. `rss_mb=-1` marks an unsupported platform
+    // (no /proc/self/status) — Kestrel still parses the line, the
+    // dashboard can filter sentinels out.
     println!(
         "kestrel: step={} pimcts_avg={:.6} win_rate={:.6} tie_rate={:.6} loss_rate={:.6} \
-         info_states={} num_players={} n_tricks={} eval_games={}",
+         info_states={} rss_mb={:.4} peak_rss_mb={:.4} vsize_mb={:.4} bytes_per_istate={:.2} \
+         num_players={} n_tricks={} eval_games={}",
         done,
         eval.pimcts_avg,
         eval.win_rate,
         eval.tie_rate,
         eval.loss_rate,
-        cfr.num_info_states(),
+        info_states,
+        rss_mb,
+        peak_rss_mb,
+        vsize_mb,
+        bytes_per_istate,
         n_players,
         n_tricks,
         eval_games,
     );
 
-    // Time-axis metric: progress fraction.
-    println!("kestrel: t={:.4} progress_pct={:.4}", elapsed, pct);
+    // Time-axis metric: progress fraction + current rss so memory
+    // growth can be plotted against wall-clock independent of iter
+    // count.
+    println!(
+        "kestrel: t={:.4} progress_pct={:.4} rss_mb={:.4}",
+        elapsed, pct, rss_mb
+    );
 }
 
 struct EvalSummary {
