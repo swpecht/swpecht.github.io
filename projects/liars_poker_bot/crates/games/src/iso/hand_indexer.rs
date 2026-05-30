@@ -634,6 +634,17 @@ impl HandIndexer {
             .sum()
     }
 
+    /// Look up the canonical suit permutation `pi[canonical_slot] =
+    /// raw_suit` at `round` given the raw permutation index
+    /// `state.permutation_index` produced by walking the cards through
+    /// `next_round`. Used by external normalisers (e.g. OH's
+    /// `OhHellNormalizer`) to recover the suit relabelling for a given
+    /// game state.
+    pub fn perm_at(&self, round: usize, perm_index: u32) -> [u8; SUITS] {
+        let pi_idx = self.permutation_to_pi[round][perm_index as usize] as usize;
+        SUIT_PERMUTATIONS[pi_idx]
+    }
+
     fn tabulate_permutation(&mut self, round: usize, count: &[u64; SUITS], idx: u32) {
         // Build pi: a permutation of {0..SUITS} that sorts `count`
         // descending (count[pi[0]] >= count[pi[1]] >= …).

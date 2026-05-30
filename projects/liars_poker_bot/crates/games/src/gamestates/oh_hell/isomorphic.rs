@@ -1,45 +1,76 @@
-//! `IStateNormalizer` for Oh Hell. Collapses CFR istate keys that differ
-//! only by a non-trump suit permutation into a single canonical key, so
-//! MCCFR's HashMap-backed store shares regrets across the symmetry class
-//! instead of paying for each labelling separately.
+//! `IStateNormalizer` for Oh Hell.
 //!
-//! Symmetries exploited (player-visible only — this operates on istates,
-//! not the full gamestate):
-//!   * Trump suit → canonical slot 0 (Spades). The face-up card's suit
-//!     determines trump, so this is a one-shot relabel.
-//!   * Among the three non-trump suits, sort by an iso-invariant
-//!     "fingerprint" derived from the istate (player's hand cards in
-//!     that suit + plays in that suit). Ties break deterministically.
+//! Collapses CFR istate keys that differ only by a non-trump suit
+//! permutation into a single canonical key, so MCCFR's HashMap-backed
+//! store shares regrets across the symmetry class instead of paying
+//! for each labelling separately.
 //!
-//! Why no rank compaction within a suit
+//! ## How it works
 //!
-//!   Any non-trivial rank permutation within a suit would have to
-//!   (a) be order-preserving (otherwise trick-taking outcomes change)
-//!   and (b) map Hand↔Hand, Played↔Played, Face-up↔Face-up, Unknown↔
-//!   Unknown set-wise. For a strict total order the only such bijection
-//!   is the identity, so rank-compaction *within* a suit doesn't exist
-//!   for a strict iso of a CFR istate. The per-rank category sequence
-//!   is therefore the absolute ceiling for strict iso reduction. The
-//!   `OpenHandSolver` TT *does* rank-compact, but only because it sees
-//!   the full game state (including "card is literally out of the game"
-//!   None positions, which behave like Euchre's `iso_deck` swap_loc).
+//! For each non-trump suit, compute a fingerprint that captures
+//! everything iso-invariant about how cards in that suit appear in
+//! the perspective player's istate. Sort the three non-trump suits
+//! by this fingerprint ascending; that determines the canonical
+//! relabelling. Trump is pinned to canonical slot 0 (Spades).
 //!
-//!   We confirmed this empirically: a packed categorical-sequence
-//!   normaliser (encoding the per-rank category for every suit + bids
-//!   + tricks_won + cur_player) produced 982,081 info_states across a
-//!   50M-iter run, vs 981,902 for the simpler suit-perm action
-//!   sequence here. The 179-state difference is within RNG sampling
-//!   noise, confirming the two formats capture the same iso-equivalence
-//!   classes. We reverted to this simpler form so the normalised istate
-//!   stays a recognisable suit-permuted action sequence (easier to
-//!   debug and inspect).
+//! The fingerprint has four parts, packed into a `u128` so they
+//! sort lex-style:
 //!
-//!   Further reduction requires *approximate* iso (poker-style card
-//!   abstraction), which is a separate design choice with a real
-//!   policy-quality cost.
+//! ```text
+//!   bits   0..13  : hand-in-suit rank mask
+//!   bits  13..26  : played-in-suit rank mask
+//!   bits  26..30  : hand-in-suit count (popcount of the hand mask)
+//!   bits  30..34  : played-in-suit count
+//!   bits  64..96  : first-play-position (or u32::MAX if no plays)
+//! ```
+//!
+//! The first-play-position is the **key** fix relative to the
+//! purely-set-based fingerprint we shipped first. Without it, two
+//! states that differ only in the *order* plays were made share the
+//! same fingerprint (same final card distribution) and therefore the
+//! same perm, leaving the order in the canonical IStateKey — which
+//! produces two distinct canonical forms for one true iso class.
+//!
+//! The 3p 1-trick repro (uncovered by cross-checking against the
+//! Waugh `HandIndexer` in `crate::iso::hand_indexer`):
+//!
+//! ```text
+//!   hand=5♠, face_up=TS (trump),  bids=[1, 0, 0]
+//!   Scenario A: plays = [TD, TH]   (Diamonds played first)
+//!   Scenario B: plays = [TH, TD]   (Hearts played first)
+//! ```
+//!
+//! A and B are related by the Hearts↔Diamonds swap (a valid OH iso
+//! symmetry — trump is Spades). They must collapse to one
+//! canonical IStateKey. With the set-only fingerprint Diamonds and
+//! Hearts had identical fingerprints in both scenarios, so the perm
+//! came out the same and the order remained — two distinct canonical
+//! forms. With `first_play_position` included, Diamonds has
+//! position 0 in A but position 1 in B (vice versa for Hearts), so
+//! the perm differs between A and B in exactly the way needed to
+//! make them produce the same canonical sequence.
+//!
+//! ## Other notes
+//!
+//! Why no rank compaction within a suit: any non-trivial rank
+//! permutation within a suit would have to (a) be order-preserving
+//! and (b) map Hand↔Hand, Played↔Played, Face-up↔Face-up,
+//! Unknown↔Unknown set-wise. For a strict total order the only such
+//! bijection is the identity, so rank-compaction within a suit
+//! doesn't exist for a strict iso of a CFR istate. (The
+//! `OpenHandSolver` TT does rank-compact, but only because it sees
+//! the full game state, including "card is literally out of the
+//! game" None positions — which behave like Euchre's `iso_deck`
+//! swap_loc.) The per-rank category sequence is the absolute
+//! ceiling for strict iso reduction; this implementation hits it
+//! once the play-order ambiguity is resolved.
+//!
+//! Further reduction requires *approximate* iso (poker-style card
+//! abstraction), which is a separate design choice with a real
+//! policy-quality cost.
 //!
 //! Code structure mirrors `gamestates/euchre/isomorphic.rs` — same
-//! `IStateNormalizer` trait, same "compute perm from istate, then apply
+//! `IStateNormalizer` trait, same "compute perm from gs, then apply
 //! per-action" pattern.
 
 use crate::{
@@ -83,45 +114,71 @@ impl IStateNormalizer<OhHellGameState> for OhHellNormalizer {
 /// Compute the canonical suit permutation: `perm[old_suit] = new_suit`.
 ///
 /// - `perm[trump_suit] = 0` (Spades is the canonical trump slot).
-/// - The other three suits are sorted by an iso-invariant fingerprint and
-///   assigned slots 1, 2, 3 in order.
+/// - The other three suits are sorted by an iso-invariant fingerprint
+///   and assigned slots 1, 2, 3 in order.
 ///
-/// The fingerprint depends only on:
-///   * the player's hand bits in that suit,
-///   * how many cards in that suit have been played by anyone,
-///   * the played-card mask within that suit (so chronologically
-///     identical-card-distribution suits also tie),
-/// all of which are visible from the istate alone. That makes the perm
-/// invariant under any non-trump suit relabelling, which is the
-/// fundamental requirement for the normalised istate to be canonical.
+/// The fingerprint depends only on data visible from the istate alone,
+/// so the perm is invariant under any non-trump suit relabelling.
 pub fn compute_perm(gs: &OhHellGameState) -> [u8; 4] {
     let Some(trump) = gs.trump_suit() else {
         return IDENTITY;
     };
 
-    let player = gs.cur_player();
-    let hand = gs.hand_mask(player);
+    let perspective = gs.cur_player();
+    let hand = gs.hand_mask(perspective);
     let played = gs.played_mask();
+    let n_tricks = gs.n_tricks();
+    let istate = gs.istate_key(perspective);
 
-    // For each suit, compute a fingerprint that's iso-invariant.
-    let fingerprint = |suit_idx: usize| -> u64 {
+    // Walk the play portion of the istate to record the first-play
+    // position per suit. The istate layout is:
+    //   [0..n_tricks)         hand cards (in some sorted order)
+    //   [n_tricks]            face-up
+    //   [n_tricks+1..]        bids (discriminant ≥ OH_DECK_SIZE) and
+    //                         plays (discriminant < OH_DECK_SIZE),
+    //                         interleaved-but-actually-bids-first
+    //                         since OH transitions through bidding
+    //                         entirely before play starts.
+    //
+    // The play position we record is the index *among play cards
+    // only* — bids don't shift it. `u32::MAX` = no play seen in
+    // that suit yet (sorts after every real position).
+    let mut first_play_pos: [u32; 4] = [u32::MAX; 4];
+    let mut play_idx: u32 = 0;
+    for a in istate.iter().skip(n_tricks + 1) {
+        let d = a.0;
+        if (d as usize) >= OH_DECK_SIZE {
+            // Bid action — no card revealed, position unchanged.
+            continue;
+        }
+        let suit = (d / 13) as usize;
+        if first_play_pos[suit] == u32::MAX {
+            first_play_pos[suit] = play_idx;
+        }
+        play_idx += 1;
+    }
+
+    // For each non-trump suit, compute the fingerprint. Packed as
+    // u128 so the lex comparison on the tuple comes out in one
+    // primitive comparison.
+    let fingerprint = |suit_idx: usize| -> u128 {
         let suit_full = SUIT_MASK[suit_idx];
         let suit_base = (suit_idx as u64) * 13;
         let hand_in_suit = ((hand & suit_full) >> suit_base) & 0x1FFF;
         let played_in_suit = ((played & suit_full) >> suit_base) & 0x1FFF;
-        // Pack: low 13 bits = hand mask in suit, next 13 = played mask in suit,
-        // next 4 = popcount(hand_in_suit), next 4 = popcount(played_in_suit).
         let hand_count = hand_in_suit.count_ones() as u64;
         let played_count = played_in_suit.count_ones() as u64;
-        hand_in_suit
+        let lo: u64 = hand_in_suit
             | (played_in_suit << 13)
             | (hand_count << 26)
-            | (played_count << 30)
+            | (played_count << 30);
+        let hi: u64 = first_play_pos[suit_idx] as u64;
+        (lo as u128) | ((hi as u128) << 64)
     };
 
     // Gather (old_suit_idx, fingerprint) for the three non-trump suits.
     let trump_idx = trump as usize;
-    let mut nontrump: [(u8, u64); 3] = [(0, 0); 3];
+    let mut nontrump: [(u8, u128); 3] = [(0, 0); 3];
     let mut k = 0;
     for s in 0..4 {
         if s != trump_idx {
@@ -141,8 +198,9 @@ pub fn compute_perm(gs: &OhHellGameState) -> [u8; 4] {
     perm
 }
 
-/// Apply the suit permutation to a single Action. Card actions get their
-/// suit-bits relabelled (same rank, new suit); Bid actions pass through.
+/// Apply the suit permutation to a single Action. Card actions get
+/// their suit-bits relabelled (same rank, new suit); Bid actions pass
+/// through.
 #[inline]
 pub fn apply_perm(action: Action, perm: &[u8; 4]) -> Action {
     let oa = OHAction::from(action);
@@ -160,9 +218,9 @@ pub fn apply_perm(action: Action, perm: &[u8; 4]) -> Action {
     }
 }
 
-/// Apply the suit permutation to an entire istate key, re-sorting the
-/// player's hand segment afterwards (it was sorted before the relabel,
-/// but the new suit labels change the discriminant order).
+/// Apply the suit permutation to an entire istate key, re-sorting
+/// the perspective's hand segment afterwards (sort order changes
+/// when suit discriminants shift).
 pub fn apply_perm_to_istate(
     istate: &IStateKey,
     perm: &[u8; 4],
@@ -208,15 +266,11 @@ mod tests {
     };
     use rand::{rngs::StdRng, seq::IndexedRandom, RngExt, SeedableRng};
 
-    /// Play a deterministic random game and record its action sequence so
-    /// it can be replayed (possibly with a perm) to build a truly
-    /// iso-equivalent sibling state.
     fn play_random_to_phase(seed: u64, stop_in_bidding: bool) -> (OhHellGameState, Vec<Action>) {
         let mut rng: StdRng = SeedableRng::seed_from_u64(seed);
         let mut gs = OhHell::new_state(2, 2);
         let mut history = Vec::new();
         while !gs.is_terminal() {
-            // Stop once we're in bidding-or-play (post chance).
             if !gs.is_chance_node()
                 && (gs.phase() == OHPhase::Play || stop_in_bidding)
             {
@@ -234,9 +288,6 @@ mod tests {
         play_random_to_phase(seed, false).0
     }
 
-    /// Rebuild a fresh game state by replaying `history` with the suit
-    /// permutation `perm` applied to every action. Bid actions pass
-    /// through unchanged; card actions get their suit-bits relabelled.
     fn rebuild_with_perm(history: &[Action], perm: [u8; 4]) -> OhHellGameState {
         let mut gs = OhHell::new_state(2, 2);
         for a in history {
@@ -247,16 +298,10 @@ mod tests {
 
     /// Two iso-equivalent states (one built by replaying the original
     /// history with a 2-suit perm applied to every card action) must
-    /// produce the same normalised istate. Tests every pairwise non-
-    /// identity permutation of the 4 suits.
+    /// produce the same normalised istate.
     #[test]
     fn normalize_collapses_suit_perm_istate() {
-        let normalizer = OhHellNormalizer::default();
-        // All pairwise 2-suit swaps. Each swaps two suits and leaves the
-        // other two untouched. We deliberately include swaps that move
-        // the trump suit — the normalisation still has to land both
-        // states on the same canonical key because trump is just pinned
-        // to slot 0 regardless of which suit was originally trump.
+        let normalizer = OhHellNormalizer;
         let perms: &[[u8; 4]] = &[
             [1, 0, 2, 3], // S↔C
             [2, 1, 0, 3], // S↔H
@@ -289,13 +334,10 @@ mod tests {
 
     #[test]
     fn perm_inverse_round_trip_actions() {
-        let normalizer = OhHellNormalizer::default();
+        let normalizer = OhHellNormalizer;
         let mut rng: StdRng = SeedableRng::seed_from_u64(0xC0FFEE);
         for _ in 0..50 {
             let gs = drive_to_play(rng.random::<u64>());
-            // Pick a legal action and round-trip it through
-            // normalize → denormalize. The denormalised value should
-            // equal the original.
             let acts = actions!(gs);
             for &a in acts.iter().take(5) {
                 let n = normalizer.normalize_action(a, &gs);
@@ -307,7 +349,7 @@ mod tests {
 
     #[test]
     fn normalization_preserves_legal_action_count() {
-        let normalizer = OhHellNormalizer::default();
+        let normalizer = OhHellNormalizer;
         let mut rng: StdRng = SeedableRng::seed_from_u64(123);
         for _ in 0..50 {
             let gs = drive_to_play(rng.random::<u64>());
@@ -339,14 +381,10 @@ mod tests {
         }
     }
 
-    /// Bids are unaffected by suit permutation.
     #[test]
     fn bid_actions_unchanged() {
-        let normalizer = OhHellNormalizer::default();
+        let normalizer = OhHellNormalizer;
         let gs = drive_to_play(42);
-        // Phase is Play, but we still test the bid branch through
-        // apply_perm directly (Bid actions never re-enter play, but
-        // the type-level handling is what we want to check).
         let bid: Action = OHAction::Bid(2).into();
         let n = normalizer.normalize_action(bid, &gs);
         assert_eq!(n.get(), bid);
@@ -354,31 +392,20 @@ mod tests {
         assert_eq!(d, bid);
     }
 
-    /// Two states with the same trump, same hand and same bids but a
-    /// different specific played card (different rank in the same suit)
-    /// must NOT collapse — the played card is part of the istate's
-    /// action sequence, so its rank label distinguishes the two
-    /// normalised istates. This is the lower bound on what the
-    /// normaliser must preserve: it can collapse suit relabellings but
-    /// not rank substitutions on played cards.
     #[test]
     fn normalize_distinguishes_different_played_card_ranks() {
-        let normalizer = OhHellNormalizer::default();
+        let normalizer = OhHellNormalizer;
 
-        // State A: P0=9s,Js / P1=9h,Th. Face up=2h (hearts trump).
-        // Bids 0,0. P0 leads 9s, P1 follows with 9h (played).
         let mut a = OhHell::new_state(2, 2);
         for c in &[OHCard::NS, OHCard::NH, OHCard::JS, OHCard::TH] {
             a.apply_action(OHAction::Card(*c).into());
         }
-        a.apply_action(OHAction::Card(OHCard::_2H).into()); // face up
+        a.apply_action(OHAction::Card(OHCard::_2H).into());
         a.apply_action(OHAction::Bid(0).into());
         a.apply_action(OHAction::Bid(0).into());
-        a.apply_action(OHAction::Card(OHCard::NS).into()); // P0 leads 9s
-        a.apply_action(OHAction::Card(OHCard::NH).into()); // P1 plays 9h (trump)
+        a.apply_action(OHAction::Card(OHCard::NS).into());
+        a.apply_action(OHAction::Card(OHCard::NH).into());
 
-        // State B: same hands, same face up, same bids, but P1 plays Th
-        // (different rank in same suit) on the same trick.
         let mut b = OhHell::new_state(2, 2);
         for c in &[OHCard::NS, OHCard::NH, OHCard::JS, OHCard::TH] {
             b.apply_action(OHAction::Card(*c).into());
@@ -387,10 +414,8 @@ mod tests {
         b.apply_action(OHAction::Bid(0).into());
         b.apply_action(OHAction::Bid(0).into());
         b.apply_action(OHAction::Card(OHCard::NS).into());
-        b.apply_action(OHAction::Card(OHCard::TH).into()); // played higher card
+        b.apply_action(OHAction::Card(OHCard::TH).into());
 
-        // The played-card rank differs (9h vs Th) — the normalised
-        // istate must preserve that distinction.
         let p = a.cur_player();
         let na = normalizer
             .normalize_istate(&a.istate_key(p), &a)
@@ -404,21 +429,63 @@ mod tests {
         );
     }
 
-    /// Picking apart a specific card: queen-of-hearts under a perm that
-    /// remaps hearts→clubs becomes queen-of-clubs (same rank).
     #[test]
     fn apply_perm_relabels_suit_only() {
-        // Hearts is suit index 2; Clubs is 1. Build a perm Hearts -> Clubs.
         let mut perm = [0u8, 1, 2, 3];
-        perm.swap(1, 2); // Clubs↔Hearts
+        perm.swap(1, 2);
         let qh: Action = OHCard::QH.into();
         let qc: Action = OHCard::QC.into();
         assert_eq!(apply_perm(qh, &perm), qc);
         assert_eq!(apply_perm(qc, &perm), qh);
-        // Spades and Diamonds untouched.
         let qs: Action = OHCard::QS.into();
         let qd: Action = OHCard::QD.into();
         assert_eq!(apply_perm(qs, &perm), qs);
         assert_eq!(apply_perm(qd, &perm), qd);
+    }
+
+    /// The bug that prompted this rewrite: a Hearts↔Diamonds play-
+    /// order swap in 3p × 1-trick that the set-only fingerprint left
+    /// in two distinct canonical forms. With first-play-position now
+    /// in the fingerprint, both scenarios must collapse to one
+    /// canonical IStateKey.
+    #[test]
+    fn collapses_hearts_diamonds_play_order_swap() {
+        let normalizer = OhHellNormalizer;
+
+        // Build the two scenarios as 3p × 1-trick games. Perspective
+        // = P2; hand = 5♠; face-up = TS (trump = Spades); bids =
+        // [1, 0, 0]; plays differ only in order.
+        let mut a = OhHell::new_state(3, 1);
+        a.apply_action(OHAction::Card(OHCard::TD).into()); // P0 deal
+        a.apply_action(OHAction::Card(OHCard::TH).into()); // P1 deal
+        a.apply_action(OHAction::Card(OHCard::_5S).into()); // P2 deal
+        a.apply_action(OHAction::Card(OHCard::TS).into()); // face-up
+        a.apply_action(OHAction::Bid(1).into());
+        a.apply_action(OHAction::Bid(0).into());
+        a.apply_action(OHAction::Bid(0).into());
+        a.apply_action(OHAction::Card(OHCard::TD).into()); // P0 lead
+        a.apply_action(OHAction::Card(OHCard::TH).into()); // P1 follow
+
+        let mut b = OhHell::new_state(3, 1);
+        b.apply_action(OHAction::Card(OHCard::TH).into()); // P0 deal (swapped)
+        b.apply_action(OHAction::Card(OHCard::TD).into()); // P1 deal (swapped)
+        b.apply_action(OHAction::Card(OHCard::_5S).into());
+        b.apply_action(OHAction::Card(OHCard::TS).into());
+        b.apply_action(OHAction::Bid(1).into());
+        b.apply_action(OHAction::Bid(0).into());
+        b.apply_action(OHAction::Bid(0).into());
+        b.apply_action(OHAction::Card(OHCard::TH).into()); // P0 lead (swapped)
+        b.apply_action(OHAction::Card(OHCard::TD).into()); // P1 follow (swapped)
+
+        assert_eq!(a.cur_player(), 2);
+        assert_eq!(b.cur_player(), 2);
+        let p = 2;
+        let na = normalizer.normalize_istate(&a.istate_key(p), &a).get();
+        let nb = normalizer.normalize_istate(&b.istate_key(p), &b).get();
+        assert_eq!(
+            na, nb,
+            "Hearts↔Diamonds play-order swap must collapse to a single \
+             canonical IStateKey"
+        );
     }
 }

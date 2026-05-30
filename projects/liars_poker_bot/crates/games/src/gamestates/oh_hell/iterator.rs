@@ -1001,8 +1001,9 @@ mod tests {
         );
     }
 
-    /// 3p × 1-trick: cross-check **documenting an `OhHellNormalizer`
-    /// over-counting bug** uncovered by the Waugh port.
+    /// 3p × 1-trick: cross-check that **closed the over-counting gap**
+    /// once the order-sensitive fingerprint landed in
+    /// `OhHellNormalizer`.
     ///
     /// The walker (which canonicalises raw game states through
     /// `OhHellNormalizer`) emits ~33,800 more istates than the
@@ -1043,42 +1044,28 @@ mod tests {
     /// would close the gap — separate task, tracked in the iso
     /// module docs.
     ///
-    /// This test pins the relationship so future regressions
-    /// (either direction) are loud.
+    /// This test pins the post-fix iso class count and the
+    /// equality with the walker.
     #[test]
-    fn full_game_3p_1trick_waugh_is_strict_subset_of_walker() {
+    fn full_game_3p_1trick_waugh_matches_walker() {
         let walker: HashSet<IStateKey> =
             OhHellIsomorphicIStateIterator::full_game(3, 1, 100).collect();
         let via_waugh: HashSet<IStateKey> =
             OhHellIsomorphicIStateIterator::full_game_via_waugh(3, 1, 100).collect();
-        let waugh_only: Vec<_> = via_waugh.difference(&walker).copied().collect();
-        assert!(
-            waugh_only.is_empty(),
-            "Waugh produced {} istates the walker didn't — Waugh's iso \
-             partition should be a *coarsening* of the walker's, never \
-             a refinement",
-            waugh_only.len()
-        );
-        let walker_only_count = walker.difference(&via_waugh).count();
-        assert!(
-            walker_only_count > 0,
-            "expected the walker to over-count by some amount; if this \
-             trips, `OhHellNormalizer` may have been fixed and the \
-             test should be promoted to assert_eq!(walker, via_waugh)"
-        );
-        // Pin the current over-count. Drift here means the normaliser
-        // changed; investigate.
         assert_eq!(
             walker.len(),
-            3_047_811,
-            "walker count drifted — `OhHellNormalizer` behaviour change?"
-        );
-        assert_eq!(
             via_waugh.len(),
-            3_014_011,
-            "Waugh count drifted — `HandIndexer` behaviour change?"
+            "walker and Waugh now agree on iso class count after the \
+             first-play-position fingerprint fix landed; if they \
+             disagree, one of the two pieces drifted."
         );
-        assert_eq!(walker.len() - via_waugh.len(), 33_800);
+        assert_eq!(walker, via_waugh);
+        // Pin the value so accidental drift is loud.
+        assert_eq!(
+            walker.len(),
+            3_014_011,
+            "iso class count drifted from the post-fix value"
+        );
     }
 
     /// 3p × 1-trick: cross-check at a 3-player config.
