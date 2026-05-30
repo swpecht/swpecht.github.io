@@ -353,6 +353,61 @@ impl NodeStore<OH_MAX_ACTIONS> {
     /// the mmap file (`mmap`), and the populated-count file
     /// (`meta`). Pass `None` for an anonymous in-memory mmap (still
     /// PHF-indexed, but not persisted).
+    /// OH **full-game** disk-backed mmap + PHF variant. The PHF is
+    /// built over the canonical bidding + play-phase iso classes
+    /// enumerated by
+    /// [`games::gamestates::oh_hell::iterator::OhHellIsomorphicIStateIterator::full_game_via_waugh`]
+    /// for `(num_players, n_tricks, max_cards_played)`.
+    ///
+    /// Same on-disk layout as the bidding-only variant: `indexer`,
+    /// `mmap`, `meta`.
+    pub fn new_oh_hell_full_game_mmap(
+        path: Option<&Path>,
+        num_players: usize,
+        n_tricks: usize,
+        max_cards_played: usize,
+    ) -> anyhow::Result<Self> {
+        let path = path.map(|x| x.to_path_buf());
+        let mut indexer_needs_save = false;
+        let indexer = load_indexer(path.as_deref()).unwrap_or_else(|x| {
+            warn!(
+                "failed to load OH full-game indexer from {:?}: {} — \
+                 rebuilding (this may take a while for large configs)",
+                path.as_deref(),
+                x
+            );
+            indexer_needs_save = true;
+            Indexer::oh_hell_full_game(num_players, n_tricks, max_cards_played)
+        });
+
+        let mmap = get_mmap(
+            path.as_deref(),
+            indexer.len(),
+            MmapBacking::<OH_MAX_ACTIONS>::BUCKET_SIZE,
+        )
+        .context("failed to create OH full-game mmap")?;
+
+        let populated_count = path
+            .as_deref()
+            .and_then(|p| load_metadata(p).ok())
+            .unwrap_or_else(|| {
+                count_populated(
+                    &mmap,
+                    &indexer,
+                    MmapBacking::<OH_MAX_ACTIONS>::BUCKET_SIZE,
+                    path.as_deref(),
+                )
+            });
+
+        Ok(NodeStore::Mmap(MmapBacking {
+            indexer,
+            mmap,
+            path,
+            populated_count: AtomicUsize::new(populated_count),
+            indexer_needs_save,
+        }))
+    }
+
     pub fn new_oh_hell_bidding_mmap(
         path: Option<&Path>,
         num_players: usize,

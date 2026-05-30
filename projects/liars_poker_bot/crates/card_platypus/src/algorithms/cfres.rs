@@ -280,6 +280,29 @@ impl CFRES<OhHellGameState, OH_MAX_ACTIONS> {
         Self::new_oh_hell_with_store(num_players, n_tricks, 0, store)
     }
 
+    /// Disk-backed mmap + PHF variant for Oh Hell **full-game**
+    /// training. Routes storage through
+    /// [`NodeStore::new_oh_hell_full_game_mmap`], which builds the
+    /// PHF over the canonical bidding + play-phase iso classes
+    /// enumerated by the Waugh-based iterator.
+    ///
+    /// `max_cards_played` controls how deep into the play tree CFR
+    /// trains (play decisions past this point still hand off to
+    /// `OpenHandSolver` rollouts). Pass `100` (or any value ≥
+    /// `np × n_tricks`) for full coverage.
+    pub fn new_oh_hell_full_game_mmap(
+        num_players: usize,
+        n_tricks: usize,
+        max_cards_played: usize,
+        path: Option<&Path>,
+    ) -> Self {
+        let store = NodeStore::new_oh_hell_full_game_mmap(
+            path, num_players, n_tricks, max_cards_played,
+        )
+        .expect("failed to build OH full-game mmap node store");
+        Self::new_oh_hell_with_store(num_players, n_tricks, max_cards_played, store)
+    }
+
     fn new_oh_hell_with_store(
         num_players: usize,
         n_tricks: usize,

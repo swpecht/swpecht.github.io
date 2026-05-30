@@ -127,6 +127,38 @@ impl Indexer {
             sharder: Sharder::NoOp,
         }
     }
+
+    /// Build a PHF over the **full-game** iso classes for Oh Hell with
+    /// `(num_players, n_tricks, max_cards_played)`. Enumerates every
+    /// canonical bidding + play-phase decision point via the Waugh-
+    /// based iterator with the multi-trick feasibility filter applied.
+    ///
+    /// Note that for multi-trick configs the Waugh enumerator emits a
+    /// strict superset of the walker's iso set (Waugh's per-round
+    /// configuration sort doesn't fully fold OH's cross-round suit
+    /// symmetry). For the PHF use case this is sound — the extra
+    /// slots are simply never queried by CFR — but it does inflate
+    /// the mmap footprint relative to the minimal set. The
+    /// "tighten-via-round-trip" pass is the natural follow-up.
+    pub fn oh_hell_full_game(
+        num_players: usize,
+        n_tricks: usize,
+        max_cards_played: usize,
+    ) -> Self {
+        let istate_iter = OhHellIsomorphicIStateIterator::full_game_via_waugh(
+            num_players,
+            n_tricks,
+            max_cards_played,
+        );
+        let istates = MMapVec::from_iter(istate_iter);
+        let phf = Mphf::new(GAMMA, &istates);
+        Self {
+            phf,
+            shard_len: istates.len(),
+            num_shards: 1,
+            sharder: Sharder::NoOp,
+        }
+    }
 }
 
 fn euchre_sharder(istate: &IStateKey) -> Option<(usize, IStateKey)> {
