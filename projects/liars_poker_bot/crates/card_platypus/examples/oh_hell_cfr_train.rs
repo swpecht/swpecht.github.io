@@ -20,9 +20,17 @@
 //!   CFR_REPORT_PCT     report every this % of iters (5.0)
 //!   CFR_EVAL_GAMES     evaluation games per report (200)
 //!   CFR_MAX_CARDS      OhHellDepthChecker max_cards_played (100 → full)
-//!   CFR_SAVE_PATH      optional MessagePack file. When set, infostates
-//!                      are loaded on startup (if the file exists) and
-//!                      flushed after every report so training can resume.
+//!   CFR_SAVE_PATH      optional MessagePack file (HashBacking). When
+//!                      set, infostates are loaded on startup (if the
+//!                      file exists) and flushed after every report
+//!                      so training can resume.
+//!   CFR_MMAP_DIR       optional directory for disk-backed mmap + PHF
+//!                      storage (bidding-only mode). When set,
+//!                      overrides CFR_SAVE_PATH; requires
+//!                      CFR_MAX_CARDS=0. Builds the PHF on first
+//!                      startup and writes it to `<dir>/indexer`;
+//!                      the mmap goes to `<dir>/mmap` and the
+//!                      populated count to `<dir>/meta`.
 //!
 //! Example invocation (with kestrel-tail):
 //!
@@ -66,14 +74,23 @@ fn main() {
     let eval_games: usize = parse_env("CFR_EVAL_GAMES", 200);
     let max_cards: usize = parse_env("CFR_MAX_CARDS", 100);
     let save_path: Option<PathBuf> = std::env::var("CFR_SAVE_PATH").ok().map(PathBuf::from);
+    let mmap_dir: Option<PathBuf> = std::env::var("CFR_MMAP_DIR").ok().map(PathBuf::from);
+
+    if mmap_dir.is_some() && max_cards != 0 {
+        eprintln!(
+            "CFR_MMAP_DIR requires CFR_MAX_CARDS=0 (bidding-only); got CFR_MAX_CARDS={}",
+            max_cards
+        );
+        std::process::exit(2);
+    }
 
     let report_every = (((total_iters as f64) * (report_pct / 100.0)) as usize).max(1);
 
     println!(
         "CFR Oh Hell: {} players, {} tricks, total_iters={}, report every {} iters \
-         ({:.1}%), eval_games/report={}, max_cards_played={}, save_path={:?}",
+         ({:.1}%), eval_games/report={}, max_cards_played={}, save_path={:?}, mmap_dir={:?}",
         n_players, n_tricks, total_iters, report_every, report_pct, eval_games, max_cards,
-        save_path,
+        save_path, mmap_dir,
     );
     println!(
         "{:>10} {:>8} {:>8} {:>10} {:>9} {:>9} {:>9} {:>10} {:>9} {:>9}",
@@ -81,7 +98,11 @@ fn main() {
         "rss_mb", "B/istate"
     );
 
-    let mut cfr: OhCfres = CFRES::new_oh_hell(n_players, n_tricks, max_cards, save_path.as_deref());
+    let mut cfr: OhCfres = if let Some(dir) = mmap_dir.as_deref() {
+        CFRES::new_oh_hell_bidding_mmap(n_players, n_tricks, Some(dir))
+    } else {
+        CFRES::new_oh_hell(n_players, n_tricks, max_cards, save_path.as_deref())
+    };
 
     let start = Instant::now();
 
@@ -95,7 +116,7 @@ fn main() {
         cfr.train(chunk);
         done += chunk;
         report(&mut cfr, n_players, n_tricks, eval_games, done, total_iters, &start);
-        if save_path.is_some() {
+        if save_path.is_some() || mmap_dir.is_some() {
             if let Err(e) = cfr.save() {
                 eprintln!("checkpoint save failed: {:#}", e);
             }
@@ -109,7 +130,8 @@ fn main() {
         cfr.num_info_states()
     );
 
-    if let Some(p) = save_path.as_ref() {
+    let final_save_target = mmap_dir.as_ref().or(save_path.as_ref());
+    if let Some(p) = final_save_target {
         if let Err(e) = cfr.save() {
             eprintln!("final save failed: {:#}", e);
         } else {

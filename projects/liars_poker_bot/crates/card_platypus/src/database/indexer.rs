@@ -7,6 +7,7 @@ use games::{
             iterator::EuchreIsomorphicIStateIterator,
         },
         kuhn_poker::KuhnPoker,
+        oh_hell::iterator::OhHellIsomorphicIStateIterator,
     },
     istate::IStateKey,
     iterator::IStateIterator,
@@ -97,6 +98,27 @@ impl Indexer {
     pub fn bluff_11() -> Self {
         let istate_iter = IStateIterator::new(Bluff::new_state(1, 1));
         let istates = istate_iter.collect_vec();
+        let phf = Mphf::new(GAMMA, &istates);
+        Self {
+            phf,
+            shard_len: istates.len(),
+            num_shards: 1,
+            sharder: Sharder::NoOp,
+        }
+    }
+
+    /// Build a PHF over the bidding-phase iso classes for Oh Hell with
+    /// `(num_players, n_tricks)`. Used by the disk-backed
+    /// [`crate::database::NodeStore`] variant that targets bidding-
+    /// only CFR (play phase delegated to `OpenHandSolver`).
+    ///
+    /// The iterator streams canonical IStateKeys via the hand-rolled
+    /// `bidding_only` enumeration (Waugh-cross-checked) so we never
+    /// hold the full set in a HashSet during PHF construction —
+    /// MMapVec spools to disk if it doesn't fit in RAM.
+    pub fn oh_hell_bidding(num_players: usize, n_tricks: usize) -> Self {
+        let istate_iter = OhHellIsomorphicIStateIterator::bidding_only(num_players, n_tricks);
+        let istates = MMapVec::from_iter(istate_iter);
         let phf = Mphf::new(GAMMA, &istates);
         Self {
             phf,

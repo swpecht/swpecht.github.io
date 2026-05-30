@@ -253,6 +253,39 @@ impl CFRES<OhHellGameState, OH_MAX_ACTIONS> {
         max_cards_played: usize,
         path: Option<&Path>,
     ) -> Self {
+        Self::new_oh_hell_with_store(
+            num_players,
+            n_tricks,
+            max_cards_played,
+            NodeStore::new_oh_hell(path, n_tricks).unwrap(),
+        )
+    }
+
+    /// Disk-backed mmap + PHF variant for Oh Hell **bidding-only**
+    /// training. Force `max_cards_played = 0` so the play phase
+    /// always hands off to `OpenHandSolver` rollouts (matching Euchre's
+    /// production setup), and route storage through
+    /// [`NodeStore::new_oh_hell_bidding_mmap`].
+    ///
+    /// `path` is the directory holding the indexer + mmap + metadata
+    /// files. `path = None` gets an anonymous in-memory mmap (still
+    /// PHF-indexed, just not persisted on shutdown).
+    pub fn new_oh_hell_bidding_mmap(
+        num_players: usize,
+        n_tricks: usize,
+        path: Option<&Path>,
+    ) -> Self {
+        let store = NodeStore::new_oh_hell_bidding_mmap(path, num_players, n_tricks)
+            .expect("failed to build OH bidding mmap node store");
+        Self::new_oh_hell_with_store(num_players, n_tricks, 0, store)
+    }
+
+    fn new_oh_hell_with_store(
+        num_players: usize,
+        n_tricks: usize,
+        max_cards_played: usize,
+        store: NodeStore<OH_MAX_ACTIONS>,
+    ) -> Self {
         let game_generator: fn() -> OhHellGameState = match (num_players, n_tricks) {
             (2, 1) => || OhHell::new_state(2, 1),
             (2, 2) => || OhHell::new_state(2, 2),
@@ -279,9 +312,7 @@ impl CFRES<OhHellGameState, OH_MAX_ACTIONS> {
         Self {
             vector_pool: Pool::new(Vec::new),
             game_generator,
-            infostates: Arc::new(Mutex::new(
-                NodeStore::new_oh_hell(path, n_tricks).unwrap(),
-            )),
+            infostates: Arc::new(Mutex::new(store)),
             depth_checker: Box::new(OhHellDepthChecker { max_cards_played }),
             play_bot: PIMCTSBot::new(
                 50,
@@ -726,6 +757,45 @@ mod tests {
         let mut alg = CFRES::new_oh_hell(3, 2, 0, None);
         alg.train(20);
         assert!(alg.num_info_states() > 0);
+    }
+
+    /// Bidding-only mmap variant: build the PHF, run a few iterations,
+    /// confirm the disk-backed store touches at least one infostate
+    /// per training step.
+    #[test]
+    fn cfres_oh_hell_bidding_mmap_smoke() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut alg = CFRES::new_oh_hell_bidding_mmap(2, 1, Some(dir.path()));
+        alg.train(20);
+        assert!(
+            alg.num_info_states() > 0,
+            "mmap-backed bidding CFR didn't touch any info states"
+        );
+        // Indexer file and mmap file should both exist after a save.
+        alg.save().expect("save");
+        assert!(dir.path().join("indexer").exists());
+        assert!(dir.path().join("mmap").exists());
+        assert!(dir.path().join("meta").exists());
+    }
+
+    /// Round-trip the mmap variant: train, save, reload into a fresh
+    /// CFRES with the same path, confirm the populated count is
+    /// preserved (the indexer is loaded from disk; the populated
+    /// count is read from `meta`).
+    #[test]
+    fn cfres_oh_hell_bidding_mmap_round_trip() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut a = CFRES::new_oh_hell_bidding_mmap(2, 1, Some(dir.path()));
+        a.train(50);
+        let n_after_train = a.num_info_states();
+        assert!(n_after_train > 0);
+        a.save().expect("save");
+
+        // Fresh CFRES reading the same directory should see the same
+        // populated count (the indexer is rehydrated from `indexer`,
+        // the count from `meta`).
+        let b = CFRES::new_oh_hell_bidding_mmap(2, 1, Some(dir.path()));
+        assert_eq!(b.num_info_states(), n_after_train);
     }
 
     /// Round-trip: train a small Oh Hell run, persist to disk, reload

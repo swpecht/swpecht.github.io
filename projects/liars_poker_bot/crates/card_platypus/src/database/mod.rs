@@ -327,18 +327,76 @@ impl NodeStore<BLUFF_MAX_ACTIONS> {
 }
 
 impl NodeStore<OH_MAX_ACTIONS> {
-    /// Oh Hell uses a HashMap-backed store: the full-deck istate space is
+    /// Oh Hell with a HashMap-backed store. Full-game istate space is
     /// too large to enumerate up front for a perfect-hash index, but
-    /// MCCFR only touches a small subset of istates per training run, so
-    /// lazy population works well.
+    /// MCCFR only touches a small subset of istates per training run,
+    /// so lazy population works well.
     ///
     /// When `path` is `Some` the constructor hydrates from disk if the
-    /// file exists, and a later `commit()` will write the in-memory map
-    /// back (MessagePack via `rmp-serde`). When `path` is `None` the
-    /// store is purely in-memory.
+    /// file exists, and a later `commit()` will write the in-memory
+    /// map back (MessagePack via `rmp-serde`). When `path` is `None`
+    /// the store is purely in-memory.
     pub fn new_oh_hell(path: Option<&Path>, _n_tricks: usize) -> anyhow::Result<Self> {
         let owned = path.map(|p| p.to_path_buf());
         Ok(NodeStore::Hash(HashBacking::new(owned)?))
+    }
+
+    /// Oh Hell **bidding-only** with a disk-backed mmap + PHF store.
+    /// The PHF is built over the canonical bidding-phase iso classes
+    /// (the same set enumerated by
+    /// [`games::gamestates::oh_hell::iterator::OhHellIsomorphicIStateIterator::bidding_only`]
+    /// — Waugh-cross-checked to be exact), then each iso class maps
+    /// to a fixed slot in the mmap, eliminating HashMap overhead per
+    /// entry.
+    ///
+    /// `path` is the directory containing the indexer (`indexer`),
+    /// the mmap file (`mmap`), and the populated-count file
+    /// (`meta`). Pass `None` for an anonymous in-memory mmap (still
+    /// PHF-indexed, but not persisted).
+    pub fn new_oh_hell_bidding_mmap(
+        path: Option<&Path>,
+        num_players: usize,
+        n_tricks: usize,
+    ) -> anyhow::Result<Self> {
+        // Initial mmap sizing: a generous overprovision so we don't
+        // pay for a `remap` on the first few writes. Bidding-only iso
+        // class counts top out at ~1.3M for 3p × 3-trick and shrink
+        // sharply for smaller configs; 5M slots covers everything
+        // we'd reasonably train on.
+        let mmap = get_mmap(path, 5_000_000, MmapBacking::<OH_MAX_ACTIONS>::BUCKET_SIZE)
+            .context("failed to create OH mmap")?;
+
+        let path = path.map(|x| x.to_path_buf());
+        let mut indexer_needs_save = false;
+        let indexer = load_indexer(path.as_deref()).unwrap_or_else(|x| {
+            warn!(
+                "failed to load OH bidding indexer from {:?}: {} — rebuilding",
+                path.as_deref(),
+                x
+            );
+            indexer_needs_save = true;
+            Indexer::oh_hell_bidding(num_players, n_tricks)
+        });
+
+        let populated_count = path
+            .as_deref()
+            .and_then(|p| load_metadata(p).ok())
+            .unwrap_or_else(|| {
+                count_populated(
+                    &mmap,
+                    &indexer,
+                    MmapBacking::<OH_MAX_ACTIONS>::BUCKET_SIZE,
+                    path.as_deref(),
+                )
+            });
+
+        Ok(NodeStore::Mmap(MmapBacking {
+            indexer,
+            mmap,
+            path,
+            populated_count: AtomicUsize::new(populated_count),
+            indexer_needs_save,
+        }))
     }
 }
 
