@@ -240,7 +240,23 @@ impl OhHellIsomorphicIStateIterator {
                 // unseen, distribute them across opp seats in seat
                 // order (each gets `n_tricks` cards), and walk the play
                 // tree per assignment × bid sequence.
-                for opp_perm in permutations_of_k(total_opp_cards, &unseen) {
+                //
+                // Optimization: for `max_cards_played ≤ 1` the walker
+                // emits at most one istate (the perspective's very
+                // first play decision), which doesn't depend on opp
+                // hands at all (no opp legal actions queried before
+                // walker returns). Use a single placeholder opp
+                // assignment in that regime.
+                let opp_perms = if max_cards_played <= 1 {
+                    if unseen.len() < total_opp_cards {
+                        Vec::new()
+                    } else {
+                        vec![unseen[..total_opp_cards].to_vec()]
+                    }
+                } else {
+                    permutations_of_k(total_opp_cards, &unseen)
+                };
+                for opp_perm in opp_perms {
                     let mut opp_hands: Vec<Vec<OHCard>> = vec![Vec::new(); num_players];
                     let mut offset = 0;
                     for q in 0..num_players {
