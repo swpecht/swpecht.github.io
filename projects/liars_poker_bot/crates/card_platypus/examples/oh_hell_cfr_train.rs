@@ -250,12 +250,16 @@ fn report(
         paired,
     );
 
-    // Iteration-axis metrics. `rss_mb=-1` marks an unsupported platform
-    // (no /proc/self/status) — Kestrel still parses the line, the
-    // dashboard can filter sentinels out. `policy_delta_l1` is the mean
-    // L1 distance between the current and previous normalized avg
-    // strategy over the fixed sample (NaN on the first checkpoint when
-    // there's nothing to compare against).
+    // Iteration-axis metrics: training quality + resource snapshots +
+    // policy-delta convergence signal. Every metric here is owned by
+    // the `step` x-axis — emitting the same metric on a second line
+    // with a different x-axis key (`t=...`) makes Kestrel chart it as
+    // a mixed series, which is what produced the zigzag in earlier
+    // logs. `rss_mb=-1` marks an unsupported platform (no
+    // /proc/self/status); the dashboard filters that sentinel out.
+    // `policy_delta_l1` is the mean L1 distance between the current
+    // and previous normalized avg strategy over the fixed sample (NaN
+    // on the first checkpoint when there's nothing to compare against).
     println!(
         "kestrel: step={} pimcts_avg={:.6} win_rate={:.6} tie_rate={:.6} loss_rate={:.6} \
          info_states={} rss_mb={:.4} peak_rss_mb={:.4} vsize_mb={:.4} bytes_per_istate={:.2} \
@@ -280,12 +284,13 @@ fn report(
         eval_games,
     );
 
-    // Time-axis metric: progress fraction + current rss so memory
-    // growth can be plotted against wall-clock independent of iter
-    // count.
+    // Time-axis metric: just the progress fraction, so the dashboard
+    // can show how wall-clock maps to training progress (useful for
+    // spotting slowdowns / stalls). Resource and convergence metrics
+    // already live on the `step` axis above.
     println!(
-        "kestrel: t={:.4} progress_pct={:.4} rss_mb={:.4} policy_delta_l1={:.6}",
-        elapsed, pct, rss_mb, delta_l1,
+        "kestrel: t={:.4} progress_pct={:.4}",
+        elapsed, pct,
     );
 }
 
