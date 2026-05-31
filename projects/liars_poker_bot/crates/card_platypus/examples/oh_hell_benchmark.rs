@@ -63,8 +63,8 @@ fn pimcts_bot(seed: u64) -> PIMCTSBot<OhHellGameState, OpenHandSolver<OhHellGame
 }
 
 /// Try to load a CFR policy from disk for `(num_players, n_tricks)`
-/// at the given `max_cards_played` depth. Returns `None` if no
-/// checkpoint exists at any of the known locations.
+/// at the given `max_cards_played` depth. Returns `None` if the
+/// checkpoint directory doesn't exist.
 fn try_load_cfr(
     num_players: usize,
     n_tricks: usize,
@@ -77,28 +77,15 @@ fn try_load_cfr(
         "{}p_{}t_max{}",
         num_players, n_tricks, max_cards_played
     ));
-    if mmap_dir.join("indexer").exists() && mmap_dir.join("mmap").exists() {
-        return Some(CFRES::new_oh_hell_mmap(
-            num_players,
-            n_tricks,
-            max_cards_played,
-            Some(mmap_dir.as_path()),
-        ));
+    if !(mmap_dir.join("indexer").exists() && mmap_dir.join("mmap").exists()) {
+        return None;
     }
-    // Fallback to msgpack checkpoint for older 1-trick runs.
-    let msgpack = PathBuf::from(format!(
-        "/tmp/oh_cfr_{}p_{}t.msgpack",
-        num_players, n_tricks
-    ));
-    if msgpack.exists() {
-        return Some(CFRES::new_oh_hell(
-            num_players,
-            n_tricks,
-            max_cards_played,
-            Some(msgpack.as_path()),
-        ));
-    }
-    None
+    Some(CFRES::new_oh_hell(
+        num_players,
+        n_tricks,
+        max_cards_played,
+        Some(mmap_dir.as_path()),
+    ))
 }
 
 #[derive(Clone, Copy, Debug)]

@@ -20,19 +20,14 @@
 //!   CFR_REPORT_PCT     report every this % of iters (5.0)
 //!   CFR_EVAL_GAMES     evaluation games per report (200)
 //!   CFR_MAX_CARDS      OhHellDepthChecker max_cards_played (100 → full)
-//!   CFR_SAVE_PATH      optional MessagePack file (HashBacking). When
-//!                      set, infostates are loaded on startup (if the
-//!                      file exists) and flushed after every report
-//!                      so training can resume.
-//!   CFR_MMAP_DIR       optional directory for disk-backed mmap + PHF
-//!                      storage. When set, overrides CFR_SAVE_PATH;
-//!                      CFR_MAX_CARDS=0 gives bidding-only training,
-//!                      larger values include play decisions through
-//!                      that depth (rest hands off to OpenHandSolver
-//!                      rollouts). Builds the PHF on first startup
-//!                      and writes it to `<dir>/indexer`; the mmap
-//!                      goes to `<dir>/mmap` and the populated count
-//!                      to `<dir>/meta`.
+//!   CFR_MMAP_DIR       directory for disk-backed mmap + PHF storage.
+//!                      Builds the PHF on first startup and writes it
+//!                      to `<dir>/indexer`; the mmap goes to
+//!                      `<dir>/mmap` and the populated count to
+//!                      `<dir>/meta`. If `<dir>` already contains the
+//!                      three files, training resumes from that
+//!                      checkpoint. When unset, runs purely in-memory
+//!                      (anonymous mmap, no persistence).
 //!
 //! Example invocation (with kestrel-tail):
 //!
@@ -55,6 +50,72 @@ use games::{
 };
 use rand::{rngs::StdRng, seq::IndexedRandom, SeedableRng};
 
+/// Sampled L1 policy-delta convergence metric.
+///
+/// Picks a fixed random subset of PHF slots once at startup (seeded for
+/// reproducibility across resumes), and at each checkpoint computes the
+/// mean L1 distance between the current normalized avg strategy and the
+/// previous snapshot, over slots populated at *both* checkpoints. Drops
+/// to 0 as the average policy stops changing.
+///
+/// Sample size is bounded by a byte budget (default 100 MB). For Oh Hell
+/// each sample stores 1 × usize (index) + OH_MAX_ACTIONS × f32 (strategy
+/// snapshot) ≈ 40 B, so 100 MB covers up to 2.5M slots. Smaller PHFs are
+/// sampled in full.
+struct PolicySampler {
+    indices: Vec<usize>,
+    prev: Vec<Option<Vec<f32>>>,
+}
+
+impl PolicySampler {
+    fn new(indexer_size: usize, budget_bytes: usize, max_actions: usize, seed: u64) -> Self {
+        let per_sample =
+            std::mem::size_of::<usize>() + max_actions * std::mem::size_of::<f32>();
+        let max_samples = budget_bytes / per_sample.max(1);
+        let n_samples = max_samples.min(indexer_size);
+        let indices: Vec<usize> = if n_samples >= indexer_size {
+            (0..indexer_size).collect()
+        } else {
+            let mut rng: StdRng = SeedableRng::seed_from_u64(seed);
+            rand::seq::index::sample(&mut rng, indexer_size, n_samples).into_vec()
+        };
+        let prev = vec![None; indices.len()];
+        Self { indices, prev }
+    }
+
+    /// Walk samples, compute mean L1 vs previous snapshot, update snapshot.
+    /// Returns (mean_l1, paired_count, populated_count). `mean_l1` is NaN
+    /// when no slot was populated at both checkpoints.
+    fn measure(&mut self, cfr: &OhCfres) -> (f64, usize, usize) {
+        let mut total_l1 = 0.0_f64;
+        let mut paired = 0usize;
+        let mut populated = 0usize;
+        for (i, &idx) in self.indices.iter().enumerate() {
+            let current = cfr.avg_strategy_at_index(idx);
+            if current.is_some() {
+                populated += 1;
+            }
+            if let (Some(prev), Some(cur)) = (self.prev[i].as_ref(), current.as_ref()) {
+                let n = prev.len().min(cur.len());
+                let l1: f32 = (0..n).map(|j| (prev[j] - cur[j]).abs()).sum();
+                total_l1 += l1 as f64;
+                paired += 1;
+            }
+            self.prev[i] = current;
+        }
+        let mean_l1 = if paired > 0 {
+            total_l1 / paired as f64
+        } else {
+            f64::NAN
+        };
+        (mean_l1, paired, populated)
+    }
+
+    fn sample_size(&self) -> usize {
+        self.indices.len()
+    }
+}
+
 fn parse_env<T: std::str::FromStr>(name: &str, default: T) -> T {
     std::env::var(name)
         .ok()
@@ -75,42 +136,55 @@ fn main() {
     let report_pct: f64 = parse_env("CFR_REPORT_PCT", 5.0);
     let eval_games: usize = parse_env("CFR_EVAL_GAMES", 200);
     let max_cards: usize = parse_env("CFR_MAX_CARDS", 100);
-    let save_path: Option<PathBuf> = std::env::var("CFR_SAVE_PATH").ok().map(PathBuf::from);
     let mmap_dir: Option<PathBuf> = std::env::var("CFR_MMAP_DIR").ok().map(PathBuf::from);
 
     let report_every = (((total_iters as f64) * (report_pct / 100.0)) as usize).max(1);
+    let sample_budget_bytes: usize = parse_env("CFR_POLICY_SAMPLE_BYTES", 100 * 1024 * 1024);
+    let sample_seed: u64 = parse_env("CFR_POLICY_SAMPLE_SEED", 0xC0DEC0DE);
 
     println!(
         "CFR Oh Hell: {} players, {} tricks, total_iters={}, report every {} iters \
-         ({:.1}%), eval_games/report={}, max_cards_played={}, save_path={:?}, mmap_dir={:?}",
+         ({:.1}%), eval_games/report={}, max_cards_played={}, mmap_dir={:?}",
         n_players, n_tricks, total_iters, report_every, report_pct, eval_games, max_cards,
-        save_path, mmap_dir,
+        mmap_dir,
     );
     println!(
-        "{:>10} {:>8} {:>8} {:>10} {:>9} {:>9} {:>9} {:>10} {:>9} {:>9}",
+        "{:>10} {:>8} {:>8} {:>10} {:>9} {:>9} {:>9} {:>10} {:>9} {:>9} {:>10} {:>10}",
         "iter", "time_s", "pct", "score_v_rand", "win%", "tie%", "loss%", "info_states",
-        "rss_mb", "B/istate"
+        "rss_mb", "B/istate", "delta_l1", "paired"
     );
 
-    let mut cfr: OhCfres = if let Some(dir) = mmap_dir.as_deref() {
-        CFRES::new_oh_hell_mmap(n_players, n_tricks, max_cards, Some(dir))
-    } else {
-        CFRES::new_oh_hell(n_players, n_tricks, max_cards, save_path.as_deref())
-    };
+    let mut cfr: OhCfres =
+        CFRES::new_oh_hell(n_players, n_tricks, max_cards, mmap_dir.as_deref());
+
+    let mut sampler = PolicySampler::new(
+        cfr.indexer_size(),
+        sample_budget_bytes,
+        OH_MAX_ACTIONS,
+        sample_seed,
+    );
+    println!(
+        "Policy-delta sampler: {} slots sampled out of {} (budget={} MB)",
+        sampler.sample_size(),
+        cfr.indexer_size(),
+        sample_budget_bytes / (1024 * 1024),
+    );
 
     let start = Instant::now();
 
     // Pre-training (random-policy) baseline at iter=0 so the chart has a
-    // visible "before" point.
+    // visible "before" point. Also seeds the policy-delta snapshot from
+    // any pre-loaded weights so the first post-train report's delta is
+    // measured against the resume point rather than zero.
     let mut done = 0usize;
-    report(&mut cfr, n_players, n_tricks, eval_games, done, total_iters, &start);
+    report(&mut cfr, &mut sampler, n_players, n_tricks, eval_games, done, total_iters, &start);
 
     while done < total_iters {
         let chunk = report_every.min(total_iters - done);
         cfr.train(chunk);
         done += chunk;
-        report(&mut cfr, n_players, n_tricks, eval_games, done, total_iters, &start);
-        if save_path.is_some() || mmap_dir.is_some() {
+        report(&mut cfr, &mut sampler, n_players, n_tricks, eval_games, done, total_iters, &start);
+        if mmap_dir.is_some() {
             if let Err(e) = cfr.save() {
                 eprintln!("checkpoint save failed: {:#}", e);
             }
@@ -124,8 +198,7 @@ fn main() {
         cfr.num_info_states()
     );
 
-    let final_save_target = mmap_dir.as_ref().or(save_path.as_ref());
-    if let Some(p) = final_save_target {
+    if let Some(p) = mmap_dir.as_ref() {
         if let Err(e) = cfr.save() {
             eprintln!("final save failed: {:#}", e);
         } else {
@@ -136,6 +209,7 @@ fn main() {
 
 fn report(
     cfr: &mut OhCfres,
+    sampler: &mut PolicySampler,
     n_players: usize,
     n_tricks: usize,
     eval_games: usize,
@@ -148,6 +222,7 @@ fn report(
     let info_states = cfr.num_info_states();
 
     let eval = evaluate_vs_random(cfr, n_players, n_tricks, eval_games, done as u64);
+    let (delta_l1, paired, populated_sampled) = sampler.measure(cfr);
 
     let mem = process_memory();
     let (rss_mb, peak_rss_mb, vsize_mb) = mem
@@ -160,7 +235,7 @@ fn report(
     };
 
     println!(
-        "{:>10} {:>8.2} {:>7.1}% {:>10.3} {:>8.1}% {:>8.1}% {:>8.1}% {:>10} {:>9.1} {:>9.1}",
+        "{:>10} {:>8.2} {:>7.1}% {:>10.3} {:>8.1}% {:>8.1}% {:>8.1}% {:>10} {:>9.1} {:>9.1} {:>10.4} {:>10}",
         done,
         elapsed,
         pct,
@@ -171,15 +246,21 @@ fn report(
         info_states,
         rss_mb,
         bytes_per_istate,
+        delta_l1,
+        paired,
     );
 
     // Iteration-axis metrics. `rss_mb=-1` marks an unsupported platform
     // (no /proc/self/status) — Kestrel still parses the line, the
-    // dashboard can filter sentinels out.
+    // dashboard can filter sentinels out. `policy_delta_l1` is the mean
+    // L1 distance between the current and previous normalized avg
+    // strategy over the fixed sample (NaN on the first checkpoint when
+    // there's nothing to compare against).
     println!(
         "kestrel: step={} pimcts_avg={:.6} win_rate={:.6} tie_rate={:.6} loss_rate={:.6} \
          info_states={} rss_mb={:.4} peak_rss_mb={:.4} vsize_mb={:.4} bytes_per_istate={:.2} \
-         num_players={} n_tricks={} eval_games={}",
+         policy_delta_l1={:.6} policy_delta_paired={} policy_sample_populated={} \
+         policy_sample_size={} num_players={} n_tricks={} eval_games={}",
         done,
         eval.pimcts_avg,
         eval.win_rate,
@@ -190,6 +271,10 @@ fn report(
         peak_rss_mb,
         vsize_mb,
         bytes_per_istate,
+        delta_l1,
+        paired,
+        populated_sampled,
+        sampler.sample_size(),
         n_players,
         n_tricks,
         eval_games,
@@ -199,8 +284,8 @@ fn report(
     // growth can be plotted against wall-clock independent of iter
     // count.
     println!(
-        "kestrel: t={:.4} progress_pct={:.4} rss_mb={:.4}",
-        elapsed, pct, rss_mb
+        "kestrel: t={:.4} progress_pct={:.4} rss_mb={:.4} policy_delta_l1={:.6}",
+        elapsed, pct, rss_mb, delta_l1,
     );
 }
 

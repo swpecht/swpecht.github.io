@@ -237,49 +237,23 @@ impl CFRES<BluffGameState, BLUFF_MAX_ACTIONS> {
 }
 
 impl CFRES<OhHellGameState, OH_MAX_ACTIONS> {
-    /// CFRES for Oh Hell. Uses a HashMap-backed store (no PHF
-    /// pre-enumeration) and a depth checker that hands off to an
-    /// `OpenHandSolver` rollout once `max_cards_played` cards have been
-    /// played. Mirrors the Euchre `max_cards_played` knob: pass `0` to
-    /// run CFR only on the bidding sub-game, or larger values to also
-    /// solve some opening tricks.
-    ///
-    /// When `path` is `Some`, the infostate map is loaded from disk on
-    /// construction (if the file exists) and `save()` writes it back via
-    /// MessagePack. Pass `None` for purely in-memory training.
-    pub fn new_oh_hell(
-        num_players: usize,
-        n_tricks: usize,
-        max_cards_played: usize,
-        path: Option<&Path>,
-    ) -> Self {
-        Self::new_oh_hell_with_store(
-            num_players,
-            n_tricks,
-            max_cards_played,
-            NodeStore::new_oh_hell(path, n_tricks).unwrap(),
-        )
-    }
-
-    /// Disk-backed mmap + PHF variant for Oh Hell. Routes storage
-    /// through [`NodeStore::new_oh_hell_full_game_mmap`], which
-    /// builds the PHF over the canonical bidding + play-phase iso
-    /// classes enumerated by the Waugh-based iterator.
+    /// CFRES for Oh Hell, disk-backed mmap + PHF store. Routes storage
+    /// through [`NodeStore::new_oh_hell_full_game_mmap`], which builds
+    /// the PHF over the canonical bidding + play-phase iso classes
+    /// enumerated by the Waugh-based iterator.
     ///
     /// `max_cards_played` controls how deep into the play tree CFR
     /// trains:
-    ///   * `0` — bidding-only; the walker returns at the start of
-    ///     play before emitting any play istate. Equivalent to the
-    ///     pre-unification `new_oh_hell_bidding_mmap`.
+    ///   * `0` — bidding-only; the walker returns at the start of play
+    ///     before emitting any play istate.
     ///   * larger values — CFR also trains the first `max_cards_played`
     ///     play decisions; everything beyond hands off to
-    ///     `OpenHandSolver` rollouts (matching Euchre's production
-    ///     setup).
+    ///     `OpenHandSolver` rollouts (matching Euchre's production setup).
     ///
     /// `path` is the directory holding the indexer + mmap + metadata
     /// files. `path = None` gets an anonymous in-memory mmap (still
     /// PHF-indexed, just not persisted on shutdown).
-    pub fn new_oh_hell_mmap(
+    pub fn new_oh_hell(
         num_players: usize,
         n_tricks: usize,
         max_cards_played: usize,
@@ -559,10 +533,6 @@ impl<G: GameState + ResampleFromInfoState + Sync, const MAX_ACTIONS: usize> CFRE
     pub fn num_info_states(&self) -> usize {
         self.infostates.lock().unwrap().len()
     }
-
-    pub fn indexer_size(&self) -> usize {
-        self.infostates.lock().unwrap().indexer_len()
-    }
 }
 
 impl<G, const MAX_ACTIONS: usize> CFRES<G, MAX_ACTIONS> {
@@ -573,6 +543,24 @@ impl<G, const MAX_ACTIONS: usize> CFRES<G, MAX_ACTIONS> {
 
     fn put_entry(&self, key: &NormalizedIstate, v: InfoState<MAX_ACTIONS>) {
         self.infostates.lock().unwrap().put(&key.get(), &v);
+    }
+
+    /// Total addressable slot count (PHF size). For Hash-backed stores
+    /// this collapses to `num_info_states`.
+    pub fn indexer_size(&self) -> usize {
+        self.infostates.lock().unwrap().indexer_len()
+    }
+
+    /// Normalized average policy at PHF slot `idx`. Returns `None` if the
+    /// slot is empty (never written) or if the cumulative strategy sum is
+    /// zero. Used by sampled convergence metrics.
+    pub fn avg_strategy_at_index(&self, idx: usize) -> Option<Vec<Weight>> {
+        let infostate = self.infostates.lock().unwrap().get_at_index(idx)?;
+        let sum: Weight = infostate.avg_strategy.iter().sum();
+        if sum <= 0.0 {
+            return None;
+        }
+        Some(infostate.avg_strategy.iter().map(|&w| w / sum).collect())
     }
 }
 
@@ -760,72 +748,37 @@ mod tests {
         alg.train(10);
     }
 
-    /// CFRES on full-deck Oh Hell, bidding-only mode (max_cards_played=0).
-    /// Smoke test: training completes and at least one info state gets
-    /// touched. Bidding-only keeps the istate space small enough that
-    /// MCCFR with a HashMap-backed store converges quickly.
-    #[test]
-    fn cfres_oh_hell_train_smoke() {
-        let mut alg = CFRES::new_oh_hell(3, 2, 0, None);
-        alg.train(20);
-        assert!(alg.num_info_states() > 0);
-    }
-
-    /// Bidding-only mmap variant: build the PHF, run a few iterations,
+    /// Bidding-only smoke test: build the PHF, run a few iterations,
     /// confirm the disk-backed store touches at least one infostate
-    /// per training step.
+    /// per training step and persists the expected files.
     #[test]
-    fn cfres_oh_hell_mmap_bidding_smoke() {
+    fn cfres_oh_hell_bidding_smoke() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let mut alg = CFRES::new_oh_hell_mmap(2, 1, 0, Some(dir.path()));
+        let mut alg = CFRES::new_oh_hell(2, 1, 0, Some(dir.path()));
         alg.train(20);
         assert!(
             alg.num_info_states() > 0,
             "mmap-backed bidding CFR didn't touch any info states"
         );
-        // Indexer file and mmap file should both exist after a save.
         alg.save().expect("save");
         assert!(dir.path().join("indexer").exists());
         assert!(dir.path().join("mmap").exists());
         assert!(dir.path().join("meta").exists());
     }
 
-    /// Round-trip the mmap variant: train, save, reload into a fresh
-    /// CFRES with the same path, confirm the populated count is
-    /// preserved (the indexer is loaded from disk; the populated
-    /// count is read from `meta`).
+    /// Round-trip: train, save, reload into a fresh CFRES from the same
+    /// directory, confirm the populated count is preserved (indexer
+    /// rehydrated from `indexer`, count from `meta`).
     #[test]
-    fn cfres_oh_hell_mmap_bidding_round_trip() {
+    fn cfres_oh_hell_round_trip() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let mut a = CFRES::new_oh_hell_mmap(2, 1, 0, Some(dir.path()));
+        let mut a = CFRES::new_oh_hell(2, 1, 0, Some(dir.path()));
         a.train(50);
         let n_after_train = a.num_info_states();
         assert!(n_after_train > 0);
         a.save().expect("save");
 
-        // Fresh CFRES reading the same directory should see the same
-        // populated count (the indexer is rehydrated from `indexer`,
-        // the count from `meta`).
-        let b = CFRES::new_oh_hell_mmap(2, 1, 0, Some(dir.path()));
-        assert_eq!(b.num_info_states(), n_after_train);
-    }
-
-    /// Round-trip: train a small Oh Hell run, persist to disk, reload
-    /// into a fresh CFRES, and confirm the info-state count is preserved
-    /// and that `save()` after reload is a no-op (count stays the same).
-    #[test]
-    fn cfres_oh_hell_save_load_round_trip() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("oh_cfr.msgpack");
-
-        let mut a = CFRES::new_oh_hell(3, 2, 0, Some(path.as_path()));
-        a.train(50);
-        let n_after_train = a.num_info_states();
-        assert!(n_after_train > 0);
-        a.save().expect("save");
-        assert!(path.exists());
-
-        let b = CFRES::new_oh_hell(3, 2, 0, Some(path.as_path()));
+        let b = CFRES::new_oh_hell(2, 1, 0, Some(dir.path()));
         assert_eq!(b.num_info_states(), n_after_train);
     }
 

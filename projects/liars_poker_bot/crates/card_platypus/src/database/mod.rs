@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     fs::OpenOptions,
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -24,78 +23,13 @@ const REMAP_INCREMENT: usize = 10_000_000;
 const INDEXER_NAME: &str = "indexer";
 const METADATA_NAME: &str = "meta";
 
-/// Pluggable storage for CFR infostates. Two backings:
-///   - `Mmap`: a perfect-hash + mmap-backed array. Fast O(1) get/put, but
-///     requires pre-enumeration of every reachable infostate to build the
-///     PHF. Used for games where that enumeration is tractable
-///     (Kuhn Poker, Bluff(1,1), Euchre with isomorphic reduction).
-///   - `Hash`: a plain `HashMap`. Lazily populated, no pre-enumeration
-///     needed. Used for games whose istate space is too large to enumerate
-///     (e.g. Oh Hell with the full 52-card deck). Optionally backed by a
-///     MessagePack file on disk for checkpoint / resume.
+/// Mmap + PHF storage for CFR infostates. Each game pre-enumerates its
+/// canonical isomorphic istate set, builds a perfect hash function over
+/// that set, and rents one fixed-size slot per istate in an mmap-backed
+/// array. Disk-backed when constructed with a directory path; anonymous
+/// (RAM-only) when constructed with `None`.
 pub enum NodeStore<const MAX_ACTIONS: usize> {
     Mmap(MmapBacking<MAX_ACTIONS>),
-    Hash(HashBacking<MAX_ACTIONS>),
-}
-
-/// In-memory infostate store with optional disk persistence. `commit()`
-/// serialises the `HashMap` to `path` via MessagePack; the constructor
-/// hydrates from `path` if the file exists.
-pub struct HashBacking<const MAX_ACTIONS: usize> {
-    map: HashMap<IStateKey, InfoState<MAX_ACTIONS>>,
-    path: Option<PathBuf>,
-}
-
-impl<const MAX_ACTIONS: usize> HashBacking<MAX_ACTIONS> {
-    /// New empty store (with optional save path). If `path` exists, hydrate
-    /// from it; otherwise start with an empty map.
-    pub fn new(path: Option<PathBuf>) -> anyhow::Result<Self> {
-        let mut map = HashMap::new();
-        if let Some(p) = path.as_ref() {
-            if p.exists() {
-                let bytes = std::fs::read(p)
-                    .with_context(|| format!("reading {}", p.display()))?;
-                map = rmp_serde::from_slice(&bytes)
-                    .with_context(|| format!("decoding {}", p.display()))?;
-                debug!("HashBacking: loaded {} infostates from {}", map.len(), p.display());
-            }
-        }
-        Ok(Self { map, path })
-    }
-
-    pub fn get(&self, key: &IStateKey) -> Option<InfoState<MAX_ACTIONS>> {
-        self.map.get(key).copied()
-    }
-
-    pub fn put(&mut self, key: &IStateKey, value: &InfoState<MAX_ACTIONS>) {
-        self.map.insert(*key, *value);
-    }
-
-    pub fn len(&self) -> usize {
-        self.map.len()
-    }
-
-    /// Serialise to disk if a path was provided. Writes via a `.tmp` file
-    /// + rename so a half-written checkpoint can't replace a good one.
-    pub fn commit(&self) -> anyhow::Result<()> {
-        let Some(path) = self.path.as_ref() else {
-            return Ok(());
-        };
-        if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() {
-                std::fs::create_dir_all(parent)
-                    .with_context(|| format!("creating dir {}", parent.display()))?;
-            }
-        }
-        let bytes = rmp_serde::to_vec(&self.map)
-            .context("encoding HashBacking map")?;
-        let tmp = path.with_extension("tmp");
-        std::fs::write(&tmp, &bytes)
-            .with_context(|| format!("writing {}", tmp.display()))?;
-        std::fs::rename(&tmp, path)
-            .with_context(|| format!("renaming {} -> {}", tmp.display(), path.display()))?;
-        Ok(())
-    }
 }
 
 /// Mmap + PHF backing for `NodeStore`.
@@ -126,7 +60,7 @@ impl<const MAX_ACTIONS: usize> MmapBacking<MAX_ACTIONS> {
         self.get_index(index)
     }
 
-    fn get_index(&self, index: usize) -> Option<InfoState<MAX_ACTIONS>> {
+    pub(crate) fn get_index(&self, index: usize) -> Option<InfoState<MAX_ACTIONS>> {
         let start = index * Self::BUCKET_SIZE;
 
         if start + Self::BUCKET_SIZE > self.mmap.len() {
@@ -209,28 +143,24 @@ impl<const MAX_ACTIONS: usize> NodeStore<MAX_ACTIONS> {
     pub fn get(&self, key: &IStateKey) -> Option<InfoState<MAX_ACTIONS>> {
         match self {
             NodeStore::Mmap(m) => m.get(key),
-            NodeStore::Hash(h) => h.get(key),
         }
     }
 
     pub fn put(&mut self, key: &IStateKey, value: &InfoState<MAX_ACTIONS>) {
         match self {
             NodeStore::Mmap(m) => m.put(key, value),
-            NodeStore::Hash(h) => h.put(key, value),
         }
     }
 
     pub fn commit(&mut self) -> anyhow::Result<()> {
         match self {
             NodeStore::Mmap(m) => m.commit(),
-            NodeStore::Hash(h) => h.commit(),
         }
     }
 
     pub fn len(&self) -> usize {
         match self {
             NodeStore::Mmap(m) => m.len(),
-            NodeStore::Hash(h) => h.len(),
         }
     }
 
@@ -239,12 +169,18 @@ impl<const MAX_ACTIONS: usize> NodeStore<MAX_ACTIONS> {
         self.len() == 0
     }
 
-    /// Total addressable index size. For HashMap-backed stores there is no
-    /// pre-allocated index, so this reports the same value as `len()`.
     pub fn indexer_len(&self) -> usize {
         match self {
             NodeStore::Mmap(m) => m.indexer_len(),
-            NodeStore::Hash(h) => h.len(),
+        }
+    }
+
+    /// Direct slot read by PHF index. Used by sampled convergence metrics
+    /// that need to revisit the same slot across checkpoints without going
+    /// through an IStateKey. Returns `None` for empty slots.
+    pub fn get_at_index(&self, idx: usize) -> Option<InfoState<MAX_ACTIONS>> {
+        match self {
+            NodeStore::Mmap(m) => m.get_index(idx),
         }
     }
 }
@@ -327,40 +263,15 @@ impl NodeStore<BLUFF_MAX_ACTIONS> {
 }
 
 impl NodeStore<OH_MAX_ACTIONS> {
-    /// Oh Hell with a HashMap-backed store. Full-game istate space is
-    /// too large to enumerate up front for a perfect-hash index, but
-    /// MCCFR only touches a small subset of istates per training run,
-    /// so lazy population works well.
-    ///
-    /// When `path` is `Some` the constructor hydrates from disk if the
-    /// file exists, and a later `commit()` will write the in-memory
-    /// map back (MessagePack via `rmp-serde`). When `path` is `None`
-    /// the store is purely in-memory.
-    pub fn new_oh_hell(path: Option<&Path>, _n_tricks: usize) -> anyhow::Result<Self> {
-        let owned = path.map(|p| p.to_path_buf());
-        Ok(NodeStore::Hash(HashBacking::new(owned)?))
-    }
-
-    /// Oh Hell **bidding-only** with a disk-backed mmap + PHF store.
-    /// The PHF is built over the canonical bidding-phase iso classes
-    /// (the same set enumerated by
-    /// [`games::gamestates::oh_hell::iterator::OhHellIsomorphicIStateIterator::bidding_only`]
-    /// — Waugh-cross-checked to be exact), then each iso class maps
-    /// to a fixed slot in the mmap, eliminating HashMap overhead per
-    /// entry.
+    /// Oh Hell disk-backed mmap + PHF store. The PHF is built over the
+    /// canonical bidding + play-phase iso classes enumerated by
+    /// [`games::gamestates::oh_hell::iterator::OhHellIsomorphicIStateIterator::full_game_via_waugh`]
+    /// for `(num_players, n_tricks, max_cards_played)`.
     ///
     /// `path` is the directory containing the indexer (`indexer`),
     /// the mmap file (`mmap`), and the populated-count file
     /// (`meta`). Pass `None` for an anonymous in-memory mmap (still
     /// PHF-indexed, but not persisted).
-    /// OH **full-game** disk-backed mmap + PHF variant. The PHF is
-    /// built over the canonical bidding + play-phase iso classes
-    /// enumerated by
-    /// [`games::gamestates::oh_hell::iterator::OhHellIsomorphicIStateIterator::full_game_via_waugh`]
-    /// for `(num_players, n_tricks, max_cards_played)`.
-    ///
-    /// Same on-disk layout as the bidding-only variant: `indexer`,
-    /// `mmap`, `meta`.
     pub fn new_oh_hell_full_game_mmap(
         path: Option<&Path>,
         num_players: usize,

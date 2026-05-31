@@ -1,13 +1,15 @@
-//! Inspect a trained 1-trick Oh Hell CFR policy and summarise the
+//! Inspect a trained Oh Hell CFR policy and summarise the
 //! bidding/play strategy by perspective.
 //!
-//! Loads weights from `CFR_LOAD_PATH` (the file produced by the
-//! `oh_hell_cfr_train` example when `CFR_SAVE_PATH` is set), constructs
-//! representative game states by replaying chance + bid actions, and
-//! queries `CFRES::action_probabilities` to read the trained policy.
+//! Loads weights from `CFR_LOAD_DIR` (the mmap directory produced by
+//! the `oh_hell_cfr_train` example when `CFR_MMAP_DIR` is set),
+//! constructs representative game states by replaying chance + bid
+//! actions, and queries `CFRES::action_probabilities` to read the
+//! trained policy.
 //!
-//! Defaults to the 2-player 1-trick saved weights but accepts
-//! `CFR_PLAYERS={2,3}` to switch.
+//! Defaults to the 2-player 1-trick saved weights at
+//! `$HOME/cache/oh_cfr/{np}p_{nt}t_max0/` but accepts
+//! `CFR_PLAYERS={2,3}` / `CFR_TRICKS=N` / `CFR_MAX_CARDS=N` to switch.
 
 use std::path::PathBuf;
 
@@ -40,31 +42,39 @@ fn main() {
 
     let n_players: usize = parse_env("CFR_PLAYERS", 2);
     let n_tricks: usize = parse_env("CFR_TRICKS", 1);
-    let max_cards: usize = parse_env("CFR_MAX_CARDS", 100);
-    let load_path: PathBuf = std::env::var("CFR_LOAD_PATH")
+    let max_cards: usize = parse_env("CFR_MAX_CARDS", 0);
+    let load_dir: PathBuf = std::env::var("CFR_LOAD_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
-            PathBuf::from(format!("/tmp/oh_cfr_{}p_{}t.msgpack", n_players, n_tricks))
+            let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+            PathBuf::from(home).join(format!(
+                "cache/oh_cfr/{}p_{}t_max{}",
+                n_players, n_tricks, max_cards
+            ))
         });
 
-    if !load_path.exists() {
+    if !(load_dir.join("indexer").exists() && load_dir.join("mmap").exists()) {
         eprintln!(
-            "no checkpoint at {} — train first with CFR_PLAYERS={} CFR_TRICKS={} CFR_SAVE_PATH={}",
-            load_path.display(),
+            "no checkpoint at {} — train first with \
+             CFR_PLAYERS={} CFR_TRICKS={} CFR_MAX_CARDS={} CFR_MMAP_DIR={}",
+            load_dir.display(),
             n_players,
             n_tricks,
-            load_path.display()
+            max_cards,
+            load_dir.display()
         );
         std::process::exit(1);
     }
 
     println!(
-        "Loading {} weights for {} players × {} trick(s)…",
-        load_path.display(),
+        "Loading {} weights for {} players × {} trick(s) (max_cards_played={})…",
+        load_dir.display(),
         n_players,
-        n_tricks
+        n_tricks,
+        max_cards,
     );
-    let mut cfr: OhCfres = CFRES::new_oh_hell(n_players, n_tricks, max_cards, Some(load_path.as_path()));
+    let mut cfr: OhCfres =
+        CFRES::new_oh_hell(n_players, n_tricks, max_cards, Some(load_dir.as_path()));
     println!("info_states loaded: {}", cfr.num_info_states());
     println!();
 
