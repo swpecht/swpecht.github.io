@@ -321,15 +321,64 @@ type TranspositionKey = (u8, u64);
 #[derive(Clone)]
 struct AlphaBetaCache<G> {
     vec_pool: Pool<Vec<Action>>,
-    transposition_table: Arc<DashMap<TranspositionKey, AlphaBetaResult, FxBuildHasher>>,
+    transposition_table: TtImpl,
     optimizations: Optimizations<G>,
+}
+
+const DEFAULT_TT_CAP: usize = 1_000_000;
+
+/// Bounded transposition-table backing. CFR drives OHS for millions of
+/// iterations, so the table has to evict — letting it grow unbounded
+/// OOM-kills 3p × 3-trick training (~31 GB anon-rss).
+///
+/// Strategy: sharded DashMap with cap-and-clear. On `insert`, if
+/// `len() >= cap`, wipe the whole map and start over. Cap defaults to
+/// 1M entries; override via `OHS_TT_CAP`.
+///
+/// Why not LRU: benchmarked `Mutex<LruCache>` against this and it was
+/// 1.57× slower at the same cap on 3p × 3-trick × max=0 (200K iters:
+/// 103s vs 66s). The mutex serialises every TT op and erases the
+/// parallel CFR throughput. DashMap's lockless sharded reads/writes
+/// dominate the cost of occasional bulk clears.
+#[derive(Clone)]
+struct TtImpl {
+    map: Arc<DashMap<TranspositionKey, AlphaBetaResult, FxBuildHasher>>,
+    cap: usize,
+}
+
+impl TtImpl {
+    fn from_env() -> Self {
+        let cap = std::env::var("OHS_TT_CAP")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(DEFAULT_TT_CAP);
+        Self {
+            map: Arc::new(DashMap::with_hasher(FxBuildHasher)),
+            cap,
+        }
+    }
+
+    fn get(&self, k: TranspositionKey) -> Option<AlphaBetaResult> {
+        self.map.get(&k).as_deref().copied()
+    }
+
+    fn insert(&self, k: TranspositionKey, v: AlphaBetaResult) {
+        if self.map.len() >= self.cap {
+            self.map.clear();
+        }
+        self.map.insert(k, v);
+    }
+
+    fn clear(&self) {
+        self.map.clear();
+    }
 }
 
 impl<G> AlphaBetaCache<G> {
     fn new(optimizations: Optimizations<G>) -> Self {
         Self {
             vec_pool: Pool::new(|| Vec::with_capacity(5)),
-            transposition_table: Arc::new(DashMap::with_hasher(FxBuildHasher)),
+            transposition_table: TtImpl::from_env(),
             optimizations,
         }
     }
@@ -340,10 +389,7 @@ impl<G: GameState> AlphaBetaCache<G> {
     /// once per alpha_beta frame via `get_game_key` and passes it to both `get_by_key`
     /// and `insert_by_key`, avoiding the iso-deck + hash cost on the insert side.
     pub fn get_by_key(&self, k: u64, team_id: u8) -> Option<AlphaBetaResult> {
-        self.transposition_table
-            .get(&(team_id, k))
-            .as_deref()
-            .copied()
+        self.transposition_table.get((team_id, k))
     }
 
     /// Insert with a precomputed key. See `get_by_key`.
@@ -373,6 +419,35 @@ impl<G: GameState> AlphaBetaCache<G> {
 impl<G> AlphaBetaCache<G> {
     pub fn reset(&mut self) {
         self.transposition_table.clear();
+    }
+}
+
+#[cfg(test)]
+mod tt_tests {
+    use super::*;
+
+    fn dummy(i: u64) -> AlphaBetaResult {
+        AlphaBetaResult {
+            lower_bound: i as f64,
+            upper_bound: i as f64,
+            action: None,
+        }
+    }
+
+    #[test]
+    fn cap_clear_wraps_around() {
+        let tt = TtImpl {
+            map: Arc::new(DashMap::with_hasher(FxBuildHasher)),
+            cap: 4,
+        };
+        for i in 0..3 {
+            tt.insert((0, i), dummy(i));
+        }
+        assert!(tt.get((0, 1)).is_some());
+        tt.insert((0, 3), dummy(3));
+        tt.insert((0, 4), dummy(4)); // triggers clear before insert
+        assert!(tt.get((0, 0)).is_none());
+        assert!(tt.get((0, 4)).is_some());
     }
 }
 
