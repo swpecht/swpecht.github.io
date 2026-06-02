@@ -700,19 +700,41 @@ impl WaughEuchreIndexer {
     }
 
     pub fn index(&self, key: &IStateKey) -> u64 {
-        // PHASE 2a HALT — see the BLOCKING ISSUE comment in the
-        // `WaughEuchreIndexer` doc block. Naive Waugh `index_all` over
-        // (hand, face_up) collapses iso classes that the Euchre
-        // normalizer keeps distinct (Waugh's iso = full S₄ suit perm;
-        // Euchre's iso = the color-preserving Z₂×Z₂ subgroup). We need a
-        // color-split indexer to match, which is queued as Phase 2a-2.
-        let _ = key;
-        let _ = self.runtime();
-        panic!(
-            "WaughEuchreIndexer::index is not implementable with a single \
-             4-suit HandIndexer — see the BLOCKING ISSUE comment in \
-             crates/card_platypus/src/database/indexer.rs"
-        );
+        let rt = self.runtime();
+
+        // Phase 2: pre-trump (R1, R2) only. Post-trump phases are
+        // queued — see roadmap.
+        let bid_state = match parse_euchre_bid_state(key, 5) {
+            Some(s) => s,
+            None => panic!(
+                "WaughEuchreIndexer: istate has no recoverable bid state \
+                 (either malformed or Play phase, which Phase 2c doesn't yet handle)"
+            ),
+        };
+        match bid_state {
+            EuchreBidState::R1Pending { .. } | EuchreBidState::R2Pending { .. } => {}
+            EuchreBidState::Alone { .. } => panic!(
+                "WaughEuchreIndexer: Alone bid state queued for Phase 2b \
+                 (needs trump-pin preprocessor + L-Bauer remap)"
+            ),
+            EuchreBidState::Discard { .. } => panic!(
+                "WaughEuchreIndexer: Discard bid state queued for Phase 2b \
+                 (needs 6-card HandIndexer + trump-pin)"
+            ),
+        }
+
+        // Pre-trump: full S₄ suit perm iso. Shard by face_up *rank*; the
+        // face_up's suit varies across raw istates but Waugh collapses
+        // them naturally so we DON'T apply `euchre_sharder` (which would
+        // pre-canonicalize under the stricter Z₂×Z₂ subgroup and over-
+        // count). The raw istate goes straight into Waugh.
+        let face_up_rank = (key[5].0 % 8) as u64;
+        let shard = face_up_rank;
+        let waugh_idx = compute_euchre_waugh_idx_5_1(key, &rt.waugh);
+
+        let shard_offset = shard * rt.shard_size;
+        let bid_offset = rt.bid_state_offsets[bid_state.to_idx()];
+        shard_offset + bid_offset + waugh_idx
     }
 }
 
@@ -1076,17 +1098,16 @@ mod waugh_euchre_tests {
     }
 
     /// Walk every R1Pending / R2Pending istate the Euchre iterator
-    /// emits for the NS face_up shard and verify Waugh slots are
-    /// unique + in-range.
-    ///
-    /// **CURRENTLY IGNORED** — see the BLOCKING ISSUE comment on
-    /// `WaughEuchreIndexer`. A vanilla `HandIndexer::init(&[5, 1])`
-    /// over-collapses iso classes that the Euchre iterator distinguishes
-    /// (Waugh S₄ vs Euchre Z₂×Z₂). The test will be un-ignored once the
-    /// color-split indexer in Phase 2a-2 lands.
+    /// emits for the NS face_up shard and verify:
+    ///   * Every Waugh slot is in `[0, indexer.len())`.
+    ///   * Distinct iterator emissions can MERGE onto the same Waugh
+    ///     slot (Waugh's S₄ iso is coarser than the iterator's Z₂×Z₂);
+    ///     this is the intended behaviour for path 2.
+    ///   * At least some merging happens — otherwise we'd silently be
+    ///     getting bijection back and the iso refinement claim would be
+    ///     wrong.
     #[test]
-    #[ignore = "Phase 2a-2 (color-split indexer) not yet implemented"]
-    fn waugh_euchre_r1_r2_bijection_ns_shard() {
+    fn waugh_euchre_r1_r2_slots_in_range_with_merges() {
         use games::gamestates::euchre::{
             actions::EAction, iterator::EuchreIsomorphicIStateIterator,
         };
@@ -1096,15 +1117,8 @@ mod waugh_euchre_tests {
 
         let mut slots: std::collections::HashSet<u64> = std::collections::HashSet::new();
         let mut r1_r2_count = 0usize;
-        let mut skipped_other = 0usize;
 
         for istate in EuchreIsomorphicIStateIterator::with_face_up(0, &[EAction::NS]) {
-            // Phase 2a filter: only R1Pending / R2Pending get indexed.
-            // We can't call parse_euchre_bid_state directly on the raw
-            // emitted istate because the sharder hasn't been applied yet;
-            // however, parse looks only at the tail (post hand+face_up)
-            // and the sharder doesn't reorder the tail, so a tail-only
-            // parse on the raw istate is equivalent.
             let bid_state = parse_euchre_bid_state(&istate, 5);
             let in_phase = matches!(
                 bid_state,
@@ -1112,7 +1126,6 @@ mod waugh_euchre_tests {
                     | Some(EuchreBidState::R2Pending { .. })
             );
             if !in_phase {
-                skipped_other += 1;
                 continue;
             }
 
@@ -1122,26 +1135,152 @@ mod waugh_euchre_tests {
                 "slot {} >= total {} for istate {:?}",
                 slot, total, istate
             );
-            assert!(
-                slots.insert(slot),
-                "collision at slot {} for istate {:?}",
-                slot, istate
-            );
+            slots.insert(slot);
             r1_r2_count += 1;
         }
 
         assert!(r1_r2_count > 0, "iterator emitted zero R1/R2 istates");
-        assert_eq!(
-            slots.len(),
-            r1_r2_count,
-            "unique slot count != emitted count"
-        );
-        // Sanity: at least some non-R1/R2 emissions were filtered (Alone
-        // and Discard always exist for max_cards_played=0 since pickup
-        // paths are reachable).
+        // Merging is expected: distinct iterator emissions land on fewer
+        // unique Waugh slots than the iterator emitted.
         assert!(
-            skipped_other > 0,
-            "expected some non-R1/R2 emissions (Alone/Discard)"
+            slots.len() < r1_r2_count,
+            "expected merging (Waugh S₄ iso < iterator Z₂×Z₂); got \
+             unique slots={} == emissions={}",
+            slots.len(),
+            r1_r2_count
         );
+    }
+
+    /// Iso-on-raw under FULL S₄ suit permutations: random game states
+    /// at an R1/R2 decision point, with every suit perm applied,
+    /// should land on the same Waugh slot. This is the path-2
+    /// correctness invariant: any S₄-iso transformation of an istate
+    /// preserves the slot.
+    #[test]
+    fn waugh_euchre_r1_r2_iso_under_full_s4() {
+        use games::gamestates::euchre::{actions::EAction, EPhase, Euchre};
+        use games::GameState;
+        let _ = EAction::Pass; // touch import to silence unused
+
+        let indexer = WaughEuchreIndexer::new(0);
+
+        // 24 permutations of [0, 1, 2, 3] — full S₄ on suits.
+        fn perms() -> Vec<[u8; 4]> {
+            let mut out = Vec::with_capacity(24);
+            let suits = [0u8, 1, 2, 3];
+            // Heap's algorithm is fine, but for clarity just list all 24.
+            let base = suits;
+            for &a in &base {
+                for &b in &base {
+                    if b == a {
+                        continue;
+                    }
+                    for &c in &base {
+                        if c == a || c == b {
+                            continue;
+                        }
+                        for &d in &base {
+                            if d == a || d == b || d == c {
+                                continue;
+                            }
+                            out.push([a, b, c, d]);
+                        }
+                    }
+                }
+            }
+            assert_eq!(out.len(), 24);
+            out
+        }
+
+        fn perm_action(a: Action, perm: &[u8; 4]) -> Action {
+            // Card bit indices: suit * 8 + rank_in_suit ∈ [0, 6).
+            // Non-card bits (Pickup/Pass/etc.) stay put.
+            let bit = a.0;
+            if bit >= 32 {
+                return a;
+            }
+            let suit = bit / 8;
+            let rank = bit % 8;
+            if rank < 6 {
+                // Real card — remap suit.
+                Action((perm[suit as usize]) * 8 + rank)
+            } else {
+                // Suit-call bit (Spades/Clubs/Hearts/Diamonds at rank=6) —
+                // also remaps to the permuted suit. Pickup/Pass/etc. live
+                // at rank=7 across suits and shouldn't be permuted (they
+                // happen to be the SAME action regardless of suit).
+                if rank == 6 {
+                    Action((perm[suit as usize]) * 8 + rank)
+                } else {
+                    a
+                }
+            }
+        }
+
+        let all_perms = perms();
+        let mut rng: u64 = 0xA1B2C3D4;
+        let mut next = || {
+            rng ^= rng << 13;
+            rng ^= rng >> 7;
+            rng ^= rng << 17;
+            rng
+        };
+
+        for _ in 0..50 {
+            let seed = next() as usize;
+            // Build a random game and stop at an R1/R2 decision.
+            let mut gs = Euchre::new_state();
+            let mut acts = Vec::new();
+            let mut step = 0usize;
+            let mut reached_decision = false;
+            while !gs.is_terminal() {
+                gs.legal_actions(&mut acts);
+                let pick = (seed.wrapping_add(step.wrapping_mul(73))) % acts.len();
+                gs.apply_action(acts[pick]);
+                step += 1;
+                if !gs.is_chance_node() {
+                    // Stop at Pickup or ChooseTrump phase.
+                    let p = gs.phase();
+                    if p == EPhase::Pickup || p == EPhase::ChooseTrump {
+                        reached_decision = true;
+                        break;
+                    }
+                }
+            }
+            if !reached_decision {
+                continue;
+            }
+
+            let perspective = gs.cur_player();
+            let raw = gs.istate_key(perspective);
+            // Sanity: parse_euchre_bid_state should return R1/R2.
+            let bs = parse_euchre_bid_state(&raw, 5);
+            if !matches!(
+                bs,
+                Some(EuchreBidState::R1Pending { .. })
+                    | Some(EuchreBidState::R2Pending { .. })
+            ) {
+                continue;
+            }
+            let slot_raw = indexer.index(&raw);
+
+            for perm in &all_perms {
+                // Apply σ to every action in `raw` to build a permuted
+                // istate. The bid-state and shard should be invariant
+                // under σ (no card actions in the R1/R2 tail).
+                let mut permuted = IStateKey::default();
+                for a in raw.iter() {
+                    permuted.push(perm_action(*a, perm));
+                }
+                // Re-sort the hand block since suit perm shuffles ranks.
+                permuted.sort_range(0, 5.min(permuted.len()));
+                let slot_perm = indexer.index(&permuted);
+                assert_eq!(
+                    slot_raw, slot_perm,
+                    "iso violation: perm={:?} raw={:?} permuted={:?}",
+                    perm, raw, permuted
+                );
+            }
+        }
     }
 }
