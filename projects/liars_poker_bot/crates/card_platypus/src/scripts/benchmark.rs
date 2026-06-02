@@ -115,7 +115,7 @@ fn run_euchre_benchmark(args: BenchmarkArgs) {
     let mut a = CFRES::new_euchre(
         get_rng(),
         0,
-        Some(Path::new("/var/lib/card_platypus/infostate.baseline/")),
+        Some(Path::new("/home/steven/card_platypus/infostate.baseline/")),
     );
     let n = a.num_info_states();
     info!("loaded cfr baseline agent: {} istates", n);
@@ -125,7 +125,7 @@ fn run_euchre_benchmark(args: BenchmarkArgs) {
         get_rng(),
         1,
         Some(Path::new(
-            "/var/lib/card_platypus/infostate.one_card_played/",
+            "/home/steven/card_platypus/infostate.one_card_played/",
         )),
     );
     let n = a.num_info_states();
@@ -134,9 +134,24 @@ fn run_euchre_benchmark(args: BenchmarkArgs) {
 
     let mut a = CFRES::new_euchre(
         get_rng(),
+        2,
+        Some(Path::new(
+            "/home/steven/card_platypus/infostate.two_card_played/",
+        )),
+    );
+    let n = a.num_info_states();
+    if n > 0 {
+        info!("loaded cfr 2 card agent: {} istates", n);
+        agents.insert("cfr, 2 cards played".to_string(), &mut a);
+    } else {
+        warn!("failed to load istates for 2 card agent, skipping")
+    }
+
+    let mut a = CFRES::new_euchre(
+        get_rng(),
         3,
         Some(Path::new(
-            "/var/lib/card_platypus/infostate.three_card_played_f32/",
+            "/home/steven/card_platypus/infostate.three_card_played_f32/",
         )),
     );
     let n = a.num_info_states();
@@ -145,21 +160,6 @@ fn run_euchre_benchmark(args: BenchmarkArgs) {
         agents.insert("cfr, 3 cards played f32".to_string(), &mut a);
     } else {
         warn!("failed to load istates for 3 card agent, skipping")
-    }
-
-    let mut a = CFRES::new_euchre(
-        get_rng(),
-        1,
-        Some(Path::new(
-            "/var/lib/card_platypus/infostate.one_card_lossy/",
-        )),
-    );
-    let n = a.num_info_states();
-    if n > 0 {
-        info!("loaded cfr 1 card lossy agent: {} istates", n);
-        agents.insert("cfr, 1 cards lossy".to_string(), &mut a);
-    } else {
-        warn!("failed to load istates for 1 card lossy agent, skipping")
     }
 
     println!("Starting benchmark for agents: {:?}", agents.keys());
@@ -325,7 +325,7 @@ fn run_jack_face_up_benchmark(args: BenchmarkArgs) {
     let cfr = CFRES::new_euchre(
         get_rng(),
         0,
-        Some(&Path::new("/var/lib/card_platypus").join("infostate.baseline")),
+        Some(&Path::new("/home/steven/card_platypus").join("infostate.baseline")),
     );
     let loaded = cfr.num_info_states();
     println!("loaded {loaded} infostates");
