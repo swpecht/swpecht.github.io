@@ -5,7 +5,8 @@ use games::{
     gamestates::{
         bluff::Bluff,
         euchre::{
-            actions::EAction, isomorphic::normalize_euchre_istate,
+            actions::{Card as ECard, EAction, Suit as ESuit},
+            isomorphic::normalize_euchre_istate,
             iterator::EuchreIsomorphicIStateIterator,
         },
         kuhn_poker::KuhnPoker,
@@ -51,6 +52,7 @@ impl Sharder {
 pub enum Indexer {
     Phf(PhfIndexer),
     WaughOh(WaughOhIndexer),
+    WaughEuchre(WaughEuchreIndexer),
 }
 
 impl Indexer {
@@ -59,6 +61,7 @@ impl Indexer {
         match self {
             Indexer::Phf(p) => p.index(key),
             Indexer::WaughOh(w) => Some(w.index(key) as usize),
+            Indexer::WaughEuchre(w) => Some(w.index(key) as usize),
         }
     }
 
@@ -67,6 +70,7 @@ impl Indexer {
         match self {
             Indexer::Phf(p) => p.len(),
             Indexer::WaughOh(w) => w.len() as usize,
+            Indexer::WaughEuchre(w) => w.len() as usize,
         }
     }
 
@@ -157,6 +161,17 @@ impl Indexer {
         max_cards_played: usize,
     ) -> Self {
         Indexer::WaughOh(WaughOhIndexer::new(num_players, n_tricks, max_cards_played))
+    }
+
+    /// Build a Waugh-based direct indexer for Euchre.
+    ///
+    /// **Phase 1 scaffold** — see the roadmap in `database/indexer.rs`.
+    /// `index()` currently panics; do NOT use for training until Phase 2
+    /// (slot computation + L-Bauer + Discard + Play) is complete. The
+    /// constructor and bidding-state machinery are in place so the
+    /// migration tool and tests can be built alongside Phase 2.
+    pub fn euchre_waugh(max_cards_played: usize) -> Self {
+        Indexer::WaughEuchre(WaughEuchreIndexer::new(max_cards_played))
     }
 }
 
@@ -402,6 +417,351 @@ fn oh_disc_to_waugh(d: u8) -> u8 {
     (rank << 2) | suit
 }
 
+// =====================================================================
+// Waugh-based direct indexer for Euchre (work in progress)
+// =====================================================================
+//
+// Roadmap — what's done and what's not.
+//
+// DONE (Phase 1):
+//   * Bidding state machine (`EuchreBidState`) — finite enum over every
+//     point at which CFR can have a non-Play istate. Total ≤ 64 variants
+//     so the encoding can be a small integer table.
+//   * `parse_euchre_bid_state(&IStateKey, n_cards_per_hand)` — derive the
+//     bid state from an istate's tail. Independently testable; does NOT
+//     depend on L-Bauer or slot layout.
+//   * `WaughEuchreIndexer` struct + `Indexer::euchre_waugh` constructor,
+//     wired into the `Indexer` enum.
+//   * Slot layout sketch (per shard): bidding-state-major × waugh-hand-iso
+//     minor. Computed in `WaughEuchreRuntime::build`.
+//
+// TODO (Phase 2 — required for any training to be correct):
+//   * `index()` body that computes the slot from a parsed istate.
+//     Currently returns 0 with a panic — explicitly NOT a quiet stub so
+//     mis-wired training fails loudly.
+//   * L-Bauer preprocessor — map (cards, declared_trump) → (cards with
+//     off-color jack reassigned to trump's suit). Required for any
+//     post-trump-declaration bid state (Alone, Discard) and all Play
+//     istates.
+//   * Discard slot layout — dealer's istate after Pickup has 6 cards in
+//     hand (5 + picked-up face_up). Requires a second HandIndexer with
+//     round 0 = 6.
+//   * Play phase (depth d = 1..max_cards_played) — append play rounds
+//     to the HandIndexer config, encode plays in order, similar to OH.
+//
+// TODO (Phase 3 — migration):
+//   * `examples/migrate_euchre_phf_to_waugh.rs` — load legacy PHF +
+//     mmap, enumerate via the iterator, copy each populated InfoState
+//     from old slot to new Waugh slot.
+
+/// Every distinct "what's been decided in bidding" state CFR can encounter.
+///
+/// Phases the istate can be at when no Play action has happened:
+///   * Round 1 (Pickup vs Pass), pre-Pickup: 0..=3 prior passes.
+///   * Round 2 (ChooseTrump vs Pass), pre-call: 4 R1 passes + 0..=3 R2
+///     passes.
+///   * Discard (dealer only): trump was declared via Pickup; dealer is
+///     about to drop one of their 6 cards. Distinguished by which R1
+///     slot Pickup'd — 4 sub-variants — because that determines who
+///     leads first trick.
+///   * Alone (caller): trump was declared (via Pickup or R2 call) and
+///     the caller has yet to decide alone-or-not. Distinguished by the
+///     calling slot × calling phase.
+///
+/// The encoding stores the *bid prefix* but NOT the perspective; the
+/// perspective is implicit in the istate's hand contents and is folded
+/// into the hand-iso Waugh index, not the bid state.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum EuchreBidState {
+    /// Round 1 pickup decision pending. `passes_so_far` ∈ {0,1,2,3}.
+    R1Pending { passes_so_far: u8 },
+    /// Round 2 trump-choice pending after 4 R1 passes. `r2_passes` ∈ {0,1,2,3}.
+    R2Pending { r2_passes: u8 },
+    /// Dealer in Discard phase after `r1_pickup_seat` ∈ {0,1,2,3} called Pickup.
+    Discard { r1_pickup_seat: u8 },
+    /// Caller in Alone phase. `caller_seat` ∈ {0,1,2,3}.
+    /// `via_pickup` = true if Pickup path (dealer discarded), else R2 path
+    /// (some `chosen_trump` was declared — we only need the seat for the
+    /// slot because the trump suit is derivable from the face-up sharding +
+    /// the istate's R2 call action).
+    Alone { caller_seat: u8, via_pickup: bool },
+}
+
+impl EuchreBidState {
+    /// Total number of distinct bid states — used to size the per-shard
+    /// slot allocation.
+    pub const COUNT: usize =
+        4    // R1Pending: 4
+        + 4  // R2Pending: 4
+        + 4  // Discard: 4
+        + 8; // Alone: 4 seats × 2 paths
+
+    /// Stable index into `[0, COUNT)`.
+    pub fn to_idx(self) -> usize {
+        match self {
+            EuchreBidState::R1Pending { passes_so_far } => passes_so_far as usize,
+            EuchreBidState::R2Pending { r2_passes } => 4 + r2_passes as usize,
+            EuchreBidState::Discard { r1_pickup_seat } => 8 + r1_pickup_seat as usize,
+            EuchreBidState::Alone { caller_seat, via_pickup } => {
+                12 + (caller_seat as usize) * 2 + via_pickup as usize
+            }
+        }
+    }
+}
+
+/// Parse the istate's tail to recover the bidding state. Returns `None` if
+/// the istate is in the Play phase (which this Phase 1 scaffold does NOT
+/// yet handle — see roadmap above).
+///
+/// `n_hand_cards` is the size of the hand block at the start of the istate
+/// (5 for standard Euchre; the constant is passed in to keep the parser
+/// independent of game-specific globals).
+pub fn parse_euchre_bid_state(key: &IStateKey, n_hand_cards: usize) -> Option<EuchreBidState> {
+    // Tail layout after [hand (n_hand_cards), face_up (1)]:
+    //   bidding actions: Pass / Pickup / Clubs / Spades / Hearts / Diamonds
+    //   Alone (or Pass meaning NotAlone) once trump declared
+    //   DiscardMarker pseudo-action (dealer view in Discard phase) or the
+    //   actual discarded card (post-Discard view, currently unused by CFR)
+    //
+    // We walk the tail and track which sub-phase we're in.
+    let tail_start = n_hand_cards + 1;
+    let mut r1_passes = 0u8;
+    let mut r1_pickup_at: Option<u8> = None;
+    let mut saw_discard_marker = false;
+    let mut r2_passes = 0u8;
+    let mut r2_call_at: Option<u8> = None;
+    let mut seen_alone_decision = false;
+    let mut play_seen = false;
+
+    for i in tail_start..key.len() {
+        let ea = EAction::from(key[i]);
+        match ea {
+            EAction::Pass => {
+                if r1_pickup_at.is_some() || r2_call_at.is_some() {
+                    // A Pass *after* trump declaration is the "NotAlone" choice.
+                    seen_alone_decision = true;
+                } else if r1_passes < 4 && r2_call_at.is_none() && r2_passes == 0 {
+                    // Still in R1.
+                    r1_passes += 1;
+                    if r1_passes > 4 {
+                        // shouldn't happen — defensive
+                        return None;
+                    }
+                } else {
+                    r2_passes += 1;
+                }
+            }
+            EAction::Pickup => {
+                r1_pickup_at = Some(r1_passes);
+            }
+            EAction::Clubs | EAction::Spades | EAction::Hearts | EAction::Diamonds => {
+                r2_call_at = Some(r2_passes);
+            }
+            EAction::Alone => {
+                seen_alone_decision = true;
+            }
+            EAction::DiscardMarker => {
+                saw_discard_marker = true;
+            }
+            _ if (ea as u8) < (EAction::DiscardMarker as u8) => {
+                // Card action — either a discard (dealer view, post-DiscardMarker)
+                // or a play. Either way we're past the bid state.
+                if saw_discard_marker {
+                    // Discard happened: now we'd be in Alone or Play. Treat as
+                    // post-discard for state purposes.
+                    seen_alone_decision = saw_discard_marker; // dealer's Alone view
+                } else {
+                    play_seen = true;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if play_seen {
+        return None; // play phase — not handled in Phase 1
+    }
+
+    // Case analysis on what we observed.
+    if r1_pickup_at.is_none() && r2_call_at.is_none() {
+        // R1 still pending (no trump declared yet).
+        if r1_passes < 4 {
+            return Some(EuchreBidState::R1Pending { passes_so_far: r1_passes });
+        }
+        // 4 R1 passes done, R2 pending.
+        if r2_passes < 4 {
+            return Some(EuchreBidState::R2Pending { r2_passes });
+        }
+        return None; // all 8 pass — game void, no istate emitted by iterator
+    }
+
+    if let Some(seat) = r1_pickup_at {
+        // Pickup path. Discard pending or Alone pending.
+        if saw_discard_marker && !seen_alone_decision {
+            return Some(EuchreBidState::Discard { r1_pickup_seat: seat });
+        }
+        // Either non-dealer view (no DiscardMarker, no Alone yet) or dealer
+        // view past Discard (saw_discard_marker, no Alone yet either).
+        // Both correspond to the Alone-pending state with caller = pickup_seat.
+        return Some(EuchreBidState::Alone {
+            caller_seat: seat,
+            via_pickup: true,
+        });
+    }
+
+    if let Some(r2_seat) = r2_call_at {
+        return Some(EuchreBidState::Alone {
+            caller_seat: r2_seat,
+            via_pickup: false,
+        });
+    }
+
+    None
+}
+
+/// Direct istate→slot indexer for Euchre using Waugh-2013 multi-round
+/// hand isomorphism. **Work in progress — see the roadmap comment above
+/// for what's implemented and what isn't.**
+///
+/// Slot layout per face-up shard (planned):
+///   * For each `bid_state ∈ EuchreBidState`, a contiguous block of size
+///     `waugh.size(1)` (post-discard / play rounds add `waugh.size(2+d)`
+///     blocks per depth).
+///   * Shards are stacked: slot = shard_offset + intra_shard_slot.
+///
+/// The sharding mirrors `Indexer::euchre`: 6 shards, one per face-up
+/// rank ∈ {NS, TS, JS, QS, KS, AS}. The `euchre_sharder` function is
+/// reused unchanged so the L-Bauer-relative normalization the iterator
+/// performs is consistent across PHF and Waugh modes.
+#[derive(Serialize, Deserialize)]
+pub struct WaughEuchreIndexer {
+    max_cards_played: usize,
+    #[serde(skip)]
+    runtime: OnceLock<WaughEuchreRuntime>,
+}
+
+#[allow(dead_code)] // Phase 1 scaffolding — fields used by Phase 2 index().
+struct WaughEuchreRuntime {
+    waugh: HandIndexer,
+    /// `waugh_size[r] = waugh.size(r)` cached.
+    waugh_size: Vec<u64>,
+    /// Per-bid-state offset within a shard.
+    bid_state_offsets: [u64; EuchreBidState::COUNT],
+    /// Total slots within one shard.
+    shard_size: u64,
+    /// 6 shards × `shard_size` (matches `Indexer::euchre`'s sharding).
+    total: u64,
+}
+
+impl WaughEuchreIndexer {
+    pub fn new(max_cards_played: usize) -> Self {
+        let s = Self {
+            max_cards_played,
+            runtime: OnceLock::new(),
+        };
+        s.runtime(); // eagerly build
+        s
+    }
+
+    fn runtime(&self) -> &WaughEuchreRuntime {
+        self.runtime
+            .get_or_init(|| WaughEuchreRuntime::build(self.max_cards_played))
+    }
+
+    pub fn len(&self) -> u64 {
+        self.runtime().total
+    }
+
+    pub fn index(&self, key: &IStateKey) -> u64 {
+        // Phase 1 stub: panics loudly so any accidental training pre-Phase-2
+        // halts immediately. Switch to a real computation here once L-Bauer
+        // preprocessing + per-bid-state Waugh-card-sequence assembly is in
+        // place.
+        let _ = key;
+        let _ = self.runtime();
+        panic!(
+            "WaughEuchreIndexer::index is not yet implemented (Phase 1 scaffold). \
+             See the roadmap in crates/card_platypus/src/database/indexer.rs."
+        );
+    }
+}
+
+impl WaughEuchreRuntime {
+    fn build(max_cards_played: usize) -> Self {
+        let n_hand = 5u8;
+        let mut rounds = vec![n_hand, 1];
+        for _ in 0..max_cards_played {
+            rounds.push(1);
+        }
+        let waugh = HandIndexer::init(&rounds).expect("Waugh indexer init for Euchre");
+        let n_rounds = 2 + max_cards_played;
+        let waugh_size: Vec<u64> = (0..n_rounds).map(|r| waugh.size(r)).collect();
+
+        // Per-bid-state allocation: each bid state gets `waugh.size(1)`
+        // slots within a shard. Discard's true slot count is larger (the
+        // dealer's 6-card hand has a richer iso class space) — Phase 2
+        // will allocate `waugh6.size(0)` for those instead. For now we
+        // over-provision conservatively.
+        let per_state = waugh_size[1];
+        let mut bid_state_offsets = [0u64; EuchreBidState::COUNT];
+        let mut running = 0u64;
+        for slot in bid_state_offsets.iter_mut() {
+            *slot = running;
+            running += per_state;
+        }
+        let shard_size = running;
+        let total = 6 * shard_size;
+
+        Self {
+            waugh,
+            waugh_size,
+            bid_state_offsets,
+            shard_size,
+            total,
+        }
+    }
+}
+
+/// Map the off-color jack to the trump suit when `trump` is declared.
+///
+/// In Euchre the J of the same color as the trump suit (the "L-Bauer") is
+/// treated as a trump card. For the Waugh canonicalisation to capture the
+/// L-Bauer's true-trump status, the card's suit label must be reassigned
+/// from its native suit to the trump suit before being fed to
+/// `HandIndexer`. This is a card-level rewrite: rank stays the same,
+/// `suit` becomes the trump's suit.
+///
+/// Returns the input cards with L-Bauer remapped (or unchanged if no trump
+/// is declared yet).
+#[allow(dead_code)] // wired up in Phase 2
+pub fn apply_l_bauer(cards: &[ECard], trump: Option<ESuit>) -> Vec<ECard> {
+    let Some(trump) = trump else {
+        return cards.to_vec();
+    };
+    let same_color_jack = match trump {
+        ESuit::Spades => Some(ECard::JC),
+        ESuit::Clubs => Some(ECard::JS),
+        ESuit::Hearts => Some(ECard::JD),
+        ESuit::Diamonds => Some(ECard::JH),
+    };
+    let trump_jack = match trump {
+        ESuit::Spades => ECard::JS,
+        ESuit::Clubs => ECard::JC,
+        ESuit::Hearts => ECard::JH,
+        ESuit::Diamonds => ECard::JD,
+    };
+    cards
+        .iter()
+        .map(|&c| {
+            if Some(c) == same_color_jack {
+                trump_jack
+            } else {
+                c
+            }
+        })
+        .collect()
+}
+
 fn euchre_sharder(istate: &IStateKey) -> Option<(usize, IStateKey)> {
     let mut normed = normalize_euchre_istate(istate);
     let face_up = *normed.get(5)?;
@@ -562,5 +922,72 @@ mod waugh_oh_tests {
             let back = waugh_card_to_oh(w);
             assert_eq!(back, *c);
         }
+    }
+}
+
+#[cfg(test)]
+mod waugh_euchre_tests {
+    use super::*;
+    use games::gamestates::euchre::actions::{Card as ECard, Suit as ESuit};
+
+    /// `EuchreBidState::to_idx` is bijective on [0, COUNT). All 16 distinct
+    /// variants land at distinct indices in [0, 20).
+    #[test]
+    fn euchre_bid_state_indices_unique() {
+        let mut seen = std::collections::HashSet::new();
+        let states: Vec<EuchreBidState> = (0..4u8)
+            .map(|p| EuchreBidState::R1Pending { passes_so_far: p })
+            .chain((0..4u8).map(|r| EuchreBidState::R2Pending { r2_passes: r }))
+            .chain((0..4u8).map(|s| EuchreBidState::Discard { r1_pickup_seat: s }))
+            .chain((0..4u8).flat_map(|s| {
+                [true, false]
+                    .into_iter()
+                    .map(move |v| EuchreBidState::Alone { caller_seat: s, via_pickup: v })
+            }))
+            .collect();
+        assert_eq!(states.len(), EuchreBidState::COUNT);
+        for s in &states {
+            let idx = s.to_idx();
+            assert!(idx < EuchreBidState::COUNT, "idx {} out of range", idx);
+            assert!(seen.insert(idx), "collision at idx {}: {:?}", idx, s);
+        }
+        assert_eq!(seen.len(), EuchreBidState::COUNT);
+    }
+
+    /// L-Bauer preprocessor: with spades trump, the JC (clubs jack, the
+    /// off-color jack) gets remapped to JS. Other cards untouched. With
+    /// no trump declared, all cards untouched.
+    #[test]
+    fn l_bauer_remaps_off_color_jack() {
+        // Spades trump → JC becomes JS.
+        let hand = [ECard::JC, ECard::AH, ECard::KS, ECard::TD, ECard::AS];
+        let out = apply_l_bauer(&hand, Some(ESuit::Spades));
+        assert_eq!(out, vec![ECard::JS, ECard::AH, ECard::KS, ECard::TD, ECard::AS]);
+
+        // Diamonds trump → JH becomes JD.
+        let hand = [ECard::JH, ECard::QH];
+        let out = apply_l_bauer(&hand, Some(ESuit::Diamonds));
+        assert_eq!(out, vec![ECard::JD, ECard::QH]);
+
+        // No trump → no remap.
+        let hand = [ECard::JC, ECard::JS, ECard::JH, ECard::JD];
+        let out = apply_l_bauer(&hand, None);
+        assert_eq!(out, hand.to_vec());
+
+        // Trump-suit jack is unchanged (no off-color match).
+        let hand = [ECard::JS]; // already trump's jack
+        let out = apply_l_bauer(&hand, Some(ESuit::Spades));
+        assert_eq!(out, vec![ECard::JS]);
+    }
+
+    /// The constructor builds a non-empty runtime and reports a positive
+    /// slot count. `index()` is intentionally not exercised here (panics
+    /// per the Phase 1 scaffold).
+    #[test]
+    fn waugh_euchre_runtime_builds() {
+        let idx = WaughEuchreIndexer::new(0);
+        assert!(idx.len() > 0, "Phase 1 scaffold should size to non-zero");
+        let idx = WaughEuchreIndexer::new(1);
+        assert!(idx.len() > 0);
     }
 }
