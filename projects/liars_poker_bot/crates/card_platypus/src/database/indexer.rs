@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use boomphf::Mphf;
 use games::{
     gamestates::{
@@ -7,8 +9,9 @@ use games::{
             iterator::EuchreIsomorphicIStateIterator,
         },
         kuhn_poker::KuhnPoker,
-        oh_hell::iterator::OhHellIsomorphicIStateIterator,
+        oh_hell::actions::{OHCard, OH_DECK_SIZE},
     },
+    iso::hand_indexer::{HandIndexer, IndexerState},
     istate::IStateKey,
     iterator::IStateIterator,
     Action,
@@ -35,28 +38,36 @@ impl Sharder {
     }
 }
 
+/// Two backends:
+///   * `Phf` — boomphf over an enumerated iso-class set. Used for
+///     Kuhn Poker, Bluff(1,1), Euchre. Requires building the PHF up
+///     front, which dominates startup time for large games.
+///   * `WaughOh` — direct Waugh-2013 multi-round hand isomorphism for
+///     Oh Hell. Closed-form O(1) slot lookup; no enumeration, no
+///     PHF, no on-disk indexer state to serialize. Supports any
+///     `(num_players, n_tricks, max_cards_played)` including the
+///     `3p × 3-trick × max=2` config that the iterator can't reach.
 #[derive(Serialize, Deserialize)]
-pub struct Indexer {
-    phf: Mphf<IStateKey>,
-    shard_len: usize,
-    num_shards: usize,
-    /// Returns the normalized istatekey and the associated shard
-    /// Shards can be used to keep similar istates near each other in the database
-    sharder: Sharder,
+pub enum Indexer {
+    Phf(PhfIndexer),
+    WaughOh(WaughOhIndexer),
 }
 
 impl Indexer {
     /// May return None if the key isn't in the original function, but this isn't guaranteed
     pub fn index(&self, key: &IStateKey) -> Option<usize> {
-        let (shard, normed) = self.sharder.shard(key)?;
-        self.phf
-            .try_hash(&normed)
-            .map(|x| x as usize + (shard * self.shard_len))
+        match self {
+            Indexer::Phf(p) => p.index(key),
+            Indexer::WaughOh(w) => Some(w.index(key) as usize),
+        }
     }
 
     /// Returns the total length of the indexer
     pub fn len(&self) -> usize {
-        self.shard_len * self.num_shards
+        match self {
+            Indexer::Phf(p) => p.len(),
+            Indexer::WaughOh(w) => w.len() as usize,
+        }
     }
 
     #[must_use]
@@ -75,63 +86,291 @@ impl Indexer {
         let istates = MMapVec::from_iter(istate_iter);
         let phf = Mphf::new(GAMMA, &istates);
 
-        Self {
+        Indexer::Phf(PhfIndexer {
             phf,
             shard_len: istates.len(),
             num_shards: 6, // one for each possible face up card
             sharder: Sharder::Euchre,
-        }
+        })
     }
 
     pub fn kuhn_poker() -> Self {
         let istate_iter = IStateIterator::new(KuhnPoker::new_state());
         let istates = istate_iter.collect_vec();
         let phf = Mphf::new(GAMMA, &istates);
-        Self {
+        Indexer::Phf(PhfIndexer {
             phf,
             shard_len: istates.len(),
             num_shards: 1,
             sharder: Sharder::NoOp,
-        }
+        })
     }
 
     pub fn bluff_11() -> Self {
         let istate_iter = IStateIterator::new(Bluff::new_state(1, 1));
         let istates = istate_iter.collect_vec();
         let phf = Mphf::new(GAMMA, &istates);
-        Self {
+        Indexer::Phf(PhfIndexer {
             phf,
             shard_len: istates.len(),
             num_shards: 1,
             sharder: Sharder::NoOp,
-        }
+        })
     }
 
-    /// Build a PHF over OH iso classes through the play-phase depth
-    /// `max_cards_played`. Passing `max_cards_played = 0` gives the
-    /// bidding-only PHF (the walker returns at the start of play
-    /// before emitting). Same construction code path for both, which
-    /// is the simplification the bidding-only-vs-full-game split used
-    /// to obscure.
+    /// Build a Waugh-based direct indexer for an Oh Hell configuration.
+    /// O(1) per slot lookup; no enumeration or PHF construction.
+    /// Same slot space as the iterator-built PHF (verified by
+    /// `examples/waugh_oh_indexer_poc.rs`).
     pub fn oh_hell_full_game(
         num_players: usize,
         n_tricks: usize,
         max_cards_played: usize,
     ) -> Self {
-        let istate_iter = OhHellIsomorphicIStateIterator::full_game_via_waugh(
+        Indexer::WaughOh(WaughOhIndexer::new(num_players, n_tricks, max_cards_played))
+    }
+}
+
+/// PHF-backed indexer for games small enough to pre-enumerate.
+#[derive(Serialize, Deserialize)]
+pub struct PhfIndexer {
+    phf: Mphf<IStateKey>,
+    shard_len: usize,
+    num_shards: usize,
+    /// Returns the normalized istatekey and the associated shard.
+    /// Shards keep similar istates near each other in the database.
+    sharder: Sharder,
+}
+
+impl PhfIndexer {
+    pub fn index(&self, key: &IStateKey) -> Option<usize> {
+        let (shard, normed) = self.sharder.shard(key)?;
+        self.phf
+            .try_hash(&normed)
+            .map(|x| x as usize + (shard * self.shard_len))
+    }
+
+    pub fn len(&self) -> usize {
+        self.shard_len * self.num_shards
+    }
+}
+
+// =====================================================================
+// Waugh-based direct indexer for Oh Hell
+// =====================================================================
+
+/// Direct istate→slot indexer for Oh Hell using Waugh-2013 multi-round
+/// hand isomorphism. Slot layout:
+///   * `[0 .. bidding_size)` — bidding istates. Sub-layout by
+///     perspective: perspective `p`'s slice is at
+///     `bidding_offsets[p] .. bidding_offsets[p+1]` and contains
+///     `(n_tricks+1)^p × waugh_size_1` slots
+///     (one per prior-bid sequence × canonical (hand, face_up)).
+///   * `[bidding_size .. total)` — play istates. Sub-layout by depth
+///     `d ∈ [0, max_cards_played)`: `bid_full × waugh.size(1+d)`
+///     slots per depth.
+///
+/// The HandIndexer (and the per-round-size cache) is rebuilt lazily on
+/// first use after deserialisation; only `(num_players, n_tricks,
+/// max_cards_played)` is on disk.
+#[derive(Serialize, Deserialize)]
+pub struct WaughOhIndexer {
+    num_players: usize,
+    n_tricks: usize,
+    max_cards: usize,
+    #[serde(skip)]
+    runtime: OnceLock<WaughOhRuntime>,
+}
+
+struct WaughOhRuntime {
+    bid_base: u64,
+    bid_full: u64,
+    waugh: HandIndexer,
+    waugh_size: Vec<u64>,       // waugh_size[r] = waugh.size(r), r ∈ [0, max_cards+2)
+    bidding_offsets: Vec<u64>,  // [num_players + 1]
+    bidding_size: u64,
+    depth_offsets: Vec<u64>,    // [max_cards + 1]
+    total: u64,
+}
+
+impl WaughOhIndexer {
+    pub fn new(num_players: usize, n_tricks: usize, max_cards: usize) -> Self {
+        let s = Self {
             num_players,
             n_tricks,
-            max_cards_played,
-        );
-        let istates = MMapVec::from_iter(istate_iter);
-        let phf = Mphf::new(GAMMA, &istates);
-        Self {
-            phf,
-            shard_len: istates.len(),
-            num_shards: 1,
-            sharder: Sharder::NoOp,
+            max_cards,
+            runtime: OnceLock::new(),
+        };
+        s.runtime(); // eagerly build
+        s
+    }
+
+    fn runtime(&self) -> &WaughOhRuntime {
+        self.runtime
+            .get_or_init(|| WaughOhRuntime::build(self.num_players, self.n_tricks, self.max_cards))
+    }
+
+    pub fn len(&self) -> u64 {
+        self.runtime().total
+    }
+
+    pub fn index(&self, key: &IStateKey) -> u64 {
+        let rt = self.runtime();
+        let n_tricks = self.n_tricks;
+        // Walk the istate tail to split bids from plays. Layout:
+        //   [0 .. n_tricks)          hand cards
+        //   [n_tricks]               face_up
+        //   [n_tricks + 1 ..]        bids (discriminant ≥ OH_DECK_SIZE)
+        //                            then plays (discriminant < OH_DECK_SIZE)
+        let mut num_bids = 0u8;
+        let mut num_plays = 0usize;
+        for i in (n_tricks + 1)..key.len() {
+            let d = key[i].0;
+            if d >= OH_DECK_SIZE as u8 {
+                num_bids += 1;
+            } else {
+                num_plays += 1;
+            }
+        }
+
+        if num_plays == 0 && (num_bids as usize) < self.num_players {
+            // Bidding istate. perspective = number of prior bids seen.
+            let perspective = num_bids as usize;
+            let bid_idx = encode_bids_from_istate(key, n_tricks, perspective, rt.bid_base);
+            let waugh_idx = compute_waugh_idx(key, n_tricks, 0, &rt.waugh);
+            rt.bidding_offsets[perspective] + bid_idx * rt.waugh_size[1] + waugh_idx
+        } else {
+            // Play istate at depth = num_plays.
+            let depth = num_plays;
+            debug_assert!(
+                depth < self.max_cards,
+                "play istate at depth {} >= max_cards {} (out of CFR scope)",
+                depth,
+                self.max_cards,
+            );
+            let bid_idx = encode_bids_from_istate(key, n_tricks, self.num_players, rt.bid_base);
+            let waugh_idx = compute_waugh_idx(key, n_tricks, depth, &rt.waugh);
+            rt.bidding_size
+                + rt.depth_offsets[depth]
+                + bid_idx * rt.waugh_size[1 + depth]
+                + waugh_idx
         }
     }
+}
+
+impl WaughOhRuntime {
+    fn build(num_players: usize, n_tricks: usize, max_cards: usize) -> Self {
+        let bid_base = (n_tricks + 1) as u64;
+        let bid_full = bid_base.pow(num_players as u32);
+
+        let mut rounds = vec![n_tricks as u8, 1];
+        for _ in 0..max_cards {
+            rounds.push(1);
+        }
+        let waugh = HandIndexer::init(&rounds).expect("Waugh indexer init");
+        let n_rounds = 2 + max_cards;
+        let waugh_size: Vec<u64> = (0..n_rounds).map(|r| waugh.size(r)).collect();
+
+        let mut bidding_offsets = Vec::with_capacity(num_players + 1);
+        let mut running = 0u64;
+        for p in 0..num_players {
+            bidding_offsets.push(running);
+            running += bid_base.pow(p as u32) * waugh_size[1];
+        }
+        bidding_offsets.push(running);
+        let bidding_size = running;
+
+        let mut depth_offsets = Vec::with_capacity(max_cards + 1);
+        let mut running = 0u64;
+        for d in 0..max_cards {
+            depth_offsets.push(running);
+            running += bid_full * waugh_size[1 + d];
+        }
+        depth_offsets.push(running);
+        let play_size = running;
+
+        Self {
+            bid_base,
+            bid_full,
+            waugh,
+            waugh_size,
+            bidding_offsets,
+            bidding_size,
+            depth_offsets,
+            total: bidding_size + play_size,
+        }
+    }
+}
+
+/// Convert an OH istate's hand + face_up + first `depth` plays into
+/// Waugh card encoding and compute the iso-class index through round
+/// `1 + depth`.
+fn compute_waugh_idx(key: &IStateKey, n_tricks: usize, depth: usize, waugh: &HandIndexer) -> u64 {
+    let mut state = IndexerState::new();
+    let mut idx;
+
+    // Round 0: hand cards.
+    let mut hand = Vec::with_capacity(n_tricks);
+    for i in 0..n_tricks {
+        hand.push(oh_disc_to_waugh(key[i].0));
+    }
+    idx = waugh.next_round(&hand, &mut state);
+    if depth == 0 && n_tricks == 0 {
+        return idx;
+    }
+
+    // Round 1: face_up.
+    idx = waugh.next_round(&[oh_disc_to_waugh(key[n_tricks].0)], &mut state);
+    if depth == 0 {
+        return idx;
+    }
+
+    // Rounds 2..=(1+depth): plays in order.
+    // Plays start in the istate tail AFTER all bids.
+    let tail_start = n_tricks + 1;
+    let mut play_iter = key
+        .iter()
+        .skip(tail_start)
+        .filter(|a| a.0 < OH_DECK_SIZE as u8)
+        .copied();
+    for _ in 0..depth {
+        let play = play_iter.next().expect("missing play card at depth");
+        idx = waugh.next_round(&[oh_disc_to_waugh(play.0)], &mut state);
+    }
+    idx
+}
+
+fn encode_bids_from_istate(
+    key: &IStateKey,
+    n_tricks: usize,
+    num_bids: usize,
+    bid_base: u64,
+) -> u64 {
+    let tail_start = n_tricks + 1;
+    let mut idx = 0u64;
+    let mut mul = 1u64;
+    let mut seen = 0;
+    for i in tail_start..key.len() {
+        let d = key[i].0;
+        if d >= OH_DECK_SIZE as u8 {
+            if seen >= num_bids {
+                break;
+            }
+            let b = d - OH_DECK_SIZE as u8;
+            idx += (b as u64) * mul;
+            mul *= bid_base;
+            seen += 1;
+        }
+    }
+    idx
+}
+
+/// OHCard discriminant (`suit * 13 + rank`) → Waugh card encoding
+/// (`(rank << 2) | suit`).
+fn oh_disc_to_waugh(d: u8) -> u8 {
+    let suit = d / 13;
+    let rank = d % 13;
+    (rank << 2) | suit
 }
 
 fn euchre_sharder(istate: &IStateKey) -> Option<(usize, IStateKey)> {
@@ -153,4 +392,146 @@ fn euchre_sharder(istate: &IStateKey) -> Option<(usize, IStateKey)> {
     };
 
     Some((shard, normed))
+}
+
+#[cfg(test)]
+mod waugh_oh_tests {
+    use super::*;
+    use games::gamestates::oh_hell::{
+        actions::{OHAction, OHCard, OH_DECK},
+        iterator::OhHellIsomorphicIStateIterator,
+        OhHell,
+    };
+    use games::GameState;
+
+    /// Helper: convert a Waugh card encoding back to OHCard.
+    fn waugh_card_to_oh(w: u8) -> OHCard {
+        let suit = w & 3;
+        let rank = w >> 2;
+        OHCard::from_index(suit * 13 + rank).unwrap()
+    }
+
+    /// Every iterator-emitted istate gets a unique slot in [0, total).
+    fn check_bijection(np: usize, nt: usize, max_cards: usize) {
+        let indexer = Indexer::oh_hell_full_game(np, nt, max_cards);
+        let total = indexer.len();
+        let mut seen = std::collections::HashSet::new();
+        let mut count = 0;
+        for istate in OhHellIsomorphicIStateIterator::full_game_via_waugh(np, nt, max_cards) {
+            let slot = indexer.index(&istate).expect("indexable");
+            assert!(
+                slot < total,
+                "{}p_{}t_max{}: slot {} out of range (total {})",
+                np, nt, max_cards, slot, total
+            );
+            assert!(
+                seen.insert(slot),
+                "{}p_{}t_max{}: collision at slot {}",
+                np, nt, max_cards, slot
+            );
+            count += 1;
+        }
+        assert_eq!(
+            seen.len(),
+            total,
+            "{}p_{}t_max{}: iter emitted {} but indexer has {} slots",
+            np, nt, max_cards, count, total
+        );
+    }
+
+    #[test]
+    fn waugh_oh_bijection_smoke() {
+        check_bijection(2, 1, 0);
+        check_bijection(2, 2, 0);
+        check_bijection(2, 2, 1);
+        check_bijection(3, 1, 0);
+        check_bijection(3, 2, 0);
+        check_bijection(3, 2, 1);
+    }
+
+    /// Iso-permuted raw istates land on the same slot.
+    #[test]
+    fn waugh_oh_iso_on_raw() {
+        let configs = [(2, 1, 0), (2, 2, 1), (3, 2, 1)];
+        let perms: [[u8; 4]; 4] = [
+            [0, 1, 2, 3],
+            [1, 0, 2, 3],
+            [2, 3, 0, 1],
+            [3, 2, 1, 0],
+        ];
+
+        for (np, nt, max_cards) in configs {
+            let indexer = Indexer::oh_hell_full_game(np, nt, max_cards);
+            let mut rng: u64 = 0xC0FFEE;
+            let mut next = || {
+                rng ^= rng << 13;
+                rng ^= rng >> 7;
+                rng ^= rng << 17;
+                rng
+            };
+
+            for _ in 0..50 {
+                let seed = next() as usize;
+                let mut gs = OhHell::new_state(np, nt);
+                let mut acts = Vec::new();
+                let mut step: usize = 0;
+                while !gs.is_terminal() {
+                    gs.legal_actions(&mut acts);
+                    let pick = (seed.wrapping_add(step.wrapping_mul(73))) % acts.len();
+                    gs.apply_action(acts[pick]);
+                    step += 1;
+                    use games::gamestates::oh_hell::OHPhase;
+                    if !gs.is_chance_node() {
+                        if gs.phase() == OHPhase::Play && gs.cards_played() >= max_cards {
+                            continue;
+                        }
+                        break;
+                    }
+                }
+                if gs.is_terminal() || gs.is_chance_node() {
+                    continue;
+                }
+                let perspective = gs.cur_player();
+                let raw = gs.istate_key(perspective);
+                let slot_raw = indexer.index(&raw).expect("indexable");
+
+                for perm in &perms {
+                    let mut gs_p = OhHell::new_state(np, nt);
+                    for a in gs.key().iter().copied() {
+                        let oa = OHAction::from(a);
+                        let new_a = match oa {
+                            OHAction::Card(c) => {
+                                let d = c as u8;
+                                let suit = (d / 13) as usize;
+                                let rank = d % 13;
+                                let new_c = OHCard::from_index(perm[suit] * 13 + rank).unwrap();
+                                OHAction::Card(new_c).into()
+                            }
+                            OHAction::Bid(_) => a,
+                        };
+                        gs_p.apply_action(new_a);
+                    }
+                    let raw_p = gs_p.istate_key(perspective);
+                    let slot_perm = indexer.index(&raw_p).expect("indexable");
+                    assert_eq!(
+                        slot_raw, slot_perm,
+                        "iso mismatch ({}p_{}t_max{}): perm={:?}",
+                        np, nt, max_cards, perm
+                    );
+                }
+            }
+        }
+    }
+
+    /// Verify the waugh_card_to_oh helper round-trips against
+    /// oh_disc_to_waugh (used as a basic encoding sanity).
+    #[test]
+    fn waugh_oh_encoding_round_trip() {
+        for c in OH_DECK.iter() {
+            let d = *c as u8;
+            let w = oh_disc_to_waugh(d);
+            let back = waugh_card_to_oh(w);
+            assert_eq!(back, *c);
+        }
+    }
 }
