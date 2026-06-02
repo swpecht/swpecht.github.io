@@ -75,6 +75,35 @@ impl Indexer {
         self.len() == 0
     }
 
+    /// Parse an `indexer` file written before commit 2f075ed, when
+    /// `Indexer` was still a bare struct rather than the
+    /// `Phf`/`WaughOh` enum. The old layout matches today's
+    /// `PhfIndexer` field-for-field, so we deserialize into a local
+    /// mirror and wrap it in the `Phf` variant. Used by the migration
+    /// tool (and the runtime load fallback) so the existing trained
+    /// Euchre weight files don't need to be retrained when we switch
+    /// the on-disk format.
+    pub fn from_legacy_struct_json(json: &str) -> anyhow::Result<Self> {
+        // Mirror of the pre-enum `Indexer` struct fields. The two
+        // private-to-this-module types (`Mphf<IStateKey>`, `Sharder`)
+        // implement `Deserialize`, so serde walks the JSON exactly the
+        // way it used to.
+        #[derive(Deserialize)]
+        struct LegacyIndexer {
+            phf: Mphf<IStateKey>,
+            shard_len: usize,
+            num_shards: usize,
+            sharder: Sharder,
+        }
+        let l: LegacyIndexer = serde_json::from_str(json)?;
+        Ok(Indexer::Phf(PhfIndexer {
+            phf: l.phf,
+            shard_len: l.shard_len,
+            num_shards: l.num_shards,
+            sharder: l.sharder,
+        }))
+    }
+
     pub fn euchre(max_cards_played: usize) -> Self {
         // TODO: in the future can use make it so the hashing happens in stages so that later istates are offset from others as a way to save space
         // Or can pass in the max num cards as a parameter

@@ -122,13 +122,19 @@ impl<L: ActionMask, const MAX_ACTIONS: usize> MmapBacking<L, MAX_ACTIONS> {
         };
 
         if self.indexer_needs_save {
+            // Indexer is serialized as MessagePack — the indexer is a
+            // boomphf MPHF whose internal Vec<u64> bit tables are huge,
+            // and the previous JSON encoding made every u64 a 10-20 byte
+            // ASCII number that serde_json then chugged through at
+            // ~25 MB/s on read. MessagePack drops the ASCII bloat
+            // (~10× smaller on disk) and parses ~100× faster.
             let mut file = OpenOptions::new()
                 .write(true)
                 .create(true)
                 .truncate(true)
                 .open(dir.join(INDEXER_NAME))?;
-            let buf = serde_json::to_string(&self.indexer)?;
-            file.write_all(buf.as_bytes())?;
+            let buf = rmp_serde::to_vec(&self.indexer)?;
+            file.write_all(&buf)?;
             self.indexer_needs_save = false;
         }
 
@@ -419,10 +425,30 @@ fn load_indexer(path: Option<&Path>) -> anyhow::Result<Indexer> {
         bail!("no path");
     };
 
+    // Reads MessagePack first (current format); falls back to the
+    // legacy JSON encoding so files written before the format switch
+    // still load. The migration tool in
+    // examples/migrate_indexers_to_msgpack.rs re-saves any legacy
+    // files in place.
     let mut file = OpenOptions::new().read(true).open(dir.join(INDEXER_NAME))?;
-    let mut buf = String::new();
-    file.read_to_string(&mut buf)?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
 
-    let indexer: Indexer = serde_json::from_str(&buf)?;
+    if let Ok(indexer) = rmp_serde::from_slice::<Indexer>(&bytes) {
+        return Ok(indexer);
+    }
+    // Legacy path — parse as JSON. Slow (~9 minutes for the 216 MB
+    // three_card_played_f32 indexer); run the migration tool to
+    // convert it to MessagePack and the next load is seconds.
+    let buf = std::str::from_utf8(&bytes)
+        .context("indexer is neither MessagePack nor valid UTF-8")?;
+    // Files written after the `Phf`/`WaughOh` enum split go through the
+    // tagged-enum path; older Euchre files have the pre-enum struct
+    // layout. Try the current shape first and fall back to the legacy
+    // shape if that fails.
+    if let Ok(indexer) = serde_json::from_str::<Indexer>(buf) {
+        return Ok(indexer);
+    }
+    let indexer = Indexer::from_legacy_struct_json(buf)?;
     anyhow::Ok(indexer)
 }

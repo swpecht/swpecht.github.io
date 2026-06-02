@@ -14,7 +14,7 @@
 //!   cargo run -p card_platypus --release --example debug_indexer_miss
 
 use card_platypus::{
-    algorithms::cfres::CFRES,
+    algorithms::cfres::EuchreCfres,
     database::indexer::Indexer,
 };
 use games::{
@@ -90,10 +90,10 @@ fn main() {
         return;
     }
 
-    // Use CFRES::new_euchre to load the same path; it constructs the
-    // same NodeStore the bench bot uses.
-    let cfres: CFRES<EuchreGameState> =
-        CFRES::new_euchre(StdRng::seed_from_u64(0), 0, Some(indexer_dir.as_path()));
+    // Use EuchreCfres::new_euchre to load the same path; it constructs
+    // the same NodeStore the bench bot uses (u32-backed ActionList).
+    let cfres: EuchreCfres =
+        EuchreCfres::new_euchre(StdRng::seed_from_u64(0), 0, Some(indexer_dir.as_path()));
     println!("  loaded {} info states", cfres.num_info_states());
 
     // Same as IStateNormalizer call inside CFRES::action_probabilities.
@@ -104,13 +104,21 @@ fn main() {
     // Load the SAVED indexer the weights were trained against; compare its
     // slot assignment to a freshly-built one. If they differ, the saved PHF
     // is out of sync with the current iterator's istate set.
+    //
+    // Tries MessagePack (current format) first and falls back to JSON
+    // (legacy) so this tool works against an un-migrated indexer too.
     use std::fs::File;
     use std::io::Read;
     let saved_indexer: Indexer = {
         let mut f = File::open(indexer_dir.join("indexer")).expect("open indexer");
-        let mut buf = String::new();
-        f.read_to_string(&mut buf).expect("read indexer");
-        serde_json::from_str(&buf).expect("parse indexer")
+        let mut bytes = Vec::new();
+        f.read_to_end(&mut bytes).expect("read indexer");
+        if let Ok(idx) = rmp_serde::from_slice::<Indexer>(&bytes) {
+            idx
+        } else {
+            let utf8 = std::str::from_utf8(&bytes).expect("indexer not utf8");
+            serde_json::from_str(utf8).expect("parse indexer")
+        }
     };
     let idx_saved = saved_indexer.index(&key_for_phf.get());
     println!("  saved Indexer.index(key) = {:?}", idx_saved);
