@@ -700,41 +700,30 @@ impl WaughEuchreIndexer {
     }
 
     pub fn index(&self, key: &IStateKey) -> u64 {
-        let rt = self.runtime();
-
-        // Phase 2: pre-trump (R1, R2) only. Post-trump phases are
-        // queued — see roadmap.
-        let bid_state = match parse_euchre_bid_state(key, 5) {
-            Some(s) => s,
-            None => panic!(
-                "WaughEuchreIndexer: istate has no recoverable bid state \
-                 (either malformed or Play phase, which Phase 2c doesn't yet handle)"
-            ),
-        };
-        match bid_state {
-            EuchreBidState::R1Pending { .. } | EuchreBidState::R2Pending { .. } => {}
-            EuchreBidState::Alone { .. } => panic!(
-                "WaughEuchreIndexer: Alone bid state queued for Phase 2b \
-                 (needs trump-pin preprocessor + L-Bauer remap)"
-            ),
-            EuchreBidState::Discard { .. } => panic!(
-                "WaughEuchreIndexer: Discard bid state queued for Phase 2b \
-                 (needs 6-card HandIndexer + trump-pin)"
-            ),
-        }
-
-        // Pre-trump: full S₄ suit perm iso. Shard by face_up *rank*; the
-        // face_up's suit varies across raw istates but Waugh collapses
-        // them naturally so we DON'T apply `euchre_sharder` (which would
-        // pre-canonicalize under the stricter Z₂×Z₂ subgroup and over-
-        // count). The raw istate goes straight into Waugh.
-        let face_up_rank = (key[5].0 % 8) as u64;
-        let shard = face_up_rank;
-        let waugh_idx = compute_euchre_waugh_idx_5_1(key, &rt.waugh);
-
-        let shard_offset = shard * rt.shard_size;
-        let bid_offset = rt.bid_state_offsets[bid_state.to_idx()];
-        shard_offset + bid_offset + waugh_idx
+        // CORRECTION (Phase 2a roll-back): full-S₄ iso is wrong even for
+        // pre-trump bidding. The L-Bauer (off-color trump-color jack)
+        // creates Z₂×Z₂-only symmetry: hands {AH,KH,QH,JH,JD} and
+        // {AH,KH,QH,JH,JC} are S₄-iso under C↔D but NOT strategically
+        // iso (under H trump the former has 5 trumps via JD-Left-Bauer
+        // and the latter has 4). The PHF's color-preserving Z₂×Z₂
+        // reduction is the correct one.
+        //
+        // Re-pivoting to Path 1 (color-split indexer):
+        //   * waugh_black on (black hand cards + face_up if black) for
+        //     S↔C iso.
+        //   * waugh_red on (red hand cards + face_up if red) for H↔D
+        //     iso.
+        //   * Slot encodes both indices plus the (black_count, red_count)
+        //     combo (which color holds face_up, hand split by color).
+        //
+        // This panic stays until the color-split implementation lands.
+        let _ = key;
+        let _ = self.runtime();
+        panic!(
+            "WaughEuchreIndexer::index is parked pending color-split \
+             redesign — see the BLOCKING ISSUE / PATH-2 CORRECTION comment \
+             in crates/card_platypus/src/database/indexer.rs"
+        );
     }
 }
 
@@ -1098,15 +1087,13 @@ mod waugh_euchre_tests {
     }
 
     /// Walk every R1Pending / R2Pending istate the Euchre iterator
-    /// emits for the NS face_up shard and verify:
-    ///   * Every Waugh slot is in `[0, indexer.len())`.
-    ///   * Distinct iterator emissions can MERGE onto the same Waugh
-    ///     slot (Waugh's S₄ iso is coarser than the iterator's Z₂×Z₂);
-    ///     this is the intended behaviour for path 2.
-    ///   * At least some merging happens — otherwise we'd silently be
-    ///     getting bijection back and the iso refinement claim would be
-    ///     wrong.
+    /// emits for the NS face_up shard and verify path-2 merging
+    /// behaviour. **CURRENTLY IGNORED** — path 2 (full S₄ iso) was
+    /// rolled back when we realised the L-Bauer creates real Z₂×Z₂-
+    /// only symmetry even pre-trump. Un-ignore once the color-split
+    /// indexer (Path 1) is in place.
     #[test]
+    #[ignore = "Path 2 rolled back; awaiting color-split (Z₂×Z₂) indexer"]
     fn waugh_euchre_r1_r2_slots_in_range_with_merges() {
         use games::gamestates::euchre::{
             actions::EAction, iterator::EuchreIsomorphicIStateIterator,
@@ -1151,12 +1138,15 @@ mod waugh_euchre_tests {
         );
     }
 
-    /// Iso-on-raw under FULL S₄ suit permutations: random game states
-    /// at an R1/R2 decision point, with every suit perm applied,
-    /// should land on the same Waugh slot. This is the path-2
-    /// correctness invariant: any S₄-iso transformation of an istate
-    /// preserves the slot.
+    /// Iso-on-raw under FULL S₄ suit permutations.
+    ///
+    /// **CURRENTLY IGNORED** — this was the path-2 correctness
+    /// invariant, but path 2 was rolled back: full S₄ is wrong for
+    /// Euchre even pre-trump because of L-Bauer asymmetry between
+    /// color classes. Replace this with an iso-on-raw-under-Z₂×Z₂
+    /// test once the color-split indexer lands.
     #[test]
+    #[ignore = "Path 2 rolled back; needs Z₂×Z₂-only iso test"]
     fn waugh_euchre_r1_r2_iso_under_full_s4() {
         use games::gamestates::euchre::{actions::EAction, EPhase, Euchre};
         use games::GameState;
