@@ -667,11 +667,31 @@ pub struct WaughEuchreIndexer {
     runtime: OnceLock<WaughEuchreRuntime>,
 }
 
-#[allow(dead_code)] // Phase 1 scaffolding — fields used by Phase 2 index().
+/// Per-shard color-split runtime. See the BLOCKING ISSUE / PATH-2
+/// CORRECTION block above for design rationale.
 struct WaughEuchreRuntime {
-    waugh: HandIndexer,
-    /// `waugh_size[r] = waugh.size(r)` cached.
-    waugh_size: Vec<u64>,
+    /// `waugh_black[k]` for `k ∈ {0..=5}`. Black hand-card count.
+    ///   * k = 0: rounds = `[1]` (just face_up).
+    ///   * k > 0: rounds = `[k, 1]` (hand black cards + face_up).
+    waugh_black: Vec<HandIndexer>,
+    /// `waugh_red[k]` for `k ∈ {0..=5}`. Red hand-card count is `5 - k`
+    /// in our indexer indexing convention (`k` is the black count, the
+    /// red count derives from `5 - k`).
+    ///   * 5 - k = 0: dummy 1-card indexer that's never queried.
+    ///   * 5 - k > 0: rounds = `[5-k]`.
+    waugh_red: Vec<HandIndexer>,
+    /// `waugh_black_size[k]` = iso class count for `waugh_black[k]`.
+    waugh_black_size: Vec<u64>,
+    /// `waugh_red_size[k]` = iso class count for `waugh_red[k]`. For
+    /// `5 - k = 0` this is 1 (the single "empty red hand" iso class).
+    waugh_red_size: Vec<u64>,
+    /// Cumulative offset of each `k` block within a (shard, bid_state)
+    /// section. `combo_offsets[k] = Σ_{k'<k} (waugh_black_size[k'] ×
+    /// waugh_red_size[k'])`. `combo_offsets[6]` is the total
+    /// `bid_state_size`.
+    combo_offsets: Vec<u64>,
+    /// Total slots within one (shard, bid_state) block.
+    bid_state_size: u64,
     /// Per-bid-state offset within a shard.
     bid_state_offsets: [u64; EuchreBidState::COUNT],
     /// Total slots within one shard.
@@ -716,14 +736,97 @@ impl WaughEuchreIndexer {
         //   * Slot encodes both indices plus the (black_count, red_count)
         //     combo (which color holds face_up, hand split by color).
         //
-        // This panic stays until the color-split implementation lands.
-        let _ = key;
-        let _ = self.runtime();
-        panic!(
-            "WaughEuchreIndexer::index is parked pending color-split \
-             redesign — see the BLOCKING ISSUE / PATH-2 CORRECTION comment \
-             in crates/card_platypus/src/database/indexer.rs"
-        );
+        // The color-split implementation below realises this design.
+        let rt = self.runtime();
+        let bid_state = match parse_euchre_bid_state(key, 5) {
+            Some(s) => s,
+            None => panic!(
+                "WaughEuchreIndexer: istate has no recoverable bid state \
+                 (either malformed or Play phase, which Phase 2c doesn't yet handle)"
+            ),
+        };
+        match bid_state {
+            EuchreBidState::R1Pending { .. } | EuchreBidState::R2Pending { .. } => {}
+            EuchreBidState::Alone { .. } => panic!(
+                "WaughEuchreIndexer: Alone bid state queued for Phase 2b"
+            ),
+            EuchreBidState::Discard { .. } => panic!(
+                "WaughEuchreIndexer: Discard bid state queued for Phase 2c"
+            ),
+        }
+
+        // D₄ canonicalisation:
+        //   step 1: if face_up is red (H or D), apply swap_color
+        //           (S↔H, C↔D) to every card. After this face_up is
+        //           always black. This kills the swap_color iso element.
+        //   step 2: split hand by color. Feed (hand_black, face_up) to
+        //           a per-k black HandIndexer (it reduces by S↔C iso
+        //           internally because the H,D positions are always
+        //           empty). Feed hand_red to a per-k red HandIndexer
+        //           (it reduces by H↔D iso). Combined this kills the
+        //           residual Z₂×Z₂.
+        let face_up_bit = key[5].0;
+        let face_up_rank = face_up_bit % 8;
+        let face_up_suit = face_up_bit / 8;
+        let face_up_is_red = face_up_suit >= 2;
+
+        let normalize_suit = |s: u8| -> u8 {
+            if !face_up_is_red {
+                s
+            } else if s < 2 {
+                s + 2
+            } else {
+                s - 2
+            }
+        };
+
+        let canonical_face_up_suit = normalize_suit(face_up_suit);
+        let face_up_waugh = (face_up_rank << 2) | canonical_face_up_suit;
+
+        let mut hand_black: Vec<u8> = Vec::with_capacity(5);
+        let mut hand_red: Vec<u8> = Vec::with_capacity(5);
+        for i in 0..5 {
+            let bit = key[i].0;
+            let rank = bit % 8;
+            let new_suit = normalize_suit(bit / 8);
+            let waugh_card = (rank << 2) | new_suit;
+            if new_suit < 2 {
+                hand_black.push(waugh_card);
+            } else {
+                hand_red.push(waugh_card);
+            }
+        }
+        let k = hand_black.len();
+
+        // Waugh_black: feed (hand_black, face_up). For k = 0 the indexer
+        // is the 1-card form so we only feed the face_up.
+        let black_indexer = &rt.waugh_black[k];
+        let black_idx = if k == 0 {
+            let mut state = IndexerState::new();
+            black_indexer.next_round(&[face_up_waugh], &mut state)
+        } else {
+            let mut state = IndexerState::new();
+            black_indexer.next_round(&hand_black, &mut state);
+            black_indexer.next_round(&[face_up_waugh], &mut state)
+        };
+
+        // Waugh_red: feed hand_red. Empty hand_red gets slot 0 (the
+        // single empty-hand iso class).
+        let red_idx = if hand_red.is_empty() {
+            0
+        } else {
+            let red_indexer = &rt.waugh_red[k];
+            let mut state = IndexerState::new();
+            red_indexer.next_round(&hand_red, &mut state)
+        };
+
+        let shard = face_up_rank as u64;
+        let red_size = rt.waugh_red_size[k];
+        shard * rt.shard_size
+            + rt.bid_state_offsets[bid_state.to_idx()]
+            + rt.combo_offsets[k]
+            + black_idx * red_size
+            + red_idx
     }
 }
 
@@ -762,34 +865,77 @@ fn compute_euchre_waugh_idx_5_1(key: &IStateKey, waugh: &HandIndexer) -> u64 {
 }
 
 impl WaughEuchreRuntime {
-    fn build(max_cards_played: usize) -> Self {
-        let n_hand = 5u8;
-        let mut rounds = vec![n_hand, 1];
-        for _ in 0..max_cards_played {
-            rounds.push(1);
-        }
-        let waugh = HandIndexer::init(&rounds).expect("Waugh indexer init for Euchre");
-        let n_rounds = 2 + max_cards_played;
-        let waugh_size: Vec<u64> = (0..n_rounds).map(|r| waugh.size(r)).collect();
+    fn build(_max_cards_played: usize) -> Self {
+        const N_HAND: usize = 5;
+        let mut waugh_black = Vec::with_capacity(N_HAND + 1);
+        let mut waugh_red = Vec::with_capacity(N_HAND + 1);
+        let mut waugh_black_size = Vec::with_capacity(N_HAND + 1);
+        let mut waugh_red_size = Vec::with_capacity(N_HAND + 1);
 
-        // Per-bid-state allocation: each bid state gets `waugh.size(1)`
-        // slots within a shard. Discard's true slot count is larger (the
-        // dealer's 6-card hand has a richer iso class space) — Phase 2
-        // will allocate `waugh6.size(0)` for those instead. For now we
-        // over-provision conservatively.
-        let per_state = waugh_size[1];
+        for k in 0..=N_HAND {
+            // Black indexer: k hand cards + 1 face_up. For k = 0 there
+            // are no hand cards so we collapse to a 1-card indexer over
+            // the face_up alone.
+            let black_indexer = if k == 0 {
+                HandIndexer::init(&[1]).expect("Waugh black init k=0")
+            } else {
+                HandIndexer::init(&[k as u8, 1]).expect("Waugh black init")
+            };
+            let black_size = if k == 0 {
+                black_indexer.size(0)
+            } else {
+                black_indexer.size(1)
+            };
+            waugh_black_size.push(black_size);
+            waugh_black.push(black_indexer);
+
+            // Red indexer: (5 - k) hand cards. For 5 - k = 0 we use a
+            // dummy indexer and a slot count of 1 (the empty red hand
+            // iso class).
+            let red_count = N_HAND - k;
+            let (red_indexer, red_size) = if red_count == 0 {
+                (
+                    HandIndexer::init(&[1]).expect("Waugh red dummy init"),
+                    1u64,
+                )
+            } else {
+                let idx = HandIndexer::init(&[red_count as u8]).expect("Waugh red init");
+                let sz = idx.size(0);
+                (idx, sz)
+            };
+            waugh_red_size.push(red_size);
+            waugh_red.push(red_indexer);
+        }
+
+        // Combo offsets: cumulative (black × red) sizes across k.
+        let mut combo_offsets = Vec::with_capacity(N_HAND + 2);
+        let mut running = 0u64;
+        for k in 0..=N_HAND {
+            combo_offsets.push(running);
+            running += waugh_black_size[k] * waugh_red_size[k];
+        }
+        combo_offsets.push(running);
+        let bid_state_size = running;
+
+        // Per-bid-state offsets within a shard. Phase 2 only fills
+        // R1Pending / R2Pending; other variants are still panic-stubbed
+        // but we reserve space for them so the layout is stable.
         let mut bid_state_offsets = [0u64; EuchreBidState::COUNT];
         let mut running = 0u64;
         for slot in bid_state_offsets.iter_mut() {
             *slot = running;
-            running += per_state;
+            running += bid_state_size;
         }
         let shard_size = running;
         let total = 6 * shard_size;
 
         Self {
-            waugh,
-            waugh_size,
+            waugh_black,
+            waugh_red,
+            waugh_black_size,
+            waugh_red_size,
+            combo_offsets,
+            bid_state_size,
             bid_state_offsets,
             shard_size,
             total,
@@ -1087,14 +1233,13 @@ mod waugh_euchre_tests {
     }
 
     /// Walk every R1Pending / R2Pending istate the Euchre iterator
-    /// emits for the NS face_up shard and verify path-2 merging
-    /// behaviour. **CURRENTLY IGNORED** — path 2 (full S₄ iso) was
-    /// rolled back when we realised the L-Bauer creates real Z₂×Z₂-
-    /// only symmetry even pre-trump. Un-ignore once the color-split
-    /// indexer (Path 1) is in place.
+    /// emits for the NS face_up shard. With the D₄ color-split indexer,
+    /// the iterator's iso reduction = our iso reduction, so we expect:
+    ///   * Every Waugh slot is in `[0, indexer.len())`.
+    ///   * **Bijection** — every iterator emission gets a unique Waugh
+    ///     slot.
     #[test]
-    #[ignore = "Path 2 rolled back; awaiting color-split (Z₂×Z₂) indexer"]
-    fn waugh_euchre_r1_r2_slots_in_range_with_merges() {
+    fn waugh_euchre_r1_r2_bijection_ns_shard() {
         use games::gamestates::euchre::{
             actions::EAction, iterator::EuchreIsomorphicIStateIterator,
         };
@@ -1127,59 +1272,44 @@ mod waugh_euchre_tests {
         }
 
         assert!(r1_r2_count > 0, "iterator emitted zero R1/R2 istates");
-        // Merging is expected: distinct iterator emissions land on fewer
-        // unique Waugh slots than the iterator emitted.
-        assert!(
-            slots.len() < r1_r2_count,
-            "expected merging (Waugh S₄ iso < iterator Z₂×Z₂); got \
-             unique slots={} == emissions={}",
+        // D₄ design: iterator's iso reduction == ours. We expect
+        // bijection — each iterator emission gets a unique Waugh slot.
+        assert_eq!(
+            slots.len(),
+            r1_r2_count,
+            "expected bijection (D₄ iso match); got unique slots={} \
+             but emissions={}",
             slots.len(),
             r1_r2_count
         );
     }
 
-    /// Iso-on-raw under FULL S₄ suit permutations.
-    ///
-    /// **CURRENTLY IGNORED** — this was the path-2 correctness
-    /// invariant, but path 2 was rolled back: full S₄ is wrong for
-    /// Euchre even pre-trump because of L-Bauer asymmetry between
-    /// color classes. Replace this with an iso-on-raw-under-Z₂×Z₂
-    /// test once the color-split indexer lands.
+    /// Iso-on-raw under D₄ (the 8 color-preserving suit permutations).
+    /// Random R1/R2 game states under each D₄ element should land on
+    /// the same Waugh slot. This is the correctness invariant for the
+    /// color-split indexer.
     #[test]
-    #[ignore = "Path 2 rolled back; needs Z₂×Z₂-only iso test"]
-    fn waugh_euchre_r1_r2_iso_under_full_s4() {
+    fn waugh_euchre_r1_r2_iso_under_d4() {
         use games::gamestates::euchre::{actions::EAction, EPhase, Euchre};
         use games::GameState;
         let _ = EAction::Pass; // touch import to silence unused
 
         let indexer = WaughEuchreIndexer::new(0);
 
-        // 24 permutations of [0, 1, 2, 3] — full S₄ on suits.
+        // The 8 elements of D₄ = preserve color partition {{S,C},{H,D}}.
+        // Each perm sends each suit somewhere consistent with the
+        // partition: black ↔ black or black ↔ red (as a pair).
         fn perms() -> Vec<[u8; 4]> {
-            let mut out = Vec::with_capacity(24);
-            let suits = [0u8, 1, 2, 3];
-            // Heap's algorithm is fine, but for clarity just list all 24.
-            let base = suits;
-            for &a in &base {
-                for &b in &base {
-                    if b == a {
-                        continue;
-                    }
-                    for &c in &base {
-                        if c == a || c == b {
-                            continue;
-                        }
-                        for &d in &base {
-                            if d == a || d == b || d == c {
-                                continue;
-                            }
-                            out.push([a, b, c, d]);
-                        }
-                    }
-                }
-            }
-            assert_eq!(out.len(), 24);
-            out
+            vec![
+                [0, 1, 2, 3], // identity
+                [1, 0, 2, 3], // swap_black: S↔C
+                [0, 1, 3, 2], // swap_red: H↔D
+                [1, 0, 3, 2], // swap_both
+                [2, 3, 0, 1], // swap_color: S↔H, C↔D
+                [3, 2, 0, 1], // swap_color × swap_black
+                [2, 3, 1, 0], // swap_color × swap_red
+                [3, 2, 1, 0], // swap_color × swap_both
+            ]
         }
 
         fn perm_action(a: Action, perm: &[u8; 4]) -> Action {
@@ -1272,5 +1402,95 @@ mod waugh_euchre_tests {
                 );
             }
         }
+    }
+
+    /// Negative control: under a non-D₄ permutation (single S↔H swap,
+    /// which breaks the color partition), iso must NOT hold for at
+    /// least some istates — otherwise our reduction would be coarser
+    /// than D₄ and over-collapsing again.
+    #[test]
+    fn waugh_euchre_r1_r2_breaks_iso_under_non_d4() {
+        use games::gamestates::euchre::{EPhase, Euchre};
+        use games::GameState;
+
+        let indexer = WaughEuchreIndexer::new(0);
+        let non_d4: [u8; 4] = [2, 1, 0, 3]; // S↔H only (not D₄)
+
+        fn perm_action(a: Action, perm: &[u8; 4]) -> Action {
+            let bit = a.0;
+            if bit >= 32 {
+                return a;
+            }
+            let suit = bit / 8;
+            let rank = bit % 8;
+            if rank <= 6 {
+                Action(perm[suit as usize] * 8 + rank)
+            } else {
+                a
+            }
+        }
+
+        let mut rng: u64 = 0xDEADBEEF;
+        let mut next = || {
+            rng ^= rng << 13;
+            rng ^= rng >> 7;
+            rng ^= rng << 17;
+            rng
+        };
+
+        let mut differing_count = 0usize;
+        let mut tested = 0usize;
+        for _ in 0..200 {
+            let seed = next() as usize;
+            let mut gs = Euchre::new_state();
+            let mut acts = Vec::new();
+            let mut step = 0usize;
+            let mut reached = false;
+            while !gs.is_terminal() {
+                gs.legal_actions(&mut acts);
+                let pick = (seed.wrapping_add(step.wrapping_mul(73))) % acts.len();
+                gs.apply_action(acts[pick]);
+                step += 1;
+                if !gs.is_chance_node() {
+                    let p = gs.phase();
+                    if p == EPhase::Pickup || p == EPhase::ChooseTrump {
+                        reached = true;
+                        break;
+                    }
+                }
+            }
+            if !reached {
+                continue;
+            }
+            let perspective = gs.cur_player();
+            let raw = gs.istate_key(perspective);
+            let bs = parse_euchre_bid_state(&raw, 5);
+            if !matches!(
+                bs,
+                Some(EuchreBidState::R1Pending { .. })
+                    | Some(EuchreBidState::R2Pending { .. })
+            ) {
+                continue;
+            }
+            let slot_raw = indexer.index(&raw);
+            let mut permuted = IStateKey::default();
+            for a in raw.iter() {
+                permuted.push(perm_action(*a, &non_d4));
+            }
+            permuted.sort_range(0, 5.min(permuted.len()));
+            let slot_perm = indexer.index(&permuted);
+            if slot_raw != slot_perm {
+                differing_count += 1;
+            }
+            tested += 1;
+        }
+
+        assert!(tested > 0, "couldn't sample any R1/R2 istates");
+        assert!(
+            differing_count > 0,
+            "non-D₄ perm (S↔H only) produced same slot on every test ({} samples); \
+             our reduction is too coarse",
+            tested
+        );
     }
 }
