@@ -2,7 +2,7 @@ use std::{collections::HashMap, path::Path};
 
 use card_platypus::{
     agents::{Agent, Seedable},
-    algorithms::cfres::{self, CFRES},
+    algorithms::cfres::{self, EuchreCfres},
     algorithms::{open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot},
 };
 use clap::{Args, ValueEnum};
@@ -81,12 +81,12 @@ pub fn all_deal_cfr(args: PassOnBowerCFRArgs) {
     info!("starting creation of CFRES, including hash function");
     let infostate_path = args.weight_file.as_str();
     let mut alg = match args.normalizer {
-        Normalizer::Lossless => CFRES::new_euchre(
+        Normalizer::Lossless => EuchreCfres::new_euchre(
             get_rng(),
             args.max_cards_played,
             Some(Path::new(infostate_path)),
         ),
-        Normalizer::Lossy => CFRES::new_with_normalizer(
+        Normalizer::Lossy => EuchreCfres::new_with_normalizer(
             get_rng(),
             args.max_cards_played,
             Box::<LossyEuchreNormalizer>::default(),
@@ -157,7 +157,7 @@ pub fn all_deal_cfr(args: PassOnBowerCFRArgs) {
 
 pub fn train_cfr_shot(
     _args: PassOnBowerCFRArgs,
-    alg: &mut CFRES<EuchreGameState>,
+    alg: &mut EuchreCfres,
     training_iterations: usize,
     mp: &MultiProgress,
 ) {
@@ -174,7 +174,7 @@ pub fn train_cfr_shot(
     alg.save().unwrap();
 }
 
-fn log_score(alg: &mut CFRES<EuchreGameState>, worlds: Vec<EuchreGameState>, baseline_score: f64) {
+fn log_score(alg: &mut EuchreCfres, worlds: Vec<EuchreGameState>, baseline_score: f64) {
     let score = score_vs_defender(alg, 1, worlds);
     info!(
         "iteration:\t{}\tnodes touched:\t{}\tinfo_states:\t{}\tscore:\t{}\tbaseline:\t{}",
@@ -225,7 +225,7 @@ fn score_vs_defender<A: Agent<EuchreGameState> + Seedable>(
 pub fn analyze_istate(num_games: usize) {
     let istate = EuchreGameState::from("9sTsQsKsAs|9cTcKcAcTd|JdQdKdAd9h|JcQcJhAh9d|Js");
     let mut rng = get_rng();
-    let mut agent = CFRES::new_euchre(
+    let mut agent = EuchreCfres::new_euchre(
         get_rng(),
         0,
         Some(Path::new("/var/lib/card_platypus/infostate.baseline")),
@@ -297,7 +297,7 @@ pub fn analyze_istate(num_games: usize) {
 
 fn outcome_distribution(
     games: Vec<EuchreGameState>,
-    agent: &mut CFRES<EuchreGameState>,
+    agent: &mut EuchreCfres,
 ) -> HashMap<String, HashMap<i8, usize>> {
     let mut counts = HashMap::new();
     let pb = ProgressBar::new(games.len() as u64);

@@ -14,6 +14,7 @@ use memmap2::MmapMut;
 use crate::algorithms::cfres::{
     InfoState, BLUFF_MAX_ACTIONS, EUCHRE_MAX_ACTIONS, KP_MAX_ACTIONS, OH_MAX_ACTIONS,
 };
+use crate::collections::actionlist::ActionMask;
 
 use self::indexer::Indexer;
 
@@ -28,8 +29,13 @@ const METADATA_NAME: &str = "meta";
 /// that set, and rents one fixed-size slot per istate in an mmap-backed
 /// array. Disk-backed when constructed with a directory path; anonymous
 /// (RAM-only) when constructed with `None`.
-pub enum NodeStore<const MAX_ACTIONS: usize> {
-    Mmap(MmapBacking<MAX_ACTIONS>),
+///
+/// The `L: ActionMask` parameter is the [`InfoState`] action-bitmap width
+/// (`u32` for Euchre, `u64` for Oh Hell) — it dictates the bucket byte size
+/// and, transitively, the on-disk layout. Loading a mmap with the wrong
+/// `L` reinterprets every bucket's downstream fields and yields garbage.
+pub enum NodeStore<L: ActionMask, const MAX_ACTIONS: usize> {
+    Mmap(MmapBacking<L, MAX_ACTIONS>),
 }
 
 /// Mmap + PHF backing for `NodeStore`.
@@ -37,8 +43,8 @@ pub enum NodeStore<const MAX_ACTIONS: usize> {
 /// `MAX_ACTIONS` is the maximum number of actions stored per slot, which
 /// controls the on-disk size of each bucket. Each game gets a right-sized
 /// slot so Euchre (max 6 actions) doesn't pay Bluff's (max ~10 actions)
-/// memory overhead.
-pub struct MmapBacking<const MAX_ACTIONS: usize> {
+/// memory overhead. `L` picks the action-bitmap width — see [`NodeStore`].
+pub struct MmapBacking<L: ActionMask, const MAX_ACTIONS: usize> {
     indexer: Indexer,
     mmap: MmapMut,
     path: Option<PathBuf>,
@@ -47,12 +53,13 @@ pub struct MmapBacking<const MAX_ACTIONS: usize> {
     /// to be written on the next commit. Once written, set to false so
     /// subsequent commits skip the expensive 226MB JSON serialization.
     indexer_needs_save: bool,
+    _marker: std::marker::PhantomData<L>,
 }
 
-impl<const MAX_ACTIONS: usize> MmapBacking<MAX_ACTIONS> {
-    const BUCKET_SIZE: usize = std::mem::size_of::<InfoState<MAX_ACTIONS>>();
+impl<L: ActionMask, const MAX_ACTIONS: usize> MmapBacking<L, MAX_ACTIONS> {
+    const BUCKET_SIZE: usize = std::mem::size_of::<InfoState<L, MAX_ACTIONS>>();
 
-    pub fn get(&self, key: &IStateKey) -> Option<InfoState<MAX_ACTIONS>> {
+    pub fn get(&self, key: &IStateKey) -> Option<InfoState<L, MAX_ACTIONS>> {
         let index: usize = self
             .indexer
             .index(key)
@@ -60,7 +67,7 @@ impl<const MAX_ACTIONS: usize> MmapBacking<MAX_ACTIONS> {
         self.get_index(index)
     }
 
-    pub(crate) fn get_index(&self, index: usize) -> Option<InfoState<MAX_ACTIONS>> {
+    pub(crate) fn get_index(&self, index: usize) -> Option<InfoState<L, MAX_ACTIONS>> {
         let start = index * Self::BUCKET_SIZE;
 
         if start + Self::BUCKET_SIZE > self.mmap.len() {
@@ -73,11 +80,11 @@ impl<const MAX_ACTIONS: usize> MmapBacking<MAX_ACTIONS> {
             return None;
         }
 
-        let info = bytemuck::cast_slice::<u8, InfoState<MAX_ACTIONS>>(data)[0];
+        let info = bytemuck::cast_slice::<u8, InfoState<L, MAX_ACTIONS>>(data)[0];
         Some(info)
     }
 
-    pub fn put(&mut self, key: &IStateKey, value: &InfoState<MAX_ACTIONS>) {
+    pub fn put(&mut self, key: &IStateKey, value: &InfoState<L, MAX_ACTIONS>) {
         let index: usize = self
             .indexer
             .index(key)
@@ -98,7 +105,7 @@ impl<const MAX_ACTIONS: usize> MmapBacking<MAX_ACTIONS> {
             .all(|&x| x == 0);
 
         let value = [*value];
-        let data = bytemuck::cast_slice::<InfoState<MAX_ACTIONS>, u8>(&value);
+        let data = bytemuck::cast_slice::<InfoState<L, MAX_ACTIONS>, u8>(&value);
         assert!(data.len() <= Self::BUCKET_SIZE);
         self.mmap[start..start + data.len()].copy_from_slice(data);
 
@@ -139,14 +146,14 @@ impl<const MAX_ACTIONS: usize> MmapBacking<MAX_ACTIONS> {
     }
 }
 
-impl<const MAX_ACTIONS: usize> NodeStore<MAX_ACTIONS> {
-    pub fn get(&self, key: &IStateKey) -> Option<InfoState<MAX_ACTIONS>> {
+impl<L: ActionMask, const MAX_ACTIONS: usize> NodeStore<L, MAX_ACTIONS> {
+    pub fn get(&self, key: &IStateKey) -> Option<InfoState<L, MAX_ACTIONS>> {
         match self {
             NodeStore::Mmap(m) => m.get(key),
         }
     }
 
-    pub fn put(&mut self, key: &IStateKey, value: &InfoState<MAX_ACTIONS>) {
+    pub fn put(&mut self, key: &IStateKey, value: &InfoState<L, MAX_ACTIONS>) {
         match self {
             NodeStore::Mmap(m) => m.put(key, value),
         }
@@ -178,17 +185,27 @@ impl<const MAX_ACTIONS: usize> NodeStore<MAX_ACTIONS> {
     /// Direct slot read by PHF index. Used by sampled convergence metrics
     /// that need to revisit the same slot across checkpoints without going
     /// through an IStateKey. Returns `None` for empty slots.
-    pub fn get_at_index(&self, idx: usize) -> Option<InfoState<MAX_ACTIONS>> {
+    pub fn get_at_index(&self, idx: usize) -> Option<InfoState<L, MAX_ACTIONS>> {
         match self {
             NodeStore::Mmap(m) => m.get_index(idx),
         }
     }
 }
 
-impl NodeStore<EUCHRE_MAX_ACTIONS> {
-    /// len is the number of infostates to provision for
+impl NodeStore<u32, EUCHRE_MAX_ACTIONS> {
+    /// len is the number of infostates to provision for.
+    ///
+    /// `L = u32`: Euchre's action space fits in 32 IDs and the on-disk
+    /// bucket layout in `infostate.baseline` / `infostate.three_card_played_f32`
+    /// was written when ActionList was a `u32`. Using `u64` here would
+    /// shift every downstream field in each bucket on read and corrupt
+    /// the loaded policy.
     pub fn new_euchre(path: Option<&Path>, max_cards_played: usize) -> anyhow::Result<Self> {
-        let mmap = get_mmap(path, 20_000_000, MmapBacking::<EUCHRE_MAX_ACTIONS>::BUCKET_SIZE)
+        let mmap = get_mmap(
+            path,
+            20_000_000,
+            MmapBacking::<u32, EUCHRE_MAX_ACTIONS>::BUCKET_SIZE,
+        )
             .context("failed to create mmap")?;
 
         let path = path.map(|x| x.to_path_buf());
@@ -210,7 +227,7 @@ impl NodeStore<EUCHRE_MAX_ACTIONS> {
                 count_populated(
                     &mmap,
                     &indexer,
-                    MmapBacking::<EUCHRE_MAX_ACTIONS>::BUCKET_SIZE,
+                    MmapBacking::<u32, EUCHRE_MAX_ACTIONS>::BUCKET_SIZE,
                     path.as_deref(),
                 )
             });
@@ -221,17 +238,21 @@ impl NodeStore<EUCHRE_MAX_ACTIONS> {
             path,
             populated_count: AtomicUsize::new(populated_count),
             indexer_needs_save,
+            _marker: std::marker::PhantomData,
         }))
     }
 }
 
-impl NodeStore<KP_MAX_ACTIONS> {
+// Kuhn poker and Bluff are tiny and never persisted; `L = u64` here just
+// matches the [`CFRES`](crate::algorithms::cfres::CFRES) default and saves
+// us from threading another type alias through their few call sites.
+impl NodeStore<u64, KP_MAX_ACTIONS> {
     pub fn new_kp(path: Option<&Path>) -> anyhow::Result<Self> {
         if path.is_some() {
             bail!("serialization not supported for this game type")
         }
 
-        let mmap = get_mmap(path, 1_000, MmapBacking::<KP_MAX_ACTIONS>::BUCKET_SIZE)?;
+        let mmap = get_mmap(path, 1_000, MmapBacking::<u64, KP_MAX_ACTIONS>::BUCKET_SIZE)?;
 
         let path = path.map(|x| x.to_path_buf());
         Ok(NodeStore::Mmap(MmapBacking {
@@ -240,16 +261,17 @@ impl NodeStore<KP_MAX_ACTIONS> {
             path,
             populated_count: AtomicUsize::new(0),
             indexer_needs_save: false,
+            _marker: std::marker::PhantomData,
         }))
     }
 }
 
-impl NodeStore<BLUFF_MAX_ACTIONS> {
+impl NodeStore<u64, BLUFF_MAX_ACTIONS> {
     pub fn new_bluff_11(path: Option<&Path>) -> anyhow::Result<Self> {
         if path.is_some() {
             bail!("serialization not supported for this game type")
         }
-        let mmap = get_mmap(path, 10_000, MmapBacking::<BLUFF_MAX_ACTIONS>::BUCKET_SIZE)?;
+        let mmap = get_mmap(path, 10_000, MmapBacking::<u64, BLUFF_MAX_ACTIONS>::BUCKET_SIZE)?;
 
         let path = path.map(|x| x.to_path_buf());
         Ok(NodeStore::Mmap(MmapBacking {
@@ -258,11 +280,12 @@ impl NodeStore<BLUFF_MAX_ACTIONS> {
             path,
             populated_count: AtomicUsize::new(0),
             indexer_needs_save: false,
+            _marker: std::marker::PhantomData,
         }))
     }
 }
 
-impl NodeStore<OH_MAX_ACTIONS> {
+impl NodeStore<u64, OH_MAX_ACTIONS> {
     /// Oh Hell disk-backed mmap + PHF store. The PHF is built over the
     /// canonical bidding + play-phase iso classes enumerated by
     /// [`games::gamestates::oh_hell::iterator::OhHellIsomorphicIStateIterator::full_game_via_waugh`]
@@ -294,7 +317,7 @@ impl NodeStore<OH_MAX_ACTIONS> {
         let mmap = get_mmap(
             path.as_deref(),
             indexer.len(),
-            MmapBacking::<OH_MAX_ACTIONS>::BUCKET_SIZE,
+            MmapBacking::<u64, OH_MAX_ACTIONS>::BUCKET_SIZE,
         )
         .context("failed to create OH full-game mmap")?;
 
@@ -305,7 +328,7 @@ impl NodeStore<OH_MAX_ACTIONS> {
                 count_populated(
                     &mmap,
                     &indexer,
-                    MmapBacking::<OH_MAX_ACTIONS>::BUCKET_SIZE,
+                    MmapBacking::<u64, OH_MAX_ACTIONS>::BUCKET_SIZE,
                     path.as_deref(),
                 )
             });
@@ -316,6 +339,7 @@ impl NodeStore<OH_MAX_ACTIONS> {
             path,
             populated_count: AtomicUsize::new(populated_count),
             indexer_needs_save,
+            _marker: std::marker::PhantomData,
         }))
     }
 

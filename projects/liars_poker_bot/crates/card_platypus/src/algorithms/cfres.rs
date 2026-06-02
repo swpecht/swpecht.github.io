@@ -32,7 +32,10 @@ use crate::{
     agents::{Agent, Seedable},
     algorithms::{ismcts::Evaluator, open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot},
     alloc::Pool,
-    collections::{actionlist::ActionList, actionvec::ActionVec},
+    collections::{
+        actionlist::{ActionList, ActionMask},
+        actionvec::ActionVec,
+    },
     counter,
     database::NodeStore,
     policy::Policy,
@@ -68,16 +71,32 @@ pub const KP_MAX_ACTIONS: usize = 6;
 /// for the 2-trick variant; pick a slack value of 8 to support future growth.
 pub const OH_MAX_ACTIONS: usize = 8;
 
+/// On-disk CFR bucket layout, generic over the [`ActionMask`] backing of
+/// its action bitmap. Each persisted mmap is sized for *exactly one*
+/// choice of `(L, MAX_ACTIONS)` — the byte layout of this struct *is* the
+/// on-disk record format, so changing the width or the const ever after
+/// weights have been trained renders the existing mmap unreadable.
+///
+/// Game-specific instantiations:
+///   * Euchre: `InfoState<u32, EUCHRE_MAX_ACTIONS>` — 4-byte action mask
+///     saves 4 bytes per bucket vs the `u64` default, which on the
+///     `three_card_played` weight file (~1.3 B populated slots) is on the
+///     order of 5 GB on disk. The `u32` width is also what the historical
+///     Euchre weight files were written with, so this is the only
+///     instantiation that loads them without a migration step.
+///   * Oh Hell: `InfoState<u64, OH_MAX_ACTIONS>` — `u64` is required
+///     because Oh Hell's 52-card + bid action IDs run up to 63.
 #[derive(Copy, Clone, Serialize, Deserialize)]
-pub struct InfoState<const MAX_ACTIONS: usize> {
-    pub actions: ActionList,
+#[serde(bound(serialize = "L: ActionMask", deserialize = "L: ActionMask"))]
+pub struct InfoState<L: ActionMask, const MAX_ACTIONS: usize> {
+    pub actions: ActionList<L>,
     pub regrets: ArrayVec<[Weight; MAX_ACTIONS]>,
     pub avg_strategy: ArrayVec<[Weight; MAX_ACTIONS]>,
     pub last_iteration: usize,
 }
 
 // SAFETY: InfoState is composed of:
-//   - ActionList(u32): a plain u32 bitmask, trivially Pod/Zeroable.
+//   - ActionList<L>: repr(transparent) over L (u32 or u64), trivially Pod/Zeroable.
 //   - ArrayVec<[f32; MAX_ACTIONS]> (x2): tinyvec's ArrayVec is internally a length field + a
 //     fixed-size array. All byte patterns are valid for its fields (u16 len + [f32; N]).
 //     The all-zeros pattern produces a valid ArrayVec with len=0.
@@ -87,10 +106,10 @@ pub struct InfoState<const MAX_ACTIONS: usize> {
 // safe to reinterpret as bytes. The all-zeros bit pattern is valid (empty ActionList, empty
 // ArrayVecs with len=0, last_iteration=0). We cannot use #[derive(Pod, Zeroable)] because
 // tinyvec::ArrayVec does not itself implement Pod or Zeroable.
-unsafe impl<const N: usize> Pod for InfoState<N> {}
-unsafe impl<const N: usize> Zeroable for InfoState<N> {}
+unsafe impl<L: ActionMask, const N: usize> Pod for InfoState<L, N> {}
+unsafe impl<L: ActionMask, const N: usize> Zeroable for InfoState<L, N> {}
 
-impl<const MAX_ACTIONS: usize> InfoState<MAX_ACTIONS> {
+impl<L: ActionMask, const MAX_ACTIONS: usize> InfoState<L, MAX_ACTIONS> {
     pub fn new(normalized_actions: Vec<NormalizedAction>) -> Self {
         let n = normalized_actions.len();
         let mut regrets = ArrayVec::new();
@@ -130,12 +149,19 @@ impl<const MAX_ACTIONS: usize> InfoState<MAX_ACTIONS> {
 ///
 /// Based on implementation from: OpenSpiel:
 ///     https://github.com/deepmind/open_spiel/blob/master/open_spiel/python/algorithms/mccfr.py
+///
+/// The `L: ActionMask` parameter chooses the action-bitmap backing (`u32`
+/// or `u64`). It defaults to `u64` because that's the only width that is
+/// safe for arbitrary action spaces — `u32` silently truncates IDs ≥ 32 —
+/// but Euchre overrides this to `u32` via the [`EuchreCfres`] alias so its
+/// trained mmap files stay binary-compatible with the historical layout
+/// and don't pay 4 extra bytes per slot.
 #[derive(Clone)]
-pub struct CFRES<G, const MAX_ACTIONS: usize = EUCHRE_MAX_ACTIONS> {
+pub struct CFRES<G, const MAX_ACTIONS: usize = EUCHRE_MAX_ACTIONS, L: ActionMask = u64> {
     vector_pool: Pool<Vec<Action>>,
     game_generator: fn() -> G,
     iteration: Arc<AtomicUsize>,
-    infostates: Arc<Mutex<NodeStore<MAX_ACTIONS>>>,
+    infostates: Arc<Mutex<NodeStore<L, MAX_ACTIONS>>>,
     /// determine if we are at the max depth and should use the rollout
     depth_checker: Box<dyn DepthChecker<G>>,
     normalizer: Box<dyn IStateNormalizer<G>>,
@@ -143,20 +169,29 @@ pub struct CFRES<G, const MAX_ACTIONS: usize = EUCHRE_MAX_ACTIONS> {
     evaluator: OpenHandSolver<G>,
 }
 
-impl<G, const MAX_ACTIONS: usize> CFRES<G, MAX_ACTIONS> {
+/// Euchre's CFRES instantiation. Uses a `u32` action bitmap because
+/// Euchre's action space fits in 32 IDs, which (a) saves 4 bytes per
+/// stored bucket and (b) is the layout the production weight files
+/// (`infostate.baseline`, `infostate.three_card_played_f32`) were trained
+/// against. Switching Euchre to the `u64` default would silently shift
+/// every downstream field in the on-disk record and produce garbage when
+/// loading existing weights.
+pub type EuchreCfres = CFRES<EuchreGameState, EUCHRE_MAX_ACTIONS, u32>;
+
+impl<G, const MAX_ACTIONS: usize, L: ActionMask> CFRES<G, MAX_ACTIONS, L> {
     pub fn iterations(&self) -> usize {
         self.iteration.load(Ordering::Relaxed)
     }
 }
 
-impl<G, const MAX_ACTIONS: usize> Seedable for CFRES<G, MAX_ACTIONS> {
+impl<G, const MAX_ACTIONS: usize, L: ActionMask> Seedable for CFRES<G, MAX_ACTIONS, L> {
     /// Sets the seed for the evaluator, it doesn't change the seed used for training
     fn set_seed(&mut self, seed: u64) {
         self.play_bot.set_seed(seed);
     }
 }
 
-impl CFRES<EuchreGameState> {
+impl CFRES<EuchreGameState, EUCHRE_MAX_ACTIONS, u32> {
     pub fn new_euchre(rng: StdRng, max_cards_played: usize, path: Option<&Path>) -> Self {
         let normalizer: Box<dyn IStateNormalizer<EuchreGameState>> =
             Box::<EuchreNormalizer>::default();
@@ -195,12 +230,14 @@ impl CFRES<EuchreGameState> {
     }
 }
 
-impl<G: GameState + ResampleFromInfoState, const MAX_ACTIONS: usize> CFRES<G, MAX_ACTIONS> {
+impl<G: GameState + ResampleFromInfoState, const MAX_ACTIONS: usize, L: ActionMask>
+    CFRES<G, MAX_ACTIONS, L>
+{
     /// Creates a CFRES instance for simple (non-Euchre) games that don't need
     /// depth checking or state normalization.
     fn new_simple(
         game_generator: fn() -> G,
-        node_store: NodeStore<MAX_ACTIONS>,
+        node_store: NodeStore<L, MAX_ACTIONS>,
     ) -> Self {
         let mut rng: StdRng = SeedableRng::seed_from_u64(43);
         let pimcts_seed = rng.random();
@@ -236,7 +273,7 @@ impl CFRES<BluffGameState, BLUFF_MAX_ACTIONS> {
     }
 }
 
-impl CFRES<OhHellGameState, OH_MAX_ACTIONS> {
+impl CFRES<OhHellGameState, OH_MAX_ACTIONS, u64> {
     /// CFRES for Oh Hell, disk-backed mmap + PHF store. Routes storage
     /// through [`NodeStore::new_oh_hell_full_game_mmap`], which builds
     /// the PHF over the canonical bidding + play-phase iso classes
@@ -270,7 +307,7 @@ impl CFRES<OhHellGameState, OH_MAX_ACTIONS> {
         num_players: usize,
         n_tricks: usize,
         max_cards_played: usize,
-        store: NodeStore<OH_MAX_ACTIONS>,
+        store: NodeStore<u64, OH_MAX_ACTIONS>,
     ) -> Self {
         let game_generator: fn() -> OhHellGameState = match (num_players, n_tricks) {
             (2, 1) => || OhHell::new_state(2, 1),
@@ -316,7 +353,9 @@ impl CFRES<OhHellGameState, OH_MAX_ACTIONS> {
     }
 }
 
-impl<G: GameState + ResampleFromInfoState + Sync, const MAX_ACTIONS: usize> CFRES<G, MAX_ACTIONS> {
+impl<G: GameState + ResampleFromInfoState + Sync, const MAX_ACTIONS: usize, L: ActionMask>
+    CFRES<G, MAX_ACTIONS, L>
+{
     pub fn train(&mut self, n: usize) {
         if feature::is_enabled(feature::SingleThread) {
             for _ in 0..n {
@@ -535,13 +574,13 @@ impl<G: GameState + ResampleFromInfoState + Sync, const MAX_ACTIONS: usize> CFRE
     }
 }
 
-impl<G, const MAX_ACTIONS: usize> CFRES<G, MAX_ACTIONS> {
+impl<G, const MAX_ACTIONS: usize, L: ActionMask> CFRES<G, MAX_ACTIONS, L> {
     /// Can deadlock if we hold onto handle
-    fn lookup_entry(&self, key: &NormalizedIstate) -> Option<InfoState<MAX_ACTIONS>> {
+    fn lookup_entry(&self, key: &NormalizedIstate) -> Option<InfoState<L, MAX_ACTIONS>> {
         self.infostates.lock().unwrap().get(&key.get())
     }
 
-    fn put_entry(&self, key: &NormalizedIstate, v: InfoState<MAX_ACTIONS>) {
+    fn put_entry(&self, key: &NormalizedIstate, v: InfoState<L, MAX_ACTIONS>) {
         self.infostates.lock().unwrap().put(&key.get(), &v);
     }
 
@@ -587,8 +626,8 @@ fn regret_matching(regrets: &[(Action, Weight)]) -> ActionVec<Weight> {
     policy
 }
 
-fn add_regret<const N: usize>(
-    infostate: &mut InfoState<N>,
+fn add_regret<L: ActionMask, const N: usize>(
+    infostate: &mut InfoState<L, N>,
     action: NormalizedAction,
     amount: Weight,
     iteration: usize,
@@ -627,8 +666,8 @@ fn add_regret<const N: usize>(
     infostate.regrets[idx] += amount;
 }
 
-fn add_avstrat<const N: usize>(
-    infostate: &mut InfoState<N>,
+fn add_avstrat<L: ActionMask, const N: usize>(
+    infostate: &mut InfoState<L, N>,
     action: NormalizedAction,
     amount: Weight,
 ) {
@@ -639,8 +678,8 @@ fn add_avstrat<const N: usize>(
     infostate.avg_strategy[idx] += amount;
 }
 
-impl<G: GameState + ResampleFromInfoState + Send, const MAX_ACTIONS: usize> Policy<G>
-    for CFRES<G, MAX_ACTIONS>
+impl<G: GameState + ResampleFromInfoState + Send, const MAX_ACTIONS: usize, L: ActionMask>
+    Policy<G> for CFRES<G, MAX_ACTIONS, L>
 {
     /// Returns the MCCFR average policy for a player in a state.
     ///
@@ -684,8 +723,8 @@ impl<G: GameState + ResampleFromInfoState + Send, const MAX_ACTIONS: usize> Poli
     }
 }
 
-impl<G: GameState + ResampleFromInfoState + Send, const MAX_ACTIONS: usize> Agent<G>
-    for CFRES<G, MAX_ACTIONS>
+impl<G: GameState + ResampleFromInfoState + Send, const MAX_ACTIONS: usize, L: ActionMask>
+    Agent<G> for CFRES<G, MAX_ACTIONS, L>
 {
     fn step(&mut self, s: &G) -> Action {
         let action_weights = self.action_probabilities(s).to_vec();

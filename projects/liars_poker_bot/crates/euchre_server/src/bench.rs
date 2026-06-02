@@ -20,7 +20,7 @@ use std::{
 use actix_web::{web, HttpResponse, Responder};
 use card_platypus::{
     agents::Agent,
-    algorithms::{cfres::CFRES, open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot},
+    algorithms::{cfres::EuchreCfres, open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot},
 };
 use games::{
     actions,
@@ -211,7 +211,7 @@ pub(crate) fn load_bench_agents() -> HashMap<String, Mutex<BenchAgent>> {
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from(MEDIUM_WEIGHT_PATH));
     if medium_path.exists() {
-        let agent = CFRES::new_euchre(
+        let agent = EuchreCfres::new_euchre(
             StdRng::from_rng(&mut rng()),
             0,
             Some(medium_path.as_path()),
@@ -234,7 +234,7 @@ pub(crate) fn load_bench_agents() -> HashMap<String, Mutex<BenchAgent>> {
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from(HARD_WEIGHT_PATH));
     if hard_path.exists() {
-        let agent = CFRES::new_euchre(
+        let agent = EuchreCfres::new_euchre(
             StdRng::from_rng(&mut rng()),
             3,
             Some(hard_path.as_path()),

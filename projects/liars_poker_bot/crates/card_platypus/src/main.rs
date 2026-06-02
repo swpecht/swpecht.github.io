@@ -134,11 +134,11 @@ fn run_scratch(_args: Args) {
 
     println!(
         "cfres node (euchre) {}",
-        mem::size_of::<InfoState<{ cfres::EUCHRE_MAX_ACTIONS }>>()
+        mem::size_of::<InfoState<u32, { cfres::EUCHRE_MAX_ACTIONS }>>()
     );
     println!(
         "cfres node (bluff)  {}",
-        mem::size_of::<InfoState<{ cfres::BLUFF_MAX_ACTIONS }>>()
+        mem::size_of::<InfoState<u64, { cfres::BLUFF_MAX_ACTIONS }>>()
     );
     println!("istate key {}", mem::size_of::<IStateKey>());
 

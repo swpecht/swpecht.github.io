@@ -8,7 +8,7 @@ use std::{
 };
 
 use actix_web::{middleware::Logger, web, App, HttpResponse, HttpServer};
-use card_platypus::{agents::Agent, algorithms::cfres::CFRES};
+use card_platypus::{agents::Agent, algorithms::cfres::EuchreCfres};
 use games::{
     actions,
     gamestates::euchre::{Euchre, EuchreGameState},
@@ -46,7 +46,7 @@ const LOG_FILE: &str = "euchre_server.log";
 /// rather than attempting to recover from potentially inconsistent state.
 pub(crate) struct AppState {
     pub(crate) games: Mutex<HashMap<Uuid, GameData>>,
-    pub(crate) bot: Mutex<CFRES<EuchreGameState>>,
+    pub(crate) bot: Mutex<EuchreCfres>,
     pub(crate) bench: bench::BenchState,
 }
 
@@ -57,7 +57,7 @@ impl Default for AppState {
             .unwrap_or_else(|_| PathBuf::from(DEFAULT_WEIGHTS_PATH));
         info!("loading weights from {}", weights_path.display());
 
-        let bot = CFRES::new_euchre(
+        let bot = EuchreCfres::new_euchre(
             StdRng::from_rng(&mut rng()),
             MAX_CARDS_PLAYED,
             Some(weights_path.as_path()),
@@ -195,7 +195,7 @@ pub(crate) fn handle_register_player(
 
 pub(crate) fn progress_game(
     game_data: &mut GameData,
-    bot: &Mutex<CFRES<EuchreGameState>>,
+    bot: &Mutex<EuchreCfres>,
     game_id: &Uuid,
 ) {
     let mut gs = EuchreGameState::from(game_data.gs.as_str());
@@ -381,23 +381,23 @@ mod tests {
     use rand::{rng, rngs::StdRng, SeedableRng};
     use games::GameState;
     use games::gamestates::euchre::EuchreGameState;
-    use card_platypus::algorithms::cfres::CFRES;
+    use card_platypus::algorithms::cfres::EuchreCfres;
     use crate::html::render_game_view;
     use crate::{
         GameData, GameProcessingState, MAX_CARDS_PLAYED, handle_ready_clear,
         handle_take_action, new_game, progress_game,
     };
 
-    fn make_test_bot() -> Mutex<CFRES<EuchreGameState>> {
+    fn make_test_bot() -> Mutex<EuchreCfres> {
         // None path → in-memory NodeStore, uniform-random policy.
-        Mutex::new(CFRES::new_euchre(
+        Mutex::new(EuchreCfres::new_euchre(
             StdRng::from_rng(&mut rng()),
             MAX_CARDS_PLAYED,
             None,
         ))
     }
 
-    fn play_random_game(bot: &Mutex<CFRES<EuchreGameState>>, human_id: usize) {
+    fn play_random_game(bot: &Mutex<EuchreCfres>, human_id: usize) {
         let game_id = Uuid::new_v4();
         let mut gd = GameData::new(new_game(), human_id, 1);
         progress_game(&mut gd, bot, &game_id);
