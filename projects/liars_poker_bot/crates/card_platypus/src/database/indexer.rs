@@ -623,16 +623,43 @@ pub fn parse_euchre_bid_state(key: &IStateKey, n_hand_cards: usize) -> Option<Eu
 /// hand isomorphism. **Work in progress — see the roadmap comment above
 /// for what's implemented and what isn't.**
 ///
+/// BLOCKING ISSUE discovered in Phase 2a (commit pending):
+///
+/// A vanilla `HandIndexer::init(&[5, 1])` over (hand, face_up) iso-reduces
+/// under the full 4-suit symmetric group S₄ (24 permutations). The
+/// existing Euchre iterator + PHF uses a STRICTER iso reduction — only
+/// color-preserving suit permutations are considered iso (Z₂×Z₂ = 4
+/// permutations: identity, swap_black {S↔C}, swap_red {H↔D}, both).
+/// Concretely: hands like {AC, JH, QH, KH, AH} with face_up=NS and
+/// {AH, JC, QC, KC, AC} with face_up=NS are iso under S₄ (swap C↔H) but
+/// NOT iso under Euchre's Z₂×Z₂ — the iterator emits both, and a naive
+/// Waugh `index_last` collapses them to the same slot, breaking
+/// bijection.
+///
+/// The fix (Phase 2a-2, queued — needs design + implementation):
+///
+/// Split cards by color before indexing. Use two HandIndexers per shard:
+///   * `waugh_black` over `(black_hand_count, 1)` rounds — covers
+///     (Spades-or-Clubs hand cards, face_up which is always Spades in
+///     the post-sharder layout). Allows S↔C swap; treats H,D as the
+///     always-empty suits.
+///   * `waugh_red` over `(red_hand_count,)` rounds — covers Hearts-or-
+///     Diamonds hand cards. Allows H↔D swap; S,C empty.
+///
+/// Slot within shard = combo_offset[hand_black_count]
+///                    + black_idx × red_size_at_combo + red_idx.
+///
+/// This matches Euchre's exact iso reduction. Until that's built and
+/// passes the bijection test against the iterator, `index()` panics.
+///
 /// Slot layout per face-up shard (planned):
 ///   * For each `bid_state ∈ EuchreBidState`, a contiguous block of size
-///     `waugh.size(1)` (post-discard / play rounds add `waugh.size(2+d)`
-///     blocks per depth).
+///     `color_split_size` (post-discard / play rounds add per-depth
+///     blocks similar to OH).
 ///   * Shards are stacked: slot = shard_offset + intra_shard_slot.
 ///
 /// The sharding mirrors `Indexer::euchre`: 6 shards, one per face-up
-/// rank ∈ {NS, TS, JS, QS, KS, AS}. The `euchre_sharder` function is
-/// reused unchanged so the L-Bauer-relative normalization the iterator
-/// performs is consistent across PHF and Waugh modes.
+/// rank ∈ {NS, TS, JS, QS, KS, AS}.
 #[derive(Serialize, Deserialize)]
 pub struct WaughEuchreIndexer {
     max_cards_played: usize,
@@ -673,17 +700,54 @@ impl WaughEuchreIndexer {
     }
 
     pub fn index(&self, key: &IStateKey) -> u64 {
-        // Phase 1 stub: panics loudly so any accidental training pre-Phase-2
-        // halts immediately. Switch to a real computation here once L-Bauer
-        // preprocessing + per-bid-state Waugh-card-sequence assembly is in
-        // place.
+        // PHASE 2a HALT — see the BLOCKING ISSUE comment in the
+        // `WaughEuchreIndexer` doc block. Naive Waugh `index_all` over
+        // (hand, face_up) collapses iso classes that the Euchre
+        // normalizer keeps distinct (Waugh's iso = full S₄ suit perm;
+        // Euchre's iso = the color-preserving Z₂×Z₂ subgroup). We need a
+        // color-split indexer to match, which is queued as Phase 2a-2.
         let _ = key;
         let _ = self.runtime();
         panic!(
-            "WaughEuchreIndexer::index is not yet implemented (Phase 1 scaffold). \
-             See the roadmap in crates/card_platypus/src/database/indexer.rs."
+            "WaughEuchreIndexer::index is not implementable with a single \
+             4-suit HandIndexer — see the BLOCKING ISSUE comment in \
+             crates/card_platypus/src/database/indexer.rs"
         );
     }
+}
+
+/// Convert an istate entry's `Action(u8)` (a bit index 0..32) to Waugh's
+/// `(rank << 2) | suit` encoding. Euchre cards occupy bit indices
+/// `suit*8 + rank_in_suit` where `rank_in_suit ∈ [0, 6)` (0=9 ... 5=A)
+/// and `suit ∈ [0, 4)` (0=S, 1=C, 2=H, 3=D).
+#[inline]
+fn euchre_istate_entry_to_waugh_card(a: Action) -> u8 {
+    let bit_idx = a.0;
+    debug_assert!(
+        bit_idx < 32 && (bit_idx % 8) < 6,
+        "euchre card bit_idx={} is not a card position",
+        bit_idx
+    );
+    let suit = bit_idx / 8;
+    let rank = bit_idx % 8;
+    (rank << 2) | suit
+}
+
+/// Compute Waugh's iso-class index through round 1 (hand + face_up) for an
+/// Euchre istate that's been through the sharder normalizer. The istate
+/// layout is `[hand_0 .. hand_4, face_up, ...bid tail]`.
+fn compute_euchre_waugh_idx_5_1(key: &IStateKey, waugh: &HandIndexer) -> u64 {
+    let mut state = IndexerState::new();
+    let hand: [u8; 5] = [
+        euchre_istate_entry_to_waugh_card(key[0]),
+        euchre_istate_entry_to_waugh_card(key[1]),
+        euchre_istate_entry_to_waugh_card(key[2]),
+        euchre_istate_entry_to_waugh_card(key[3]),
+        euchre_istate_entry_to_waugh_card(key[4]),
+    ];
+    waugh.next_round(&hand, &mut state);
+    let face_up = euchre_istate_entry_to_waugh_card(key[5]);
+    waugh.next_round(&[face_up], &mut state)
 }
 
 impl WaughEuchreRuntime {
@@ -981,13 +1045,103 @@ mod waugh_euchre_tests {
     }
 
     /// The constructor builds a non-empty runtime and reports a positive
-    /// slot count. `index()` is intentionally not exercised here (panics
-    /// per the Phase 1 scaffold).
+    /// slot count.
     #[test]
     fn waugh_euchre_runtime_builds() {
         let idx = WaughEuchreIndexer::new(0);
-        assert!(idx.len() > 0, "Phase 1 scaffold should size to non-zero");
+        assert!(idx.len() > 0);
         let idx = WaughEuchreIndexer::new(1);
         assert!(idx.len() > 0);
+    }
+
+    /// `euchre_istate_entry_to_waugh_card` is bijective on the 24 valid
+    /// Euchre card bit indices: distinct cards map to distinct Waugh
+    /// encodings.
+    #[test]
+    fn euchre_to_waugh_card_bijection() {
+        let mut seen = std::collections::HashSet::new();
+        // Card bit indices: suit (0..4) × rank-in-suit (0..6).
+        for suit in 0..4u8 {
+            for rank in 0..6u8 {
+                let bit = suit * 8 + rank;
+                let w = euchre_istate_entry_to_waugh_card(Action(bit));
+                assert!(
+                    seen.insert(w),
+                    "collision at suit={} rank={} bit={} → w={}",
+                    suit, rank, bit, w
+                );
+            }
+        }
+        assert_eq!(seen.len(), 24);
+    }
+
+    /// Walk every R1Pending / R2Pending istate the Euchre iterator
+    /// emits for the NS face_up shard and verify Waugh slots are
+    /// unique + in-range.
+    ///
+    /// **CURRENTLY IGNORED** — see the BLOCKING ISSUE comment on
+    /// `WaughEuchreIndexer`. A vanilla `HandIndexer::init(&[5, 1])`
+    /// over-collapses iso classes that the Euchre iterator distinguishes
+    /// (Waugh S₄ vs Euchre Z₂×Z₂). The test will be un-ignored once the
+    /// color-split indexer in Phase 2a-2 lands.
+    #[test]
+    #[ignore = "Phase 2a-2 (color-split indexer) not yet implemented"]
+    fn waugh_euchre_r1_r2_bijection_ns_shard() {
+        use games::gamestates::euchre::{
+            actions::EAction, iterator::EuchreIsomorphicIStateIterator,
+        };
+
+        let indexer = WaughEuchreIndexer::new(0);
+        let total = indexer.len();
+
+        let mut slots: std::collections::HashSet<u64> = std::collections::HashSet::new();
+        let mut r1_r2_count = 0usize;
+        let mut skipped_other = 0usize;
+
+        for istate in EuchreIsomorphicIStateIterator::with_face_up(0, &[EAction::NS]) {
+            // Phase 2a filter: only R1Pending / R2Pending get indexed.
+            // We can't call parse_euchre_bid_state directly on the raw
+            // emitted istate because the sharder hasn't been applied yet;
+            // however, parse looks only at the tail (post hand+face_up)
+            // and the sharder doesn't reorder the tail, so a tail-only
+            // parse on the raw istate is equivalent.
+            let bid_state = parse_euchre_bid_state(&istate, 5);
+            let in_phase = matches!(
+                bid_state,
+                Some(EuchreBidState::R1Pending { .. })
+                    | Some(EuchreBidState::R2Pending { .. })
+            );
+            if !in_phase {
+                skipped_other += 1;
+                continue;
+            }
+
+            let slot = indexer.index(&istate);
+            assert!(
+                slot < total,
+                "slot {} >= total {} for istate {:?}",
+                slot, total, istate
+            );
+            assert!(
+                slots.insert(slot),
+                "collision at slot {} for istate {:?}",
+                slot, istate
+            );
+            r1_r2_count += 1;
+        }
+
+        assert!(r1_r2_count > 0, "iterator emitted zero R1/R2 istates");
+        assert_eq!(
+            slots.len(),
+            r1_r2_count,
+            "unique slot count != emitted count"
+        );
+        // Sanity: at least some non-R1/R2 emissions were filtered (Alone
+        // and Discard always exist for max_cards_played=0 since pickup
+        // paths are reachable).
+        assert!(
+            skipped_other > 0,
+            "expected some non-R1/R2 emissions (Alone/Discard)"
+        );
     }
 }
