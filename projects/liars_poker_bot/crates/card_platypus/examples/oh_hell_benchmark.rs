@@ -203,6 +203,7 @@ enum AgentKind {
     Pimcts,
     CfrMax0,
     CfrMax1,
+    CfrMax2,
 }
 
 impl AgentKind {
@@ -211,6 +212,7 @@ impl AgentKind {
             AgentKind::Pimcts => "PIMCTS",
             AgentKind::CfrMax0 => "CFR max=0",
             AgentKind::CfrMax1 => "CFR max=1",
+            AgentKind::CfrMax2 => "CFR max=2",
         }
     }
 }
@@ -227,6 +229,7 @@ fn build_focal(
         AgentKind::Pimcts => Some(Box::new(pimcts_bot(seed))),
         AgentKind::CfrMax0 => Some(Box::new(try_load_cfr(num_players, n_tricks, 0)?)),
         AgentKind::CfrMax1 => Some(Box::new(try_load_cfr(num_players, n_tricks, 1)?)),
+        AgentKind::CfrMax2 => Some(Box::new(try_load_cfr(num_players, n_tricks, 2)?)),
     }
 }
 
@@ -249,11 +252,14 @@ fn benchmark_config(num_players: usize, n_tricks: usize, n_random: usize, n_head
 
     // Decide which agent kinds are available for this config.
     let mut kinds = vec![AgentKind::Pimcts, AgentKind::CfrMax0];
-    // For 1-trick max=0 and max=1 produce identical policy (only play
-    // decision is forced) — only include max=1 row when it's
-    // *separately* trained.
+    // For 1-trick max=0/1/2 produce identical policy (only play decision
+    // is forced) — only include the higher-depth rows when they're
+    // separately trained.
     if n_tricks >= 2 && try_load_cfr(num_players, n_tricks, 1).is_some() {
         kinds.push(AgentKind::CfrMax1);
+    }
+    if n_tricks >= 2 && try_load_cfr(num_players, n_tricks, 2).is_some() {
+        kinds.push(AgentKind::CfrMax2);
     }
 
     // Verify each kind's checkpoint is reachable.
@@ -306,6 +312,8 @@ fn benchmark_config(num_players: usize, n_tricks: usize, n_random: usize, n_head
                     .expect("opp CFR max=0 missing"),
                 AgentKind::CfrMax1 => cfr_opponents(num_players - 1, num_players, n_tricks, 1)
                     .expect("opp CFR max=1 missing"),
+                AgentKind::CfrMax2 => cfr_opponents(num_players - 1, num_players, n_tricks, 2)
+                    .expect("opp CFR max=2 missing"),
             };
             let summary = play_matchup(
                 focal.as_mut(),

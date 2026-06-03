@@ -596,13 +596,23 @@ pub fn parse_euchre_bid_state(key: &IStateKey, n_hand_cards: usize) -> Option<Eu
     }
 
     if let Some(seat) = r1_pickup_at {
-        // Pickup path. Discard pending or Alone pending.
+        // Defensive: a valid seat must be 0..3.
+        if seat > 3 {
+            return None;
+        }
         if saw_discard_marker && !seen_alone_decision {
             return Some(EuchreBidState::Discard { r1_pickup_seat: seat });
         }
-        // Either non-dealer view (no DiscardMarker, no Alone yet) or dealer
-        // view past Discard (saw_discard_marker, no Alone yet either).
-        // Both correspond to the Alone-pending state with caller = pickup_seat.
+        // A *card* action in the tail after Pickup (but no DiscardMarker
+        // remaining, since DiscardMarker is only pushed while phase ==
+        // Discard) means this is the dealer's view post-discard. The
+        // dealer's actual current hand differs from `istate[0..5]` (one
+        // dealt card was discarded, face_up was picked up), so this
+        // case needs different indexing logic. We defer it to Phase 2c
+        // by returning None.
+        if has_card_action_after_pickup(key, n_hand_cards) {
+            return None;
+        }
         return Some(EuchreBidState::Alone {
             caller_seat: seat,
             via_pickup: true,
@@ -610,6 +620,9 @@ pub fn parse_euchre_bid_state(key: &IStateKey, n_hand_cards: usize) -> Option<Eu
     }
 
     if let Some(r2_seat) = r2_call_at {
+        if r2_seat > 3 {
+            return None;
+        }
         return Some(EuchreBidState::Alone {
             caller_seat: r2_seat,
             via_pickup: false,
@@ -670,34 +683,57 @@ pub struct WaughEuchreIndexer {
 /// Per-shard color-split runtime. See the BLOCKING ISSUE / PATH-2
 /// CORRECTION block above for design rationale.
 struct WaughEuchreRuntime {
+    // ---- R1/R2 layout (Phase 2a) ----
     /// `waugh_black[k]` for `k ∈ {0..=5}`. Black hand-card count.
     ///   * k = 0: rounds = `[1]` (just face_up).
     ///   * k > 0: rounds = `[k, 1]` (hand black cards + face_up).
     waugh_black: Vec<HandIndexer>,
-    /// `waugh_red[k]` for `k ∈ {0..=5}`. Red hand-card count is `5 - k`
-    /// in our indexer indexing convention (`k` is the black count, the
-    /// red count derives from `5 - k`).
-    ///   * 5 - k = 0: dummy 1-card indexer that's never queried.
-    ///   * 5 - k > 0: rounds = `[5-k]`.
+    /// `waugh_red[k]` for `k ∈ {0..=5}`. Red hand-card count is `5 - k`.
     waugh_red: Vec<HandIndexer>,
     /// `waugh_black_size[k]` = iso class count for `waugh_black[k]`.
     waugh_black_size: Vec<u64>,
-    /// `waugh_red_size[k]` = iso class count for `waugh_red[k]`. For
-    /// `5 - k = 0` this is 1 (the single "empty red hand" iso class).
+    /// `waugh_red_size[k]` = iso class count for `waugh_red[k]`.
     waugh_red_size: Vec<u64>,
-    /// Cumulative offset of each `k` block within a (shard, bid_state)
-    /// section. `combo_offsets[k] = Σ_{k'<k} (waugh_black_size[k'] ×
-    /// waugh_red_size[k'])`. `combo_offsets[6]` is the total
-    /// `bid_state_size`.
+    /// `combo_offsets[k] = Σ_{k'<k} (waugh_black_size[k'] × waugh_red_size[k'])`.
     combo_offsets: Vec<u64>,
-    /// Total slots within one (shard, bid_state) block.
-    bid_state_size: u64,
-    /// Per-bid-state offset within a shard.
+    /// Total slots within one (shard, R1/R2 bid_state) block.
+    r1_r2_bid_state_size: u64,
+
+    // ---- Alone layout (Phase 2b) ----
+    /// `waugh_per_count[k] = HandIndexer::init([k])` (or dummy for k=0).
+    /// Used for the per-color-group sub-indexing of Alone istates.
+    waugh_per_count: Vec<HandIndexer>,
+    /// `waugh_per_count_size[k]` = iso class count for `waugh_per_count[k]`.
+    /// For k=0 this is 1 (the single empty-hand iso class).
+    waugh_per_count_size: Vec<u64>,
+    /// `alone_combo_offsets[(face_up_group << 6) | (s_hand << 3) | c_hand]`
+    /// = cumulative offset within an Alone bid_state block.
+    /// `face_up_group ∈ {0=S, 1=C, 2=red}`. `s_hand`, `c_hand` are the
+    /// hand-only counts (face_up not included). The face_up is added to
+    /// the group indicated by `face_up_group`.
+    alone_combo_offsets: Vec<u64>,
+    /// Total slots within one (shard, Alone bid_state) block.
+    alone_bid_state_size: u64,
+
+    // ---- Shared shard layout ----
+    /// Per-bid-state offset within a shard. Each bid_state's offset
+    /// accounts for its variant's slot count (R1/R2 vs Alone vs the
+    /// deferred Discard).
     bid_state_offsets: [u64; EuchreBidState::COUNT],
     /// Total slots within one shard.
     shard_size: u64,
-    /// 6 shards × `shard_size` (matches `Indexer::euchre`'s sharding).
+    /// 6 shards × `shard_size`.
     total: u64,
+}
+
+/// Pack `(face_up_canonical_suit, s_hand, c_hand)` into a single index
+/// for `alone_combo_offsets`. `face_up_canonical_suit < 4`,
+/// `s_hand <= 5`, `c_hand <= 5`.
+#[inline]
+fn alone_combo_index(face_up_canonical_suit: u8, s_hand: u8, c_hand: u8) -> usize {
+    ((face_up_canonical_suit as usize) << 6)
+        | ((s_hand as usize) << 3)
+        | (c_hand as usize)
 }
 
 impl WaughEuchreIndexer {
@@ -747,9 +783,15 @@ impl WaughEuchreIndexer {
         };
         match bid_state {
             EuchreBidState::R1Pending { .. } | EuchreBidState::R2Pending { .. } => {}
-            EuchreBidState::Alone { .. } => panic!(
-                "WaughEuchreIndexer: Alone bid state queued for Phase 2b"
-            ),
+            EuchreBidState::Alone { caller_seat, .. } => {
+                if caller_seat == 3 {
+                    panic!(
+                        "WaughEuchreIndexer: dealer Alone (caller_seat=3) \
+                         deferred to Phase 2c (needs post-discard hand)"
+                    );
+                }
+                return alone_slot(rt, key, bid_state);
+            }
             EuchreBidState::Discard { .. } => panic!(
                 "WaughEuchreIndexer: Discard bid state queued for Phase 2c"
             ),
@@ -830,6 +872,166 @@ impl WaughEuchreIndexer {
     }
 }
 
+/// Returns true if the istate's tail (after hand + face_up) contains a
+/// CARD action (bit_idx < 32 with rank-in-suit < 6) at any position
+/// after the Pickup action. Used by `parse_euchre_bid_state` to detect
+/// the dealer's post-discard view at Alone phase, which has the
+/// discard card recorded in the tail.
+fn has_card_action_after_pickup(key: &IStateKey, n_hand_cards: usize) -> bool {
+    let tail_start = n_hand_cards + 1;
+    let mut seen_pickup = false;
+    for i in tail_start..key.len() {
+        let bit = key[i].0;
+        let ea = EAction::from(key[i]);
+        if ea == EAction::Pickup {
+            seen_pickup = true;
+            continue;
+        }
+        if seen_pickup && bit < 32 && (bit % 8) < 6 {
+            return true;
+        }
+    }
+    false
+}
+
+/// Compute the slot for an Alone-phase istate. Trump is pinned to S
+/// via σ, then the hand is split into three groups (S/trump,
+/// C/same-color-non-trump, red). face_up is added to whichever group
+/// it canonically lives in. Each group's iso index comes from its own
+/// per-count HandIndexer.
+///
+/// The Z₂ iso (swap H↔D) is captured by Waugh's natural reduction
+/// inside the red group's HandIndexer (the cards are fed with their
+/// actual suits H=2 and D=3, and Waugh swaps them when the
+/// configurations match).
+fn alone_slot(
+    rt: &WaughEuchreRuntime,
+    key: &IStateKey,
+    bid_state: EuchreBidState,
+) -> u64 {
+    let (caller_seat, via_pickup) = match bid_state {
+        EuchreBidState::Alone {
+            caller_seat,
+            via_pickup,
+        } => (caller_seat, via_pickup),
+        _ => unreachable!(),
+    };
+    let _ = caller_seat; // encoded via bid_state.to_idx()
+
+    let face_up_bit = key[5].0;
+    let face_up_orig_suit = face_up_bit / 8;
+    let face_up_orig_rank = face_up_bit % 8;
+
+    // Determine the declared trump.
+    let trump = if via_pickup {
+        face_up_orig_suit
+    } else {
+        // Find the R2 trump-call action's suit. Suit-call bits occupy
+        // bit indices `suit * 8 + 6`.
+        let mut t: Option<u8> = None;
+        for i in 6..key.len() {
+            let bit = key[i].0;
+            if bit < 32 && bit % 8 == 6 {
+                t = Some(bit / 8);
+                break;
+            }
+        }
+        t.expect("via_pickup=false but no R2 call action in tail")
+    };
+
+    // σ: pin trump to S = canonical position 0, AND choose σ so that
+    // the residual iso (after σ) is always swap H↔D in canonical space.
+    // Different trumps require different σ because the iso group on the
+    // raw istate is swap_red (if trump black) vs swap_black (if trump
+    // red); under σ-conjugation, both must become swap H↔D in canonical
+    // space.
+    //
+    // Derivation:
+    //   * trump=S (black): σ = identity. Residual swap_red = swap H↔D. ✓
+    //   * trump=C (black): σ = swap_black. Residual swap_red after
+    //     σ-conjugation = swap H↔D. ✓
+    //   * trump=H (red):   σ = swap_color (S↔H, C↔D). σ-conjugated
+    //     swap_black = swap H↔D. ✓
+    //   * trump=D (red):   σ = swap_color × swap_black ([3,2,1,0]).
+    //     σ-conjugated swap_black = swap H↔D. ✓
+    let sigma_table: [u8; 4] = match trump {
+        0 => [0, 1, 2, 3],
+        1 => [1, 0, 2, 3],
+        2 => [2, 3, 0, 1],
+        3 => [3, 2, 1, 0],
+        _ => panic!("invalid trump suit {}", trump),
+    };
+    let sigma = |s: u8| -> u8 { sigma_table[s as usize] };
+
+    // Apply σ to face_up — its canonical suit becomes a slot dimension.
+    let face_up_canonical_suit = sigma(face_up_orig_suit);
+
+    // Split hand cards into 4 per-canonical-suit rank sets (bitmasks
+    // over the 6 Euchre ranks). Using explicit rank-set encoding (not
+    // Waugh) avoids Waugh's natural S₄ iso silently swapping suits that
+    // aren't actually iso-equivalent at the game-state level.
+    let mut rank_sets: [u8; 4] = [0; 4];
+    for i in 0..5 {
+        let bit = key[i].0;
+        let rank = bit % 8;
+        let new_suit = sigma(bit / 8) as usize;
+        rank_sets[new_suit] |= 1u8 << rank;
+    }
+    let s_count = rank_sets[0].count_ones() as u8;
+    let c_count = rank_sets[1].count_ones() as u8;
+    let h_count = rank_sets[2].count_ones() as u8;
+    let d_count = rank_sets[3].count_ones() as u8;
+    debug_assert_eq!(s_count + c_count + h_count + d_count, 5);
+
+    // Apply iterator's iso reduction. The iterator uses
+    // `norm_transform` which canonicalises by face_up suit; within a
+    // black-face_up shard this is swap_red in original space. For ANY
+    // trump, after σ-conjugation the canonical iso reduction works
+    // out to canonical_swap_red (swap canonical H↔D, suits 2↔3).
+    //
+    // This is because the σ I chose has the property
+    //   σ_T2 ∘ swap_red ∘ σ_T1⁻¹ = canonical_swap_red
+    // whenever T2 is the trump of `swap_red(istate)` (which is T1 for
+    // T1 ∈ {S,C} and swap_red(T1) for T1 ∈ {H,D}).
+    let (canon_h, canon_d, canon_face_up_suit) = {
+        let lex_lo = (h_count, rank_sets[2]) <= (d_count, rank_sets[3]);
+        let (h, d) = if lex_lo {
+            (rank_sets[2], rank_sets[3])
+        } else {
+            (rank_sets[3], rank_sets[2])
+        };
+        let fu_suit = if face_up_canonical_suit == 2 || face_up_canonical_suit == 3 {
+            if lex_lo {
+                face_up_canonical_suit
+            } else if face_up_canonical_suit == 2 {
+                3
+            } else {
+                2
+            }
+        } else {
+            face_up_canonical_suit
+        };
+        (h, d, fu_suit)
+    };
+    let canon_s = rank_sets[0];
+    let canon_c = rank_sets[1];
+
+    // Slot encoding within (shard, bid_state) block:
+    //   * 4 face_up canonical suit positions.
+    //   * 4 × 64⁴ rank-set combinations per suit.
+    // Total per bid_state = 4 × 64⁴ = 67,108,864. Sparse (CFR only
+    // touches actually-reachable configurations).
+    const RANK_SET_DIM: u64 = 64;
+    let intra = (canon_face_up_suit as u64) * (RANK_SET_DIM.pow(4))
+        + (canon_s as u64) * (RANK_SET_DIM.pow(3))
+        + (canon_c as u64) * (RANK_SET_DIM.pow(2))
+        + (canon_h as u64) * RANK_SET_DIM
+        + (canon_d as u64);
+
+    let shard = face_up_orig_rank as u64;
+    shard * rt.shard_size + rt.bid_state_offsets[bid_state.to_idx()] + intra
+}
+
 /// Convert an istate entry's `Action(u8)` (a bit index 0..32) to Waugh's
 /// `(rank << 2) | suit` encoding. Euchre cards occupy bit indices
 /// `suit*8 + rank_in_suit` where `rank_in_suit ∈ [0, 6)` (0=9 ... 5=A)
@@ -867,19 +1069,17 @@ fn compute_euchre_waugh_idx_5_1(key: &IStateKey, waugh: &HandIndexer) -> u64 {
 impl WaughEuchreRuntime {
     fn build(_max_cards_played: usize) -> Self {
         const N_HAND: usize = 5;
+
+        // ---- R1/R2 layout: waugh_black([k, 1]) + waugh_red([5-k]) ----
         let mut waugh_black = Vec::with_capacity(N_HAND + 1);
         let mut waugh_red = Vec::with_capacity(N_HAND + 1);
         let mut waugh_black_size = Vec::with_capacity(N_HAND + 1);
         let mut waugh_red_size = Vec::with_capacity(N_HAND + 1);
-
         for k in 0..=N_HAND {
-            // Black indexer: k hand cards + 1 face_up. For k = 0 there
-            // are no hand cards so we collapse to a 1-card indexer over
-            // the face_up alone.
             let black_indexer = if k == 0 {
-                HandIndexer::init(&[1]).expect("Waugh black init k=0")
+                HandIndexer::init(&[1]).expect("Waugh black k=0")
             } else {
-                HandIndexer::init(&[k as u8, 1]).expect("Waugh black init")
+                HandIndexer::init(&[k as u8, 1]).expect("Waugh black k>0")
             };
             let black_size = if k == 0 {
                 black_indexer.size(0)
@@ -889,17 +1089,11 @@ impl WaughEuchreRuntime {
             waugh_black_size.push(black_size);
             waugh_black.push(black_indexer);
 
-            // Red indexer: (5 - k) hand cards. For 5 - k = 0 we use a
-            // dummy indexer and a slot count of 1 (the empty red hand
-            // iso class).
             let red_count = N_HAND - k;
             let (red_indexer, red_size) = if red_count == 0 {
-                (
-                    HandIndexer::init(&[1]).expect("Waugh red dummy init"),
-                    1u64,
-                )
+                (HandIndexer::init(&[1]).expect("Waugh red dummy"), 1u64)
             } else {
-                let idx = HandIndexer::init(&[red_count as u8]).expect("Waugh red init");
+                let idx = HandIndexer::init(&[red_count as u8]).expect("Waugh red");
                 let sz = idx.size(0);
                 (idx, sz)
             };
@@ -907,7 +1101,6 @@ impl WaughEuchreRuntime {
             waugh_red.push(red_indexer);
         }
 
-        // Combo offsets: cumulative (black × red) sizes across k.
         let mut combo_offsets = Vec::with_capacity(N_HAND + 2);
         let mut running = 0u64;
         for k in 0..=N_HAND {
@@ -915,16 +1108,54 @@ impl WaughEuchreRuntime {
             running += waugh_black_size[k] * waugh_red_size[k];
         }
         combo_offsets.push(running);
-        let bid_state_size = running;
+        let r1_r2_bid_state_size = running;
 
-        // Per-bid-state offsets within a shard. Phase 2 only fills
-        // R1Pending / R2Pending; other variants are still panic-stubbed
-        // but we reserve space for them so the layout is stable.
+        // ---- Alone layout: 3 per-color-group sub-indexers ----
+        // waugh_per_count[k] for k ∈ {0..=6}: HandIndexer::init([k]).
+        // Used to index each color group's hand (+face_up if in group).
+        const MAX_GROUP: usize = N_HAND + 1; // face_up can push a group to 6.
+        let mut waugh_per_count = Vec::with_capacity(MAX_GROUP + 1);
+        let mut waugh_per_count_size = Vec::with_capacity(MAX_GROUP + 1);
+        for k in 0..=MAX_GROUP {
+            if k == 0 {
+                waugh_per_count.push(HandIndexer::init(&[1]).expect("dummy"));
+                waugh_per_count_size.push(1u64);
+            } else {
+                let idx = HandIndexer::init(&[k as u8]).expect("per-count");
+                let sz = idx.size(0);
+                waugh_per_count_size.push(sz);
+                waugh_per_count.push(idx);
+            }
+        }
+
+        // Alone slot layout: per-suit rank-set bitmasks (6 ranks → 64
+        // values each) keep Waugh's natural S₄ iso out of the way. The
+        // iterator's iso reduction is applied manually before slot
+        // encoding (see `alone_slot`). Layout:
+        //   * 4 face_up canonical suit positions
+        //   * 64⁴ rank-set combinations
+        // Total = 4 × 64⁴ = 67,108,864 per Alone bid_state.
+        let alone_combo_offsets: Vec<u64> = Vec::new(); // unused now
+        let alone_bid_state_size: u64 = 4 * (64u64.pow(4));
+
+        // ---- Per-bid-state shard offsets ----
+        // Each bid_state variant gets a contiguous block. Block size
+        // depends on the variant: R1Pending/R2Pending → r1_r2_bid_state_size;
+        // Alone → alone_bid_state_size; Discard → max for now (Phase 2c
+        // will give it a real size).
+        let placeholder_size = r1_r2_bid_state_size.max(alone_bid_state_size);
         let mut bid_state_offsets = [0u64; EuchreBidState::COUNT];
         let mut running = 0u64;
-        for slot in bid_state_offsets.iter_mut() {
-            *slot = running;
-            running += bid_state_size;
+        for i in 0..EuchreBidState::COUNT {
+            bid_state_offsets[i] = running;
+            // Decode i back into a bid_state to determine its size.
+            running += match i {
+                0..=3 => r1_r2_bid_state_size,            // R1Pending
+                4..=7 => r1_r2_bid_state_size,            // R2Pending
+                8..=11 => placeholder_size,               // Discard (Phase 2c)
+                12..=19 => alone_bid_state_size,          // Alone
+                _ => unreachable!(),
+            };
         }
         let shard_size = running;
         let total = 6 * shard_size;
@@ -935,7 +1166,11 @@ impl WaughEuchreRuntime {
             waugh_black_size,
             waugh_red_size,
             combo_offsets,
-            bid_state_size,
+            r1_r2_bid_state_size,
+            waugh_per_count,
+            waugh_per_count_size,
+            alone_combo_offsets,
+            alone_bid_state_size,
             bid_state_offsets,
             shard_size,
             total,
@@ -1402,6 +1637,175 @@ mod waugh_euchre_tests {
                 );
             }
         }
+    }
+
+    /// Alone phase (non-dealer caller, via Pickup or via R2). The iso
+    /// group is Z₂: identity + swap_red when trump is black, or
+    /// identity + swap_black when trump is red. The trump-preserving
+    /// swap should land on the same Waugh slot.
+    #[test]
+    fn waugh_euchre_alone_iso_under_z2() {
+        use games::gamestates::euchre::{actions::EAction, EPhase, Euchre};
+        use games::GameState;
+
+        let indexer = WaughEuchreIndexer::new(0);
+
+        fn perm_action(a: Action, perm: &[u8; 4]) -> Action {
+            let bit = a.0;
+            if bit >= 32 {
+                return a;
+            }
+            let suit = bit / 8;
+            let rank = bit % 8;
+            if rank <= 6 {
+                Action(perm[suit as usize] * 8 + rank)
+            } else {
+                a
+            }
+        }
+
+        let mut rng: u64 = 0xCAFE_C0DE;
+        let mut next = || {
+            rng ^= rng << 13;
+            rng ^= rng >> 7;
+            rng ^= rng << 17;
+            rng
+        };
+
+        let mut tested = 0usize;
+        for _ in 0..400 {
+            let seed = next() as usize;
+            let mut gs = Euchre::new_state();
+            let mut acts = Vec::new();
+            let mut step = 0usize;
+            let mut reached = false;
+            while !gs.is_terminal() {
+                gs.legal_actions(&mut acts);
+                // Bias toward Pickup/ChooseTrump so we don't always
+                // pass past Alone-pending.
+                let pick = (seed.wrapping_add(step.wrapping_mul(73))) % acts.len();
+                gs.apply_action(acts[pick]);
+                step += 1;
+                if !gs.is_chance_node() && gs.phase() == EPhase::Alone {
+                    reached = true;
+                    break;
+                }
+            }
+            if !reached {
+                continue;
+            }
+            let perspective = gs.cur_player();
+            if perspective == 3 {
+                continue; // dealer Alone — deferred to Phase 2c
+            }
+            let raw = gs.istate_key(perspective);
+            let bs = parse_euchre_bid_state(&raw, 5);
+            let (caller_seat, via_pickup) = match bs {
+                Some(EuchreBidState::Alone {
+                    caller_seat,
+                    via_pickup,
+                }) => (caller_seat, via_pickup),
+                _ => continue,
+            };
+            if caller_seat == 3 {
+                continue;
+            }
+
+            // Determine trump from raw istate.
+            let trump = if via_pickup {
+                raw[5].0 / 8
+            } else {
+                let mut t: Option<u8> = None;
+                for i in 6..raw.len() {
+                    let bit = raw[i].0;
+                    if bit < 32 && bit % 8 == 6 {
+                        t = Some(bit / 8);
+                        break;
+                    }
+                }
+                match t {
+                    Some(t) => t,
+                    None => continue,
+                }
+            };
+
+            // The iterator's iso within a black-face_up shard is
+            // swap_red (H↔D) for ALL trumps — `norm_transform` chooses
+            // its perm based on face_up's suit, not trump. So
+            // regardless of trump's color, swap_red is the within-shard
+            // iso we need to verify against.
+            let iso_perm: [u8; 4] = [0, 1, 3, 2];
+
+            let slot_raw = indexer.index(&raw);
+            let mut permuted = IStateKey::default();
+            for a in raw.iter() {
+                permuted.push(perm_action(*a, &iso_perm));
+            }
+            permuted.sort_range(0, 5.min(permuted.len()));
+            let slot_perm = indexer.index(&permuted);
+            assert_eq!(
+                slot_raw, slot_perm,
+                "Alone Z₂ iso violation: trump={} perm={:?} raw={:?} permuted={:?}",
+                trump, iso_perm, raw, permuted
+            );
+            tested += 1;
+        }
+        assert!(
+            tested > 0,
+            "couldn't sample any Alone non-dealer istates in 400 tries"
+        );
+    }
+
+    /// Alone bijection check: every iterator-emitted Alone istate with
+    /// caller_seat ∈ {0,1,2} lands on a unique Waugh slot for the NS
+    /// face_up shard.
+    #[test]
+    fn waugh_euchre_alone_bijection_ns_shard() {
+        use games::gamestates::euchre::{
+            actions::EAction, iterator::EuchreIsomorphicIStateIterator,
+        };
+
+        let indexer = WaughEuchreIndexer::new(0);
+        let total = indexer.len();
+
+        let mut slots: std::collections::HashSet<u64> = std::collections::HashSet::new();
+        let mut alone_count = 0usize;
+        let mut deferred_dealer_count = 0usize;
+
+        for istate in EuchreIsomorphicIStateIterator::with_face_up(0, &[EAction::NS]) {
+            let bs = parse_euchre_bid_state(&istate, 5);
+            let (caller_seat, _via_pickup) = match bs {
+                Some(EuchreBidState::Alone {
+                    caller_seat,
+                    via_pickup,
+                }) => (caller_seat, via_pickup),
+                _ => continue,
+            };
+            if caller_seat == 3 {
+                deferred_dealer_count += 1;
+                continue;
+            }
+            assert!(
+                caller_seat < 4,
+                "parser returned invalid caller_seat={} for istate {:?}",
+                caller_seat, istate
+            );
+            let slot = indexer.index(&istate);
+            assert!(
+                slot < total,
+                "Alone slot {} out of range (total {}) for istate {:?}",
+                slot, total, istate
+            );
+            assert!(
+                slots.insert(slot),
+                "Alone collision at slot {} for istate {:?}",
+                slot, istate
+            );
+            alone_count += 1;
+        }
+
+        assert!(alone_count > 0, "iterator emitted zero non-dealer Alone istates");
+        let _ = deferred_dealer_count; // currently ignored — Phase 2c will pick it up
     }
 
     /// Negative control: under a non-D₄ permutation (single S↔H swap,
