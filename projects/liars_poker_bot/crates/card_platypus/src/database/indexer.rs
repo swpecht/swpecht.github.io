@@ -485,6 +485,13 @@ pub enum EuchreBidState {
     /// slot because the trump suit is derivable from the face-up sharding +
     /// the istate's R2 call action).
     Alone { caller_seat: u8, via_pickup: bool },
+    /// Dealer's view of a NON-DEALER caller's Alone-pending state
+    /// (after dealer discarded). `pickup_seat` ∈ {0,1,2}.
+    /// Distinct from `Alone{caller=3, via_pickup=true}` (dealer's *own*
+    /// Alone) because here the dealer is observing, not the caller. The
+    /// istate has the discard card in the tail (dealer-private), and
+    /// the dealer's actual current hand needs reconstruction.
+    DealerAloneObserver { pickup_seat: u8 },
 }
 
 impl EuchreBidState {
@@ -494,7 +501,8 @@ impl EuchreBidState {
         4    // R1Pending: 4
         + 4  // R2Pending: 4
         + 4  // Discard: 4
-        + 8; // Alone: 4 seats × 2 paths
+        + 8  // Alone: 4 seats × 2 paths
+        + 3; // DealerAloneObserver: 3 (pickup_seat ∈ {0,1,2})
 
     /// Stable index into `[0, COUNT)`.
     pub fn to_idx(self) -> usize {
@@ -504,6 +512,9 @@ impl EuchreBidState {
             EuchreBidState::Discard { r1_pickup_seat } => 8 + r1_pickup_seat as usize,
             EuchreBidState::Alone { caller_seat, via_pickup } => {
                 12 + (caller_seat as usize) * 2 + via_pickup as usize
+            }
+            EuchreBidState::DealerAloneObserver { pickup_seat } => {
+                20 + pickup_seat as usize
             }
         }
     }
@@ -596,22 +607,23 @@ pub fn parse_euchre_bid_state(key: &IStateKey, n_hand_cards: usize) -> Option<Eu
     }
 
     if let Some(seat) = r1_pickup_at {
-        // Defensive: a valid seat must be 0..3.
         if seat > 3 {
             return None;
         }
         if saw_discard_marker && !seen_alone_decision {
             return Some(EuchreBidState::Discard { r1_pickup_seat: seat });
         }
-        // A *card* action in the tail after Pickup (but no DiscardMarker
-        // remaining, since DiscardMarker is only pushed while phase ==
-        // Discard) means this is the dealer's view post-discard. The
-        // dealer's actual current hand differs from `istate[0..5]` (one
-        // dealt card was discarded, face_up was picked up), so this
-        // case needs different indexing logic. We defer it to Phase 2c
-        // by returning None.
-        if has_card_action_after_pickup(key, n_hand_cards) {
+        let has_card_after = has_card_action_after_pickup(key, n_hand_cards);
+        if !has_card_after && seat == 3 {
+            // Iterator artifact: dealer's post-Pickup candidate
+            // emitted *before* the DiscardMarker child. The actual
+            // CFR-queried istate at this game state has DiscardMarker
+            // appended (→ Discard {seat=3}), so this marker-less
+            // candidate isn't a real CFR lookup. Skip.
             return None;
+        }
+        if has_card_after && seat < 3 {
+            return Some(EuchreBidState::DealerAloneObserver { pickup_seat: seat });
         }
         return Some(EuchreBidState::Alone {
             caller_seat: seat,
@@ -783,18 +795,18 @@ impl WaughEuchreIndexer {
         };
         match bid_state {
             EuchreBidState::R1Pending { .. } | EuchreBidState::R2Pending { .. } => {}
-            EuchreBidState::Alone { caller_seat, .. } => {
-                if caller_seat == 3 {
-                    panic!(
-                        "WaughEuchreIndexer: dealer Alone (caller_seat=3) \
-                         deferred to Phase 2c (needs post-discard hand)"
-                    );
-                }
+            EuchreBidState::Alone { caller_seat: 3, via_pickup: true } => {
+                return dealer_alone_pickup_slot(rt, key, bid_state);
+            }
+            EuchreBidState::Alone { .. } => {
                 return alone_slot(rt, key, bid_state);
             }
-            EuchreBidState::Discard { .. } => panic!(
-                "WaughEuchreIndexer: Discard bid state queued for Phase 2c"
-            ),
+            EuchreBidState::Discard { .. } => {
+                return discard_slot(rt, key, bid_state);
+            }
+            EuchreBidState::DealerAloneObserver { .. } => {
+                return dealer_alone_pickup_slot(rt, key, bid_state);
+            }
         }
 
         // D₄ canonicalisation:
@@ -1032,6 +1044,225 @@ fn alone_slot(
     shard * rt.shard_size + rt.bid_state_offsets[bid_state.to_idx()] + intra
 }
 
+/// Pure helper: from a 4-element rank-set bitmask array `[s, c, h, d]`
+/// and the face_up's canonical suit, compute the iso-reduced intra
+/// slot. Iso = canonical_swap_red (swap canonical H↔D).
+///
+/// Returns `(canon_face_up_suit, canon_s, canon_c, canon_h, canon_d)`
+/// for the caller to encode as needed.
+#[inline]
+fn apply_canonical_swap_red(rank_sets: [u8; 4], face_up_canonical_suit: u8) -> (u8, u8, u8, u8, u8) {
+    let h_count = rank_sets[2].count_ones() as u8;
+    let d_count = rank_sets[3].count_ones() as u8;
+    let lex_lo = (h_count, rank_sets[2]) <= (d_count, rank_sets[3]);
+    let (canon_h, canon_d) = if lex_lo {
+        (rank_sets[2], rank_sets[3])
+    } else {
+        (rank_sets[3], rank_sets[2])
+    };
+    let canon_face_up = if face_up_canonical_suit == 2 || face_up_canonical_suit == 3 {
+        if lex_lo {
+            face_up_canonical_suit
+        } else if face_up_canonical_suit == 2 {
+            3
+        } else {
+            2
+        }
+    } else {
+        face_up_canonical_suit
+    };
+    (canon_face_up, rank_sets[0], rank_sets[1], canon_h, canon_d)
+}
+
+/// Pure helper: pack (canon_face_up_suit, canon_s, canon_c, canon_h,
+/// canon_d) into the 4 × 64⁴ intra slot.
+#[inline]
+fn pack_intra_slot(canon_face_up: u8, s: u8, c: u8, h: u8, d: u8) -> u64 {
+    const DIM: u64 = 64;
+    (canon_face_up as u64) * DIM.pow(4)
+        + (s as u64) * DIM.pow(3)
+        + (c as u64) * DIM.pow(2)
+        + (h as u64) * DIM
+        + (d as u64)
+}
+
+/// Find the discard card in a dealer's post-Pickup istate. The discard
+/// is the first card action after Pickup (with no intervening
+/// DiscardMarker). Returns the card's bit index (`suit*8 + rank`).
+fn find_discard_card(key: &IStateKey, n_hand: usize) -> Option<u8> {
+    let mut seen_pickup = false;
+    for i in (n_hand + 1)..key.len() {
+        let bit = key[i].0;
+        let ea = EAction::from(key[i]);
+        if ea == EAction::Pickup {
+            seen_pickup = true;
+            continue;
+        }
+        if seen_pickup && bit < 32 && bit % 8 < 6 {
+            return Some(bit);
+        }
+    }
+    None
+}
+
+/// Reconstruct dealer's actual 5-card hand at Alone phase (post-discard).
+/// `original` = istate[0..5] (dealer's 5 dealt cards). The dealer
+/// either discards face_up (hand stays = original) or discards one of
+/// the original 5 (replace that card with face_up).
+fn reconstruct_dealer_hand(original: &[u8; 5], face_up_bit: u8, discard_bit: u8) -> [u8; 5] {
+    if discard_bit == face_up_bit {
+        return *original;
+    }
+    let mut out = [0u8; 5];
+    let mut idx = 0;
+    let mut found_discard = false;
+    for &c in original {
+        if !found_discard && c == discard_bit {
+            found_discard = true;
+            continue;
+        }
+        out[idx] = c;
+        idx += 1;
+    }
+    debug_assert!(
+        found_discard,
+        "discard {} not in dealer's original hand {:?}",
+        discard_bit, original
+    );
+    out[idx] = face_up_bit;
+    out
+}
+
+/// Slot for the dealer's Discard-phase istate. The dealer's "hand" at
+/// Discard time is the 5 dealt cards + face_up = 6 cards. Trump =
+/// face_up.suit (always via_pickup for Discard). Apply σ to pin trump
+/// to canonical S, then encode as 4 rank-set bitmasks with
+/// canonical_swap_red iso. face_up's canonical suit is always 0
+/// (trump-pinned), so we omit that dim from the slot — Discard uses
+/// just 64⁴ slots per bid_state, not 4 × 64⁴.
+fn discard_slot(rt: &WaughEuchreRuntime, key: &IStateKey, bid_state: EuchreBidState) -> u64 {
+    let face_up_bit = key[5].0;
+    let face_up_orig_suit = face_up_bit / 8;
+    let face_up_orig_rank = face_up_bit % 8;
+    let trump = face_up_orig_suit;
+
+    let sigma_table: [u8; 4] = match trump {
+        0 => [0, 1, 2, 3],
+        1 => [1, 0, 2, 3],
+        2 => [2, 3, 0, 1],
+        3 => [3, 2, 1, 0],
+        _ => panic!("invalid trump suit {}", trump),
+    };
+    let sigma = |s: u8| -> u8 { sigma_table[s as usize] };
+
+    let mut rank_sets: [u8; 4] = [0; 4];
+    for i in 0..5 {
+        let bit = key[i].0;
+        let rank = bit % 8;
+        let new_suit = sigma(bit / 8) as usize;
+        rank_sets[new_suit] |= 1u8 << rank;
+    }
+    let face_up_canonical_suit = sigma(face_up_orig_suit);
+    rank_sets[face_up_canonical_suit as usize] |= 1u8 << face_up_orig_rank;
+
+    let (_canon_fu, canon_s, canon_c, canon_h, canon_d) =
+        apply_canonical_swap_red(rank_sets, face_up_canonical_suit);
+
+    // face_up_canonical_suit always = 0 (trump-pinned) — omit that dim.
+    let intra = pack_intra_slot(0, canon_s, canon_c, canon_h, canon_d);
+
+    let shard = face_up_orig_rank as u64;
+    shard * rt.shard_size + rt.bid_state_offsets[bid_state.to_idx()] + intra
+}
+
+/// Slot for the dealer-post-discard Alone-phase istates: either the
+/// dealer's *own* Alone (`Alone {caller_seat=3, via_pickup=true}`) or
+/// the dealer's *observer* view of a non-dealer caller's Alone
+/// (`DealerAloneObserver {pickup_seat}`).
+///
+/// Two iterator-emitted istates that share the same dealer *current*
+/// hand but differ in original hand / discard choice are
+/// game-theoretically equivalent (dealer makes no future decision
+/// that depends on which original card was discarded vs which became
+/// the face_up pickup). But the iterator emits them as distinct
+/// keys, so for the PHF-compatible bijection we encode the dealer's
+/// **5 original dealt cards + discard choice** (which together
+/// determine the istate uniquely modulo iso) — not the current hand.
+///
+/// Encoding: σ-rotate to pin trump to canonical S; build 4 rank-set
+/// bitmasks over the 5 original dealt cards; canonicalise the
+/// (rank_sets, discard) pair under the canonical_swap_red residual
+/// iso. The face_up is fully determined by (shard, trump) and is not
+/// directly encoded.
+fn dealer_alone_pickup_slot(
+    rt: &WaughEuchreRuntime,
+    key: &IStateKey,
+    bid_state: EuchreBidState,
+) -> u64 {
+    let face_up_bit = key[5].0;
+    let face_up_orig_suit = face_up_bit / 8;
+    let face_up_orig_rank = face_up_bit % 8;
+    let trump = face_up_orig_suit;
+
+    let discard = match find_discard_card(key, 5) {
+        Some(b) => b,
+        None => panic!(
+            "dealer Alone via_pickup=true but no discard card in tail; istate = {:?}",
+            (0..key.len()).map(|i| key[i].0).collect::<Vec<u8>>()
+        ),
+    };
+
+    let sigma_table: [u8; 4] = match trump {
+        0 => [0, 1, 2, 3],
+        1 => [1, 0, 2, 3],
+        2 => [2, 3, 0, 1],
+        3 => [3, 2, 1, 0],
+        _ => panic!("invalid trump suit {}", trump),
+    };
+    let sigma = |s: u8| -> u8 { sigma_table[s as usize] };
+
+    // Encode istate[0..5] (dealer's 5 dealt cards) as 4 rank-sets.
+    let mut rank_sets: [u8; 4] = [0; 4];
+    for i in 0..5 {
+        let bit = key[i].0;
+        let rank = bit % 8;
+        let new_suit = sigma(bit / 8) as usize;
+        rank_sets[new_suit] |= 1u8 << rank;
+    }
+    // Discard card in canonical (suit, rank).
+    let disc_canonical_suit = sigma(discard / 8);
+    let disc_rank = discard % 8;
+
+    // NO additional iso reduction here. The iterator's `norm` already
+    // canonicalises within the {identity, swap_red} group for the
+    // face_up=Spades shard, and σ for trump=face_up.suit happens to
+    // agree with that canonical choice. Applying my own
+    // canonical_swap_red lex-min on top would *over-collapse* —
+    // iterator emits BOTH (rank_sets, discard=H-suit) and
+    // (rank_sets, discard=D-suit) when rank_sets are H/D-symmetric,
+    // because suit_order can't see which of the two discards landed.
+    // We need both to keep distinct slots.
+    let (cs, cc, ch, cd, dsuit, drank) = (
+        rank_sets[0], rank_sets[1], rank_sets[2], rank_sets[3],
+        disc_canonical_suit, disc_rank,
+    );
+
+    // Layout: 64⁴ rank_sets × 4 discard suits × 8 discard ranks.
+    // (Using 8 ranks rather than 6 keeps the rank slot arithmetic-
+    // simple at a slight space overhead — `disc_rank ∈ [0, 6)` so
+    // upper 2 ranks are unused.)
+    const RANK_SET_DIM: u64 = 64;
+    let rank_sets_part = (cs as u64) * RANK_SET_DIM.pow(3)
+        + (cc as u64) * RANK_SET_DIM.pow(2)
+        + (ch as u64) * RANK_SET_DIM
+        + (cd as u64);
+    let discard_idx = (dsuit as u64) * 8 + drank as u64;
+    let intra = rank_sets_part * 32 + discard_idx;
+
+    let shard = face_up_orig_rank as u64;
+    shard * rt.shard_size + rt.bid_state_offsets[bid_state.to_idx()] + intra
+}
+
 /// Convert an istate entry's `Action(u8)` (a bit index 0..32) to Waugh's
 /// `(rank << 2) | suit` encoding. Euchre cards occupy bit indices
 /// `suit*8 + rank_in_suit` where `rank_in_suit ∈ [0, 6)` (0=9 ... 5=A)
@@ -1140,20 +1371,32 @@ impl WaughEuchreRuntime {
 
         // ---- Per-bid-state shard offsets ----
         // Each bid_state variant gets a contiguous block. Block size
-        // depends on the variant: R1Pending/R2Pending → r1_r2_bid_state_size;
-        // Alone → alone_bid_state_size; Discard → max for now (Phase 2c
-        // will give it a real size).
-        let placeholder_size = r1_r2_bid_state_size.max(alone_bid_state_size);
+        // depends on the variant:
+        //   * R1Pending/R2Pending → r1_r2_bid_state_size.
+        //   * Discard → 64⁴ (no face_up dim — face_up is in dealer's
+        //     hand, canonical suit always = 0).
+        //   * Alone {caller=*, via_pickup=*} → alone_bid_state_size
+        //     (= 4 × 64⁴, with face_up canonical suit dim).
+        let discard_bid_state_size: u64 = 64u64.pow(4);
+        // Dealer-Alone-via-Pickup encodes (5-card rank_sets × discard
+        // suit × discard rank) under canonical_swap_red iso. The
+        // rank-set part is 64⁴; the discard part is `4 suits × 8 rank
+        // slots = 32` (only 24 valid combos but we pad to 32 for clean
+        // arithmetic). Total = 32 × 64⁴ per bid_state. This applies to:
+        //   * Alone {caller=3, via_pickup=true} (dealer's own).
+        //   * DealerAloneObserver {pickup_seat=0..2} (dealer observing).
+        let dealer_pickup_size: u64 = 32 * 64u64.pow(4);
         let mut bid_state_offsets = [0u64; EuchreBidState::COUNT];
         let mut running = 0u64;
         for i in 0..EuchreBidState::COUNT {
             bid_state_offsets[i] = running;
-            // Decode i back into a bid_state to determine its size.
             running += match i {
-                0..=3 => r1_r2_bid_state_size,            // R1Pending
-                4..=7 => r1_r2_bid_state_size,            // R2Pending
-                8..=11 => placeholder_size,               // Discard (Phase 2c)
-                12..=19 => alone_bid_state_size,          // Alone
+                0..=3 => r1_r2_bid_state_size,    // R1Pending
+                4..=7 => r1_r2_bid_state_size,    // R2Pending
+                8..=11 => discard_bid_state_size, // Discard
+                12..=18 => alone_bid_state_size,  // Alone {caller ∈ {0..2} OR caller=3,via_pickup=false}
+                19 => dealer_pickup_size,         // Alone {caller=3, via_pickup=true}
+                20..=22 => dealer_pickup_size,    // DealerAloneObserver
                 _ => unreachable!(),
             };
         }
@@ -1386,8 +1629,7 @@ mod waugh_euchre_tests {
     use super::*;
     use games::gamestates::euchre::actions::{Card as ECard, Suit as ESuit};
 
-    /// `EuchreBidState::to_idx` is bijective on [0, COUNT). All 16 distinct
-    /// variants land at distinct indices in [0, 20).
+    /// `EuchreBidState::to_idx` is bijective on [0, COUNT).
     #[test]
     fn euchre_bid_state_indices_unique() {
         let mut seen = std::collections::HashSet::new();
@@ -1400,6 +1642,9 @@ mod waugh_euchre_tests {
                     .into_iter()
                     .map(move |v| EuchreBidState::Alone { caller_seat: s, via_pickup: v })
             }))
+            .chain(
+                (0..3u8).map(|s| EuchreBidState::DealerAloneObserver { pickup_seat: s }),
+            )
             .collect();
         assert_eq!(states.len(), EuchreBidState::COUNT);
         for s in &states {
@@ -1770,26 +2015,16 @@ mod waugh_euchre_tests {
 
         let mut slots: std::collections::HashSet<u64> = std::collections::HashSet::new();
         let mut alone_count = 0usize;
-        let mut deferred_dealer_count = 0usize;
 
         for istate in EuchreIsomorphicIStateIterator::with_face_up(0, &[EAction::NS]) {
             let bs = parse_euchre_bid_state(&istate, 5);
-            let (caller_seat, _via_pickup) = match bs {
-                Some(EuchreBidState::Alone {
-                    caller_seat,
-                    via_pickup,
-                }) => (caller_seat, via_pickup),
+            let caller_seat = match bs {
+                Some(EuchreBidState::Alone { caller_seat, .. }) => caller_seat,
                 _ => continue,
             };
             if caller_seat == 3 {
-                deferred_dealer_count += 1;
-                continue;
+                continue; // covered by waugh_euchre_dealer_own_alone_bijection
             }
-            assert!(
-                caller_seat < 4,
-                "parser returned invalid caller_seat={} for istate {:?}",
-                caller_seat, istate
-            );
             let slot = indexer.index(&istate);
             assert!(
                 slot < total,
@@ -1805,7 +2040,150 @@ mod waugh_euchre_tests {
         }
 
         assert!(alone_count > 0, "iterator emitted zero non-dealer Alone istates");
-        let _ = deferred_dealer_count; // currently ignored — Phase 2c will pick it up
+    }
+
+    /// Discard bijection check.
+    #[test]
+    fn waugh_euchre_discard_bijection_ns_shard() {
+        use games::gamestates::euchre::{
+            actions::EAction, iterator::EuchreIsomorphicIStateIterator,
+        };
+
+        let indexer = WaughEuchreIndexer::new(0);
+        let total = indexer.len();
+        let mut slots: std::collections::HashSet<u64> = std::collections::HashSet::new();
+        let mut count = 0usize;
+
+        for istate in EuchreIsomorphicIStateIterator::with_face_up(0, &[EAction::NS]) {
+            if !matches!(
+                parse_euchre_bid_state(&istate, 5),
+                Some(EuchreBidState::Discard { .. })
+            ) {
+                continue;
+            }
+            let slot = indexer.index(&istate);
+            assert!(
+                slot < total,
+                "Discard slot {} out of range (total {})",
+                slot, total
+            );
+            assert!(
+                slots.insert(slot),
+                "Discard collision at slot {} for istate {:?}",
+                slot, istate
+            );
+            count += 1;
+        }
+        assert!(count > 0, "iterator emitted zero Discard istates");
+    }
+
+    /// Dealer's own Alone (caller_seat=3) bijection check.
+    #[test]
+    fn waugh_euchre_dealer_own_alone_bijection_ns_shard() {
+        use games::gamestates::euchre::{
+            actions::EAction, iterator::EuchreIsomorphicIStateIterator,
+        };
+
+        let indexer = WaughEuchreIndexer::new(0);
+        let total = indexer.len();
+        let mut slots: std::collections::HashSet<u64> = std::collections::HashSet::new();
+        let mut count = 0usize;
+
+        for istate in EuchreIsomorphicIStateIterator::with_face_up(0, &[EAction::NS]) {
+            if !matches!(
+                parse_euchre_bid_state(&istate, 5),
+                Some(EuchreBidState::Alone { caller_seat: 3, .. })
+            ) {
+                continue;
+            }
+            let slot = indexer.index(&istate);
+            assert!(
+                slot < total,
+                "Dealer Alone slot {} out of range (total {})",
+                slot, total
+            );
+            assert!(
+                slots.insert(slot),
+                "Dealer Alone collision at slot {} for istate {:?}",
+                slot, istate
+            );
+            count += 1;
+        }
+        assert!(count > 0, "iterator emitted zero dealer Alone istates");
+    }
+
+    /// DealerAloneObserver bijection check.
+    #[test]
+    fn waugh_euchre_dealer_observer_bijection_ns_shard() {
+        use games::gamestates::euchre::{
+            actions::EAction, iterator::EuchreIsomorphicIStateIterator,
+        };
+
+        let indexer = WaughEuchreIndexer::new(0);
+        let total = indexer.len();
+        let mut slots: std::collections::HashMap<u64, Vec<u8>> = std::collections::HashMap::new();
+        let mut count = 0usize;
+
+        for istate in EuchreIsomorphicIStateIterator::with_face_up(0, &[EAction::NS]) {
+            if !matches!(
+                parse_euchre_bid_state(&istate, 5),
+                Some(EuchreBidState::DealerAloneObserver { .. })
+            ) {
+                continue;
+            }
+            let slot = indexer.index(&istate);
+            assert!(
+                slot < total,
+                "DealerObserver slot {} out of range (total {})",
+                slot, total
+            );
+            let istate_bytes: Vec<u8> = (0..istate.len()).map(|i| istate[i].0).collect();
+            if let Some(prev) = slots.get(&slot) {
+                panic!(
+                    "DealerObserver collision at slot {} for istate {:?} (also {:?})",
+                    slot, istate_bytes, prev
+                );
+            }
+            slots.insert(slot, istate_bytes);
+            count += 1;
+        }
+        assert!(count > 0, "iterator emitted zero DealerAloneObserver istates");
+    }
+
+    /// Full bijection check across ALL parsed bid_states (max=0).
+    #[test]
+    fn waugh_euchre_full_bijection_max0_ns_shard() {
+        use games::gamestates::euchre::{
+            actions::EAction, iterator::EuchreIsomorphicIStateIterator,
+        };
+
+        let indexer = WaughEuchreIndexer::new(0);
+        let total = indexer.len();
+        let mut slots: std::collections::HashSet<u64> = std::collections::HashSet::new();
+        let mut count = 0usize;
+        let mut unparsed: Vec<Vec<u8>> = Vec::new();
+
+        for istate in EuchreIsomorphicIStateIterator::with_face_up(0, &[EAction::NS]) {
+            if parse_euchre_bid_state(&istate, 5).is_none() {
+                if unparsed.len() < 5 {
+                    unparsed.push((0..istate.len()).map(|i| istate[i].0).collect());
+                }
+                continue;
+            }
+            let slot = indexer.index(&istate);
+            assert!(slot < total, "slot {} out of range (total {})", slot, total);
+            assert!(
+                slots.insert(slot),
+                "full bijection collision at slot {} for istate {:?}",
+                slot, istate
+            );
+            count += 1;
+        }
+        assert!(count > 0, "iterator emitted zero parseable istates");
+        // Iterator-only artifacts (e.g., marker-less dealer Pickup
+        // candidates) are expected to be unparsed and skipped — CFR
+        // never queries them. Print samples for diagnostic.
+        eprintln!("Unparsed sample: {:?}", unparsed);
     }
 
     /// Negative control: under a non-D₄ permutation (single S↔H swap,
