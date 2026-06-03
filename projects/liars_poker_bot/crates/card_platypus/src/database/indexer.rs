@@ -492,6 +492,15 @@ pub enum EuchreBidState {
     /// istate has the discard card in the tail (dealer-private), and
     /// the dealer's actual current hand needs reconstruction.
     DealerAloneObserver { pickup_seat: u8 },
+    /// Post-Alone-decision, pre-first-play istate ("Play depth=0").
+    /// Emitted by the iterator at `max_cards_played ≥ 1`. Perspective
+    /// is always P0 (the leader). `alone_chosen` records whether the
+    /// caller went alone (relevant for sit-out logic at depths 1-3).
+    ///
+    /// Phase 2d FULL (depths 1-3, covering max ≥ 2) is **not yet
+    /// implemented** — `index()` panics on those depths with a clear
+    /// roadmap comment. See `WaughEuchreRuntime::build` for sizing.
+    PlayDepth0 { caller_seat: u8, via_pickup: bool, alone_chosen: bool },
 }
 
 impl EuchreBidState {
@@ -502,7 +511,8 @@ impl EuchreBidState {
         + 4  // R2Pending: 4
         + 4  // Discard: 4
         + 8  // Alone: 4 seats × 2 paths
-        + 3; // DealerAloneObserver: 3 (pickup_seat ∈ {0,1,2})
+        + 3  // DealerAloneObserver: 3 (pickup_seat ∈ {0,1,2})
+        + 16; // PlayDepth0: 4 seats × 2 via_pickup × 2 alone_chosen
 
     /// Stable index into `[0, COUNT)`.
     pub fn to_idx(self) -> usize {
@@ -515,6 +525,15 @@ impl EuchreBidState {
             }
             EuchreBidState::DealerAloneObserver { pickup_seat } => {
                 20 + pickup_seat as usize
+            }
+            EuchreBidState::PlayDepth0 {
+                caller_seat,
+                via_pickup,
+                alone_chosen,
+            } => {
+                23 + (caller_seat as usize) * 4
+                    + (via_pickup as usize) * 2
+                    + alone_chosen as usize
             }
         }
     }
@@ -532,9 +551,8 @@ pub fn parse_euchre_bid_state(key: &IStateKey, n_hand_cards: usize) -> Option<Eu
     //   bidding actions: Pass / Pickup / Clubs / Spades / Hearts / Diamonds
     //   Alone (or Pass meaning NotAlone) once trump declared
     //   DiscardMarker pseudo-action (dealer view in Discard phase) or the
-    //   actual discarded card (post-Discard view, currently unused by CFR)
-    //
-    // We walk the tail and track which sub-phase we're in.
+    //   actual discarded card
+    //   followed by 0..N play actions (Play phase)
     let tail_start = n_hand_cards + 1;
     let mut r1_passes = 0u8;
     let mut r1_pickup_at: Option<u8> = None;
@@ -542,20 +560,24 @@ pub fn parse_euchre_bid_state(key: &IStateKey, n_hand_cards: usize) -> Option<Eu
     let mut r2_passes = 0u8;
     let mut r2_call_at: Option<u8> = None;
     let mut seen_alone_decision = false;
-    let mut play_seen = false;
+    let mut alone_chosen: Option<bool> = None;
+    let mut play_cards_count: u8 = 0;
 
     for i in tail_start..key.len() {
         let ea = EAction::from(key[i]);
         match ea {
             EAction::Pass => {
-                if r1_pickup_at.is_some() || r2_call_at.is_some() {
-                    // A Pass *after* trump declaration is the "NotAlone" choice.
+                if seen_alone_decision {
+                    // A Pass *after* the Alone-decision is a play-phase
+                    // sit-out sentinel from a partner-of-alone-caller.
+                    play_cards_count += 1;
+                } else if r1_pickup_at.is_some() || r2_call_at.is_some() {
+                    // First Pass after trump declaration = NotAlone choice.
                     seen_alone_decision = true;
+                    alone_chosen = Some(false);
                 } else if r1_passes < 4 && r2_call_at.is_none() && r2_passes == 0 {
-                    // Still in R1.
                     r1_passes += 1;
                     if r1_passes > 4 {
-                        // shouldn't happen — defensive
                         return None;
                     }
                 } else {
@@ -570,27 +592,38 @@ pub fn parse_euchre_bid_state(key: &IStateKey, n_hand_cards: usize) -> Option<Eu
             }
             EAction::Alone => {
                 seen_alone_decision = true;
+                alone_chosen = Some(true);
             }
             EAction::DiscardMarker => {
                 saw_discard_marker = true;
             }
             _ if (ea as u8) < (EAction::DiscardMarker as u8) => {
-                // Card action — either a discard (dealer view, post-DiscardMarker)
-                // or a play. Either way we're past the bid state.
-                if saw_discard_marker {
-                    // Discard happened: now we'd be in Alone or Play. Treat as
-                    // post-discard for state purposes.
-                    seen_alone_decision = saw_discard_marker; // dealer's Alone view
-                } else {
-                    play_seen = true;
+                // Card action. Three sub-cases:
+                //   1. saw_discard_marker && !seen_alone_decision:
+                //      dealer's discard action (post-DiscardMarker).
+                //      Leaves us still pre-Alone-decision.
+                //   2. !saw_discard_marker && !seen_alone_decision:
+                //      dealer's discard action visible (in dealer's
+                //      post-discard non-marker tail) OR a play action
+                //      in the Pickup-skip path (e.g., non-dealer caller
+                //      view that went Pickup → Alone-decided → Play
+                //      directly). Distinguishing these requires more
+                //      context — defer to the depth-aware play parser
+                //      below.
+                //   3. seen_alone_decision: definitely a play card.
+                if seen_alone_decision {
+                    play_cards_count += 1;
+                } else if saw_discard_marker {
+                    // Discard card after marker — leaves dealer at the
+                    // Alone-pending phase. Don't mark as Alone-decision
+                    // yet; the absence of Alone/Pass *after* this
+                    // discard is what `Alone {caller=3, ...}` covers.
                 }
+                // else: pre-decision card-after-Pickup. Already handled
+                // by DealerAloneObserver / Alone routing below.
             }
             _ => {}
         }
-    }
-
-    if play_seen {
-        return None; // play phase — not handled in Phase 1
     }
 
     // Case analysis on what we observed.
@@ -606,20 +639,44 @@ pub fn parse_euchre_bid_state(key: &IStateKey, n_hand_cards: usize) -> Option<Eu
         return None; // all 8 pass — game void, no istate emitted by iterator
     }
 
+    // Post-Alone-decision istates go to PlayDepth0 (if no play cards yet)
+    // or higher Play depths (Phase 2d ≥ depth 1 — deferred).
+    if seen_alone_decision {
+        if play_cards_count > 0 {
+            // Phase 2d depths ≥ 1 unimplemented; return None to skip.
+            return None;
+        }
+        let alone = alone_chosen.unwrap_or(false);
+        let (caller_seat, via_pickup) = if let Some(seat) = r1_pickup_at {
+            if seat > 3 {
+                return None;
+            }
+            (seat, true)
+        } else if let Some(r2_seat) = r2_call_at {
+            if r2_seat > 3 {
+                return None;
+            }
+            (r2_seat, false)
+        } else {
+            return None;
+        };
+        return Some(EuchreBidState::PlayDepth0 {
+            caller_seat,
+            via_pickup,
+            alone_chosen: alone,
+        });
+    }
+
     if let Some(seat) = r1_pickup_at {
         if seat > 3 {
             return None;
         }
-        if saw_discard_marker && !seen_alone_decision {
+        if saw_discard_marker {
             return Some(EuchreBidState::Discard { r1_pickup_seat: seat });
         }
         let has_card_after = has_card_action_after_pickup(key, n_hand_cards);
         if !has_card_after && seat == 3 {
-            // Iterator artifact: dealer's post-Pickup candidate
-            // emitted *before* the DiscardMarker child. The actual
-            // CFR-queried istate at this game state has DiscardMarker
-            // appended (→ Discard {seat=3}), so this marker-less
-            // candidate isn't a real CFR lookup. Skip.
+            // Iterator artifact (marker-less dealer Pickup candidate).
             return None;
         }
         if has_card_after && seat < 3 {
@@ -806,6 +863,9 @@ impl WaughEuchreIndexer {
             }
             EuchreBidState::DealerAloneObserver { .. } => {
                 return dealer_alone_pickup_slot(rt, key, bid_state);
+            }
+            EuchreBidState::PlayDepth0 { .. } => {
+                return play_depth0_slot(rt, key, bid_state);
             }
         }
 
@@ -1263,6 +1323,86 @@ fn dealer_alone_pickup_slot(
     shard * rt.shard_size + rt.bid_state_offsets[bid_state.to_idx()] + intra
 }
 
+/// Slot for `PlayDepth0` (post-Alone-decision, pre-first-play). The
+/// perspective at depth 0 is always P0 (the leader). For NotAlone
+/// with caller ∈ {0..3}: P0 plays first. For Alone with any caller:
+/// P0 still leads (or sits-out plays a sentinel — but that wouldn't
+/// be depth 0 since depth 0 is the leader's turn).
+///
+/// Encoding:
+///   * Hand = P0's 5 dealt cards = `istate[0..5]`. (P0 is never the
+///     dealer in this codebase — dealer is fixed at P3 — so no
+///     post-discard reconstruction is needed at depth 0.)
+///   * Apply σ for declared trump.
+///   * Encode as 4 rank-set bitmasks + face_up canonical suit dim
+///     (same layout as the Alone bid_state).
+///
+/// Depths ≥ 1 (Phase 2d remainder) need additional encoding:
+///   * Perspective shifts: depth d → seat (leader + d') % 4 where
+///     d' = d for NotAlone, or skipping the sit-out partner for Alone.
+///   * Hand may belong to dealer (for d such that perspective = P3),
+///     requiring discard-aware reconstruction.
+///   * Encode d play cards' canonical (suit, rank) in order — likely
+///     via a HandIndexer multi-round with appropriate color-split, or
+///     by explicit per-play (suit, rank) dimensions on top of the
+///     hand encoding. This is left as follow-up work.
+fn play_depth0_slot(
+    rt: &WaughEuchreRuntime,
+    key: &IStateKey,
+    bid_state: EuchreBidState,
+) -> u64 {
+    let face_up_bit = key[5].0;
+    let face_up_orig_suit = face_up_bit / 8;
+    let face_up_orig_rank = face_up_bit % 8;
+
+    let via_pickup = match bid_state {
+        EuchreBidState::PlayDepth0 { via_pickup, .. } => via_pickup,
+        _ => unreachable!(),
+    };
+
+    // Determine trump: via_pickup → face_up.suit; else R2 call suit.
+    let trump = if via_pickup {
+        face_up_orig_suit
+    } else {
+        let mut t: Option<u8> = None;
+        for i in 6..key.len() {
+            let bit = key[i].0;
+            if bit < 32 && bit % 8 == 6 {
+                t = Some(bit / 8);
+                break;
+            }
+        }
+        t.expect("via_pickup=false PlayDepth0 but no R2 call action in tail")
+    };
+
+    let sigma_table: [u8; 4] = match trump {
+        0 => [0, 1, 2, 3],
+        1 => [1, 0, 2, 3],
+        2 => [2, 3, 0, 1],
+        3 => [3, 2, 1, 0],
+        _ => panic!("invalid trump suit {}", trump),
+    };
+    let sigma = |s: u8| -> u8 { sigma_table[s as usize] };
+
+    let face_up_canonical_suit = sigma(face_up_orig_suit);
+
+    let mut rank_sets: [u8; 4] = [0; 4];
+    for i in 0..5 {
+        let bit = key[i].0;
+        let rank = bit % 8;
+        let new_suit = sigma(bit / 8) as usize;
+        rank_sets[new_suit] |= 1u8 << rank;
+    }
+
+    let (canon_face_up_suit, canon_s, canon_c, canon_h, canon_d) =
+        apply_canonical_swap_red(rank_sets, face_up_canonical_suit);
+
+    let intra = pack_intra_slot(canon_face_up_suit, canon_s, canon_c, canon_h, canon_d);
+
+    let shard = face_up_orig_rank as u64;
+    shard * rt.shard_size + rt.bid_state_offsets[bid_state.to_idx()] + intra
+}
+
 /// Convert an istate entry's `Action(u8)` (a bit index 0..32) to Waugh's
 /// `(rank << 2) | suit` encoding. Euchre cards occupy bit indices
 /// `suit*8 + rank_in_suit` where `rank_in_suit ∈ [0, 6)` (0=9 ... 5=A)
@@ -1378,14 +1518,9 @@ impl WaughEuchreRuntime {
         //   * Alone {caller=*, via_pickup=*} → alone_bid_state_size
         //     (= 4 × 64⁴, with face_up canonical suit dim).
         let discard_bid_state_size: u64 = 64u64.pow(4);
-        // Dealer-Alone-via-Pickup encodes (5-card rank_sets × discard
-        // suit × discard rank) under canonical_swap_red iso. The
-        // rank-set part is 64⁴; the discard part is `4 suits × 8 rank
-        // slots = 32` (only 24 valid combos but we pad to 32 for clean
-        // arithmetic). Total = 32 × 64⁴ per bid_state. This applies to:
-        //   * Alone {caller=3, via_pickup=true} (dealer's own).
-        //   * DealerAloneObserver {pickup_seat=0..2} (dealer observing).
         let dealer_pickup_size: u64 = 32 * 64u64.pow(4);
+        // PlayDepth0: same shape as Alone (4 × 64⁴, with face_up dim).
+        let play_depth0_size: u64 = alone_bid_state_size;
         let mut bid_state_offsets = [0u64; EuchreBidState::COUNT];
         let mut running = 0u64;
         for i in 0..EuchreBidState::COUNT {
@@ -1394,9 +1529,10 @@ impl WaughEuchreRuntime {
                 0..=3 => r1_r2_bid_state_size,    // R1Pending
                 4..=7 => r1_r2_bid_state_size,    // R2Pending
                 8..=11 => discard_bid_state_size, // Discard
-                12..=18 => alone_bid_state_size,  // Alone {caller ∈ {0..2} OR caller=3,via_pickup=false}
+                12..=18 => alone_bid_state_size,  // Alone (non-dealer-pickup)
                 19 => dealer_pickup_size,         // Alone {caller=3, via_pickup=true}
                 20..=22 => dealer_pickup_size,    // DealerAloneObserver
+                23..=38 => play_depth0_size,      // PlayDepth0
                 _ => unreachable!(),
             };
         }
@@ -1645,6 +1781,15 @@ mod waugh_euchre_tests {
             .chain(
                 (0..3u8).map(|s| EuchreBidState::DealerAloneObserver { pickup_seat: s }),
             )
+            .chain((0..4u8).flat_map(|s| {
+                [false, true].into_iter().flat_map(move |vp| {
+                    [false, true].into_iter().map(move |ac| EuchreBidState::PlayDepth0 {
+                        caller_seat: s,
+                        via_pickup: vp,
+                        alone_chosen: ac,
+                    })
+                })
+            }))
             .collect();
         assert_eq!(states.len(), EuchreBidState::COUNT);
         for s in &states {
@@ -2148,6 +2293,42 @@ mod waugh_euchre_tests {
             count += 1;
         }
         assert!(count > 0, "iterator emitted zero DealerAloneObserver istates");
+    }
+
+    /// PlayDepth0 bijection: every iterator-emitted Play istate at
+    /// cards_played=0 (NS shard, max=1) lands on a unique Waugh slot.
+    #[test]
+    fn waugh_euchre_play_depth0_bijection_ns_shard() {
+        use games::gamestates::euchre::{
+            actions::EAction, iterator::EuchreIsomorphicIStateIterator,
+        };
+
+        let indexer = WaughEuchreIndexer::new(1);
+        let total = indexer.len();
+        let mut slots: std::collections::HashSet<u64> = std::collections::HashSet::new();
+        let mut count = 0usize;
+
+        for istate in EuchreIsomorphicIStateIterator::with_face_up(1, &[EAction::NS]) {
+            if !matches!(
+                parse_euchre_bid_state(&istate, 5),
+                Some(EuchreBidState::PlayDepth0 { .. })
+            ) {
+                continue;
+            }
+            let slot = indexer.index(&istate);
+            assert!(
+                slot < total,
+                "PlayDepth0 slot {} out of range (total {})",
+                slot, total
+            );
+            assert!(
+                slots.insert(slot),
+                "PlayDepth0 collision at slot {} for istate {:?}",
+                slot, istate
+            );
+            count += 1;
+        }
+        assert!(count > 0, "iterator emitted zero PlayDepth0 istates");
     }
 
     /// Full bijection check across ALL parsed bid_states (max=0).
