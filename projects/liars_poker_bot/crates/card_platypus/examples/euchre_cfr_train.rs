@@ -25,12 +25,27 @@
 //! the deployment uses) and saves after every checkpoint, so a long
 //! run can be interrupted and resumed.
 //!
+//! Reporting is *time-based*, not iteration-based — for cfr3 the 91 GB
+//! mmap is heavily disk-bound (training rate observed at ~3h per 5M
+//! iters), so a fixed 5%-of-total-iters cadence gives single-digit
+//! checkpoints over an entire weekend. Instead we train in small inner
+//! chunks (`CFR_INNER_CHUNK`, default 25 000 iters) and emit a report
+//! whenever `CFR_REPORT_SECS` of wall-clock have passed since the last
+//! one. The total budget is still capped by `CFR_ITERS` (default very
+//! large) and `CFR_MAX_SECS` (default 24 h) — whichever fires first.
+//!
 //! Knobs (env vars):
 //!   CFR_WEIGHT_DIR     where to load/save weights
 //!                      (default /home/steven/card_platypus/infostate.three_card_played_f32)
 //!   CFR_MAX_CARDS      EuchreDepthChecker.max_cards_played (default 3)
-//!   CFR_ITERS          additional CFR iterations to run (default 100_000_000)
-//!   CFR_REPORT_PCT     report every this % of iters (default 5.0)
+//!   CFR_ITERS          hard cap on CFR iterations (default 1_000_000_000)
+//!   CFR_MAX_SECS       hard wall-clock cap in seconds (default 86_400 = 24 h)
+//!   CFR_REPORT_SECS    emit a checkpoint roughly every this many wall-clock
+//!                      seconds of training (default 1_800 = 30 min)
+//!   CFR_INNER_CHUNK    iters per inner train() call (default 25_000); time
+//!                      is checked between inner chunks, so smaller =
+//!                      finer report-cadence resolution but more
+//!                      overhead from extra eval-side calls.
 //!   CFR_EVAL_HANDS     eval hands per checkpoint, CFR-vs-PIMCTS (default 100)
 //!   CFR_POLICY_SAMPLE_BYTES  byte budget for L1 sampler (default 100 MB)
 //!   CFR_POLICY_SAMPLE_SEED   sampler seed (default 0xC0DEC0DE)
@@ -140,22 +155,29 @@ fn main() {
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from(DEFAULT_WEIGHT_DIR));
     let max_cards: usize = parse_env("CFR_MAX_CARDS", 3);
-    let total_iters: usize = parse_env("CFR_ITERS", 100_000_000);
-    let report_pct: f64 = parse_env("CFR_REPORT_PCT", 5.0);
+    let total_iters: usize = parse_env("CFR_ITERS", 1_000_000_000);
+    let max_secs: f64 = parse_env("CFR_MAX_SECS", 86_400.0);
+    let report_secs: f64 = parse_env("CFR_REPORT_SECS", 1_800.0);
+    let inner_chunk: usize = parse_env("CFR_INNER_CHUNK", 25_000);
     let eval_hands: usize = parse_env("CFR_EVAL_HANDS", 100);
     let sample_budget_bytes: usize =
         parse_env("CFR_POLICY_SAMPLE_BYTES", 100 * 1024 * 1024);
     let sample_seed: u64 = parse_env("CFR_POLICY_SAMPLE_SEED", 0xC0DEC0DE);
 
-    let report_every = (((total_iters as f64) * (report_pct / 100.0)) as usize).max(1);
-
     println!(
-        "CFR Euchre: weight_dir={} max_cards={} total_iters={} report_every={} ({:.1}%) eval_hands={}",
-        weight_dir.display(), max_cards, total_iters, report_every, report_pct, eval_hands,
+        "CFR Euchre: weight_dir={} max_cards={} cap_iters={} cap_secs={:.0} \
+         report_every≈{:.0}s (inner_chunk={}) eval_hands={}",
+        weight_dir.display(),
+        max_cards,
+        total_iters,
+        max_secs,
+        report_secs,
+        inner_chunk,
+        eval_hands,
     );
     println!(
-        "{:>12} {:>8} {:>7} {:>12} {:>8} {:>8} {:>8} {:>14} {:>9} {:>9} {:>10} {:>10}",
-        "iter", "time_s", "pct", "score_v_pim", "win%", "tie%", "loss%", "info_states",
+        "{:>12} {:>8} {:>12} {:>8} {:>8} {:>8} {:>14} {:>9} {:>9} {:>10} {:>10}",
+        "iter", "time_s", "score_v_pim", "win%", "tie%", "loss%", "info_states",
         "rss_mb", "B/istate", "delta_l1", "paired"
     );
 
@@ -189,23 +211,52 @@ fn main() {
 
     let start = Instant::now();
 
-    // Baseline checkpoint at iter=0 so the chart has a visible "before"
+    // Baseline checkpoint at t=0 so the chart has a visible "before"
     // point. This also seeds the policy-delta snapshot from the loaded
     // weights so the first post-train report's delta is measured
     // against the resume point rather than against zero.
     let mut done = 0usize;
-    report(&mut cfr, &mut sampler, eval_hands, done, total_iters, &start);
+    let mut last_report = Instant::now();
+    report(&mut cfr, &mut sampler, eval_hands, done, &start);
 
-    while done < total_iters {
-        let chunk = report_every.min(total_iters - done);
+    // Time-based outer loop. Inner train() calls are kept short (
+    // `inner_chunk` iters) so we can check the wall clock between
+    // chunks and trigger a report at the next chunk boundary after
+    // `report_secs` have passed. With cfr3 running at ~10 iters/sec
+    // observed (3h per 5M) the default 25 000-iter chunk is ~40
+    // minutes, so report cadence resolution is roughly one chunk —
+    // shrink `inner_chunk` for finer-grained reports at the cost of
+    // more eval-side overhead.
+    loop {
+        if done >= total_iters {
+            break;
+        }
+        if start.elapsed().as_secs_f64() >= max_secs {
+            println!(
+                "Wall-clock cap (CFR_MAX_SECS={:.0}) hit; stopping.",
+                max_secs
+            );
+            break;
+        }
+        let chunk = inner_chunk.min(total_iters - done);
         cfr.train(chunk);
         done += chunk;
-        report(&mut cfr, &mut sampler, eval_hands, done, total_iters, &start);
-        // Persist progress after every checkpoint so an interrupted run
-        // doesn't lose the past report_pct of work.
-        if let Err(e) = cfr.save() {
-            eprintln!("checkpoint save failed: {:#}", e);
+
+        if last_report.elapsed().as_secs_f64() >= report_secs {
+            report(&mut cfr, &mut sampler, eval_hands, done, &start);
+            last_report = Instant::now();
+            // Persist progress after every checkpoint so an interrupted
+            // run doesn't lose the past report_secs of work.
+            if let Err(e) = cfr.save() {
+                eprintln!("checkpoint save failed: {:#}", e);
+            }
         }
+    }
+
+    // Final report if the last chunk straddled the report boundary —
+    // otherwise we'd leave the dashboard missing the very last point.
+    if last_report.elapsed().as_secs_f64() > 1.0 {
+        report(&mut cfr, &mut sampler, eval_hands, done, &start);
     }
 
     let elapsed = start.elapsed().as_secs_f64();
@@ -226,11 +277,9 @@ fn report(
     sampler: &mut PolicySampler,
     eval_hands: usize,
     done: usize,
-    total_iters: usize,
     start: &Instant,
 ) {
     let elapsed = start.elapsed().as_secs_f64();
-    let pct = 100.0 * (done as f64) / (total_iters as f64);
     let info_states = cfr.num_info_states();
 
     let eval = evaluate_vs_pimcts(cfr, eval_hands, done as u64);
@@ -247,10 +296,9 @@ fn report(
     };
 
     println!(
-        "{:>12} {:>8.2} {:>6.1}% {:>12.3} {:>7.1}% {:>7.1}% {:>7.1}% {:>14} {:>9.1} {:>9.1} {:>10.4} {:>10}",
+        "{:>12} {:>8.2} {:>12.3} {:>7.1}% {:>7.1}% {:>7.1}% {:>14} {:>9.1} {:>9.1} {:>10.4} {:>10}",
         done,
         elapsed,
-        pct,
         eval.score_avg,
         100.0 * eval.win_rate,
         100.0 * eval.tie_rate,
@@ -263,38 +311,62 @@ fn report(
     );
 
     // Iteration-axis: training quality + convergence + resource. Mirrors
-    // the Oh Hell trainer's emission so the Kestrel dashboard treats the
-    // two runs the same way. `policy_delta_l1` is the headline
-    // convergence number — NaN on the very first checkpoint (no prior
-    // snapshot), then drops toward zero as training stops moving the
-    // sampled policy entries. `rss_mb=-1` is a sentinel for "no
-    // /proc/self/status available" and is filtered out on the dashboard.
-    println!(
-        "kestrel: step={} pimcts_avg={:.6} win_rate={:.6} tie_rate={:.6} loss_rate={:.6} \
-         info_states={} rss_mb={:.4} peak_rss_mb={:.4} vsize_mb={:.4} bytes_per_istate={:.2} \
-         policy_delta_l1={:.6} policy_delta_paired={} policy_sample_populated={} \
-         policy_sample_size={} eval_hands={}",
-        done,
-        eval.score_avg,
-        eval.win_rate,
-        eval.tie_rate,
-        eval.loss_rate,
-        info_states,
-        rss_mb,
-        peak_rss_mb,
-        vsize_mb,
-        bytes_per_istate,
-        delta_l1,
-        paired,
-        populated_sampled,
-        sampler.sample_size(),
-        eval_hands,
-    );
-    // Time-axis: wall-clock progress fraction. Resource and convergence
-    // metrics already live on the `step` axis above, so we don't repeat
-    // them here (that's what produced the zigzag charts in earlier OH
-    // logs when a metric was emitted on two x-axes).
-    println!("kestrel: t={:.4} progress_pct={:.4}", elapsed, pct);
+    // the Oh Hell trainer's emission. `policy_delta_l1` is the headline
+    // convergence number — on the very first checkpoint there's no
+    // prior snapshot to compare to, so it sits at NaN. kestrel-tail
+    // rejects NaN as un-serialisable JSON, so we omit the line entirely
+    // in that case (the next checkpoint posts the first real value).
+    // `rss_mb=-1` is a sentinel for "no /proc/self/status available"
+    // and is filtered out on the dashboard.
+    if delta_l1.is_finite() {
+        println!(
+            "kestrel: step={} pimcts_avg={:.6} win_rate={:.6} tie_rate={:.6} loss_rate={:.6} \
+             info_states={} rss_mb={:.4} peak_rss_mb={:.4} vsize_mb={:.4} bytes_per_istate={:.2} \
+             policy_delta_l1={:.6} policy_delta_paired={} policy_sample_populated={} \
+             policy_sample_size={} eval_hands={}",
+            done,
+            eval.score_avg,
+            eval.win_rate,
+            eval.tie_rate,
+            eval.loss_rate,
+            info_states,
+            rss_mb,
+            peak_rss_mb,
+            vsize_mb,
+            bytes_per_istate,
+            delta_l1,
+            paired,
+            populated_sampled,
+            sampler.sample_size(),
+            eval_hands,
+        );
+    } else {
+        // First-checkpoint shape: still post the training-quality + resource
+        // numbers (kestrel-tail accepts these fine), just drop the delta_l1.
+        println!(
+            "kestrel: step={} pimcts_avg={:.6} win_rate={:.6} tie_rate={:.6} loss_rate={:.6} \
+             info_states={} rss_mb={:.4} peak_rss_mb={:.4} vsize_mb={:.4} bytes_per_istate={:.2} \
+             policy_delta_paired={} policy_sample_populated={} policy_sample_size={} eval_hands={}",
+            done,
+            eval.score_avg,
+            eval.win_rate,
+            eval.tie_rate,
+            eval.loss_rate,
+            info_states,
+            rss_mb,
+            peak_rss_mb,
+            vsize_mb,
+            bytes_per_istate,
+            paired,
+            populated_sampled,
+            sampler.sample_size(),
+            eval_hands,
+        );
+    }
+    // Time-axis: wall-clock vs iterations-completed, so the dashboard
+    // can chart the actual training rate (which on cfr3 changes a lot
+    // as the mmap warms up).
+    println!("kestrel: t={:.4} iters_done={}", elapsed, done);
     // Block-buffered stdout when piped to kestrel-tail would otherwise
     // hold every line until the buffer fills — at this checkpoint
     // cadence that's many minutes of "no data" between updates.
