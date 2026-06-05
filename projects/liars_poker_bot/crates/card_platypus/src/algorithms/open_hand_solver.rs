@@ -775,55 +775,7 @@ mod tests {
         }
     }
 
-    /// The early-termination heuristic should kick in when every player is
-    /// already locked at score 0 — and it should produce the same value as
-    /// the un-tuned solver doing a full search.
-    #[test]
-    fn oh_hell_early_termination_matches_full_search() {
-        // 2-trick state where all three players are guaranteed to score 0
-        // after trick 1:
-        //   P0 bid 0 but won trick 1 (busted, locked at 0).
-        //   P1 bid 2 but won 0 with 1 trick left (can't make, locked at 0).
-        //   P2 bid 2 but won 0 with 1 trick left (can't make, locked at 0).
-        use games::gamestates::oh_hell::actions::{OHAction, OHCard};
-        let mut gs = OhHell::new_state(3, 2);
-        // Deals: P0=9s,Ts ; P1=9c,Tc ; P2=9h,Th  (order: P0,P1,P2 x2)
-        let deals = [
-            OHCard::NS, OHCard::NC, OHCard::NH,
-            OHCard::TS, OHCard::TC, OHCard::TH,
-        ];
-        for c in deals {
-            gs.apply_action(OHAction::Card(c).into());
-        }
-        // Face up: TD → trump = Diamonds (no one holds a diamond).
-        gs.apply_action(OHAction::Card(OHCard::TD).into());
-        // Bids: P0=0 (sandbag), P1=2 (greedy), P2=2 (greedy).
-        gs.apply_action(OHAction::Bid(0).into());
-        gs.apply_action(OHAction::Bid(2).into());
-        gs.apply_action(OHAction::Bid(2).into());
-
-        // Play trick 1: P0 leads 9s, P1/P2 play non-spade non-trump → P0
-        // wins on the lead-suit rule.
-        gs.apply_action(OHAction::Card(OHCard::NS).into());
-        gs.apply_action(OHAction::Card(OHCard::NC).into());
-        gs.apply_action(OHAction::Card(OHCard::NH).into());
-
-        // Mid-game but every final score is now locked.
-        assert!(!gs.is_terminal());
-        assert!(oh_hell_early_terminate(&gs));
-
-        for p in 0..3 {
-            let mut baseline = OpenHandSolver::default();
-            let mut tuned = OpenHandSolver::new_oh_hell();
-            let v_default = baseline.evaluate_player(&gs, p);
-            let v_tuned = tuned.evaluate_player(&gs, p);
-            assert_eq!(v_default, v_tuned);
-            // Everyone scores 0 → evaluate = 0 - 0 = 0.
-            assert_eq!(v_tuned, 0.0, "all-locked scenario should evaluate to 0");
-        }
-    }
-
-    /// Sanity check that the team-based vs paranoid distinction is real and
+/// Sanity check that the team-based vs paranoid distinction is real and
     /// is wired correctly. Construct an Oh Hell state where:
     ///   - P0 is the "perspective" player and stands to score 0.
     ///   - P2 (P0's parity partner under the old team rule) is in a position

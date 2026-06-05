@@ -23,8 +23,9 @@ use web_common::{
 };
 
 use crate::{
-    handle_ready_clear, handle_register_player, handle_take_action, new_hand, progress_game,
-    AppState, GameData, GameProcessingState, NUM_PLAYERS, N_TRICKS, WIN_SCORE,
+    default_hand_sequence, handle_ready_clear, handle_register_player, handle_take_action,
+    new_hand, progress_game, strategy_for_hand_size, AppState, GameData, GameProcessingState,
+    NUM_PLAYERS,
 };
 
 const PLAYER_COOKIE: &str = "oh_hell_player_id";
@@ -68,22 +69,24 @@ async fn index(req: HttpRequest) -> impl Responder {
             }
             p {
                 "This server runs a "
-                span class="font-bold" {
-                    (NUM_PLAYERS) "-player, " (N_TRICKS) "-trick"
-                }
-                " variant. First player to "
-                span class="font-bold" { (WIN_SCORE) }
-                " cumulative points wins."
+                span class="font-bold" { (NUM_PLAYERS) "-player" }
+                " variant on the canonical Wikipedia schedule: deal 10 cards "
+                "to each player, then 9, all the way down to 1, then back up to 10. "
+                "The hand with the highest cumulative score after all 19 hands wins."
+            }
+            p {
+                span class="font-bold" { "Common scoring. " }
+                "Each player gets 1 point per trick taken, plus a 10-point bonus "
+                "if their bid matched the number of tricks taken exactly. "
+                "The dealer's bid is constrained so the total of all bids in a "
+                "hand can never equal the number of tricks (\"the hook\")."
             }
             p {
                 span class="font-bold" { "Optionally play with a friend. " }
                 "You can play with a friend against the ai bots by sharing the url "
                 "after you create a game. The remaining seats are filled by ai bots."
             }
-            p {
-                "The bot uses Perfect Information Monte Carlo Tree Search (PIMCTS) "
-                "backed by an alpha-beta open-hand solver."
-            }
+            (strategy_table())
         }
         div class="grid justify-items-center gap-2" {
             form method="post" action="/new" class="inline" {
@@ -121,7 +124,15 @@ async fn new_game_handler(
     let num_humans = form.num_humans.clamp(1, 2);
     let game_id = Uuid::new_v4();
 
-    let mut gd = GameData::new(new_hand(), player_id, num_humans, NUM_PLAYERS);
+    let sequence = default_hand_sequence();
+    let first_size = sequence[0];
+    let mut gd = GameData::new(
+        new_hand(first_size),
+        player_id,
+        num_humans,
+        NUM_PLAYERS,
+        sequence,
+    );
     progress_game(&mut gd, &data.bot, &game_id);
     data.games.lock().unwrap().insert(game_id, gd);
 
@@ -250,6 +261,32 @@ async fn game_action(
         .body(render_game_view(gd, player_id, &game_id).into_string())
 }
 
+// ---------- Strategy table (landing page) ----------
+
+/// Render the bot strategy per hand-size as a small table. Driven off
+/// `strategy_for_hand_size` so as the bot mix evolves the landing page
+/// stays accurate. The row set comes from the canonical hand schedule
+/// deduped (10..1 covers everything).
+fn strategy_table() -> Markup {
+    let mut sizes: Vec<usize> = default_hand_sequence();
+    sizes.sort();
+    sizes.dedup();
+    sizes.reverse(); // 10 down to 1
+    html! {
+        div class="grid gap-1" {
+            div class="font-bold" { "Bot strategy per hand size" }
+            div class="grid grid-cols-2 gap-x-4 text-sm" {
+                div class="font-semibold" { "Hand size (tricks)" }
+                div class="font-semibold" { "Strategy" }
+                @for n in sizes {
+                    div { (n) }
+                    div { (strategy_for_hand_size(n)) }
+                }
+            }
+        }
+    }
+}
+
 // ---------- Rendering ----------
 
 pub(crate) fn render_game_view(gd: &GameData, player_id: usize, game_id: &Uuid) -> Markup {
@@ -351,6 +388,8 @@ fn render_game_info(gs: &OhHellGameState, gd: &GameData, south: Player) -> Marku
 }
 
 fn render_score_table(gd: &GameData) -> Markup {
+    let total = gd.hand_sequence.len();
+    let hand_num = (gd.hand_idx + 1).min(total);
     html! {
         div {
             div class="font-bold text-xl" { "Cumulative score" }
@@ -360,7 +399,10 @@ fn render_score_table(gd: &GameData) -> Markup {
                     div { (s) }
                 }
             }
-            div class="text-xs text-gray-500 pt-1" { "First to " (WIN_SCORE) " wins" }
+            div class="text-xs text-gray-500 pt-1" {
+                "Hand " (hand_num) " of " (total)
+                " · this hand: " (gd.gs.n_tricks()) " tricks"
+            }
         }
     }
 }
@@ -586,7 +628,16 @@ fn render_hand_and_actions(
 }
 
 fn render_bid_choices(gs: &OhHellGameState, hand: &[OHCard], game_id: &Uuid) -> Markup {
-    let max_bid = N_TRICKS as u8;
+    // Only legal bid values are rendered as buttons — this is what
+    // surfaces the dealer's hook constraint to a human player without
+    // having to re-explain it in prose.
+    let legal_bids: Vec<u8> = actions!(gs)
+        .into_iter()
+        .filter_map(|a| match OHAction::from(a) {
+            OHAction::Bid(n) => Some(n),
+            _ => None,
+        })
+        .collect();
     html! {
         div class="grid gap-y-2 justify-items-center" {
             div class="flex flex-wrap gap-x-2" {
@@ -594,8 +645,8 @@ fn render_bid_choices(gs: &OhHellGameState, hand: &[OHCard], game_id: &Uuid) -> 
             }
             div class="text-sm" { "Bid the exact number of tricks you'll take this hand:" }
             div class="flex flex-wrap gap-x-2 gap-y-2 justify-center" {
-                @for n in 0..=max_bid {
-                    @let raw = (BID_BASE + n) as u32;
+                @for n in &legal_bids {
+                    @let raw = (BID_BASE + *n) as u32;
                     (action_form_button(
                         raw,
                         &n.to_string(),
@@ -605,7 +656,8 @@ fn render_bid_choices(gs: &OhHellGameState, hand: &[OHCard], game_id: &Uuid) -> 
                 }
             }
             div class="text-xs text-gray-500" {
-                "(score if exact: 10 + bid; else 0) — face up trump: "
+                "Score per hand: 1 point per trick, +10 bonus for exact bid. "
+                "Face up trump: "
                 @if let Some(c) = gs.face_up() { (card_text(c)) }
             }
         }

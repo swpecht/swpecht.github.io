@@ -267,6 +267,15 @@ impl OhHellIsomorphicIStateIterator {
                         offset += n_tricks;
                     }
                     for all_bids in PriorBidSequences::new(num_players, n_tricks) {
+                        // The hook: the dealer's bid is constrained so
+                        // the total bid count cannot equal n_tricks.
+                        // Skip illegal bid sequences so this enumerator
+                        // matches what the walker (which uses
+                        // legal_actions) produces.
+                        let sum: u32 = all_bids.iter().map(|&b| b as u32).sum();
+                        if sum == n_tricks as u32 {
+                            continue;
+                        }
                         let mut gs = OhHell::new_state(num_players, n_tricks);
                         for t in 0..n_tricks {
                             for player in 0..num_players {
@@ -1391,9 +1400,12 @@ mod tests {
             "Waugh full-game produced {} duplicate canonical istates",
             via_waugh.len() - unique.len()
         );
+        // Pin the value so accidental drift is loud. Updated after
+        // the dealer-hook constraint was added (sum of bids ≠ n_tricks);
+        // previous pin was 113_904_037.
         assert_eq!(
             unique.len(),
-            113_904_037,
+            75_942_802,
             "iso class count drifted from the pinned 2p × 2-trick value"
         );
     }
@@ -1457,11 +1469,13 @@ mod tests {
              disagree, one of the two pieces drifted."
         );
         assert_eq!(walker, via_waugh);
-        // Pin the value so accidental drift is loud.
+        // Pin the value so accidental drift is loud. Updated after the
+        // hook constraint was added (dealer's bid is filtered so total
+        // ≠ n_tricks); the previous pin was 3_014_011.
         assert_eq!(
             walker.len(),
-            3_014_011,
-            "iso class count drifted from the post-fix value"
+            1_884_610,
+            "iso class count drifted from the post-hook value"
         );
     }
 

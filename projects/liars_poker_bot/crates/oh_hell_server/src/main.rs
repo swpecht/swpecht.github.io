@@ -31,17 +31,30 @@ const SERVER_HOST: &str = "0.0.0.0";
 const SERVER_PORT: u16 = 4001;
 const LOG_FILE: &str = "oh_hell_server.log";
 
-/// Game shape served by this binary. Three players × five tricks
-/// keeps each hand small enough that PIMCTS is responsive yet leaves
-/// room for interesting bidding.
+/// Game shape served by this binary: three players. With 3 players ×
+/// 10-card hands × 2 hands per ascending/descending step + the face-up
+/// card, the deal fits within the 52-card deck.
 pub(crate) const NUM_PLAYERS: usize = 3;
-pub(crate) const N_TRICKS: usize = 5;
-/// First player to this cumulative raw score wins. Raw score per hand
-/// is `10 + bid` if you made your bid exactly, else 0.
-pub(crate) const WIN_SCORE: usize = 50;
 /// PIMCTS rollout count per bot decision. Small enough to be quick on
 /// every move yet large enough that the bot looks competent.
 const BOT_ROLLOUTS: usize = 30;
+
+/// The canonical Wikipedia hand-size schedule: deal 10 cards each
+/// hand, decrement to 1, then ascend back to 10. 19 hands total. The
+/// final cumulative score (under "common scoring") determines the
+/// winner.
+pub fn default_hand_sequence() -> Vec<usize> {
+    let mut seq: Vec<usize> = (1..=10).rev().collect();
+    seq.extend(2..=10);
+    seq
+}
+
+/// Look up the bot strategy in use for a given hand size. PIMCTS for
+/// every size today; this list will grow as CFRES weights for specific
+/// hand sizes get trained and wired in.
+pub fn strategy_for_hand_size(_n_tricks: usize) -> &'static str {
+    "PIMCTS"
+}
 
 pub(crate) type Bot = PIMCTSBot<OhHellGameState, OpenHandSolver<OhHellGameState>>;
 
@@ -180,18 +193,20 @@ pub(crate) fn progress_game(
                     game_data.display_state.clone()
                 } else if matches!(game_data.display_state, WaitingHandClear { .. }) {
                     // Finalise scores for the just-finished hand, then
-                    // start a fresh hand (or terminate).
+                    // start the next hand from the schedule. If we've
+                    // played the last hand in the schedule, the game is
+                    // over and the highest cumulative score wins.
                     finalise_hand(game_data, game_id);
-                    if game_data.scores.iter().any(|s| *s >= WIN_SCORE) {
+                    game_data.hand_idx += 1;
+                    if game_data.hand_idx >= game_data.hand_sequence.len() {
                         info!(
                             "game over|id|{}|scores|{:?}|players|{:?}",
                             game_id, game_data.scores, game_data.players
                         );
                         GameOver
                     } else {
-                        game_data.gs = new_hand();
-                        // Fresh hand starts in DealHands chance node;
-                        // drive bots/chance forward from here.
+                        let next_size = game_data.hand_sequence[game_data.hand_idx];
+                        game_data.gs = new_hand(next_size);
                         next_seat_state(game_data)
                     }
                 } else {
@@ -270,27 +285,30 @@ fn next_seat_state(game_data: &GameData) -> GameProcessingState {
     }
 }
 
-/// At end-of-hand, add per-seat raw scores (10 + bid if exact, else 0)
-/// to the cumulative running totals.
+/// At end-of-hand, add per-seat raw scores (common scoring: 1 point per
+/// trick + 10 bonus if the bid matched exactly) to the cumulative
+/// running totals. Delegates the formula to `OhHellGameState::raw_scores`
+/// so the server and game state stay in sync.
 fn finalise_hand(game_data: &mut GameData, game_id: &Uuid) {
     let gs = &game_data.gs;
     let np = gs.num_players();
-    let bids = gs.bids();
-    let tricks = gs.tricks_won();
+    let raw = gs.raw_scores();
     for p in 0..np {
-        let bid = bids[p].expect("bids set when hand ends");
-        if tricks[p] == bid {
-            game_data.scores[p] += 10 + bid as usize;
-        }
+        game_data.scores[p] += raw[p] as usize;
     }
     info!(
-        "hand ended|id|{}|bids|{:?}|tricks|{:?}|scores|{:?}|players|{:?}",
-        game_id, bids, tricks, game_data.scores, game_data.players
+        "hand ended|id|{}|bids|{:?}|tricks|{:?}|raw|{:?}|cumulative|{:?}|players|{:?}",
+        game_id,
+        gs.bids(),
+        gs.tricks_won(),
+        &raw[..np],
+        game_data.scores,
+        game_data.players
     );
 }
 
-pub(crate) fn new_hand() -> OhHellGameState {
-    OhHell::new_state(NUM_PLAYERS, N_TRICKS)
+pub(crate) fn new_hand(n_tricks: usize) -> OhHellGameState {
+    OhHell::new_state(NUM_PLAYERS, n_tricks)
 }
 
 #[actix_web::main]
@@ -358,12 +376,27 @@ mod tests {
         ))
     }
 
+    /// Test-only hand sequence: 3 → 2 → 1 → 2 → 3. Mirrors the shape of
+    /// the production schedule (descend-then-ascend) without burning
+    /// the wall-clock budget on full 10-card hands × 19 rounds.
+    fn test_hand_sequence() -> Vec<usize> {
+        vec![3, 2, 1, 2, 3]
+    }
+
     fn play_random_game(bot: &Mutex<Bot>, human_id: usize) {
         let game_id = Uuid::new_v4();
-        let mut gd = GameData::new(new_hand(), human_id, 1, crate::NUM_PLAYERS);
+        let sequence = test_hand_sequence();
+        let first_size = sequence[0];
+        let mut gd = GameData::new(
+            new_hand(first_size),
+            human_id,
+            1,
+            crate::NUM_PLAYERS,
+            sequence,
+        );
         progress_game(&mut gd, bot, &game_id);
 
-        for _ in 0..4000 {
+        for _ in 0..6000 {
             // Rendering runs on every HTTP response — include it so
             // "passes invalid input to renderer" bugs surface.
             let _ = render_game_view(&gd, human_id, &game_id).into_string();

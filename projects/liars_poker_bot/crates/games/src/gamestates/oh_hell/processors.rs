@@ -52,47 +52,19 @@ fn higher_in_suit_mask(card: OHCard) -> u64 {
     above
 }
 
-/// Returns `true` if the search may stop expanding from this state because
-/// every player's final score is already locked in.
+/// Returns `true` if the search may stop expanding from this state.
 ///
-/// Currently detects the most common case: every player has either busted
-/// (taken more tricks than their bid) or run out of room to make their bid
-/// (`tricks_won + remaining_tricks < bid`). In either case the player's
-/// final score is 0 no matter what's played in the remaining tricks.
+/// Under the previous bonus-only scoring rule ("10 + bid if exact, else
+/// 0"), this hook short-circuited play once every player was already
+/// guaranteed to score 0 — busted or unable to reach their bid. With
+/// the Wikipedia "common scoring" rule the per-trick points keep
+/// accruing through the last card, so a bust no longer locks the score.
+/// Detecting a mid-game state where the full distribution of remaining
+/// tricks-won is determined is significantly harder; until that
+/// detector is written, this hook is effectively a no-op (true only at
+/// terminal).
 pub fn oh_hell_early_terminate(gs: &OhHellGameState) -> bool {
-    if gs.is_terminal() {
-        return true;
-    }
-    if gs.phase() != OHPhase::Play {
-        return false;
-    }
-
-    let np = gs.num_players();
-    let total_tricks = gs.n_tricks();
-    let completed_tricks = gs.cards_played() / np;
-    let tricks_remaining = total_tricks - completed_tricks;
-
-    let bids = gs.bids();
-    let tricks_won = gs.tricks_won();
-
-    for p in 0..np {
-        let Some(bid) = bids[p] else {
-            return false;
-        };
-        let bid = bid as usize;
-        let won = tricks_won[p] as usize;
-        if won > bid {
-            continue;
-        }
-        if won == bid && tricks_remaining == 0 {
-            continue;
-        }
-        if won + tricks_remaining < bid {
-            continue;
-        }
-        return false;
-    }
-    true
+    gs.is_terminal()
 }
 
 /// Filter and reorder the legal action list to make alpha-beta cheaper.

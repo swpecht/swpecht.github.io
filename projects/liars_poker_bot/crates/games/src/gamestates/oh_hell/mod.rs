@@ -366,9 +366,40 @@ impl OhHellGameState {
     }
 
     fn legal_actions_bidding(&self, actions: &mut Vec<Action>) {
+        // "The hook" (per Wikipedia): the dealer's bid is constrained so
+        // that the total of bids in the deal cannot equal the number of
+        // tricks. Dealer = last bidder = `num_players - 1`. Everyone
+        // else has the full 0..=n_tricks range.
+        let np = self.num_players as usize;
+        let is_dealer = self.num_bids as usize == np - 1;
+        let forbidden: Option<u8> = if is_dealer {
+            let sum_so_far: u32 = self.bids[..np]
+                .iter()
+                .filter_map(|b| *b)
+                .map(|b| b as u32)
+                .sum();
+            let needed = (self.n_tricks as i32) - (sum_so_far as i32);
+            if (0..=self.n_tricks as i32).contains(&needed) {
+                Some(needed as u8)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         for n in 0..=self.n_tricks {
+            if Some(n) == forbidden {
+                continue;
+            }
             actions.push(OHAction::Bid(n).into());
         }
+    }
+
+    /// Seat of the dealer in this hand. Dealer = last bidder. The hook
+    /// constraint in [`legal_actions_bidding`] applies to this seat.
+    pub fn dealer(&self) -> Player {
+        (self.num_players as usize) - 1
     }
 
     fn legal_actions_play(&self, actions: &mut Vec<Action>) {
@@ -470,15 +501,22 @@ impl OhHellGameState {
         (self.trick_starter + best_pos) % np
     }
 
-    /// Build the score vector. Each player who made their bid exactly scores
-    /// `10 + bid`; everyone else gets 0. Slots beyond `num_players` are 0.
-    fn raw_scores(&self) -> [f64; MAX_PLAYERS] {
+    /// Raw per-seat scores for this hand under the Wikipedia "common
+    /// scoring" rule: 1 point per trick won, plus a 10-point bonus for
+    /// matching your bid exactly. Slots beyond `num_players` are 0.
+    /// Public so the web frontend can accumulate per-hand scores
+    /// without reimplementing the formula.
+    pub fn raw_scores(&self) -> [f64; MAX_PLAYERS] {
         let mut out = [0.0; MAX_PLAYERS];
         for p in 0..(self.num_players as usize) {
-            let bid = self.bids[p].expect("bids set when evaluating");
-            if self.tricks_won[p] == bid {
-                out[p] = 10.0 + bid as f64;
+            let tricks = self.tricks_won[p];
+            let mut score = tricks as f64;
+            if let Some(bid) = self.bids[p] {
+                if tricks == bid {
+                    score += 10.0;
+                }
             }
+            out[p] = score;
         }
         out
     }
@@ -1450,9 +1488,16 @@ mod tests {
         gs.apply_action(OHAction::Card(OHCard::JS).into());
         assert!(gs.is_terminal());
         assert_eq!(gs.tricks_won(), [0, 0, 2]);
-        for p in 0..3 {
-            assert_eq!(gs.evaluate(p), 0.0);
-        }
+        // Common scoring: P0/P1 took 0 tricks but bid 1 → 0 points each
+        // (no per-trick credit, no exact-bid bonus). P2 took 2, bid 1 →
+        // 2 points for the tricks but no bonus. Total non-zero, but
+        // evaluate is mean-centred so it remains zero-sum.
+        let raw = gs.raw_scores();
+        assert_eq!(raw[0], 0.0);
+        assert_eq!(raw[1], 0.0);
+        assert_eq!(raw[2], 2.0);
+        let total: f64 = (0..3).map(|p| gs.evaluate(p)).sum();
+        assert!(total.abs() < 1e-9, "scores must be zero-sum");
     }
 
     #[test]
@@ -1780,40 +1825,62 @@ mod tests {
     fn two_player_full_game_terminal_and_scoring() {
         // 2 players, 1 trick.
         //   P0: 9s,  P1: 9c, face up 9h (hearts trump).
-        //   Bids: P0=0, P1=1. P0 leads 9s. P1 has no spades and no hearts;
-        //   plays 9c. 9s is lead-suit highest → P0 wins.
-        //   Final: P0 won 1 (bid 0) → bust → 0. P1 won 0 (bid 1) → 0.
+        //   Bids: P0=0, P1=0 (P1 is dealer; the hook forbids the bid
+        //   that would make the total equal n_tricks=1, so P1 can't
+        //   bid 1 here). P0 leads 9s; P1 has neither spades nor
+        //   hearts so plays 9c. 9s wins as lead-suit highest.
+        //   Final under common scoring: P0 took 1 trick, bid 0 → 1
+        //   point (no bonus). P1 took 0, bid 0 → 10 points (bonus).
         let mut gs = OhHell::new_state(2, 1);
         gs.apply_action(OHAction::Card(OHCard::NS).into()); // P0 deal
         gs.apply_action(OHAction::Card(OHCard::NC).into()); // P1 deal
         gs.apply_action(OHAction::Card(OHCard::NH).into()); // face up
         gs.apply_action(OHAction::Bid(0).into()); // P0
-        gs.apply_action(OHAction::Bid(1).into()); // P1
+        gs.apply_action(OHAction::Bid(0).into()); // P1 (dealer; hook forbids 1)
         gs.apply_action(OHAction::Card(OHCard::NS).into()); // P0 leads
         gs.apply_action(OHAction::Card(OHCard::NC).into()); // P1 follows
         assert!(gs.is_terminal());
         assert_eq!(gs.tricks_won(), &[1, 0][..]);
-        // Both score 0 (mean = 0), so evaluate is 0 for both.
-        assert_eq!(gs.evaluate(0), 0.0);
-        assert_eq!(gs.evaluate(1), 0.0);
+        let raw = gs.raw_scores();
+        assert_eq!(raw[0], 1.0);
+        assert_eq!(raw[1], 10.0);
+        // Mean = 5.5. evaluate(0) = -4.5, evaluate(1) = 4.5. Zero-sum.
+        assert!((gs.evaluate(0) + 4.5).abs() < 1e-9);
+        assert!((gs.evaluate(1) - 4.5).abs() < 1e-9);
     }
 
     #[test]
     fn two_player_both_make_bid() {
-        // P0 bids 1, wins 1 → 11. P1 bids 0, wins 0 → 10.
-        // Mean = 10.5. evaluate(0) = 0.5, evaluate(1) = -0.5. Zero-sum.
-        let mut gs = OhHell::new_state(2, 1);
+        // 2p × 2 tricks (1 trick can't satisfy the hook for both
+        // players making distinct bids). Deal P0: 9s, Ts; P1: 9c, Tc;
+        // face up 9h. Bids: P0=1, P1=0 (sum=1≠2, hook ok). P0 wins
+        // both tricks — P0 misses bid (took 2, bid 1) but still gets
+        // 2 trick-points; P1 makes bid → 10 bonus.
+        let mut gs = OhHell::new_state(2, 2);
         gs.apply_action(OHAction::Card(OHCard::NS).into());
         gs.apply_action(OHAction::Card(OHCard::NC).into());
+        gs.apply_action(OHAction::Card(OHCard::TS).into());
+        gs.apply_action(OHAction::Card(OHCard::TC).into());
         gs.apply_action(OHAction::Card(OHCard::NH).into());
-        gs.apply_action(OHAction::Bid(1).into());
-        gs.apply_action(OHAction::Bid(0).into());
+        gs.apply_action(OHAction::Bid(1).into()); // P0
+        gs.apply_action(OHAction::Bid(0).into()); // P1 dealer; sum=1≠2 ok
+        // Trick 1: P0 leads 9s; P1 has no spades nor hearts → plays 9c.
+        // 9s wins (lead-suit highest, no trump).
         gs.apply_action(OHAction::Card(OHCard::NS).into());
         gs.apply_action(OHAction::Card(OHCard::NC).into());
+        // Trick 2: P0 leads Ts; P1 plays Tc. Ts wins.
+        gs.apply_action(OHAction::Card(OHCard::TS).into());
+        gs.apply_action(OHAction::Card(OHCard::TC).into());
         assert!(gs.is_terminal());
-        assert_eq!(gs.tricks_won(), &[1, 0][..]);
-        assert!((gs.evaluate(0) - 0.5).abs() < 1e-9);
-        assert!((gs.evaluate(1) + 0.5).abs() < 1e-9);
+        assert_eq!(gs.tricks_won(), &[2, 0][..]);
+        // P0 took 2 tricks but bid 1 → bust → 2 points (no bonus).
+        // P1 took 0 tricks, bid 0 → 10 bonus.
+        let raw = gs.raw_scores();
+        assert_eq!(raw[0], 2.0);
+        assert_eq!(raw[1], 10.0);
+        // Mean 6 → evaluate(0)=-4, evaluate(1)=4. Zero-sum.
+        assert!((gs.evaluate(0) + 4.0).abs() < 1e-9);
+        assert!((gs.evaluate(1) - 4.0).abs() < 1e-9);
         assert!((gs.evaluate(0) + gs.evaluate(1)).abs() < 1e-9);
     }
 
@@ -2033,5 +2100,116 @@ mod tests {
         assert_eq!(gs.phase(), OHPhase::Bidding);
         gs.legal_actions(&mut acts);
         assert_eq!(acts.len(), 5);
+    }
+
+    // ---------------- Common scoring + the dealer hook ----------------
+
+    /// Sanity-check the common-scoring formula: 1 point per trick won,
+    /// plus a 10-point bonus when the bid matches the tricks taken.
+    #[test]
+    fn common_scoring_one_pt_per_trick_plus_bonus_for_exact() {
+        // 3p × 3 tricks. Construct a terminal state by hand.
+        let mut gs = OhHell::new_state(3, 3);
+        // Round-robin deal: P0 gets (NS, KS, AS), P1 (NC, KC, AC),
+        // P2 (NH, KH, AH). Face up TD → trump = diamonds.
+        let deal = [
+            OHCard::NS, OHCard::NC, OHCard::NH,
+            OHCard::KS, OHCard::KC, OHCard::KH,
+            OHCard::AS, OHCard::AC, OHCard::AH,
+        ];
+        for c in deal {
+            gs.apply_action(OHAction::Card(c).into());
+        }
+        gs.apply_action(OHAction::Card(OHCard::TD).into()); // face up; trump=D
+        // Bids: P0=0, P1=0, P2 (dealer)=1. Sum=1≠3, hook ok.
+        gs.apply_action(OHAction::Bid(0).into());
+        gs.apply_action(OHAction::Bid(0).into());
+        gs.apply_action(OHAction::Bid(1).into());
+        // Each trick: P0 leads, P1 follows (only same-suit-rank
+        // available), P2 follows. Lead-suit-highest wins so the
+        // strongest card per suit (the ace) takes its trick. P2 holds
+        // all the aces in non-trump suits, but those don't win the
+        // trick they're played into (they're off-lead). So we walk
+        // through cards in deal order: P0 leads NS, P1 plays NC (off),
+        // P2 plays NH (off) → P0 wins. Same pattern for K and A rows.
+        gs.apply_action(OHAction::Card(OHCard::NS).into());
+        gs.apply_action(OHAction::Card(OHCard::NC).into());
+        gs.apply_action(OHAction::Card(OHCard::NH).into());
+        // Winner of trick 1 leads next. P0 won → leads again.
+        gs.apply_action(OHAction::Card(OHCard::KS).into());
+        gs.apply_action(OHAction::Card(OHCard::KC).into());
+        gs.apply_action(OHAction::Card(OHCard::KH).into());
+        gs.apply_action(OHAction::Card(OHCard::AS).into());
+        gs.apply_action(OHAction::Card(OHCard::AC).into());
+        gs.apply_action(OHAction::Card(OHCard::AH).into());
+        assert!(gs.is_terminal());
+        assert_eq!(gs.tricks_won(), [3, 0, 0]);
+        // P0: 3 tricks + 0 bonus (bid 0, took 3) = 3.
+        // P1: 0 tricks + 10 bonus (bid 0, took 0) = 10.
+        // P2: 0 tricks + 0 bonus (bid 1, took 0) = 0.
+        let raw = gs.raw_scores();
+        assert_eq!(raw[0], 3.0);
+        assert_eq!(raw[1], 10.0);
+        assert_eq!(raw[2], 0.0);
+        // Evaluate is mean-centred → zero-sum.
+        let total: f64 = (0..3).map(|p| gs.evaluate(p)).sum();
+        assert!(total.abs() < 1e-9, "scores must be zero-sum");
+    }
+
+    /// The dealer's bid is filtered so the total bid count cannot
+    /// equal n_tricks (Wikipedia's "the hook"). Non-dealer seats are
+    /// unaffected.
+    #[test]
+    fn hook_filters_dealer_bid_only() {
+        let mut gs = OhHell::new_state(3, 3);
+        // Deal + face up. Specific cards don't matter for bidding logic.
+        for c in OH_DECK.iter().take(9) {
+            gs.apply_action(OHAction::Card(*c).into());
+        }
+        gs.apply_action(OHAction::Card(OH_DECK[9]).into());
+        assert_eq!(gs.phase(), OHPhase::Bidding);
+
+        // P0 has the full range.
+        let mut acts = Vec::new();
+        gs.legal_actions(&mut acts);
+        assert_eq!(acts.len(), 4, "P0 should have 4 bid options (0..=3)");
+
+        gs.apply_action(OHAction::Bid(1).into());
+        // P1 still has the full range.
+        gs.legal_actions(&mut acts);
+        assert_eq!(acts.len(), 4, "P1 should also have 4 bid options");
+
+        gs.apply_action(OHAction::Bid(1).into());
+        // P2 is the dealer; sum so far = 2, n_tricks = 3, so Bid(1)
+        // is forbidden — total would land on 3. Remaining: 0, 2, 3.
+        gs.legal_actions(&mut acts);
+        assert_eq!(acts.len(), 3, "dealer should lose one bid option");
+        assert!(!acts.contains(&OHAction::Bid(1).into()));
+        assert!(acts.contains(&OHAction::Bid(0).into()));
+        assert!(acts.contains(&OHAction::Bid(2).into()));
+        assert!(acts.contains(&OHAction::Bid(3).into()));
+    }
+
+    /// When the forbidden bid lies outside the 0..=n_tricks range the
+    /// dealer has the full set of options (the hook is a no-op).
+    #[test]
+    fn hook_inactive_when_forbidden_bid_out_of_range() {
+        // 2p × 2 tricks. P0 bids 2 (max). Dealer's forbidden bid =
+        // n_tricks - sum = 0. So dealer loses one option, not zero.
+        // To exercise the no-op branch we need sum_others > n_tricks,
+        // which is impossible with 2p (P0 max bid is n_tricks). Use
+        // 3p × 1 trick: P0 + P1 = 2 > 1, so dealer's forbidden bid
+        // would be -1 — out of range — and dealer keeps all options.
+        let mut gs = OhHell::new_state(3, 1);
+        for c in OH_DECK.iter().take(3) {
+            gs.apply_action(OHAction::Card(*c).into());
+        }
+        gs.apply_action(OHAction::Card(OH_DECK[3]).into());
+        gs.apply_action(OHAction::Bid(1).into()); // P0
+        gs.apply_action(OHAction::Bid(1).into()); // P1
+        // Dealer P2: sum=2, n_tricks=1, forbidden=-1 → no filtering.
+        let mut acts = Vec::new();
+        gs.legal_actions(&mut acts);
+        assert_eq!(acts.len(), 2, "dealer keeps the full 0..=1 range");
     }
 }
