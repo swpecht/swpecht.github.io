@@ -13,9 +13,22 @@
 //! - Player 0 leads the first trick; trick winner leads the next.
 //! - Must follow lead suit if possible; otherwise may play any card.
 //!   Highest trump beats; if no trump played, highest of lead suit wins.
-//! - Scoring: a player who takes exactly their bid scores `10 + bid`;
-//!   anyone who misses scores 0. `evaluate(p)` returns p's score minus the
-//!   mean of all players' scores so the game is zero-sum.
+//! - Scoring (Wikipedia "common scoring"): 1 point per trick taken
+//!   plus a 10-point bonus for matching your bid exactly. The dealer
+//!   (last bidder) is subject to "the hook": the total of all bids
+//!   may not equal n_tricks, removing the bid that would land on it.
+//! - `evaluate(p)` returns p's raw score minus the mean across all
+//!   players. This is a normalisation, NOT a correctness requirement:
+//!   CFR's no-regret guarantee holds for any payoff function, and the
+//!   Nash convergence guarantee only kicks in for 2-player zero-sum
+//!   regardless of centering. Mean-centring (a) reduces MCCFR payoff
+//!   variance and (b) reframes the objective as "score above the
+//!   table average" — which suits a multi-player ranking game like
+//!   Oh Hell. Note that under common scoring the per-hand total is
+//!   variable (tricks sum to n_tricks always; bonuses are 0..10*np
+//!   depending on how many players hit their bid), so mean-centring
+//!   is not a strategy-neutral constant shift — it can change the
+//!   trained strategy at the margin.
 
 use std::fmt::{Display, Write};
 
@@ -614,6 +627,13 @@ impl GameState for OhHellGameState {
         }
     }
 
+    /// Per-player utility for CFR / PIMCTS. Returns the raw score minus
+    /// the table mean — see the module-level docstring for why this is
+    /// a normalisation choice rather than a CFR-convergence requirement.
+    /// Mean-centring trades absolute-score optimisation for
+    /// "outscore the average opponent" and reduces MCCFR variance; it
+    /// is NOT strategy-neutral under common scoring because the
+    /// per-hand total varies with how many players hit their bid.
     fn evaluate(&self, p: Player) -> f64 {
         assert!(self.is_terminal(), "evaluate called on non-terminal");
         let np = self.num_players as usize;
