@@ -142,11 +142,37 @@ fn main() {
     let sample_budget_bytes: usize = parse_env("CFR_POLICY_SAMPLE_BYTES", 100 * 1024 * 1024);
     let sample_seed: u64 = parse_env("CFR_POLICY_SAMPLE_SEED", 0xC0DEC0DE);
 
+    // Early-termination on policy-delta-L1 plateau. Disabled when
+    // `CFR_TARGET_L1` is unset → loop runs until `CFR_ITERS`.
+    //
+    //   CFR_TARGET_L1   stop once delta_l1 < this for `patience`
+    //                   consecutive checkpoints (only checked once
+    //                   iters >= CFR_MIN_ITERS). Unset = no early stop.
+    //   CFR_PATIENCE    consecutive sub-threshold checkpoints required
+    //                   before stopping. Defaults to 3, which damps
+    //                   the single-checkpoint noise in the sampled L1.
+    //   CFR_MIN_ITERS   floor on training before the patience counter
+    //                   can fire. Defaults to 0 (any checkpoint
+    //                   counts). Useful when the sampler has only a
+    //                   tiny populated fraction early on and produces
+    //                   misleadingly small L1s.
+    //
+    // The L1 metric is a sampled "average strategy stopped changing"
+    // signal, NOT a "reached Nash" signal. Multi-player CFR has no
+    // Nash guarantee anyway — this just stops once more iterations
+    // aren't moving the average policy.
+    let target_l1: Option<f64> = std::env::var("CFR_TARGET_L1")
+        .ok()
+        .and_then(|s| s.parse().ok());
+    let patience: usize = parse_env("CFR_PATIENCE", 3);
+    let min_iters: usize = parse_env("CFR_MIN_ITERS", 0);
+
     println!(
         "CFR Oh Hell: {} players, {} tricks, total_iters={}, report every {} iters \
-         ({:.1}%), eval_games/report={}, max_cards_played={}, mmap_dir={:?}",
+         ({:.1}%), eval_games/report={}, max_cards_played={}, mmap_dir={:?}, \
+         target_l1={:?}, patience={}, min_iters={}",
         n_players, n_tricks, total_iters, report_every, report_pct, eval_games, max_cards,
-        mmap_dir,
+        mmap_dir, target_l1, patience, min_iters,
     );
     println!(
         "{:>10} {:>8} {:>8} {:>10} {:>9} {:>9} {:>9} {:>10} {:>9} {:>9} {:>10} {:>10}",
@@ -177,24 +203,67 @@ fn main() {
     // any pre-loaded weights so the first post-train report's delta is
     // measured against the resume point rather than zero.
     let mut done = 0usize;
-    report(&mut cfr, &mut sampler, n_players, n_tricks, eval_games, done, total_iters, &start);
+    let _ = report(
+        &mut cfr, &mut sampler, n_players, n_tricks, eval_games, done, total_iters, &start,
+    );
+
+    // Counts consecutive checkpoints satisfying delta_l1 < target_l1.
+    // NaN checkpoints (no prior snapshot to compare against) neither
+    // increment nor reset — they're skipped. A real measurement at or
+    // above the threshold resets the counter so a single noisy dip can't
+    // stop training early.
+    let mut consecutive_below: usize = 0;
+    let mut early_stopped = false;
 
     while done < total_iters {
         let chunk = report_every.min(total_iters - done);
         cfr.train(chunk);
         done += chunk;
-        report(&mut cfr, &mut sampler, n_players, n_tricks, eval_games, done, total_iters, &start);
+        let delta_l1 = report(
+            &mut cfr, &mut sampler, n_players, n_tricks, eval_games, done, total_iters, &start,
+        );
         if mmap_dir.is_some() {
             if let Err(e) = cfr.save() {
                 eprintln!("checkpoint save failed: {:#}", e);
+            }
+        }
+
+        if let Some(target) = target_l1 {
+            if delta_l1.is_finite() {
+                if done >= min_iters && delta_l1 < target {
+                    consecutive_below += 1;
+                } else {
+                    consecutive_below = 0;
+                }
+            }
+            if consecutive_below >= patience {
+                early_stopped = true;
+                println!(
+                    "Early termination at iter {}: delta_l1 < {:.6} for {} consecutive \
+                     checkpoints (patience={}, min_iters={})",
+                    done, target, consecutive_below, patience, min_iters,
+                );
+                // Emit a kestrel signal on the step axis so the dashboard
+                // shows where the loop bailed and why.
+                println!(
+                    "kestrel: step={} early_stop=1 early_stop_iter={} target_l1={:.6} \
+                     final_delta_l1={:.6} consecutive_below={}",
+                    done, done, target, delta_l1, consecutive_below,
+                );
+                break;
             }
         }
     }
 
     let elapsed = start.elapsed().as_secs_f64();
     println!(
-        "Training finished in {:.2}s. Final info states touched: {}",
+        "Training finished in {:.2}s ({}). Final info states touched: {}",
         elapsed,
+        if early_stopped {
+            "early-stop"
+        } else {
+            "iter cap reached"
+        },
         cfr.num_info_states()
     );
 
@@ -207,6 +276,10 @@ fn main() {
     }
 }
 
+/// Emit a progress + kestrel checkpoint and return the measured
+/// `delta_l1` so the outer training loop can run patience-based
+/// early termination without calling `sampler.measure` twice (it
+/// has side effects on the snapshot ring).
 fn report(
     cfr: &mut OhCfres,
     sampler: &mut PolicySampler,
@@ -216,7 +289,7 @@ fn report(
     done: usize,
     total_iters: usize,
     start: &Instant,
-) {
+) -> f64 {
     let elapsed = start.elapsed().as_secs_f64();
     let pct = 100.0 * (done as f64) / (total_iters as f64);
     let info_states = cfr.num_info_states();
@@ -292,6 +365,7 @@ fn report(
         "kestrel: t={:.4} progress_pct={:.4}",
         elapsed, pct,
     );
+    delta_l1
 }
 
 struct EvalSummary {
