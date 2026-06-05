@@ -7,10 +7,7 @@
 
 use std::str::FromStr;
 
-use actix_web::{
-    cookie::{time::Duration as CookieDuration, Cookie},
-    web, HttpRequest, HttpResponse, Responder,
-};
+use actix_web::{web, HttpRequest, HttpResponse, Responder};
 use games::{
     actions,
     gamestates::euchre::{
@@ -19,10 +16,14 @@ use games::{
     },
     GameState, Player,
 };
-use maud::{html, Markup, DOCTYPE};
+use maud::{html, Markup};
 use rand::{rng, RngExt};
 use serde::Deserialize;
 use uuid::Uuid;
+use web_common::{
+    action_form_button, clear_form, get_or_set_player_id as web_get_or_set_player_id,
+    html_response, layout, render_waiting_players,
+};
 
 use crate::{
     handle_ready_clear, handle_register_player, handle_take_action, new_game, progress_game,
@@ -39,50 +40,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .route("/game/{id}/action", web::post().to(game_action));
 }
 
-// ---------- Player ID cookie ----------
-
-fn get_or_set_player_id(req: &HttpRequest) -> (usize, Option<Cookie<'static>>) {
-    if let Some(c) = req.cookie(PLAYER_COOKIE) {
-        if let Ok(id) = c.value().parse::<usize>() {
-            return (id, None);
-        }
-    }
-    let id: usize = rng().random_range(1..u32::MAX as usize);
-    let cookie = Cookie::build(PLAYER_COOKIE, id.to_string())
-        .path("/")
-        .max_age(CookieDuration::days(30))
-        .http_only(true)
-        .finish();
-    (id, Some(cookie))
-}
-
-fn html_response(markup: Markup, cookie: Option<Cookie<'static>>) -> HttpResponse {
-    let mut resp = HttpResponse::Ok();
-    resp.content_type("text/html; charset=utf-8");
-    if let Some(c) = cookie {
-        resp.cookie(c);
-    }
-    resp.body(markup.into_string())
-}
-
-// ---------- Shared layout ----------
-
-fn layout(title: &str, body: Markup) -> Markup {
-    html! {
-        (DOCTYPE)
-        html lang="en" {
-            head {
-                meta charset="UTF-8";
-                meta name="viewport" content="width=device-width, initial-scale=1";
-                title { (title) }
-                script src="https://unpkg.com/htmx.org@1.9.12" {}
-                script src="https://cdn.tailwindcss.com" {}
-            }
-            body class="font-sans p-4 max-w-5xl mx-auto text-black" {
-                (body)
-            }
-        }
-    }
+fn get_or_set_player_id(
+    req: &HttpRequest,
+) -> (usize, Option<actix_web::cookie::Cookie<'static>>) {
+    web_get_or_set_player_id(req, PLAYER_COOKIE)
 }
 
 // ---------- Index / landing page ----------
@@ -312,18 +273,6 @@ pub(crate) fn render_game_view(gd: &GameData, player_id: usize, game_id: &Uuid) 
         WaitingPlayerJoin { .. } => render_waiting_players(game_id),
         GameOver => render_game_over(gd, game_id),
         _ => render_active_game(gd, player_id, game_id),
-    }
-}
-
-fn render_waiting_players(game_id: &Uuid) -> Markup {
-    html! {
-        div class="p-4 grid gap-2" {
-            h2 class="text-xl font-bold" { "Waiting for other players to join..." }
-            p { "Send the other player the url of this page for them to join." }
-            p class="text-sm text-gray-600" {
-                "Game id: " code { (game_id) }
-            }
-        }
     }
 }
 
@@ -685,23 +634,6 @@ fn clear_button_for(
     }
 }
 
-fn clear_form(kind: &str, label: &str, game_id: &Uuid) -> Markup {
-    html! {
-        form
-            hx-post={ "/game/" (game_id) "/action" }
-            hx-target="#game"
-            hx-swap="innerHTML"
-            class="inline"
-        {
-            input type="hidden" name="kind" value=(kind);
-            button
-                type="submit"
-                class="bg-white outline outline-black hover:bg-slate-100 focus:outline-none focus:ring focus:bg-slate-100 active:bg-slate-200 rounded-full px-5 py-2 text-sm leading-5 font-semibold"
-            { (label) }
-        }
-    }
-}
-
 fn render_hand_and_actions(
     gs: &EuchreGameState,
     gd: &GameData,
@@ -867,17 +799,3 @@ fn play_card_button(card: Card, action: Option<EAction>, game_id: &Uuid) -> Mark
     }
 }
 
-fn action_form_button(raw_action: u32, label: &str, classes: &str, game_id: &Uuid) -> Markup {
-    html! {
-        form
-            hx-post={ "/game/" (game_id) "/action" }
-            hx-target="#game"
-            hx-swap="innerHTML"
-            class="inline"
-        {
-            input type="hidden" name="kind" value="take";
-            input type="hidden" name="action" value=(raw_action);
-            button type="submit" class=(classes) { (label) }
-        }
-    }
-}

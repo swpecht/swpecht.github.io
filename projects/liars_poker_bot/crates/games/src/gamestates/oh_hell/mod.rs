@@ -264,6 +264,56 @@ impl OhHellGameState {
         self.num_in_trick as usize
     }
 
+    pub fn trick_starter(&self) -> Player {
+        self.trick_starter
+    }
+
+    /// Card played by `player` in the in-progress trick, if any. Maps
+    /// seat → position-in-trick by walking back from the trick starter.
+    pub fn played_card(&self, player: Player) -> Option<OHCard> {
+        let np = self.num_players as usize;
+        if self.num_in_trick == 0 {
+            return None;
+        }
+        let pos = (player + np - self.trick_starter) % np;
+        if pos >= self.num_in_trick as usize {
+            return None;
+        }
+        self.trick_cards[pos]
+    }
+
+    /// True once a trick has completed and before any card of the next
+    /// trick has been played. Mirrors Euchre's same-named helper.
+    pub fn is_trick_over(&self) -> bool {
+        let np = self.num_players as usize;
+        matches!(self.phase, OHPhase::Play | OHPhase::Terminal)
+            && self.cards_played > 0
+            && self.num_in_trick == 0
+            && (self.cards_played as usize) % np == 0
+    }
+
+    /// The most recently completed trick: starter + cards in play order
+    /// (length `num_players`). Returns `None` if no trick has finished
+    /// yet. Walks the public history so callers don't need access to
+    /// internal state.
+    pub fn last_trick(&self) -> Option<(Player, Vec<OHCard>)> {
+        let np = self.num_players as usize;
+        if self.cards_played < np as u8 {
+            return None;
+        }
+        let cards_played_in_cur_trick = (self.cards_played as usize) % np;
+        let sidx = self.key.len() - cards_played_in_cur_trick - np;
+        let mut trick = Vec::with_capacity(np);
+        for i in 0..np {
+            if let OHAction::Card(c) = OHAction::from(self.key[sidx + i]) {
+                trick.push(c);
+            } else {
+                return None;
+            }
+        }
+        Some((self.play_order[sidx], trick))
+    }
+
     fn deal_card(&mut self, player: Player, card: OHCard) {
         let bit = 1u64 << (card as u8);
         debug_assert!(

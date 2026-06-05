@@ -1,20 +1,16 @@
 [package]
-name = "euchre_server"
+name = "oh_hell_server"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 actix-web = "4"
-card_platypus =  { path = "../card_platypus" }
-games =  { path = "../games" }
+card_platypus = { path = "../card_platypus" }
+games = { path = "../games" }
 web_common = { path = "../web_common" }
 rand = { workspace = true }
 log = { workspace = true }
 simplelog = "0.12"
 maud = { version = "0.27", features = ["actix-web"] }
 serde = { workspace = true }
-rusqlite = { version = "0.31", features = ["bundled"] }
-
 uuid = { workspace = true }
