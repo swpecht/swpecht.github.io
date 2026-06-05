@@ -293,12 +293,12 @@ pub(crate) fn render_game_view(gd: &GameData, player_id: usize, game_id: &Uuid) 
     use GameProcessingState::*;
     match &gd.display_state {
         WaitingPlayerJoin { .. } => render_waiting_players(game_id),
-        GameOver => render_game_over(gd, game_id),
+        GameOver => render_game_over(gd, player_id, game_id),
         _ => render_active_game(gd, player_id, game_id),
     }
 }
 
-fn render_game_over(gd: &GameData, _game_id: &Uuid) -> Markup {
+fn render_game_over(gd: &GameData, player_id: usize, _game_id: &Uuid) -> Markup {
     let winner = gd
         .scores
         .iter()
@@ -306,14 +306,22 @@ fn render_game_over(gd: &GameData, _game_id: &Uuid) -> Markup {
         .max_by_key(|(_, s)| **s)
         .map(|(i, _)| i)
         .unwrap_or(0);
+    let south = gd
+        .players
+        .iter()
+        .position(|x| *x == Some(player_id))
+        .unwrap_or(0);
+    let np = gd.players.len();
     html! {
         div class="px-8 pt-8 grid gap-4" {
             div class="font-bold text-xl" { "Thanks for playing!" }
-            div { "Seat " (winner) " wins." }
+            div { (seat_label(winner, south, gd, np)) " wins." }
             div {
-                "Final scores: "
+                "Final scores:"
                 @for (i, s) in gd.scores.iter().enumerate() {
-                    span class="ml-2" { "Seat " (i) ": " (s) }
+                    span class="ml-2" {
+                        (seat_label(i, south, gd, np)) ": " (s)
+                    }
                 }
             }
             a
@@ -343,7 +351,7 @@ fn render_active_game(gd: &GameData, player_id: usize, game_id: &Uuid) -> Markup
             }
             div class="sm:basis-1/4 grid gap-4" {
                 (render_game_info(gs, gd, south))
-                (render_score_table(gd))
+                (render_score_table(gd, south))
                 (render_seat_table(gd, south))
             }
         }
@@ -387,15 +395,16 @@ fn render_game_info(gs: &OhHellGameState, gd: &GameData, south: Player) -> Marku
     }
 }
 
-fn render_score_table(gd: &GameData) -> Markup {
+fn render_score_table(gd: &GameData, south: Player) -> Markup {
     let total = gd.hand_sequence.len();
     let hand_num = (gd.hand_idx + 1).min(total);
+    let np = gd.players.len();
     html! {
         div {
             div class="font-bold text-xl" { "Cumulative score" }
             div class="grid grid-cols-2 gap-x-2" {
                 @for (i, s) in gd.scores.iter().enumerate() {
-                    div { "Seat " (i) }
+                    div { (seat_label(i, south, gd, np)) }
                     div { (s) }
                 }
             }
