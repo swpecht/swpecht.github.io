@@ -379,8 +379,20 @@ fn get_mmap(dir: Option<&Path>, len: usize, bucket_size: usize) -> anyhow::Resul
 }
 
 /// Count the number of populated entries in an mmap by scanning every bucket.
-/// Expensive for large mmaps (60GB+ for three_card_played). Prefer loading
-/// the persisted count via `load_metadata` when available.
+///
+/// On a cold launch with no `meta` file this is the dominant startup
+/// cost for large Oh Hell configs — *not* indexer construction (Oh Hell
+/// uses the closed-form Waugh indexer, no PHF to build) and *not* mmap
+/// allocation (`set_len` is sparse). With a 207 GB mmap (e.g. 3p × 6t
+/// bidding-only) this scan touches every sparse page, materialising
+/// each via a zero-fill page fault, and easily takes hours before the
+/// first training iteration runs. Meanwhile the process looks idle on
+/// `step=0` in the training log.
+///
+/// Expensive for large mmaps (60GB+ for Euchre's three_card_played,
+/// 200GB+ for Oh Hell 3p × 6t). Prefer loading the persisted count via
+/// `load_metadata` when available; training writes `meta` on every
+/// checkpoint so warm restarts skip this entirely.
 fn count_populated(mmap: &MmapMut, indexer: &Indexer, bucket_size: usize, dir: Option<&Path>) -> usize {
     warn!(
         "no persisted populated count found for {} — scanning {} mmap entries (this may take minutes for large weight files)",
