@@ -1,5 +1,8 @@
 pub mod cfres;
+pub mod epimc;
 pub mod exploitability;
+pub mod gomcts;
+pub mod gomcts_transformer;
 pub mod ismcts;
 pub mod open_hand_solver;
 pub mod pimcts;

@@ -6,6 +6,10 @@
 //! Agents (each has its own metric series; metric name = `a_vs_b`):
 //!   * random — uniform over legal actions; the zero-skill floor.
 //!   * pimcts — PIMCTS w/ OpenHandSolver, 50 rollouts. No weights.
+//!   * epimc2 — EPIMC w/ OpenHandSolver, 50 rollouts, postponing depth=2.
+//!   * epimc3 — EPIMC w/ OpenHandSolver, 50 rollouts, postponing depth=3.
+//!   * epimc4 — EPIMC w/ OpenHandSolver, 50 rollouts, postponing depth=4.
+//!   * epimc5 — EPIMC w/ OpenHandSolver, 50 rollouts, postponing depth=5.
 //!   * cfr0   — CFRES trained on bidding only (max_cards_played = 0).
 //!              `euchre_server::bench`'s "medium" tier; also called
 //!              "baseline" in older docs.
@@ -13,6 +17,11 @@
 //!   * cfr2   — CFRES trained through 2 cards played.
 //!   * cfr3   — CFRES trained through 3 cards played.
 //!              `euchre_server::bench`'s "hard" tier.
+//!   * gomcts — GO-MCTS over a trained Euchre transformer. Loads the
+//!              safetensors checkpoint at $EUCHRE_GOMCTS_WEIGHTS
+//!              (default `/tmp/euchre_gomcts/final.safetensors`).
+//!              Config selected via $EUCHRE_GOMCTS_CONFIG (smoke /
+//!              medium / paper).
 //!
 //! With 6 agents the tournament has C(6,2) = 15 pairings. We rotate
 //! through the pairings in batches sized at `BENCH_BATCH_PCT` (default
@@ -34,7 +43,8 @@
 //!   BENCH_MATCHES    matches per pairing (default 1000)
 //!   BENCH_BATCH_PCT  batch size as % of matches per pair (default 5)
 //!   BENCH_SEED       base RNG seed (default 0)
-//!   BENCH_AGENTS     comma-separated subset (default "random,pimcts,cfr0,cfr1,cfr2,cfr3")
+//!   BENCH_AGENTS     comma-separated subset (default
+//!                    "random,pimcts,epimc2,epimc3,epimc4,epimc5,cfr0,cfr1,cfr2,cfr3")
 //!
 //! Run:
 //!   cargo run -p card_platypus --release --example euchre_difficulty_benchmark
@@ -43,7 +53,17 @@ use std::{env, io::Write, path::PathBuf, time::Instant};
 
 use card_platypus::{
     agents::Agent,
-    algorithms::{cfres::EuchreCfres, open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot},
+    algorithms::{
+        cfres::EuchreCfres,
+        epimc::EPIMCBot,
+        gomcts::{GoMcts, GoMctsConfig},
+        gomcts_transformer::{
+            default_device, euchre::EuchreTokenizer, GoMctsTransformer, TransformerConfig,
+            TransformerGenerativeModel,
+        },
+        open_hand_solver::OpenHandSolver,
+        pimcts::PIMCTSBot,
+    },
 };
 use games::{
     gamestates::euchre::{Euchre, EuchreGameState},
@@ -57,6 +77,7 @@ const DEFAULT_CFR0: &str = "/home/steven/card_platypus/infostate.baseline";
 const DEFAULT_CFR1: &str = "/home/steven/card_platypus/infostate.one_card_played";
 const DEFAULT_CFR2: &str = "/home/steven/card_platypus/infostate.two_card_played";
 const DEFAULT_CFR3: &str = "/home/steven/card_platypus/infostate.three_card_played_f32";
+const DEFAULT_GOMCTS: &str = "/tmp/euchre_gomcts/final.safetensors";
 
 type EuchreAgent = Box<dyn Agent<EuchreGameState>>;
 
@@ -106,6 +127,49 @@ fn load_cfr(env_var: &str, default: &str, max_cards_played: usize, seed: u64) ->
     Box::new(agent)
 }
 
+/// Build a GO-MCTS agent backed by a trained transformer checkpoint.
+///
+/// `EUCHRE_GOMCTS_WEIGHTS` overrides the safetensors path; default is the
+/// final checkpoint written by `euchre_gomcts_train.rs`.
+/// `EUCHRE_GOMCTS_CONFIG` selects the matching `TransformerConfig`
+/// (must match the size used at training time).
+/// `EUCHRE_GOMCTS_ITER` controls per-decision search budget (default 32).
+fn load_gomcts(seed: u64) -> EuchreAgent {
+    let path = weights_path("EUCHRE_GOMCTS_WEIGHTS", DEFAULT_GOMCTS);
+    assert!(
+        path.exists(),
+        "GO-MCTS weights not found at {} (set EUCHRE_GOMCTS_WEIGHTS to override)",
+        path.display()
+    );
+    let cfg = match env::var("EUCHRE_GOMCTS_CONFIG").as_deref() {
+        Ok("smoke") => {
+            TransformerConfig::euchre_smoke(EuchreTokenizer::VOCAB_SIZE, EuchreTokenizer::MAX_CONTEXT)
+        }
+        Ok("paper") => TransformerConfig::paper_default(
+            EuchreTokenizer::VOCAB_SIZE,
+            EuchreTokenizer::MAX_CONTEXT,
+        ),
+        _ => TransformerConfig::euchre_medium(
+            EuchreTokenizer::VOCAB_SIZE,
+            EuchreTokenizer::MAX_CONTEXT,
+        ),
+    };
+    let mut net = GoMctsTransformer::new(cfg, default_device()).expect("build transformer");
+    net.load(&path).expect("load gomcts checkpoint");
+    let model =
+        TransformerGenerativeModel::new(net, EuchreTokenizer);
+    let mcts_iter: usize = env::var("EUCHRE_GOMCTS_ITER")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(32);
+    let search = GoMcts::new(
+        GoMctsConfig { uct_c: 0.4, n_iterations: mcts_iter, mu: 0.01 },
+        model,
+        StdRng::seed_from_u64(seed),
+    );
+    Box::new(search)
+}
+
 fn load_agent(name: &str, seed: u64) -> EuchreAgent {
     match name {
         "random" => Box::new(RandomAgent::new(seed)),
@@ -114,12 +178,40 @@ fn load_agent(name: &str, seed: u64) -> EuchreAgent {
             OpenHandSolver::new_euchre(),
             StdRng::seed_from_u64(seed),
         )),
+        // EPIMC matches pimcts on rollouts + evaluator; only `depth` differs,
+        // so the head-to-head isolates the postponing-reasoning contribution.
+        "epimc2" => Box::new(EPIMCBot::new(
+            50,
+            2,
+            OpenHandSolver::new_euchre(),
+            StdRng::seed_from_u64(seed),
+        )),
+        "epimc3" => Box::new(EPIMCBot::new(
+            50,
+            3,
+            OpenHandSolver::new_euchre(),
+            StdRng::seed_from_u64(seed),
+        )),
+        "epimc4" => Box::new(EPIMCBot::new(
+            50,
+            4,
+            OpenHandSolver::new_euchre(),
+            StdRng::seed_from_u64(seed),
+        )),
+        "epimc5" => Box::new(EPIMCBot::new(
+            50,
+            5,
+            OpenHandSolver::new_euchre(),
+            StdRng::seed_from_u64(seed),
+        )),
         "cfr0" => load_cfr("EUCHRE_CFR0_WEIGHTS", DEFAULT_CFR0, 0, seed),
         "cfr1" => load_cfr("EUCHRE_CFR1_WEIGHTS", DEFAULT_CFR1, 1, seed),
         "cfr2" => load_cfr("EUCHRE_CFR2_WEIGHTS", DEFAULT_CFR2, 2, seed),
         "cfr3" => load_cfr("EUCHRE_CFR3_WEIGHTS", DEFAULT_CFR3, 3, seed),
+        "gomcts" => load_gomcts(seed),
         _ => panic!(
-            "unknown agent: {name} (valid: random, pimcts, cfr0, cfr1, cfr2, cfr3)"
+            "unknown agent: {name} (valid: random, pimcts, epimc2, epimc3, \
+             epimc4, epimc5, cfr0, cfr1, cfr2, cfr3, gomcts)"
         ),
     }
 }
@@ -211,8 +303,9 @@ fn main() {
     let batch_size = ((matches_per_pair * batch_pct + 99) / 100).max(1);
     let n_batches = (matches_per_pair + batch_size - 1) / batch_size;
 
-    let agents_csv = env::var("BENCH_AGENTS")
-        .unwrap_or_else(|_| "random,pimcts,cfr0,cfr1,cfr2,cfr3".to_string());
+    let agents_csv = env::var("BENCH_AGENTS").unwrap_or_else(|_| {
+        "random,pimcts,epimc2,epimc3,epimc4,epimc5,cfr0,cfr1,cfr2,cfr3".to_string()
+    });
     let agent_names: Vec<String> = agents_csv
         .split(',')
         .map(|s| s.trim().to_string())

@@ -32,6 +32,19 @@ memmap2 = "0.9.9"
 boomphf = {version = "0.6", git = "https://github.com/10XGenomics/rust-boomphf.git", features = ["serde"]}
 bytemuck = "1.25"
 tinyvec = {version="1.10", features =["serde"]}
+# ML stack for the GO-MCTS transformer generative model. CPU-only by
+# default; opt into GPU via the `gpu_cuda` or `gpu_metal` cargo features
+# below — they enable the matching candle backend.
+candle-core = { version = "0.9", default-features = false }
+candle-nn = { version = "0.9", default-features = false }
+
+[features]
+default = []
+# Swap candle to CUDA. Picks up CUDA on first try; falls back to CPU if
+# unavailable at runtime (see `gomcts_transformer::default_device`).
+gpu_cuda = ["candle-core/cuda", "candle-nn/cuda"]
+# Same idea for Apple Metal.
+gpu_metal = ["candle-core/metal", "candle-nn/metal"]
 
 [dev-dependencies]
 criterion = "0.8"
