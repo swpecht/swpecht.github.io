@@ -729,6 +729,109 @@ similar wall-clock budget.
 (d=256, 8L) all converge to +0.20 ± 0.05 vs random. Model capacity is
 NOT the bottleneck — self-play training signal quality is.
 
+### CFR bootstrap (started 2026-06-07)
+
+User opted into CFR bootstrap after observing that pure self-play
+plateaued at +0.20 vs random across all transformer sizes. Hypothesis:
+the value head spends most of its training budget escaping cold-start
+(random init → barely-better-than-random) before *any* strategic signal
+accumulates. Initialising from cfr3-supervised data should skip that
+entire regime.
+
+#### Why this is fundamentally different from "use OHS/PIMCTS values"
+
+OHS / PIMCTS bootstrap (E2, which the user previously excluded) trains
+the value head against perfect-info leaf evaluations. Those targets
+inherit strategy-fusion bias — the network learns to predict
+"PIMCTS-leaf-style optimistic values".
+
+CFR bootstrap trains the network against *what cfr3 actually does* in
+imperfect-info Euchre. The action targets are the moves a Nash-ish
+policy plays, and the value targets are the actual outcomes of
+self-play between Nash-ish policies. No perfect-info assumption.
+
+#### Steps (notes as we go)
+
+  1. Wrote `examples/euchre_gomcts_bootstrap.rs`:
+     - Loads N copies of `EuchreCfres` (one per worker, sharing the
+       /home/steven/card_platypus/infostate.three_card_played_f32 mmap).
+     - Spawns `EU_BOOT_THREADS` worker threads via `std::thread::scope`.
+     - Each worker plays `n_games / threads` games where all 4 seats are
+       cfr3, recording per-seat `(history, chosen_action, terminal_value)`
+       tuples as `TrainExample::hard(...)`.
+     - Collects all examples, then trains a fresh paper-config
+       transformer with the existing `train()` (soft CE on one-hot from
+       the hard target, two-position value MSE).
+     - Saves to `EU_BOOT_OUT` (default `/tmp/euchre_gomcts_bootstrap/
+       bootstrap.safetensors`).
+  2. Added `EU_INIT_WEIGHTS=path` knob to `euchre_gomcts_train.rs`:
+     - Loaded *before* the optional `EU_RESUME_FROM` snapshot rebuild.
+     - Distinct semantics from RESUME_FROM: just loads weights, no
+       Population rebuild, iter counter still starts at 1.
+     - Lets you start self-play from any checkpoint (bootstrap, prior
+       run, etc.) without pretending it was iter-N.
+  3. Run order:
+     - Wait for the current alphazero run to drain (iter 20 imminent).
+     - Run bootstrap: ~5-10k cfr3 vs cfr3 games (timing depends on
+       per-decision cfr3 cost ≈ 50-200ms; rough estimate ~hours).
+     - Resume self-play from `bootstrap.safetensors` via
+       `EU_INIT_WEIGHTS=`. Compare iter-1 mean_reward + h2h to a
+       random-init iter-1 (we have plenty of those datapoints).
+  4. Timing reality (vs guess):
+     - cfr3 turned out to be **way** cheaper than estimated. A 50-game
+       smoke test with 4 worker threads ran at **30 games/sec** —
+       ~33ms per game, ~1.3ms per cfr3 decision. The bidding policy
+       is a tabular CFR lookup; the card play also short-circuits
+       through cfr-trained tables for the early plies. Total
+       throughput on the 16-core 7950X3D with 24 worker threads
+       should be ~100-200 games/sec.
+     - 100k cfr3-vs-cfr3 games × ~24 trajectory positions = ~2.4M
+       supervised training examples. Estimated wall: ~10 min data
+       collection + 60-90 min training (paper config, batch=512,
+       25 epochs on GPU).
+     - Launched: `EU_BOOT_GAMES=100000 EU_BOOT_THREADS=24
+       EU_BOOT_EPOCHS=25 EU_BOOT_BATCH=512`.
+  5. After bootstrap finishes:
+     - Eval `bootstrap.safetensors` with `euchre_gomcts_eval` at
+       n=2000 to confirm we matched (or got close to) cfr3 strength
+       in the raw transformer / GO-MCTS-wrapped configurations.
+     - Launch self-play with `EU_INIT_WEIGHTS=$(BOOT)` (plus
+       `EU_ALPHAZERO=1 EU_BATCH_GAMES=32 EU_BATCH_SIZE=256`). Expect
+       iter-1 mean_reward far above the +0.20 plateau we hit from
+       random init.
+
+#### Train batch size sweep (paper config, GPU)
+
+`euchre_gomcts_train_batch_bench` with synthetic data, 300 steps per
+condition, dataset=16k:
+
+| batch_size | examples/sec | ms/step | speedup vs 64 |
+|---|---|---|---|
+| 64 | 7245 | 8.83 | 1.00× |
+| 128 | 9534 | 13.42 | 1.32× |
+| **256** | **10883** | **23.52** | **1.50×** |
+| 512 | 11035 | 46.40 | 1.52× |
+| 1024 | OOM | — | — |
+
+Conclusion: **`EU_BATCH_SIZE=256`** is the sweet spot — 99% of peak
+throughput with half the per-step memory of batch=512. Going above 512
+risks OOM when other GPU activity (e.g. self-play inference) is also
+happening. Updated the next-launch defaults accordingly.
+
+#### Expected speedup
+
+Today: 12 iters of self-play to barely beat random (+0.06 to +0.18 vs
+random). Cold-start regime burns most of the training budget.
+
+After bootstrap: iter 1 should sit near cfr3's strength (which we
+measured at ~89.6% point share vs random in the difficulty tournament
+== mean reward roughly +1.5 to +2.5 per hand). Self-play would then
+*refine* this rather than discover it.
+
+Stop condition the same as before: gomcts has to beat pimcts in a
+tournament check AND tie cfr0 to count as success. With cfr3 bootstrap,
+*both* feel reachable for the first time.
+
 ### Paths that could still move the needle
 
   1. **Multi-game batched self-play**: batch=|legal| is the within-decision

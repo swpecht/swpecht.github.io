@@ -944,6 +944,11 @@ fn pad_to(tokens: &[u32], max_context: usize, pad_token: u32) -> (Vec<u32>, usiz
 /// "next token given prefix", with the previous-action's token at the
 /// last input position. For an empty prefix the position is 0 (the
 /// prepended PAD).
+///
+/// Backwards-compatible wrapper around `train_with_callback` that
+/// passes a no-op callback. Use `train_with_callback` directly when you
+/// want a per-epoch hook (logging, checkpointing, …) WITHOUT discarding
+/// the AdamW moment buffers between epochs.
 pub fn train<G: GameState, T: Tokenizer<G>>(
     model: &mut TransformerGenerativeModel<G, T>,
     examples: &[TrainExample],
@@ -952,6 +957,26 @@ pub fn train<G: GameState, T: Tokenizer<G>>(
     lr: f64,
     rng: &mut StdRng,
 ) -> CandleResult<f32> {
+    train_with_callback(model, examples, n_epochs, batch_size, lr, rng, |_, _| {})
+}
+
+/// As `train`, but invokes `on_epoch_end(epoch_index_1_based, last_step_loss)`
+/// after each epoch. The optimizer is constructed once and persists
+/// across all epochs, so AdamW's `m_t` / `v_t` moments accumulate
+/// normally — strictly equivalent to a single `train(n_epochs=N)` call
+/// in terms of optimization trajectory.
+pub fn train_with_callback<G: GameState, T: Tokenizer<G>, F>(
+    model: &mut TransformerGenerativeModel<G, T>,
+    examples: &[TrainExample],
+    n_epochs: usize,
+    batch_size: usize,
+    lr: f64,
+    rng: &mut StdRng,
+    mut on_epoch_end: F,
+) -> CandleResult<f32>
+where
+    F: FnMut(usize, f32),
+{
     let params = ParamsAdamW { lr, ..Default::default() };
     let mut opt = AdamW::new(model.net.varmap.all_vars(), params)?;
     let device = model.net.device().clone();
@@ -961,7 +986,7 @@ pub fn train<G: GameState, T: Tokenizer<G>>(
     let mut idx: Vec<usize> = (0..examples.len()).collect();
     let mut last_loss = f32::NAN;
     let vocab = model.net.cfg.vocab_size;
-    for _ in 0..n_epochs {
+    for epoch in 0..n_epochs {
         for i in (1..idx.len()).rev() {
             let j = (rng.random::<u64>() as usize) % (i + 1);
             idx.swap(i, j);
@@ -1064,6 +1089,7 @@ pub fn train<G: GameState, T: Tokenizer<G>>(
             opt.backward_step(&total_loss)?;
             last_loss = total_loss.to_scalar::<f32>()?;
         }
+        on_epoch_end(epoch + 1, last_loss);
     }
     Ok(last_loss)
 }

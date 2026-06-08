@@ -51,6 +51,13 @@
 //!                         would have. AdamW state is NOT
 //!                         saved/restored — momentum recovers
 //!                         within a few hundred batches.
+//!   EU_INIT_WEIGHTS       load weights from this safetensors   (default unset)
+//!                         path BEFORE iter 1, but treat them
+//!                         as initial state (NO Population
+//!                         rebuild). Use for CFR bootstrap or
+//!                         similar pretraining. Mutually
+//!                         exclusive with EU_RESUME_FROM (resume
+//!                         takes precedence if both set).
 //!   EU_CKPT_DIR           directory for snapshots / final     (default /tmp/euchre_gomcts)
 //!   EU_SEED               base RNG seed                       (default 0)
 //!   EU_CONFIG             "smoke" | "medium" | "paper"        (default medium)
@@ -112,6 +119,7 @@ fn main() {
     let batch_games: usize = parse("EU_BATCH_GAMES", 1).max(1);
     let batch_max: usize = parse("EU_BATCH_MAX", 512);
     let resume_from: usize = parse("EU_RESUME_FROM", 0);
+    let init_weights: Option<PathBuf> = std::env::var("EU_INIT_WEIGHTS").ok().map(PathBuf::from);
     assert!(
         pimcts_bootstrap == 0 || alphazero == 0,
         "EU_PIMCTS_BOOTSTRAP and EU_ALPHAZERO are mutually exclusive"
@@ -167,6 +175,14 @@ fn main() {
         );
         net.load(&resume_path).expect("load resume checkpoint");
         println!("resumed live weights from {}", resume_path.display());
+    } else if let Some(path) = init_weights.as_ref() {
+        assert!(
+            path.exists(),
+            "EU_INIT_WEIGHTS={} does not exist",
+            path.display()
+        );
+        net.load(path).expect("load init weights");
+        println!("loaded initial weights from {}", path.display());
     }
     let live = EModel::new(net, EuchreTokenizer);
     let mut pop = Population::new(live);
