@@ -1567,7 +1567,7 @@ where
 
 // --- shared free helpers used by the batched eval/h2h/pop paths -------
 
-fn play_one_hand_subject_vs_random<G>(
+pub(crate) fn play_one_hand_subject_vs_random<G>(
     subject: &mut RemoteModel,
     new_state: impl Fn() -> G,
     game_idx: usize,
@@ -1601,7 +1601,7 @@ where
     gs.evaluate(subject_seat)
 }
 
-fn play_one_hand_a_vs_b<G>(
+pub(crate) fn play_one_hand_a_vs_b<G>(
     a: &mut RemoteModel,
     b: &mut RemoteModel,
     new_state: impl Fn() -> G,
@@ -1644,7 +1644,7 @@ where
     gs.evaluate(a_seat)
 }
 
-fn play_one_hand_pop<G>(
+pub(crate) fn play_one_hand_pop<G>(
     live: &mut RemoteModel,
     frozen: &mut RemoteModel,
     new_state: impl Fn() -> G,
@@ -1688,7 +1688,7 @@ where
     out
 }
 
-fn finish_mean_se(scores: &[f64]) -> (f64, f64) {
+pub(crate) fn finish_mean_se(scores: &[f64]) -> (f64, f64) {
     let n = scores.len() as f64;
     if n == 0.0 {
         return (0.0, 0.0);

@@ -5,15 +5,17 @@
 
 use anyhow::{anyhow, Result};
 use safetensors::SafeTensors;
-use tch::{nn, nn::Module, Device, Kind, Tensor};
+use tch::{nn, nn::Module, nn::OptimizerConfig, Device, Kind, Tensor};
 
 use games::{istate::IStateKey, GameState};
-use rand::SeedableRng;
 use rand::rngs::StdRng;
+use rand::{RngExt, SeedableRng};
 
 use crate::algorithms::gomcts_transformer::{
-    collect_self_play_game_alphazero, pad_to, McfsConfig, RemoteModel,
-    ServiceRequest, Tokenizer, TrainExample, TransformerConfig,
+    collect_self_play_game_alphazero, finish_mean_se, pad_to,
+    play_one_hand_a_vs_b, play_one_hand_pop, play_one_hand_subject_vs_random,
+    McfsConfig, RemoteModel, ServiceRequest, Tokenizer, TrainExample,
+    TransformerConfig,
 };
 
 /// libtorch-backed transformer matching the candle `GoMctsTransformer`
@@ -104,6 +106,40 @@ impl GoMctsTransformerTch {
             lm_head,
             value_head,
         })
+    }
+
+    /// Save all parameters to a safetensors file. Produces the same
+    /// layout candle's `VarMap::save` writes (one Float32 tensor per
+    /// variable, keyed by the same parameter path), so files written by
+    /// either backend interoperate.
+    pub fn save_safetensors(&self, path: &std::path::Path) -> Result<()> {
+        use safetensors::tensor::{Dtype as SDtype, TensorView};
+        // Pull every variable to CPU as contiguous f32 and serialize.
+        // Hold the f32 vectors alive across `serialize` since TensorView
+        // borrows the underlying bytes.
+        let mut owned: Vec<(String, Vec<i64>, Vec<f32>)> = Vec::new();
+        for (name, t) in self.vs.variables() {
+            let cpu = tch::no_grad(|| t.to_kind(Kind::Float).to_device(Device::Cpu).contiguous());
+            let shape: Vec<i64> = cpu.size();
+            let nbytes = shape.iter().product::<i64>() as usize;
+            let mut v = vec![0f32; nbytes];
+            cpu.copy_data(&mut v, nbytes);
+            owned.push((name, shape, v));
+        }
+        let views: Vec<(&str, TensorView)> = owned
+            .iter()
+            .map(|(n, shape, data)| {
+                let shape_usize: Vec<usize> = shape.iter().map(|&x| x as usize).collect();
+                let bytes: &[u8] = bytemuck::cast_slice(data.as_slice());
+                let tv = TensorView::new(SDtype::F32, shape_usize, bytes)
+                    .expect("build safetensors TensorView");
+                (n.as_str(), tv)
+            })
+            .collect();
+        let serialized = safetensors::tensor::serialize(views, &None)
+            .map_err(|e| anyhow!("safetensors serialize: {e}"))?;
+        std::fs::write(path, serialized)?;
+        Ok(())
     }
 
     /// Load weights from a candle-saved safetensors file. Parameter
@@ -573,4 +609,326 @@ where
         service_handle.join().expect("service thread panicked");
         out
     })
+}
+
+// =====================================================================
+// Eval / head-to-head / population batched paths (tch backends)
+//
+// Same architecture as the candle versions in `gomcts_transformer.rs`:
+// one (or two) service threads owning the tch net(s), N game worker
+// threads each playing one hand and talking to the service(s) via
+// `RemoteModel`. `play_one_hand_*` helpers are backend-agnostic.
+// =====================================================================
+
+/// Tch port of `eval_vs_random_batched`. Returns (mean_subject_payoff, SEM).
+pub fn eval_vs_random_batched_tch<G, T, FNS>(
+    net: &GoMctsTransformerTch,
+    tokenizer: &T,
+    new_state: FNS,
+    n_games: usize,
+    base_seed: u64,
+    use_graph: bool,
+    graph_batch_size: i64,
+) -> (f64, f64)
+where
+    G: GameState + Send,
+    T: Tokenizer<G> + Send + Sync,
+    FNS: Fn() -> G + Send + Sync + Copy,
+{
+    use std::sync::mpsc;
+    if n_games == 0 {
+        return (0.0, 0.0);
+    }
+    let max_batch = (n_games * 16).max(32);
+    let (request_tx, request_rx) = mpsc::channel::<ServiceRequest>();
+    let scores: Vec<f64> = std::thread::scope(|s| {
+        let svc = s.spawn(move || {
+            serve_batched_tch(net, tokenizer, request_rx, max_batch, use_graph, graph_batch_size)
+        });
+        let mut handles = Vec::with_capacity(n_games);
+        for game_idx in 0..n_games {
+            let req_tx = request_tx.clone();
+            let seed = base_seed.wrapping_add(game_idx as u64);
+            handles.push(s.spawn(move || {
+                let mut remote = RemoteModel { request_tx: req_tx };
+                let mut rng: StdRng = SeedableRng::seed_from_u64(seed);
+                play_one_hand_subject_vs_random(&mut remote, new_state, game_idx, &mut rng)
+            }));
+        }
+        drop(request_tx);
+        let scores: Vec<f64> = handles.into_iter().map(|h| h.join().expect("game")).collect();
+        svc.join().expect("service");
+        scores
+    });
+    finish_mean_se(&scores)
+}
+
+/// Tch port of `head_to_head_eval_batched`. Returns (mean_a_payoff, a_win_rate).
+pub fn head_to_head_eval_batched_tch<G, T, FNS>(
+    net_a: &GoMctsTransformerTch,
+    net_b: &GoMctsTransformerTch,
+    tokenizer: &T,
+    new_state: FNS,
+    n_games: usize,
+    base_seed: u64,
+    use_graph: bool,
+    graph_batch_size: i64,
+) -> (f64, f64)
+where
+    G: GameState + Send,
+    T: Tokenizer<G> + Send + Sync,
+    FNS: Fn() -> G + Send + Sync + Copy,
+{
+    use std::sync::mpsc;
+    if n_games == 0 {
+        return (0.0, 0.5);
+    }
+    let max_batch = (n_games * 16).max(32);
+    let (req_a_tx, req_a_rx) = mpsc::channel::<ServiceRequest>();
+    let (req_b_tx, req_b_rx) = mpsc::channel::<ServiceRequest>();
+    let scores: Vec<f64> = std::thread::scope(|s| {
+        let svc_a = s.spawn(move || {
+            serve_batched_tch(net_a, tokenizer, req_a_rx, max_batch, use_graph, graph_batch_size)
+        });
+        let svc_b = s.spawn(move || {
+            serve_batched_tch(net_b, tokenizer, req_b_rx, max_batch, use_graph, graph_batch_size)
+        });
+        let mut handles = Vec::with_capacity(n_games);
+        for game_idx in 0..n_games {
+            let req_a = req_a_tx.clone();
+            let req_b = req_b_tx.clone();
+            let seed = base_seed.wrapping_add(game_idx as u64);
+            handles.push(s.spawn(move || {
+                let mut remote_a = RemoteModel { request_tx: req_a };
+                let mut remote_b = RemoteModel { request_tx: req_b };
+                let mut rng: StdRng = SeedableRng::seed_from_u64(seed);
+                play_one_hand_a_vs_b(&mut remote_a, &mut remote_b, new_state, game_idx, &mut rng)
+            }));
+        }
+        drop(req_a_tx);
+        drop(req_b_tx);
+        let scores: Vec<f64> = handles.into_iter().map(|h| h.join().expect("game")).collect();
+        svc_a.join().expect("service A");
+        svc_b.join().expect("service B");
+        scores
+    });
+    let (mean, _se) = finish_mean_se(&scores);
+    let decided: Vec<&f64> = scores.iter().filter(|v| v.abs() > 1e-9).collect();
+    let win_rate = if decided.is_empty() {
+        0.5
+    } else {
+        decided.iter().filter(|v| ***v > 0.0).count() as f64 / decided.len() as f64
+    };
+    (mean, win_rate)
+}
+
+/// Tch port of `collect_population_games_batched`. Live model at one
+/// rotating seat, single frozen model at the others. Returns
+/// hard-target `TrainExample`s.
+pub fn collect_population_games_batched_tch<G, T, FNS>(
+    net_live: &GoMctsTransformerTch,
+    net_frozen: &GoMctsTransformerTch,
+    tokenizer: &T,
+    new_state: FNS,
+    n_games: usize,
+    base_seed: u64,
+    use_graph: bool,
+    graph_batch_size: i64,
+) -> Vec<TrainExample>
+where
+    G: GameState + Send,
+    T: Tokenizer<G> + Send + Sync,
+    FNS: Fn() -> G + Send + Sync + Copy,
+{
+    use std::sync::mpsc;
+    if n_games == 0 {
+        return Vec::new();
+    }
+    let max_batch = (n_games * 16).max(32);
+    let (req_live_tx, req_live_rx) = mpsc::channel::<ServiceRequest>();
+    let (req_frozen_tx, req_frozen_rx) = mpsc::channel::<ServiceRequest>();
+    let all: Vec<Vec<TrainExample>> = std::thread::scope(|s| {
+        let svc_live = s.spawn(move || {
+            serve_batched_tch(net_live, tokenizer, req_live_rx, max_batch, use_graph, graph_batch_size)
+        });
+        let svc_frozen = s.spawn(move || {
+            serve_batched_tch(net_frozen, tokenizer, req_frozen_rx, max_batch, use_graph, graph_batch_size)
+        });
+        let mut handles = Vec::with_capacity(n_games);
+        for game_idx in 0..n_games {
+            let req_live = req_live_tx.clone();
+            let req_frozen = req_frozen_tx.clone();
+            let seed = base_seed.wrapping_add(game_idx as u64);
+            handles.push(s.spawn(move || {
+                let mut remote_live = RemoteModel { request_tx: req_live };
+                let mut remote_frozen = RemoteModel { request_tx: req_frozen };
+                let mut rng: StdRng = SeedableRng::seed_from_u64(seed);
+                play_one_hand_pop(
+                    &mut remote_live, &mut remote_frozen, new_state, game_idx, &mut rng,
+                )
+            }));
+        }
+        drop(req_live_tx);
+        drop(req_frozen_tx);
+        let out: Vec<Vec<TrainExample>> =
+            handles.into_iter().map(|h| h.join().expect("game")).collect();
+        svc_live.join().expect("service live");
+        svc_frozen.join().expect("service frozen");
+        out
+    });
+    all.into_iter().flatten().collect()
+}
+
+// =====================================================================
+// Training (tch). Same loss as the candle `train()` — soft cross-entropy
+// on lm_logits at the prefix position + MSE on value at both prefix and
+// action positions, weighted 0.9 / 0.1. AdamW optimizer constructed
+// once and persisted across all epochs so the moment buffers
+// accumulate (matches candle's `train_with_callback`).
+// =====================================================================
+
+const LM_LOSS_WEIGHT: f64 = 0.9;
+const VALUE_LOSS_WEIGHT: f64 = 0.1;
+
+pub fn train_tch<G: GameState, T: Tokenizer<G>>(
+    net: &mut GoMctsTransformerTch,
+    tokenizer: &T,
+    examples: &[TrainExample],
+    n_epochs: usize,
+    batch_size: usize,
+    lr: f64,
+    rng: &mut StdRng,
+) -> Result<f32> {
+    train_tch_with_callback(net, tokenizer, examples, n_epochs, batch_size, lr, rng, |_, _| {})
+}
+
+pub fn train_tch_with_callback<G: GameState, T: Tokenizer<G>, F>(
+    net: &mut GoMctsTransformerTch,
+    tokenizer: &T,
+    examples: &[TrainExample],
+    n_epochs: usize,
+    batch_size: usize,
+    lr: f64,
+    rng: &mut StdRng,
+    mut on_epoch_end: F,
+) -> Result<f32>
+where
+    F: FnMut(usize, f32),
+{
+    let cfg = *net.config();
+    let device = net.device();
+    let pad = tokenizer.pad_token();
+    let max_context = cfg.max_context;
+    let vocab = cfg.vocab_size;
+
+    let mut opt = nn::AdamW::default().build(&net.vs, lr)
+        .map_err(|e| anyhow!("build AdamW: {e}"))?;
+
+    let mut idx: Vec<usize> = (0..examples.len()).collect();
+    let mut last_loss = f32::NAN;
+
+    for epoch in 0..n_epochs {
+        // Fisher-Yates shuffle to match the candle path's RNG semantics.
+        for i in (1..idx.len()).rev() {
+            let j = (rng.random::<u64>() as usize) % (i + 1);
+            idx.swap(i, j);
+        }
+        for chunk in idx.chunks(batch_size) {
+            let b = chunk.len();
+            let mut batch_tokens: Vec<i64> = Vec::with_capacity(b * max_context);
+            let mut target_values: Vec<f32> = Vec::with_capacity(b);
+            let mut prefix_positions: Vec<i64> = Vec::with_capacity(b);
+            let mut action_positions: Vec<i64> = Vec::with_capacity(b);
+            let mut soft_target_flat: Vec<f32> = Vec::with_capacity(b * vocab);
+            for &ex_idx in chunk {
+                let ex = &examples[ex_idx];
+                let history_tokens = tokenizer.encode(&ex.history);
+                let action_token = tokenizer.action_token(ex.action);
+                assert!(
+                    !history_tokens.is_empty(),
+                    "TrainExample with empty history is unsupported; prepend a PAD upstream if needed"
+                );
+                let prefix_pos = history_tokens.len() - 1;
+                let mut full = history_tokens;
+                full.push(action_token);
+                let action_pos = full.len() - 1;
+                let (padded, _) = pad_to(&full, max_context, pad);
+                batch_tokens.extend(padded.iter().map(|&u| u as i64));
+                prefix_positions.push(prefix_pos as i64);
+                action_positions.push(action_pos as i64);
+                target_values.push(ex.value);
+                let mut row = vec![0.0_f32; vocab];
+                match &ex.policy_target {
+                    Some(soft) => {
+                        for (a, p) in soft {
+                            let t = tokenizer.action_token(*a) as usize;
+                            if t < vocab {
+                                row[t] = *p;
+                            }
+                        }
+                        let s: f32 = row.iter().sum();
+                        if s > 0.0 {
+                            for x in row.iter_mut() {
+                                *x /= s;
+                            }
+                        } else {
+                            row[action_token as usize] = 1.0;
+                        }
+                    }
+                    None => {
+                        row[action_token as usize] = 1.0;
+                    }
+                }
+                soft_target_flat.extend_from_slice(&row);
+            }
+
+            let input = Tensor::from_slice(&batch_tokens)
+                .reshape([b as i64, max_context as i64])
+                .to_device(device);
+            let (lm_logits, value) = net.forward(&input);
+
+            let prefix_t = Tensor::from_slice(&prefix_positions).to_device(device);
+            let action_t = Tensor::from_slice(&action_positions).to_device(device);
+
+            // Gather LM logits at prefix positions: (B, V).
+            let lm_idx = prefix_t
+                .unsqueeze(-1)
+                .unsqueeze(-1)
+                .expand([b as i64, 1, vocab as i64], false);
+            let lm_at_prefix = lm_logits.gather(1, &lm_idx, false).squeeze_dim(1);
+
+            // Gather value at prefix + action positions: (B,) each.
+            let val_at_prefix = value
+                .gather(1, &prefix_t.unsqueeze(-1), false)
+                .squeeze_dim(1);
+            let val_at_action = value
+                .gather(1, &action_t.unsqueeze(-1), false)
+                .squeeze_dim(1);
+
+            let val_targets = Tensor::from_slice(&target_values).to_device(device);
+            let soft_targets = Tensor::from_slice(&soft_target_flat)
+                .reshape([b as i64, vocab as i64])
+                .to_device(device);
+
+            // Soft cross-entropy: -mean(sum(target * log_softmax(logits))).
+            let log_probs = lm_at_prefix.log_softmax(-1, Kind::Float);
+            let lm_loss = (&soft_targets * &log_probs)
+                .sum_dim_intlist([-1i64].as_ref(), false, Kind::Float)
+                .neg()
+                .mean(Kind::Float);
+
+            // Value MSE at both prefix and action positions, averaged.
+            let diff_pre = &val_at_prefix - &val_targets;
+            let diff_post = &val_at_action - &val_targets;
+            let val_loss = ((diff_pre.square().mean(Kind::Float)
+                + diff_post.square().mean(Kind::Float))
+                * 0.5) as Tensor;
+
+            let total_loss = lm_loss * LM_LOSS_WEIGHT + val_loss * VALUE_LOSS_WEIGHT;
+            opt.backward_step(&total_loss);
+            last_loss = total_loss.double_value(&[]) as f32;
+        }
+        on_epoch_end(epoch + 1, last_loss);
+    }
+    Ok(last_loss)
 }

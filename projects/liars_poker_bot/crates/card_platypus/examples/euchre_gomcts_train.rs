@@ -84,7 +84,8 @@ use card_platypus::algorithms::{
 };
 #[cfg(feature = "tch_spike")]
 use card_platypus::algorithms::gomcts_transformer_tch::{
-    collect_self_play_games_batched_alphazero_tch, GoMctsTransformerTch,
+    collect_self_play_games_batched_alphazero_tch, eval_vs_random_batched_tch,
+    head_to_head_eval_batched_tch, train_tch, GoMctsTransformerTch,
 };
 use games::{
     gamestates::euchre::{Euchre, EuchreGameState},
@@ -356,43 +357,95 @@ fn main() {
         let mut examples = mcts_examples;
         examples.extend(pop_examples);
 
-        let loss = train(
-            &mut pop.live,
-            &examples,
-            epochs,
-            batch_size,
-            lr,
-            &mut rng,
-        )
-        .expect("train");
+        let ckpt_path = ckpt_dir.join(format!("iter_{:03}.safetensors", iter));
+
+        // Train: when tch is the inference backend, also train on it
+        // (the candle net is then re-synced from tch for population
+        // snapshot bookkeeping below). Otherwise stay on candle.
+        let loss = {
+            #[cfg(feature = "tch_spike")]
+            {
+                if let Some(t) = tch_net.as_mut() {
+                    let l = train_tch(
+                        t,
+                        &pop.live.tokenizer,
+                        &examples,
+                        epochs,
+                        batch_size,
+                        lr,
+                        &mut rng,
+                    )
+                    .expect("train_tch");
+                    // Mirror new weights back into candle so Population
+                    // snapshots + non-tch eval paths stay consistent.
+                    t.save_safetensors(&ckpt_path).expect("save tch ckpt");
+                    pop.live.net.load(&ckpt_path).expect("load candle from tch ckpt");
+                    l
+                } else {
+                    let l = train(&mut pop.live, &examples, epochs, batch_size, lr, &mut rng)
+                        .expect("train");
+                    pop.live.net.save(&ckpt_path).expect("save");
+                    l
+                }
+            }
+            #[cfg(not(feature = "tch_spike"))]
+            {
+                let l = train(&mut pop.live, &examples, epochs, batch_size, lr, &mut rng)
+                    .expect("train");
+                pop.live.net.save(&ckpt_path).expect("save");
+                l
+            }
+        };
 
         pop.snapshot().expect("snapshot");
-        let ckpt_path = ckpt_dir.join(format!("iter_{:03}.safetensors", iter));
-        pop.live.net.save(&ckpt_path).expect("save");
         // Sync replicas from the freshly-trained primary so next iter's
         // self-play uses the updated weights on every device.
         if !replicas.is_empty() {
             sync_replicas_from_primary(&pop.live.net, &mut replicas)
                 .expect("sync replicas");
         }
-        // Sync tch replica from the freshly-trained candle primary so
-        // next iter's tch-backed self-play uses the updated weights.
-        #[cfg(feature = "tch_spike")]
-        if let Some(t) = tch_net.as_mut() {
-            t.load_safetensors(&ckpt_path).expect("sync tch from candle ckpt");
-        }
 
-        let mean = if batch_games > 1 {
-            let (m, _) = eval_vs_random_batched::<EuchreGameState, _, _>(
-                &pop.live.net,
-                &pop.live.tokenizer,
-                Euchre::new_state,
-                eval_games,
-                seed.wrapping_add(10_000),
-            );
-            m
-        } else {
-            eval_vs_random(&mut pop.live, eval_games, seed.wrapping_add(10_000))
+        let mean = {
+            #[cfg(feature = "tch_spike")]
+            let tch_mean: Option<f64> = if let Some(t) = tch_net.as_ref() {
+                // Eval/h2h disable CUDA-graph capture: the second
+                // service thread on the same process would race on the
+                // global capture-mode state and trigger "operation not
+                // permitted when stream is capturing". Eager tch still
+                // gives the 2-3x candle speedup on these paths.
+                let (m, _) = eval_vs_random_batched_tch::<EuchreGameState, _, _>(
+                    t,
+                    &pop.live.tokenizer,
+                    Euchre::new_state,
+                    eval_games,
+                    seed.wrapping_add(10_000),
+                    false,
+                    1,
+                );
+                Some(m)
+            } else {
+                None
+            };
+            #[cfg(not(feature = "tch_spike"))]
+            let tch_mean: Option<f64> = None;
+
+            match tch_mean {
+                Some(m) => m,
+                None => {
+                    if batch_games > 1 {
+                        let (m, _) = eval_vs_random_batched::<EuchreGameState, _, _>(
+                            &pop.live.net,
+                            &pop.live.tokenizer,
+                            Euchre::new_state,
+                            eval_games,
+                            seed.wrapping_add(10_000),
+                        );
+                        m
+                    } else {
+                        eval_vs_random(&mut pop.live, eval_games, seed.wrapping_add(10_000))
+                    }
+                }
+            }
         };
         // Head-to-head: live vs the previous iter's frozen snapshot. This
         // is the convergence signal — when this drops to ~0 (and win%
@@ -400,27 +453,64 @@ fn main() {
         // iter 1 there's only one snapshot (just taken: the live's own
         // weights), so we record NaN.
         let (h2h_mean, h2h_win) = if pop.num_snapshots() >= 2 {
-            let mut prev = pop
-                .sample_specific_frozen(pop.num_snapshots() - 2)
-                .expect("hydrate prior snapshot")
-                .expect("snapshot index in bounds");
-            if batch_games > 1 {
-                head_to_head_eval_batched::<EuchreGameState, _, _>(
-                    &pop.live.net,
-                    &prev.net,
-                    &pop.live.tokenizer,
-                    Euchre::new_state,
-                    h2h_games,
-                    seed.wrapping_add(20_000),
-                )
+            #[cfg(feature = "tch_spike")]
+            let tch_pair: Option<(f64, f64)> = if let Some(t_live) = tch_net.as_ref() {
+                // Build a one-off tch replica for the prior snapshot by
+                // loading the previous iter's safetensors.
+                let prev_iter = iter - 1;
+                let prev_path =
+                    ckpt_dir.join(format!("iter_{:03}.safetensors", prev_iter));
+                if prev_path.exists() {
+                    let prev_dev = t_live.device();
+                    let mut prev_t = GoMctsTransformerTch::new(cfg, prev_dev)
+                        .expect("build prev tch net");
+                    prev_t.load_safetensors(&prev_path).expect("load prev tch");
+                    // Eager-only for h2h (see eval rationale above).
+                    Some(head_to_head_eval_batched_tch::<EuchreGameState, _, _>(
+                        t_live,
+                        &prev_t,
+                        &pop.live.tokenizer,
+                        Euchre::new_state,
+                        h2h_games,
+                        seed.wrapping_add(20_000),
+                        false,
+                        1,
+                    ))
+                } else {
+                    None
+                }
             } else {
-                head_to_head_eval(
-                    &mut pop.live,
-                    &mut prev,
-                    Euchre::new_state,
-                    h2h_games,
-                    seed.wrapping_add(20_000),
-                )
+                None
+            };
+            #[cfg(not(feature = "tch_spike"))]
+            let tch_pair: Option<(f64, f64)> = None;
+
+            match tch_pair {
+                Some(p) => p,
+                None => {
+                    let mut prev = pop
+                        .sample_specific_frozen(pop.num_snapshots() - 2)
+                        .expect("hydrate prior snapshot")
+                        .expect("snapshot index in bounds");
+                    if batch_games > 1 {
+                        head_to_head_eval_batched::<EuchreGameState, _, _>(
+                            &pop.live.net,
+                            &prev.net,
+                            &pop.live.tokenizer,
+                            Euchre::new_state,
+                            h2h_games,
+                            seed.wrapping_add(20_000),
+                        )
+                    } else {
+                        head_to_head_eval(
+                            &mut pop.live,
+                            &mut prev,
+                            Euchre::new_state,
+                            h2h_games,
+                            seed.wrapping_add(20_000),
+                        )
+                    }
+                }
             }
         } else {
             (f64::NAN, f64::NAN)
