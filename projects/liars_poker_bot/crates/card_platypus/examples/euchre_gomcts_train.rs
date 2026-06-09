@@ -84,8 +84,9 @@ use card_platypus::algorithms::{
 };
 #[cfg(feature = "tch_spike")]
 use card_platypus::algorithms::gomcts_transformer_tch::{
-    collect_self_play_games_batched_alphazero_tch, eval_vs_random_batched_tch,
-    head_to_head_eval_batched_tch, train_tch, GoMctsTransformerTch,
+    collect_pop_examples_batched_tch, collect_self_play_games_batched_alphazero_tch,
+    eval_vs_random_batched_tch, head_to_head_eval_batched_tch, train_tch,
+    GoMctsTransformerTch, PopulationTch,
 };
 use games::{
     gamestates::euchre::{Euchre, EuchreGameState},
@@ -257,11 +258,18 @@ fn main() {
             resume_from + 1
         );
     }
-    // EU_USE_TCH=1: build a tch replica synced from the candle primary.
-    // Self-play inference will go through this replica (much lower
-    // per-launch overhead on WSL2). Candle still owns training.
+    // EU_USE_TCH=1: build a tch primary + its own Population. The
+    // candle `pop` then becomes inert — we never feed it gradients, run
+    // inference on it, or pop self-play through it. Keeping candle on
+    // the GPU at all caused OOM races at h2h hydrate time once the tch
+    // caching allocator's working set grew, so the tch path is now
+    // strictly disjoint.
+    // EU_USE_TCH=1: build a tch Population. The candle `pop` becomes
+    // inert (we never feed it gradients or run inference through it),
+    // so the GPU only carries the tch primary + on-demand hydrated tch
+    // snapshots. All ML hot paths route through `tch_pop.live`.
     #[cfg(feature = "tch_spike")]
-    let mut tch_net: Option<GoMctsTransformerTch> = if use_tch {
+    let mut tch_pop: Option<PopulationTch> = if use_tch {
         let dev = match pop.live.net.device() {
             candle_core::Device::Cuda(_) => tch::Device::Cuda(0),
             _ => tch::Device::Cpu,
@@ -270,8 +278,24 @@ fn main() {
         let tmp = tempfile::NamedTempFile::new().expect("tmp");
         pop.live.net.save(tmp.path()).expect("save primary for tch sync");
         t.load_safetensors(tmp.path()).expect("load tch weights");
-        println!("tch self-play enabled (EU_USE_TCH=1), device={:?}", dev);
-        Some(t)
+        let mut tp = PopulationTch::new(t);
+        // Replay any resume-from snapshots so the tch Population's
+        // frozen list matches the candle Population we just rebuilt.
+        for k in 1..=resume_from {
+            let snap_path = ckpt_dir.join(format!("iter_{:03}.safetensors", k));
+            tp.live.load_safetensors(&snap_path).expect("load resumed snap");
+            tp.snapshot().expect("snapshot resumed");
+        }
+        if resume_from > 0 {
+            let latest = ckpt_dir.join(format!("iter_{:03}.safetensors", resume_from));
+            tp.live.load_safetensors(&latest).expect("restore live tch");
+        }
+        println!(
+            "tch path enabled (EU_USE_TCH=1), device={:?}, resumed_snapshots={}",
+            dev,
+            tp.num_snapshots()
+        );
+        Some(tp)
     } else {
         None
     };
@@ -314,7 +338,7 @@ fn main() {
             )
         } else if alphazero == 1 && batch_games > 1 {
             #[cfg(feature = "tch_spike")]
-            let tch_ref = tch_net.as_ref();
+            let tch_ref = tch_pop.as_ref().map(|p| &p.live);
             #[cfg(not(feature = "tch_spike"))]
             let tch_ref: Option<&()> = None;
             // Default graph batch to a value sized for typical request
@@ -348,10 +372,43 @@ fn main() {
         } else {
             collect_mcts_examples(&mut pop.live, n_mcts, mcts_iter, mcfs_cfg, seed)
         };
-        let pop_examples = if batch_games > 1 {
-            collect_pop_examples_batched(&mut pop, n_pop, batch_games, &mut rng, seed.wrapping_add(7))
-        } else {
-            collect_pop_examples(&mut pop, n_pop, seed.wrapping_add(7))
+        let pop_examples = {
+            #[cfg(feature = "tch_spike")]
+            {
+                if let Some(tp) = tch_pop.as_mut() {
+                    // Pop self-play runs two service threads (live +
+                    // frozen). PyTorch's per-process CUDA-graph state
+                    // doesn't tolerate concurrent captures cleanly, so
+                    // pop runs eager (still tch — still ~2x candle).
+                    collect_pop_examples_batched_tch::<EuchreGameState, _, _>(
+                        tp,
+                        &pop.live.tokenizer,
+                        Euchre::new_state,
+                        n_pop,
+                        batch_games,
+                        &mut rng,
+                        seed.wrapping_add(7),
+                        false,
+                        1,
+                    )
+                } else if batch_games > 1 {
+                    collect_pop_examples_batched(
+                        &mut pop, n_pop, batch_games, &mut rng, seed.wrapping_add(7),
+                    )
+                } else {
+                    collect_pop_examples(&mut pop, n_pop, seed.wrapping_add(7))
+                }
+            }
+            #[cfg(not(feature = "tch_spike"))]
+            {
+                if batch_games > 1 {
+                    collect_pop_examples_batched(
+                        &mut pop, n_pop, batch_games, &mut rng, seed.wrapping_add(7),
+                    )
+                } else {
+                    collect_pop_examples(&mut pop, n_pop, seed.wrapping_add(7))
+                }
+            }
         };
 
         let mut examples = mcts_examples;
@@ -365,9 +422,9 @@ fn main() {
         let loss = {
             #[cfg(feature = "tch_spike")]
             {
-                if let Some(t) = tch_net.as_mut() {
+                if let Some(tp) = tch_pop.as_mut() {
                     let l = train_tch(
-                        t,
+                        &mut tp.live,
                         &pop.live.tokenizer,
                         &examples,
                         epochs,
@@ -376,15 +433,16 @@ fn main() {
                         &mut rng,
                     )
                     .expect("train_tch");
-                    // Mirror new weights back into candle so Population
-                    // snapshots + non-tch eval paths stay consistent.
-                    t.save_safetensors(&ckpt_path).expect("save tch ckpt");
-                    pop.live.net.load(&ckpt_path).expect("load candle from tch ckpt");
+                    tp.live.save_safetensors(&ckpt_path).expect("save tch ckpt");
+                    // Snapshot the freshly-trained tch primary so next
+                    // iter's pop self-play and h2h see it.
+                    tp.snapshot().expect("tch snapshot");
                     l
                 } else {
                     let l = train(&mut pop.live, &examples, epochs, batch_size, lr, &mut rng)
                         .expect("train");
                     pop.live.net.save(&ckpt_path).expect("save");
+                    pop.snapshot().expect("snapshot");
                     l
                 }
             }
@@ -393,11 +451,10 @@ fn main() {
                 let l = train(&mut pop.live, &examples, epochs, batch_size, lr, &mut rng)
                     .expect("train");
                 pop.live.net.save(&ckpt_path).expect("save");
+                pop.snapshot().expect("snapshot");
                 l
             }
         };
-
-        pop.snapshot().expect("snapshot");
         // Sync replicas from the freshly-trained primary so next iter's
         // self-play uses the updated weights on every device.
         if !replicas.is_empty() {
@@ -407,7 +464,7 @@ fn main() {
 
         let mean = {
             #[cfg(feature = "tch_spike")]
-            let tch_mean: Option<f64> = if let Some(t) = tch_net.as_ref() {
+            let tch_mean: Option<f64> = if let Some(t) = tch_pop.as_ref().map(|p| &p.live) {
                 // Eval/h2h disable CUDA-graph capture: the second
                 // service thread on the same process would race on the
                 // global capture-mode state and trigger "operation not
@@ -452,22 +509,17 @@ fn main() {
         // settles at ~50%), the model has stopped self-improving. For
         // iter 1 there's only one snapshot (just taken: the live's own
         // weights), so we record NaN.
-        let (h2h_mean, h2h_win) = if pop.num_snapshots() >= 2 {
+        let (h2h_mean, h2h_win) = {
             #[cfg(feature = "tch_spike")]
-            let tch_pair: Option<(f64, f64)> = if let Some(t_live) = tch_net.as_ref() {
-                // Build a one-off tch replica for the prior snapshot by
-                // loading the previous iter's safetensors.
-                let prev_iter = iter - 1;
-                let prev_path =
-                    ckpt_dir.join(format!("iter_{:03}.safetensors", prev_iter));
-                if prev_path.exists() {
-                    let prev_dev = t_live.device();
-                    let mut prev_t = GoMctsTransformerTch::new(cfg, prev_dev)
-                        .expect("build prev tch net");
-                    prev_t.load_safetensors(&prev_path).expect("load prev tch");
+            let tch_pair: Option<(f64, f64)> = if let Some(tp) = tch_pop.as_ref() {
+                if tp.num_snapshots() >= 2 {
+                    let prev_t = tp
+                        .sample_specific_frozen(tp.num_snapshots() - 2)
+                        .expect("hydrate prev tch snapshot")
+                        .expect("snapshot index in bounds");
                     // Eager-only for h2h (see eval rationale above).
                     Some(head_to_head_eval_batched_tch::<EuchreGameState, _, _>(
-                        t_live,
+                        &tp.live,
                         &prev_t,
                         &pop.live.tokenizer,
                         Euchre::new_state,
@@ -477,7 +529,7 @@ fn main() {
                         1,
                     ))
                 } else {
-                    None
+                    Some((f64::NAN, f64::NAN))
                 }
             } else {
                 None
@@ -488,32 +540,34 @@ fn main() {
             match tch_pair {
                 Some(p) => p,
                 None => {
-                    let mut prev = pop
-                        .sample_specific_frozen(pop.num_snapshots() - 2)
-                        .expect("hydrate prior snapshot")
-                        .expect("snapshot index in bounds");
-                    if batch_games > 1 {
-                        head_to_head_eval_batched::<EuchreGameState, _, _>(
-                            &pop.live.net,
-                            &prev.net,
-                            &pop.live.tokenizer,
-                            Euchre::new_state,
-                            h2h_games,
-                            seed.wrapping_add(20_000),
-                        )
+                    if pop.num_snapshots() >= 2 {
+                        let mut prev = pop
+                            .sample_specific_frozen(pop.num_snapshots() - 2)
+                            .expect("hydrate prior snapshot")
+                            .expect("snapshot index in bounds");
+                        if batch_games > 1 {
+                            head_to_head_eval_batched::<EuchreGameState, _, _>(
+                                &pop.live.net,
+                                &prev.net,
+                                &pop.live.tokenizer,
+                                Euchre::new_state,
+                                h2h_games,
+                                seed.wrapping_add(20_000),
+                            )
+                        } else {
+                            head_to_head_eval(
+                                &mut pop.live,
+                                &mut prev,
+                                Euchre::new_state,
+                                h2h_games,
+                                seed.wrapping_add(20_000),
+                            )
+                        }
                     } else {
-                        head_to_head_eval(
-                            &mut pop.live,
-                            &mut prev,
-                            Euchre::new_state,
-                            h2h_games,
-                            seed.wrapping_add(20_000),
-                        )
+                        (f64::NAN, f64::NAN)
                     }
                 }
             }
-        } else {
-            (f64::NAN, f64::NAN)
         };
 
         let elapsed = t0.elapsed().as_secs_f64();
@@ -540,13 +594,37 @@ fn main() {
             examples.len(),
             n_mcts,
             n_pop,
-            pop.num_snapshots(),
+            {
+                #[cfg(feature = "tch_spike")]
+                {
+                    if let Some(tp) = tch_pop.as_ref() {
+                        tp.num_snapshots()
+                    } else {
+                        pop.num_snapshots()
+                    }
+                }
+                #[cfg(not(feature = "tch_spike"))]
+                {
+                    pop.num_snapshots()
+                }
+            },
             elapsed,
         );
     }
 
     let final_path = ckpt_dir.join("final.safetensors");
-    pop.live.net.save(&final_path).expect("save final");
+    #[cfg(feature = "tch_spike")]
+    {
+        if let Some(tp) = tch_pop.as_ref() {
+            tp.live.save_safetensors(&final_path).expect("save final tch");
+        } else {
+            pop.live.net.save(&final_path).expect("save final");
+        }
+    }
+    #[cfg(not(feature = "tch_spike"))]
+    {
+        pop.live.net.save(&final_path).expect("save final");
+    }
     println!("final checkpoint: {}", final_path.display());
 }
 

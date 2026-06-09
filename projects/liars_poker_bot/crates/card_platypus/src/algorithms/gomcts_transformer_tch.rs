@@ -932,3 +932,125 @@ where
     }
     Ok(last_loss)
 }
+
+// =====================================================================
+// Population / Snapshot (tch). Same role as the candle versions —
+// freeze the current live weights into a tempfile-backed snapshot,
+// hydrate a fresh `GoMctsTransformerTch` on demand. Each snapshot is
+// at most one `paper_default` model on disk (~25 MB); cheap enough
+// that load-on-demand beats keeping every snapshot resident on GPU.
+// =====================================================================
+
+pub struct SnapshotTch {
+    file: tempfile::NamedTempFile,
+    cfg: TransformerConfig,
+}
+
+impl SnapshotTch {
+    pub fn config(&self) -> &TransformerConfig {
+        &self.cfg
+    }
+
+    pub fn from_model(net: &GoMctsTransformerTch) -> Result<Self> {
+        let file = tempfile::NamedTempFile::new()
+            .map_err(|e| anyhow!("tempfile: {e}"))?;
+        net.save_safetensors(file.path())?;
+        Ok(Self { file, cfg: *net.config() })
+    }
+
+    pub fn hydrate(&self, device: Device) -> Result<GoMctsTransformerTch> {
+        let mut net = GoMctsTransformerTch::new(self.cfg, device)?;
+        net.load_safetensors(self.file.path())?;
+        Ok(net)
+    }
+}
+
+pub struct PopulationTch {
+    pub live: GoMctsTransformerTch,
+    snapshots: Vec<SnapshotTch>,
+    device: Device,
+}
+
+impl PopulationTch {
+    pub fn new(live: GoMctsTransformerTch) -> Self {
+        let device = live.device();
+        Self { live, snapshots: Vec::new(), device }
+    }
+
+    pub fn snapshot(&mut self) -> Result<()> {
+        self.snapshots.push(SnapshotTch::from_model(&self.live)?);
+        Ok(())
+    }
+
+    pub fn num_snapshots(&self) -> usize {
+        self.snapshots.len()
+    }
+
+    pub fn sample_frozen<R: rand::Rng>(
+        &self,
+        rng: &mut R,
+    ) -> Result<Option<GoMctsTransformerTch>> {
+        if self.snapshots.is_empty() {
+            return Ok(None);
+        }
+        let idx = (rng.random::<u64>() as usize) % self.snapshots.len();
+        Ok(Some(self.snapshots[idx].hydrate(self.device)?))
+    }
+
+    pub fn sample_specific_frozen(
+        &self,
+        idx: usize,
+    ) -> Result<Option<GoMctsTransformerTch>> {
+        if idx >= self.snapshots.len() {
+            return Ok(None);
+        }
+        Ok(Some(self.snapshots[idx].hydrate(self.device)?))
+    }
+}
+
+/// Tch port of `collect_pop_examples_batched` (in `euchre_gomcts_train`).
+/// Routes self-play between the live tch model and a randomly-sampled
+/// frozen tch snapshot. Falls back to live-vs-live (via collect_self_play
+/// path) when there are no frozen snapshots yet.
+pub fn collect_pop_examples_batched_tch<G, T, FNS>(
+    pop: &mut PopulationTch,
+    tokenizer: &T,
+    new_state: FNS,
+    n_games: usize,
+    batch_games: usize,
+    rng: &mut StdRng,
+    seed: u64,
+    use_graph: bool,
+    graph_batch_size: i64,
+) -> Vec<TrainExample>
+where
+    G: GameState + games::resample::ResampleFromInfoState + Send,
+    T: Tokenizer<G> + Send + Sync,
+    FNS: Fn() -> G + Send + Sync + Copy,
+{
+    if n_games == 0 || pop.num_snapshots() == 0 {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    let chunks = n_games.div_ceil(batch_games);
+    for chunk_idx in 0..chunks {
+        let games_this_chunk = batch_games.min(n_games - chunk_idx * batch_games);
+        let frozen = pop
+            .sample_frozen(rng)
+            .expect("hydrate frozen")
+            .expect("snapshots non-empty");
+        let chunk_seed = seed.wrapping_add((chunk_idx as u64) * 1_000_000 + rng.random::<u64>());
+        let exs = collect_population_games_batched_tch::<G, _, _>(
+            &pop.live,
+            &frozen,
+            tokenizer,
+            new_state,
+            games_this_chunk,
+            chunk_seed,
+            use_graph,
+            graph_batch_size,
+        );
+        out.extend(exs);
+    }
+    out
+}
