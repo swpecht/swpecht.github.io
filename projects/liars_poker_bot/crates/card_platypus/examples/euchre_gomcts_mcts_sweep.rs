@@ -1,12 +1,10 @@
-//! Sweep GO-MCTS inference budget on a trained checkpoint.
+//! Sweep GO-MCTS inference budget on a trained checkpoint (tch).
 //!
 //! Eval the same checkpoint against uniform-random opponents at multiple
-//! MCTS sim budgets. Used to test E1: "does more search at inference
-//! compound the trained value head?"
+//! MCTS sim budgets.
 //!
 //! Run:
-//!   cargo run -p card_platypus --release --features gpu_cuda \
-//!     --example euchre_gomcts_mcts_sweep
+//!   cargo run -p card_platypus --release --example euchre_gomcts_mcts_sweep
 //!
 //! Knobs:
 //!   EU_WEIGHTS         safetensors path  (default /tmp/euchre_gomcts/final.safetensors)
@@ -17,25 +15,23 @@
 //!   EU_SEED            base seed  (default 0)
 
 use card_platypus::algorithms::{
-    gomcts::{GenerativeModel, GoMcts, GoMctsConfig},
+    gomcts::{GoMcts, GoMctsConfig},
     gomcts_transformer::{
-        default_device, euchre::EuchreTokenizer, GoMctsTransformer, TransformerConfig,
-        TransformerGenerativeModel,
+        euchre::EuchreTokenizer, eval_vs_random_batched_tch, serve_batched_tch,
+        GoMctsTransformerTch, RemoteModel, ServiceRequest, TransformerConfig,
     },
 };
 use card_platypus::agents::Agent;
 use games::{
     gamestates::euchre::{Euchre, EuchreGameState},
-    Action, GameState,
+    GameState,
 };
 use rand::{rngs::StdRng, seq::IndexedRandom, SeedableRng};
-use std::{path::PathBuf, time::Instant};
+use std::{path::PathBuf, sync::mpsc, time::Instant};
 
 fn parse<T: std::str::FromStr>(name: &str, default: T) -> T {
     std::env::var(name).ok().and_then(|s| s.parse().ok()).unwrap_or(default)
 }
-
-type EModel = TransformerGenerativeModel<EuchreGameState, EuchreTokenizer>;
 
 fn pick_config() -> TransformerConfig {
     let v = EuchreTokenizer::VOCAB_SIZE;
@@ -66,16 +62,13 @@ fn main() {
 
     let cfg = pick_config();
     println!(
-        "GO-MCTS budget sweep: weights={}, games={}, budgets={:?}, config={:?}",
+        "GO-MCTS budget sweep (tch): weights={}, games={}, budgets={:?}, config={:?}",
         weights.display(),
         n_games,
         budgets,
         cfg
     );
 
-    // Baseline: random vs random calibrates the seat-bias and rotates
-    // the same way as gomcts-vs-random below, so any positive number
-    // above this is real skill.
     let t0 = Instant::now();
     let (rb_mean, rb_se) = eval_random_baseline(n_games, base_seed.wrapping_add(7));
     let rb_secs = t0.elapsed().as_secs_f64();
@@ -92,20 +85,31 @@ fn main() {
         rb_mean, rb_se, rb_secs
     );
 
+    let device = tch::Device::cuda_if_available();
+    let mut net = GoMctsTransformerTch::new(cfg, device).expect("build");
+    net.load_safetensors(&weights).expect("load weights");
+    let tokenizer = EuchreTokenizer;
+
     for (i, budget) in budgets.iter().enumerate() {
         let t0 = Instant::now();
-        let mut net = GoMctsTransformer::new(cfg, default_device()).expect("build");
-        net.load(&weights).expect("load");
-        let mut model = EModel::new(net, EuchreTokenizer);
         let (mean, se) = if *budget == 0 {
-            eval_raw(&mut model, n_games, base_seed.wrapping_add(100 + i as u64))
+            eval_vs_random_batched_tch::<EuchreGameState, _, _>(
+                &net,
+                &tokenizer,
+                Euchre::new_state,
+                n_games,
+                base_seed.wrapping_add(100 + i as u64),
+                false,
+                1,
+            )
         } else {
-            let search = GoMcts::new(
-                GoMctsConfig { uct_c: 0.4, n_iterations: *budget, mu: 0.01, n_rollout_steps: 0, n_parallel_sims: 1 },
-                model,
-                SeedableRng::seed_from_u64(base_seed.wrapping_add(200 + i as u64)),
-            );
-            eval_search(search, n_games, base_seed.wrapping_add(300 + i as u64))
+            eval_search_via_service(
+                &net,
+                &tokenizer,
+                n_games,
+                *budget,
+                base_seed.wrapping_add(300 + i as u64),
+            )
         };
         let secs = t0.elapsed().as_secs_f64();
         let label = if *budget == 0 { "raw".to_string() } else { format!("mcts={}", budget) };
@@ -129,74 +133,52 @@ fn main() {
     }
 }
 
-fn eval_raw(model: &mut EModel, n_games: usize, seed: u64) -> (f64, f64) {
-    let mut total = 0.0;
-    let mut total_sq = 0.0;
-    for game_idx in 0..n_games {
-        let mut rng: StdRng = SeedableRng::seed_from_u64(seed.wrapping_add(game_idx as u64));
-        let s = play_one_hand(
-            game_idx % 4,
-            |gs, rng| {
-                let p = gs.cur_player();
-                let h = gs.istate_key(p);
-                let mut buf = Vec::new();
-                gs.legal_actions(&mut buf);
-                <EModel as GenerativeModel<EuchreGameState>>::sample(model, &h, &buf, rng)
-            },
-            &mut rng,
-        );
-        total += s;
-        total_sq += s * s;
-    }
-    finish(total, total_sq, n_games)
-}
-
-fn eval_search(
-    mut search: GoMcts<EuchreGameState, EModel>,
+fn eval_search_via_service(
+    net: &GoMctsTransformerTch,
+    tokenizer: &EuchreTokenizer,
     n_games: usize,
-    seed: u64,
+    mcts_iter: usize,
+    base_seed: u64,
 ) -> (f64, f64) {
-    let mut total = 0.0;
-    let mut total_sq = 0.0;
-    for game_idx in 0..n_games {
-        let mut rng: StdRng = SeedableRng::seed_from_u64(seed.wrapping_add(game_idx as u64));
-        let s = play_one_hand(game_idx % 4, |gs, _rng| search.step(gs), &mut rng);
-        total += s;
-        total_sq += s * s;
-    }
-    finish(total, total_sq, n_games)
-}
-
-fn eval_random_baseline(n_games: usize, seed: u64) -> (f64, f64) {
-    let mut total = 0.0;
-    let mut total_sq = 0.0;
-    for game_idx in 0..n_games {
-        let mut rng: StdRng = SeedableRng::seed_from_u64(seed.wrapping_add(game_idx as u64));
-        let s = play_one_hand(
-            game_idx % 4,
-            |gs, rng| {
-                let mut buf = Vec::new();
-                gs.legal_actions(&mut buf);
-                *buf.choose(rng).unwrap()
-            },
-            &mut rng,
-        );
-        total += s;
-        total_sq += s * s;
-    }
-    finish(total, total_sq, n_games)
-}
-
-fn finish(total: f64, total_sq: f64, n: usize) -> (f64, f64) {
-    let mean = total / n as f64;
-    let var = (total_sq / n as f64) - mean * mean;
-    let se = (var / n as f64).max(0.0).sqrt();
+    let (request_tx, request_rx) = mpsc::channel::<ServiceRequest>();
+    let scores: Vec<f64> = std::thread::scope(|s| {
+        let svc = s.spawn(move || {
+            serve_batched_tch::<EuchreGameState, _>(net, tokenizer, request_rx, 256, false, 1)
+        });
+        let scores: Vec<f64> = (0..n_games)
+            .map(|game_idx| {
+                let rng_seed = base_seed.wrapping_add(game_idx as u64);
+                let req_tx = request_tx.clone();
+                let remote = RemoteModel { request_tx: req_tx };
+                let mut search = GoMcts::<EuchreGameState, RemoteModel>::new(
+                    GoMctsConfig {
+                        uct_c: 0.4,
+                        n_iterations: mcts_iter,
+                        mu: 0.01,
+                        n_rollout_steps: 0,
+                        n_parallel_sims: 1,
+                    },
+                    remote,
+                    SeedableRng::seed_from_u64(rng_seed.wrapping_add(2)),
+                );
+                let mut rng: StdRng = SeedableRng::seed_from_u64(rng_seed);
+                play_one_hand_search(game_idx % 4, &mut search, &mut rng)
+            })
+            .collect();
+        drop(request_tx);
+        svc.join().expect("service");
+        scores
+    });
+    let n = scores.len() as f64;
+    let mean: f64 = scores.iter().sum::<f64>() / n;
+    let var: f64 = scores.iter().map(|x| (x - mean) * (x - mean)).sum::<f64>() / n;
+    let se = (var / n).max(0.0).sqrt();
     (mean, se)
 }
 
-fn play_one_hand(
+fn play_one_hand_search(
     subject_seat: usize,
-    mut subject_action: impl FnMut(&EuchreGameState, &mut StdRng) -> Action,
+    search: &mut GoMcts<EuchreGameState, RemoteModel>,
     rng: &mut StdRng,
 ) -> f64 {
     let mut gs = Euchre::new_state();
@@ -210,7 +192,7 @@ fn play_one_hand(
     while !gs.is_terminal() {
         let p = gs.cur_player();
         let a = if p == subject_seat {
-            subject_action(&gs, rng)
+            search.step(&gs)
         } else {
             buf.clear();
             gs.legal_actions(&mut buf);
@@ -219,4 +201,34 @@ fn play_one_hand(
         gs.apply_action(a);
     }
     gs.evaluate(subject_seat)
+}
+
+fn eval_random_baseline(n_games: usize, seed: u64) -> (f64, f64) {
+    let mut total = 0.0;
+    let mut total_sq = 0.0;
+    for game_idx in 0..n_games {
+        let mut rng: StdRng = SeedableRng::seed_from_u64(seed.wrapping_add(game_idx as u64));
+        let subject_seat = game_idx % 4;
+        let mut gs = Euchre::new_state();
+        let mut buf = Vec::new();
+        while gs.is_chance_node() {
+            buf.clear();
+            gs.legal_actions(&mut buf);
+            let a = *buf.choose(&mut rng).expect("non-empty chance");
+            gs.apply_action(a);
+        }
+        while !gs.is_terminal() {
+            buf.clear();
+            gs.legal_actions(&mut buf);
+            let a = *buf.choose(&mut rng).expect("non-empty legal");
+            gs.apply_action(a);
+        }
+        let s = gs.evaluate(subject_seat);
+        total += s;
+        total_sq += s * s;
+    }
+    let mean = total / n_games as f64;
+    let var = (total_sq / n_games as f64) - mean * mean;
+    let se = (var / n_games as f64).max(0.0).sqrt();
+    (mean, se)
 }

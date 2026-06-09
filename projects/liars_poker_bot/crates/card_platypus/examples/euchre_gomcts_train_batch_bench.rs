@@ -1,11 +1,11 @@
-//! Sweep the training mini-batch size to find the GPU sweet spot.
+//! Sweep the training mini-batch size to find the GPU sweet spot (tch).
+//!
 //! Builds a fresh paper-config model + a synthetic dataset, then runs
-//! `train()` for a fixed number of steps at each batch_size; reports
+//! `train_tch()` for a fixed number of steps at each batch_size; reports
 //! steps/sec, examples/sec, and per-step latency.
 //!
-//! Run AFTER any GPU training is done:
-//!   cargo run -p card_platypus --release --features gpu_cuda \
-//!     --example euchre_gomcts_train_batch_bench
+//! Run:
+//!   cargo run -p card_platypus --release --example euchre_gomcts_train_batch_bench
 //!
 //! Knobs:
 //!   EU_CONFIG          smoke|medium|paper   (default paper)
@@ -15,13 +15,9 @@
 //!   EU_DATASET_SIZE    synthetic examples   (default 8192)
 
 use card_platypus::algorithms::gomcts_transformer::{
-    default_device, euchre::EuchreTokenizer, train, GoMctsTransformer, TrainExample,
-    TransformerConfig, TransformerGenerativeModel,
+    euchre::EuchreTokenizer, train_tch, GoMctsTransformerTch, TrainExample, TransformerConfig,
 };
-use games::{
-    gamestates::euchre::{Euchre, EuchreGameState},
-    GameState,
-};
+use games::{gamestates::euchre::Euchre, GameState};
 use rand::{rngs::StdRng, seq::IndexedRandom, RngExt, SeedableRng};
 use std::time::Instant;
 
@@ -50,8 +46,9 @@ fn main() {
     let dataset_size: usize = parse("EU_DATASET_SIZE", 8192);
     let batch_set = parse_batch_set();
 
-    let device = default_device();
+    let device = tch::Device::cuda_if_available();
     let cfg = pick_config();
+    let tokenizer = EuchreTokenizer;
     println!(
         "Train batch-size bench: device={:?}, steps_per_condition={}, dataset_size={}, lr={}, \
          config: d={}, layers={}, heads={}, ff={}, vocab={}, ctx={}",
@@ -77,17 +74,13 @@ fn main() {
 
     let mut baseline_examples_per_sec: Option<f64> = None;
     for batch_size in batch_set.iter() {
-        let net = GoMctsTransformer::new(cfg, device.clone()).expect("build");
-        let mut model = TransformerGenerativeModel::new(net, EuchreTokenizer);
-        // Each train() call does `epochs` passes over the data. We want
-        // a fixed number of GRADIENT STEPS, not epochs, so we compute
-        // epochs that produces ~n_steps steps given this batch_size.
+        let mut net = GoMctsTransformerTch::new(cfg, device).expect("build");
         let steps_per_epoch = (dataset.len() + batch_size - 1) / batch_size;
         let epochs = ((n_steps + steps_per_epoch - 1) / steps_per_epoch).max(1);
         let actual_steps = steps_per_epoch * epochs;
         let mut rng: StdRng = SeedableRng::seed_from_u64(7);
         let t0 = Instant::now();
-        let _loss = train(&mut model, &dataset, epochs, *batch_size, lr, &mut rng)
+        let _loss = train_tch(&mut net, &tokenizer, &dataset, epochs, *batch_size, lr, &mut rng)
             .expect("train");
         let secs = t0.elapsed().as_secs_f64();
         let steps_per_sec = actual_steps as f64 / secs;
@@ -112,11 +105,6 @@ fn main() {
     }
 }
 
-/// A trajectory-shaped dataset of `n` synthetic examples. The histories
-/// have random (legal) Euchre action sequences of varying length and
-/// realistic-looking soft policy targets; values are uniform [-2, 2].
-/// Doesn't need to be game-meaningful — only needs to exercise the
-/// training kernel at the right shape.
 fn generate_synthetic_dataset(n: usize) -> Vec<TrainExample> {
     let mut rng: StdRng = SeedableRng::seed_from_u64(123);
     let mut out = Vec::with_capacity(n);
@@ -129,14 +117,12 @@ fn generate_synthetic_dataset(n: usize) -> Vec<TrainExample> {
             let a = *acts_buf.choose(&mut rng).unwrap();
             gs.apply_action(a);
         }
-        let mut hist_actions: Vec<games::Action> = Vec::new();
         while !gs.is_terminal() && out.len() < n {
             let p = gs.cur_player();
             let h = gs.istate_key(p);
             acts_buf.clear();
             gs.legal_actions(&mut acts_buf);
             let a = *acts_buf.choose(&mut rng).unwrap();
-            // Soft target: spike on chosen action plus ε uniform.
             let mut soft: Vec<(games::Action, f32)> = acts_buf
                 .iter()
                 .map(|x| (*x, if *x == a { 0.8 } else { 0.2 / (acts_buf.len() - 1).max(1) as f32 }))
@@ -147,7 +133,6 @@ fn generate_synthetic_dataset(n: usize) -> Vec<TrainExample> {
             }
             let value: f32 = rng.random::<f32>() * 4.0 - 2.0;
             out.push(TrainExample::soft(h, a, value, soft));
-            hist_actions.push(a);
             gs.apply_action(a);
         }
     }

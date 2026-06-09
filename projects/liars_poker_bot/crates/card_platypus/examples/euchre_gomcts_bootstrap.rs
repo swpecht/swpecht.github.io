@@ -8,8 +8,7 @@
 //! resume from via `EU_INIT_WEIGHTS=`.
 //!
 //! Run:
-//!   cargo run -p card_platypus --release --features gpu_cuda \
-//!     --example euchre_gomcts_bootstrap
+//!   cargo run -p card_platypus --release --example euchre_gomcts_bootstrap
 //!
 //! Knobs:
 //!   EU_BOOT_AGENT        random | cfr3                       (default cfr3)
@@ -42,13 +41,13 @@ use card_platypus::{
     algorithms::{
         cfres::EuchreCfres,
         gomcts_transformer::{
-            default_device, euchre::EuchreTokenizer, train_with_callback, GoMctsTransformer,
-            TrainExample, TransformerConfig, TransformerGenerativeModel,
+            euchre::EuchreTokenizer, train_tch_with_callback, GoMctsTransformerTch, TrainExample,
+            TransformerConfig,
         },
     },
 };
 use games::{
-    gamestates::euchre::{Euchre, EuchreGameState},
+    gamestates::euchre::Euchre,
     istate::IStateKey,
     Action, GameState,
 };
@@ -200,10 +199,10 @@ fn main() {
     );
 
     // --- Phase 2: train transformer on collected examples ---
-    let device = default_device();
+    let device = tch::Device::cuda_if_available();
     println!("training device: {:?}", device);
-    let net = GoMctsTransformer::new(cfg, device).expect("build");
-    let mut model = TransformerGenerativeModel::new(net, EuchreTokenizer);
+    let mut net = GoMctsTransformerTch::new(cfg, device).expect("build");
+    let tokenizer = EuchreTokenizer;
     let mut rng: StdRng = SeedableRng::seed_from_u64(base_seed.wrapping_add(7));
 
     let t1 = Instant::now();
@@ -211,9 +210,10 @@ fn main() {
     let last_loss = std::cell::Cell::new(f32::NAN);
     // Single train() call with an epoch-end callback. AdamW state
     // (moment buffers) persists across epochs since the optimizer is
-    // constructed once inside train_with_callback.
-    let _final = train_with_callback(
-        &mut model,
+    // constructed once inside train_tch_with_callback.
+    let _final = train_tch_with_callback(
+        &mut net,
+        &tokenizer,
         &examples,
         n_epochs,
         batch_size,
@@ -254,7 +254,7 @@ fn main() {
     );
 
     // --- Phase 3: save weights ---
-    model.net.save(&out_path).expect("save");
+    net.save_safetensors(&out_path).expect("save");
     println!("saved bootstrap weights to {}", out_path.display());
     println!(
         "kestrel: step=1 phase=bootstrap n_games={} examples={} collect_secs={:.4} \

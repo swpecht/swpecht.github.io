@@ -1,20 +1,17 @@
-// build.rs: compile the cuda_graph_shim C++ wrapper when the
-// `tch_spike` feature is on. The shim binds at::cuda::CUDAGraph from
-// libtorch so we can capture / replay the transformer forward pass —
-// the main lever for the WSL2 per-launch overhead bottleneck.
+// build.rs: compile the cuda_graph_shim C++ wrapper. The shim binds
+// at::cuda::CUDAGraph from libtorch so we can capture / replay the
+// transformer forward pass — the main lever for WSL2 per-launch overhead.
 
 fn main() {
-    #[cfg(feature = "tch_spike")]
     build_cuda_graph_shim();
 }
 
-#[cfg(feature = "tch_spike")]
 fn build_cuda_graph_shim() {
     use std::env;
     use std::path::PathBuf;
 
     let libtorch = env::var("LIBTORCH")
-        .expect("LIBTORCH env var required to build cuda_graph_shim");
+        .expect("LIBTORCH env var required to build cuda_graph_shim (see scripts/setup-libtorch.sh)");
     let libtorch = PathBuf::from(libtorch);
     let include = libtorch.join("include");
     let include_api = libtorch.join("include/torch/csrc/api/include");

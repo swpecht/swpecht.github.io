@@ -58,8 +58,8 @@ use card_platypus::{
         epimc::EPIMCBot,
         gomcts::{GoMcts, GoMctsConfig},
         gomcts_transformer::{
-            default_device, euchre::EuchreTokenizer, GoMctsTransformer, InferenceMode,
-            TransformerConfig, TransformerGenerativeModel,
+            euchre::EuchreTokenizer, forward_histories_batch_tch, GoMctsTransformerTch,
+            TransformerConfig,
         },
         open_hand_solver::OpenHandSolver,
         pimcts::PIMCTSBot,
@@ -138,6 +138,84 @@ fn load_cfr(env_var: &str, default: &str, max_cards_played: usize, seed: u64) ->
 ///                               `lm` for a supervised-only bootstrap
 ///                               where the value head hasn't seen
 ///                               counterfactual actions.
+/// `GenerativeModel` impl that owns a tch transformer directly (no
+/// service thread). Calls `forward_histories_batch_tch` per query.
+/// Suitable for the round-robin tournament where each agent's `step`
+/// runs sequentially on the main thread — there is no cross-game
+/// batching to gain from the service architecture here.
+struct TchInlineModel {
+    net: std::sync::Arc<GoMctsTransformerTch>,
+    tokenizer: EuchreTokenizer,
+}
+
+impl card_platypus::algorithms::gomcts::GenerativeModel<EuchreGameState> for TchInlineModel {
+    fn sample(
+        &mut self,
+        history: &games::istate::IStateKey,
+        legal: &[Action],
+        rng: &mut StdRng,
+    ) -> Action {
+        let probs = self.policy(history, legal);
+        let mut r: f64 = rand::RngExt::random::<f64>(rng);
+        for (i, p) in probs.iter().enumerate() {
+            r -= *p;
+            if r <= 0.0 {
+                return legal[i];
+            }
+        }
+        *legal.choose(rng).expect("non-empty legal")
+    }
+
+    fn value(&mut self, history: &games::istate::IStateKey) -> f64 {
+        let (_, values) =
+            forward_histories_batch_tch(&self.net, &self.tokenizer, &[*history]).expect("forward");
+        values[0] as f64
+    }
+
+    fn policy(
+        &mut self,
+        history: &games::istate::IStateKey,
+        legal: &[Action],
+    ) -> Vec<f64> {
+        let histories: Vec<games::istate::IStateKey> = legal
+            .iter()
+            .map(|&a| {
+                let mut h = *history;
+                h.push(a);
+                h
+            })
+            .collect();
+        let (_, values) = match forward_histories_batch_tch(&self.net, &self.tokenizer, &histories)
+        {
+            Ok(x) => x,
+            Err(_) => return vec![1.0 / legal.len() as f64; legal.len()],
+        };
+        let temp = 0.5;
+        let values: Vec<f64> = values.into_iter().map(|v| v as f64).collect();
+        let max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        if !max.is_finite() {
+            return vec![1.0 / legal.len() as f64; legal.len()];
+        }
+        let exps: Vec<f64> = values.iter().map(|s| ((s - max) / temp).exp()).collect();
+        let total: f64 = exps.iter().sum();
+        if total == 0.0 || !total.is_finite() {
+            return vec![1.0 / legal.len() as f64; legal.len()];
+        }
+        exps.into_iter().map(|e| e / total).collect()
+    }
+
+    fn batch_value(&mut self, histories: &[games::istate::IStateKey]) -> Vec<f64> {
+        if histories.is_empty() {
+            return Vec::new();
+        }
+        let (_, values) = match forward_histories_batch_tch(&self.net, &self.tokenizer, histories) {
+            Ok(x) => x,
+            Err(_) => return vec![0.0; histories.len()],
+        };
+        values.into_iter().map(|v| v as f64).collect()
+    }
+}
+
 fn load_gomcts(seed: u64) -> EuchreAgent {
     let path = weights_path("EUCHRE_GOMCTS_WEIGHTS", DEFAULT_GOMCTS);
     assert!(
@@ -158,14 +236,13 @@ fn load_gomcts(seed: u64) -> EuchreAgent {
             EuchreTokenizer::MAX_CONTEXT,
         ),
     };
-    let mut net = GoMctsTransformer::new(cfg, default_device()).expect("build transformer");
-    net.load(&path).expect("load gomcts checkpoint");
-    let infer_mode = match env::var("EUCHRE_GOMCTS_INFER").as_deref() {
-        Ok("lm") | Ok("LmSoftmax") => InferenceMode::LmSoftmax,
-        _ => InferenceMode::ArgmaxVal,
+    let mut net =
+        GoMctsTransformerTch::new(cfg, tch::Device::cuda_if_available()).expect("build transformer");
+    net.load_safetensors(&path).expect("load gomcts checkpoint");
+    let model = TchInlineModel {
+        net: std::sync::Arc::new(net),
+        tokenizer: EuchreTokenizer,
     };
-    let model = TransformerGenerativeModel::new(net, EuchreTokenizer)
-        .with_inference_mode(infer_mode);
     let mcts_iter: usize = env::var("EUCHRE_GOMCTS_ITER")
         .ok()
         .and_then(|s| s.parse().ok())

@@ -3,8 +3,6 @@ pub mod epimc;
 pub mod exploitability;
 pub mod gomcts;
 pub mod gomcts_transformer;
-#[cfg(feature = "tch_spike")]
-pub mod gomcts_transformer_tch;
 pub mod ismcts;
 pub mod open_hand_solver;
 pub mod pimcts;
