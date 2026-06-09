@@ -808,6 +808,16 @@ extern "C" {
     fn cgs_capture_begin(g: *mut std::ffi::c_void);
     fn cgs_capture_end(g: *mut std::ffi::c_void);
     fn cgs_replay(g: *mut std::ffi::c_void);
+    fn cgs_empty_cache();
+}
+
+/// Return every unused cached block in PyTorch's CUDACachingAllocator
+/// to the driver. Cheap (~ms) but the next allocation pays a
+/// `cudaMalloc` cost — call between major training phases (after a
+/// snapshot hydrate, after an iter's self-play scope drops), not in a
+/// tight inner loop.
+pub fn empty_cuda_cache() {
+    unsafe { cgs_empty_cache() }
 }
 
 /// A captured CUDA graph for one fixed batch size. Owns the static

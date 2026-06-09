@@ -17,6 +17,7 @@
 #include <ATen/cuda/CUDAGraph.h>
 #include <ATen/cuda/CUDAEvent.h>
 #include <c10/cuda/CUDAStream.h>
+#include <c10/cuda/CUDACachingAllocator.h>
 
 extern "C" {
 
@@ -45,6 +46,17 @@ void cgs_capture_end(void* g) {
 
 void cgs_replay(void* g) {
     static_cast<at::cuda::CUDAGraph*>(g)->replay();
+}
+
+// Return every unused cached block to the CUDA driver. PyTorch's
+// CUDACachingAllocator keeps freed allocations in its own pool so
+// future tch ops avoid the cudaMalloc round-trip; over a long training
+// run that pool grows and fragments, eventually thrashing on every
+// allocation. Calling this between phases (typically after each iter's
+// snapshot hydrate / between self-play and pop self-play) gives the
+// allocator a clean slate without restarting the process.
+void cgs_empty_cache() {
+    c10::cuda::CUDACachingAllocator::emptyCache();
 }
 
 } // extern "C"

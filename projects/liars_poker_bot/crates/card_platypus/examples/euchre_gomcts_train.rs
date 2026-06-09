@@ -9,6 +9,19 @@
 //! Run:
 //!   cargo run -p card_platypus --release --example euchre_gomcts_train
 //!
+//! Memory tuning (set BEFORE the process starts — these are libtorch
+//! init-time knobs, not Rust-level):
+//!   PYTORCH_CUDA_ALLOC_CONF      Tunes the CUDACachingAllocator. The
+//!     value is a comma-separated list. Recommended for long runs:
+//!       expandable_segments:True   grow on demand instead of
+//!                                  pre-reserving large blocks
+//!       max_split_size_mb:512      stop carving big blocks into tiny
+//!                                  slivers (anti-fragmentation)
+//!       garbage_collection_threshold:0.8  auto-call empty_cache when
+//!                                  80%+ of the pool is unused
+//!     Combined example:
+//!       PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True,max_split_size_mb:512,garbage_collection_threshold:0.8"
+//!
 //! Knobs (env vars):
 //!   EU_ITERS              outer training iterations           (default 6)
 //!   EU_GAMES_PER_ITER     self-play games per iteration       (default 200)
@@ -34,8 +47,9 @@
 
 use card_platypus::algorithms::gomcts_transformer::{
     collect_pop_examples_batched_tch, collect_self_play_games_batched_alphazero_tch,
-    euchre::EuchreTokenizer, eval_vs_random_batched_tch, head_to_head_eval_batched_tch,
-    train_tch_with_callback, GoMctsTransformerTch, McfsConfig, PopulationTch, TransformerConfig,
+    empty_cuda_cache, euchre::EuchreTokenizer, eval_vs_random_batched_tch,
+    head_to_head_eval_batched_tch, train_tch_with_callback, GoMctsTransformerTch, McfsConfig,
+    PopulationTch, TransformerConfig,
 };
 use games::gamestates::euchre::Euchre;
 use rand::{rngs::StdRng, SeedableRng};
@@ -246,6 +260,13 @@ fn main() {
         .expect("train_tch");
         pop.live.save_safetensors(&ckpt_path).expect("save tch ckpt");
         pop.snapshot().expect("tch snapshot");
+        // Training just freed its activations, optimizer scratch, and
+        // forward-pass intermediates. The CUDACachingAllocator holds
+        // those blocks unless we reclaim them — and the next h2h call
+        // is about to hydrate a fresh frozen snapshot's worth of
+        // parameters. Reclaim before that hydrate so it allocates into
+        // clean space rather than fighting fragmentation.
+        empty_cuda_cache();
 
         // --- Eval vs random. Eager mode (see eval_rationale above). --------------
         let (mean, _) = eval_vs_random_batched_tch::<_, _, _>(
@@ -264,7 +285,7 @@ fn main() {
                 .sample_specific_frozen(pop.num_snapshots() - 2)
                 .expect("hydrate prev snapshot")
                 .expect("snapshot index in bounds");
-            head_to_head_eval_batched_tch::<_, _, _>(
+            let result = head_to_head_eval_batched_tch::<_, _, _>(
                 &pop.live,
                 &prev,
                 &tokenizer,
@@ -273,7 +294,12 @@ fn main() {
                 seed.wrapping_add(20_000),
                 false,
                 1,
-            )
+            );
+            // Drop the hydrated `prev` and reclaim its parameters
+            // before the next iter starts a new self-play scope.
+            drop(prev);
+            empty_cuda_cache();
+            result
         } else {
             (f64::NAN, f64::NAN)
         };
