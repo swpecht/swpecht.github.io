@@ -194,7 +194,7 @@ fn collect_mcts_examples(
             GoMctsTransformer::new(placeholder_cfg, model.net.device().clone()).expect("build");
         let placeholder = KModel::new(placeholder_net, KuhnTokenizer);
         GoMcts::new(
-            GoMctsConfig { uct_c: 0.4, n_iterations: mcts_iter, mu: 0.01 },
+            GoMctsConfig { uct_c: 0.4, n_iterations: mcts_iter, mu: 0.01, n_rollout_steps: 0, n_parallel_sims: 1 },
             placeholder,
             SeedableRng::seed_from_u64(seed.wrapping_add(2)),
         )

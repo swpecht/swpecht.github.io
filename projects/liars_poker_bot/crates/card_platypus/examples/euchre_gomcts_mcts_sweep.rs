@@ -101,7 +101,7 @@ fn main() {
             eval_raw(&mut model, n_games, base_seed.wrapping_add(100 + i as u64))
         } else {
             let search = GoMcts::new(
-                GoMctsConfig { uct_c: 0.4, n_iterations: *budget, mu: 0.01 },
+                GoMctsConfig { uct_c: 0.4, n_iterations: *budget, mu: 0.01, n_rollout_steps: 0, n_parallel_sims: 1 },
                 model,
                 SeedableRng::seed_from_u64(base_seed.wrapping_add(200 + i as u64)),
             );

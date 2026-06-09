@@ -37,6 +37,12 @@ tinyvec = {version="1.10", features =["serde"]}
 # below — they enable the matching candle backend.
 candle-core = { version = "0.9", default-features = false }
 candle-nn = { version = "0.9", default-features = false }
+# Optional: tch (libtorch) port of the same transformer, gated behind
+# `tch_spike`. Used by the `tch_vs_candle_spike` example to validate
+# whether switching off candle is worth the migration.
+tch = { version = "0.18", optional = true }
+safetensors = { version = "0.4", optional = true }
+half = { version = "2", optional = true }
 
 [features]
 default = []
@@ -45,6 +51,11 @@ default = []
 gpu_cuda = ["candle-core/cuda", "candle-nn/cuda"]
 # Same idea for Apple Metal.
 gpu_metal = ["candle-core/metal", "candle-nn/metal"]
+# Build the tch-rs port + spike example to compare against candle.
+tch_spike = ["dep:tch", "dep:safetensors", "dep:half"]
+
+[build-dependencies]
+cc = "1.2"
 
 [dev-dependencies]
 criterion = "0.8"

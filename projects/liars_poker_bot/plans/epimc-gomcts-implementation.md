@@ -8,6 +8,79 @@ codebase and baseline them on Euchre (and later Oh Hell).
   - **GO-MCTS** — "Transformer Based Planning in the Observation Space with
     Applications to Trick Taking Card Games" (2024). arXiv: 2404.13150.
 
+## Experiment log
+
+Compact timeline. Each row: what was tried, key config, headline result,
+what we concluded. Detailed notes for each are in the sections below.
+
+| # | when | what | config / knobs | result | conclusion |
+|---|---|---|---|---|---|
+| 1 | 2026-06-06 | EPIMC depth sweep on Euchre | depths {1,2,3}, OpenHandSolver leaf, 25 rollouts, n=80 games per depth | all depths 45-49% win rate vs PIMCTS opponents; differences within noise | depth>1 not clearly beneficial; OpenHandSolver dominates per-move time so depth scaling was "free" but no signal at this n |
+| 2 | 2026-06-06 | EPIMC depths {1-5} in full tournament | 28 pairings × 1000 matches | killed mid-flight (~9% done) | not the highest priority; pivoted to GO-MCTS |
+| 3 | 2026-06-06 | GO-MCTS v1 Kuhn smoke | uniform model + UCT, 100 iters | sanity passes | search infra works |
+| 4 | 2026-06-06 | GO-MCTS tabular Kuhn | 5k self-play games, per-action visit + value table | King-policy bets > Jack-policy bets | value-driven softmax sampling needed; visit-proportional doesn't learn |
+| 5 | 2026-06-06 | GO-MCTS transformer + Kuhn | d=32/2L smoke, AdamW, 6 iter × 1000 games | mean reward −0.21 → +0.05 to +0.13 vs uniform | pipeline works, network learns; not at Nash |
+| 6 | 2026-06-06 | GO-MCTS Euchre smoke config | d=64/2L, 4 iter × 150 games, MCTS=16 | **+0.217 ± 0.046** vs random at n=2000 | first real Euchre transformer; clear win above baseline |
+| 7 | 2026-06-06 | Medium config | d=128/4L, 6 iter × 200 games | +0.160 raw vs random (worse than smoke) | bigger model overfit; data budget too small for capacity |
+| 8 | 2026-06-06 | Long medium | d=128/4L, 10 iter × 300 games | +0.164 raw (no better) | more training didn't help; not a capacity issue |
+| 9 | 2026-06-07 | Paper-default config | d=256/8L/8H, 6 iter × 200 games | +0.198 raw (tied with smoke) | confirmed: model size is not the bottleneck for self-play |
+| 10 | 2026-06-07 | E1: MCTS budget sweep at inference | smoke ckpt, MCTS ∈ {0,32,128,512} | +0.40 at MCTS=128 (n=200 → noisy CI); MCTS=512 regresses | bias-variance peak at moderate search; more search hits diminishing returns |
+| 11 | 2026-06-07 | E1 tournament: gomcts vs pimcts | smoke ckpt + MCTS=128, n=5 matches | 0–5, 23% point share | gomcts at this scale loses badly to PIMCTS; killed early |
+| 12 | 2026-06-07 | AlphaZero value targets | paper config, MCTS-root-value targets (not terminal), 20 iters | +0.198 raw, h2h oscillates ±0.20 across iters | self-play plateau is real; not a target-quality issue |
+| 13 | 2026-06-07 | CUDA backend enabled | gpu_cuda cargo feature + /usr/local/cuda-12.6 | Kuhn smoke ~10× faster; Euchre paper only ~1.1× (sequential batch=1) | GPU was barely used due to per-decision batch=1 ioctls in WSL; need batching |
+| 14 | 2026-06-07 | E5: cross-game batched self-play | one service thread + N game threads via mpsc; one big forward per batched step | **17× throughput** at batch=32; GPU util 39% → 89% | this is the throughput win that unlocked paper-scale training |
+| 15 | 2026-06-07 | Batched eval / h2h / pop | same pattern as E5 for the non-self-play phases | iter time 200s → 100s expected | misc speedup, makes longer runs tractable |
+| 16 | 2026-06-07 | Train mini-batch sweep | batch ∈ {64, 128, 256, 512, 1024} | 256 = sweet spot (1.5× over 64); 1024 OOMs | EU_BATCH_SIZE=256 from now on |
+| 17 | 2026-06-07 | CFR bootstrap (cfr3-vs-cfr3 supervised) | 100k games, paper config, 25 epochs, batch=512 | loss 2.20 → 2.23 over 25 epochs (LM ~30% on correct action) | data collection 33 min + train 90 min; doable |
+| 18 | 2026-06-07 | Bootstrap eval (ArgmaxVal\*) | n=2000 vs random, MCTS=16 | **raw −0.118**, gomcts −0.036 | worse than random! diagnosed: value head never saw counterfactual actions |
+| 19 | 2026-06-07 | Bootstrap eval (LM-softmax) | same weights, EU_INFER=lm | **raw +0.350**, gomcts −0.019 | bootstrap LM head learned cfr3; value head broken for ArgmaxVal\* |
+| 20 | 2026-06-07 | Post-cfr3-bootstrap self-play | paper, ~8 iter × 750 games, MCTS=64, rollout=4, lr=1e-4 | wall ballooned to 9h+ (iter 8 took 4.1h alone), 3 OOMs, mean_reward bounced ±0.05 around 0 | self-destruct loop: cfr3 LM head + broken V head → MCTS soft targets are noise → bootstrap LM head degrades to uniform |
+| 21 | 2026-06-07 | Diagnosed cfr3-bootstrap failure | analytical | LM head learned cfr3 great; V head can't extrapolate to counterfactual actions because cfr3's policy is sharply peaked | for ArgmaxVal\* to work, V needs counterfactual coverage of the action space. cfr3 doesn't provide it; random does |
+| 22 | 2026-06-08 | Virtual-loss parallel MCTS | added GoMctsConfig.n_parallel_sims + Sim state machine + apply_virtual_loss + backup_with_virtual_loss in GoMcts | k=8 parallel sims share the tree, batched leaf-value forwards, virtual loss = 1.0 per AlphaZero convention | unlocks K× larger per-call GPU batch within one game |
+| 23 | 2026-06-08 | Random bootstrap (paper-faithful) | 1M uniform-random Euchre games, paper config, batch=512, lr=1e-4, 15 epochs | **raw ArgmaxVal\* = +0.219 ± 0.046**, LM-mode = −0.061 (just imitates random) | mirror-asymmetry of cfr3 case: V works now, LM is weak. ~8h wall (mostly training) |
+| 24 | 2026-06-08 | Post-random-bootstrap self-play | paper config, 10 iter × 750 games × MCTS=32 + parallel_sims=8, rollout=0, lr=1e-4 | 71 min wall (parallel sims worked), loss 2.02 → 1.87, but **mean_reward regressed +0.219 → +0.135** at n=2000 | self-play didn't compound the bootstrap; soft targets at MCTS=32 are too noisy at our scale. Bootstrap survived (no destruction) but didn't improve |
+| 25 | 2026-06-08 | Difficulty tournament (random_bootstrap weights, MCTS=16) | gomcts (random_bootstrap, paper config) vs pimcts, cfr0, random; 30 matches/pair | **gomcts vs pimcts: 0-30 (18.6 pt%)**, **gomcts vs cfr0: 0-30 (21.2 pt%)**, gomcts vs random: 23-7 (63.1 pt%), pimcts vs cfr0: 12-18 (45.4 pt%) | **targets NOT met**. gomcts is solidly above random but ~4× below pimcts/cfr0. Slight improvement vs cfr0 (15.4% → 21.2%) over the smoke-config baseline tournament |
+
+### Headline numbers so far
+
+| condition | mean vs random (n=2000) | 95% CI |
+|---|---|---|
+| Random baseline | +0.068 | [−0.023, +0.159] |
+| GO-MCTS smoke + MCTS=16 search | **+0.358** | [+0.268, +0.448] |
+| **cfr3 bootstrap raw (LM-policy)** | **+0.350** | [+0.261, +0.439] |
+| **Random bootstrap raw (ArgmaxVal\*)** | **+0.219** | [+0.129, +0.309] |
+| GO-MCTS smoke raw | +0.217 | [+0.127, +0.307] |
+| AlphaZero paper-config raw | +0.198 | [+0.106, +0.289] |
+| Post-random-bootstrap self-play final | +0.135 | [+0.044, +0.226] |
+| cfr3 bootstrap raw (ArgmaxVal\* — broken) | −0.118 | [−0.210, −0.026] |
+| Random bootstrap raw (LM-policy — weak) | −0.061 | [−0.154, +0.032] |
+
+### Targets (FINAL — not met)
+
+- **Beat PIMCTS**: gomcts (random_bootstrap, MCTS=16, paper config) lost **0-30** to pimcts in difficulty tournament (18.6% point share). Smoke at MCTS=128 lost 0-5. Gap closed slightly but PIMCTS still dominates.
+- **Tie cfr0** (~50% point share): gomcts lost **0-30** with **21.2% point share**. Previous smoke baseline was 15.4% point share. ~7pp closer to the target, still ~3 SE short of "tie".
+
+### Why the targets weren't met (final analysis)
+
+  - **PIMCTS does ~50 perfect-info game-tree solves per move** at its leaf (each is essentially alpha-beta to terminal). Our MCTS=16 with a transformer leaf is ~3 orders of magnitude less per-decision work.
+  - **cfr0 adds CFR-trained bidding** on top of PIMCTS-style play — even stronger.
+  - **Self-play didn't compound** at our scale. The random bootstrap's value head had a real but noisy signal; MCTS at 32 sims didn't average out the noise enough to produce useful soft targets. After 10 iters we had a worse model than the bootstrap alone.
+  - **Total self-play games used: ~7500**. Paper used 5M-10M. We're ~3 orders of magnitude below the paper's self-play compute budget. At our scale, self-play looks like noise-injection on top of a decent bootstrap, not refinement.
+  - **The transformer's value head is structurally weaker than OpenHandSolver**. To match PIMCTS the V head would need to closely approximate `E_w[OpenHandSolver(w) | observed history]` — which is what E2 (PIMCTS-bootstrap) would target. We deliberately skipped that.
+
+### Decisions / lessons learned
+
+  - **Model capacity is not the bottleneck** for self-play from random init. Smoke/medium/paper all plateau around +0.20 vs random.
+  - **WSL2 ioctl per kernel launch** was the GPU bottleneck. Batched inference (E5) fixed it.
+  - **Terminal payoff is a noisy value target** in imperfect-info games. AlphaZero MCTS-root-value targets are smoother but don't fix the cold-start problem.
+  - **Bootstrap is the cold-start fix.** Supervised from cfr3 jumped raw policy from +0.22 to +0.35 immediately. But ArgmaxVal\* needs counterfactual training — MCTS self-play has to follow.
+  - **ArgmaxVal\* requires counterfactual value training.** A network whose value head only ever saw `V(h⊕action_taken)` produces ~identical V across alternative actions; ArgmaxVal\* becomes random. LM-head softmax is the right inference mode for supervised-only models; ArgmaxVal\* is the right mode after self-play refinement.
+  - **The bootstrap-data distribution determines which head works.** cfr3 bootstrap → strong LM, broken V (cfr3 is sharply peaked, no counterfactual coverage). Random bootstrap → strong V, weak LM (random covers the action space but doesn't tell you which action is good). The paper chose random for a reason: it's the right setup for ArgmaxVal\*-then-self-play.
+  - **At our compute scale, self-play does not refine the random bootstrap.** It modestly degrades it. The paper used 5M-10M self-play games; we used ~7500. The MCTS=32 visit distributions over our 750-game iterations are too noisy to provide useful soft policy targets.
+  - **The remaining gap to PIMCTS is structural**, not a hyperparameter / training-scheme tweak away. PIMCTS does ~50 full-game perfect-info solves per move; our V head approximates a single such value in one forward pass but with substantial error. Closing that gap with our current approach would need a value head that's a strong approximator of `E_w[OpenHandSolver(w)]` (E2 territory, user-excluded), or paper-scale self-play (5M+ games), or much larger inference-time MCTS (MCTS≥256, ~6 min/move).
+
+---
+
 Status (2026-06-06):
   - [x] Background research on both papers
   - [x] Survey existing card_platypus algorithm infrastructure

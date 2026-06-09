@@ -122,7 +122,7 @@ fn run_sequential(
     let placeholder = TransformerGenerativeModel::new(placeholder_net, EuchreTokenizer);
     let mut search: GoMcts<EuchreGameState, TransformerGenerativeModel<EuchreGameState, EuchreTokenizer>> =
         GoMcts::new(
-            GoMctsConfig { uct_c: 0.4, n_iterations: mcts_iter, mu: 0.01 },
+            GoMctsConfig { uct_c: 0.4, n_iterations: mcts_iter, mu: 0.01, n_rollout_steps: 0, n_parallel_sims: 1 },
             placeholder,
             SeedableRng::seed_from_u64(base_seed.wrapping_add(7)),
         );

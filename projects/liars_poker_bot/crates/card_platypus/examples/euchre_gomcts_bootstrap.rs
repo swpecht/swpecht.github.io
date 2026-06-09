@@ -12,7 +12,20 @@
 //!     --example euchre_gomcts_bootstrap
 //!
 //! Knobs:
-//!   EU_BOOT_GAMES        cfr3-vs-cfr3 games to play           (default 5000)
+//!   EU_BOOT_AGENT        random | cfr3                       (default cfr3)
+//!                        - random: pure uniform-random play.
+//!                          Paper-faithful (Hearts used 4M random
+//!                          games). Cheap to generate, gives the
+//!                          value head proper counterfactual
+//!                          coverage at the cost of weak LM-head
+//!                          targets.
+//!                        - cfr3: all four seats play cfr3.
+//!                          Strong LM-head target but the value
+//!                          head sees ~zero counterfactual data
+//!                          because cfr3 is sharply peaked → V
+//!                          extrapolates poorly to off-policy
+//!                          actions → ArgmaxVal\* breaks.
+//!   EU_BOOT_GAMES        games to play                        (default 5000)
 //!   EU_BOOT_THREADS      data-collection worker threads       (default 8)
 //!   EU_BOOT_EPOCHS       training epochs over collected data  (default 20)
 //!   EU_BOOT_BATCH        training batch size                  (default 256)
@@ -21,7 +34,7 @@
 //!   EU_BOOT_OUT          output safetensors path
 //!                        (default /tmp/euchre_gomcts_bootstrap/bootstrap.safetensors)
 //!   EU_BOOT_SEED         base RNG seed                        (default 0)
-//!   EUCHRE_CFR3_WEIGHTS  cfr3 weights dir
+//!   EUCHRE_CFR3_WEIGHTS  cfr3 weights dir (only used by cfr3 agent)
 //!                        (default /home/steven/card_platypus/infostate.three_card_played_f32)
 
 use card_platypus::{
@@ -63,7 +76,17 @@ fn pick_config() -> TransformerConfig {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+enum BootAgent {
+    Random,
+    Cfr3,
+}
+
 fn main() {
+    let agent_kind = match std::env::var("EU_BOOT_AGENT").as_deref() {
+        Ok("random") => BootAgent::Random,
+        _ => BootAgent::Cfr3,
+    };
     let n_games: usize = parse("EU_BOOT_GAMES", 5000);
     let n_threads: usize = parse("EU_BOOT_THREADS", 8).max(1);
     let n_epochs: usize = parse("EU_BOOT_EPOCHS", 20);
@@ -83,17 +106,19 @@ fn main() {
         std::fs::create_dir_all(parent).expect("create out dir");
     }
 
-    assert!(cfr3_path.exists(), "cfr3 weights not found at {}", cfr3_path.display());
+    if matches!(agent_kind, BootAgent::Cfr3) {
+        assert!(cfr3_path.exists(), "cfr3 weights not found at {}", cfr3_path.display());
+    }
 
     let cfg = pick_config();
     println!(
-        "Bootstrap: games={}, threads={}, epochs={}, batch={}, lr={}, cfr3={}, out={}",
+        "Bootstrap: agent={:?}, games={}, threads={}, epochs={}, batch={}, lr={}, out={}",
+        agent_kind,
         n_games,
         n_threads,
         n_epochs,
         batch_size,
         lr,
-        cfr3_path.display(),
         out_path.display(),
     );
     println!(
@@ -113,15 +138,18 @@ fn main() {
             let shared = Arc::clone(&shared);
             let progress = Arc::clone(&progress);
             s.spawn(move || {
-                // Each worker owns its own cfr3 instance. They share the
-                // underlying mmap on disk so memory cost is O(1) per
-                // thread, but the agent's per-call state is per-thread
-                // (no contention).
-                let mut cfr3 = EuchreCfres::new_euchre(
-                    StdRng::seed_from_u64(base_seed.wrapping_add(1_000 + t as u64)),
-                    3,
-                    Some(&cfr3_path),
-                );
+                // Per-worker agent state. cfr3 carries the mmap-backed
+                // CFR weight table (cheap to construct per thread —
+                // they all share the file via mmap). Random has no
+                // state.
+                let mut cfr3 = match agent_kind {
+                    BootAgent::Cfr3 => Some(EuchreCfres::new_euchre(
+                        StdRng::seed_from_u64(base_seed.wrapping_add(1_000 + t as u64)),
+                        3,
+                        Some(&cfr3_path),
+                    )),
+                    BootAgent::Random => None,
+                };
                 let start = t * games_per_thread;
                 let end = ((t + 1) * games_per_thread).min(n_games);
                 let mut local: Vec<TrainExample> = Vec::with_capacity((end - start) * 80);
@@ -129,7 +157,10 @@ fn main() {
                 for game_idx in start..end {
                     let mut rng: StdRng =
                         SeedableRng::seed_from_u64(base_seed.wrapping_add(100 + game_idx as u64));
-                    let exs = play_one_cfr3_game(&mut cfr3, &mut rng);
+                    let exs = match agent_kind {
+                        BootAgent::Cfr3 => play_one_cfr3_game(cfr3.as_mut().unwrap(), &mut rng),
+                        BootAgent::Random => play_one_random_game(&mut rng),
+                    };
                     local.extend(exs);
                     if last_log.elapsed().as_secs() > 5 {
                         let done = game_idx + 1 - start;
@@ -158,10 +189,11 @@ fn main() {
         Arc::try_unwrap(shared).ok().unwrap().into_inner().unwrap();
     let collect_secs = t0.elapsed().as_secs_f64();
     println!(
-        "collected {} examples from {} cfr3-vs-cfr3 games in {:.1}s ({:.1} games/s, \
+        "collected {} examples from {} {:?}-vs-self games in {:.1}s ({:.1} games/s, \
          {:.1} examples/s)",
         examples.len(),
         n_games,
+        agent_kind,
         collect_secs,
         n_games as f64 / collect_secs,
         examples.len() as f64 / collect_secs,
@@ -239,6 +271,46 @@ fn main() {
     // that the compiler complains; explicit drop also frees memory before
     // the binary exits.
     examples.clear();
+}
+
+/// Play one full Euchre game with uniform-random play at all 4 seats.
+/// Returns per-seat (history, action_taken, terminal_value) tuples.
+/// Paper-faithful bootstrap data: random play gives the value head
+/// the **counterfactual coverage** it needs to discriminate alternative
+/// actions at the same history (every legal action gets sampled across
+/// many games), at the cost of weak LM-head action targets.
+fn play_one_random_game(rng: &mut StdRng) -> Vec<TrainExample> {
+    let mut gs = Euchre::new_state();
+    let mut buf = Vec::new();
+
+    while gs.is_chance_node() {
+        buf.clear();
+        gs.legal_actions(&mut buf);
+        let a = *buf.choose(rng).expect("non-empty chance");
+        gs.apply_action(a);
+    }
+
+    let n_players = gs.num_players();
+    let mut per_player: Vec<Vec<(IStateKey, Action)>> = vec![Vec::new(); n_players];
+
+    while !gs.is_terminal() {
+        let p = gs.cur_player();
+        let history = gs.istate_key(p);
+        buf.clear();
+        gs.legal_actions(&mut buf);
+        let action = *buf.choose(rng).expect("non-empty legal");
+        per_player[p].push((history, action));
+        gs.apply_action(action);
+    }
+
+    let mut out = Vec::new();
+    for p in 0..n_players {
+        let v = gs.evaluate(p) as f32;
+        for (h, a) in per_player[p].drain(..) {
+            out.push(TrainExample::hard(h, a, v));
+        }
+    }
+    out
 }
 
 /// Play one full Euchre game with cfr3 at all 4 seats, returning a

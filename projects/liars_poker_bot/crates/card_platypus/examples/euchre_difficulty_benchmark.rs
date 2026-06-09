@@ -58,8 +58,8 @@ use card_platypus::{
         epimc::EPIMCBot,
         gomcts::{GoMcts, GoMctsConfig},
         gomcts_transformer::{
-            default_device, euchre::EuchreTokenizer, GoMctsTransformer, TransformerConfig,
-            TransformerGenerativeModel,
+            default_device, euchre::EuchreTokenizer, GoMctsTransformer, InferenceMode,
+            TransformerConfig, TransformerGenerativeModel,
         },
         open_hand_solver::OpenHandSolver,
         pimcts::PIMCTSBot,
@@ -129,11 +129,15 @@ fn load_cfr(env_var: &str, default: &str, max_cards_played: usize, seed: u64) ->
 
 /// Build a GO-MCTS agent backed by a trained transformer checkpoint.
 ///
-/// `EUCHRE_GOMCTS_WEIGHTS` overrides the safetensors path; default is the
-/// final checkpoint written by `euchre_gomcts_train.rs`.
-/// `EUCHRE_GOMCTS_CONFIG` selects the matching `TransformerConfig`
-/// (must match the size used at training time).
-/// `EUCHRE_GOMCTS_ITER` controls per-decision search budget (default 32).
+/// Env knobs:
+///   EUCHRE_GOMCTS_WEIGHTS       safetensors path (required)
+///   EUCHRE_GOMCTS_CONFIG        smoke|medium|paper (must match training)
+///   EUCHRE_GOMCTS_ITER          per-decision MCTS budget (default 32)
+///   EUCHRE_GOMCTS_ROLLOUT_STEPS rollout phase length per leaf (default 0)
+///   EUCHRE_GOMCTS_INFER         argmaxval|lm (default argmaxval). Use
+///                               `lm` for a supervised-only bootstrap
+///                               where the value head hasn't seen
+///                               counterfactual actions.
 fn load_gomcts(seed: u64) -> EuchreAgent {
     let path = weights_path("EUCHRE_GOMCTS_WEIGHTS", DEFAULT_GOMCTS);
     assert!(
@@ -156,14 +160,32 @@ fn load_gomcts(seed: u64) -> EuchreAgent {
     };
     let mut net = GoMctsTransformer::new(cfg, default_device()).expect("build transformer");
     net.load(&path).expect("load gomcts checkpoint");
-    let model =
-        TransformerGenerativeModel::new(net, EuchreTokenizer);
+    let infer_mode = match env::var("EUCHRE_GOMCTS_INFER").as_deref() {
+        Ok("lm") | Ok("LmSoftmax") => InferenceMode::LmSoftmax,
+        _ => InferenceMode::ArgmaxVal,
+    };
+    let model = TransformerGenerativeModel::new(net, EuchreTokenizer)
+        .with_inference_mode(infer_mode);
     let mcts_iter: usize = env::var("EUCHRE_GOMCTS_ITER")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(32);
+    let rollout_steps: usize = env::var("EUCHRE_GOMCTS_ROLLOUT_STEPS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let parallel_sims: usize = env::var("EUCHRE_GOMCTS_PARALLEL_SIMS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1);
     let search = GoMcts::new(
-        GoMctsConfig { uct_c: 0.4, n_iterations: mcts_iter, mu: 0.01 },
+        GoMctsConfig {
+            uct_c: 0.4,
+            n_iterations: mcts_iter,
+            mu: 0.01,
+            n_rollout_steps: rollout_steps,
+            n_parallel_sims: parallel_sims,
+        },
         model,
         StdRng::seed_from_u64(seed),
     );

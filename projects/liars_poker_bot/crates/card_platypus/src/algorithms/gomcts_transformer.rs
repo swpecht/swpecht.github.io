@@ -103,6 +103,50 @@ pub fn default_device() -> Device {
     Device::Cpu
 }
 
+/// Build `n` `Device`s on ordinal 0. For CUDA these are independent
+/// contexts on the same physical GPU — each with its own stream — so
+/// forwards on different replicas overlap. Memory cost is one model
+/// copy per device (paper-config: ~25MB each → trivial vs 16GB VRAM).
+///
+/// Falls back to a single CPU device if CUDA isn't available, so the
+/// caller can request `n > 1` and get the expected number of devices
+/// regardless of the backend.
+pub fn default_devices(n: usize) -> Vec<Device> {
+    let n = n.max(1);
+    let mut out = Vec::with_capacity(n);
+    for _ in 0..n {
+        #[cfg(feature = "gpu_cuda")]
+        {
+            if let Ok(d) = candle_core::Device::new_cuda_with_stream(0) {
+                out.push(d);
+                continue;
+            }
+        }
+        out.push(Device::Cpu);
+    }
+    out
+}
+
+/// Save the weights from `primary` to a tempfile and load them into
+/// each of `replicas`. Use after a training step to keep the N device
+/// replicas in sync for the next round of self-play. Negligible cost
+/// at paper-config size (~25MB serialise/deserialise).
+pub fn sync_replicas_from_primary(
+    primary: &GoMctsTransformer,
+    replicas: &mut [GoMctsTransformer],
+) -> CandleResult<()> {
+    if replicas.is_empty() {
+        return Ok(());
+    }
+    let tmp = tempfile::NamedTempFile::new()
+        .map_err(|e| candle_core::Error::Msg(format!("tempfile: {e}")))?;
+    primary.save(tmp.path())?;
+    for r in replicas.iter_mut() {
+        r.load(tmp.path())?;
+    }
+    Ok(())
+}
+
 // =====================================================================
 // Model
 // =====================================================================
@@ -338,17 +382,52 @@ pub fn forward_histories_batch<G: GameState, T: Tokenizer<G>>(
 // GenerativeModel impl
 // =====================================================================
 
+/// How the `GenerativeModel::sample` / `policy` calls produce a
+/// distribution over legal actions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InferenceMode {
+    /// AlphaZero-style: for each legal `a`, query `V(h⊕a)`, softmax
+    /// over those scalar values. Requires the value head to have been
+    /// trained against counterfactual actions (MCTS root-value targets
+    /// do this naturally). **Default.**
+    ArgmaxVal,
+    /// LM-head-softmax: forward `h` once, read the LM logits at the
+    /// last position, mask to legal-action tokens, softmax. Useful
+    /// when the value head wasn't trained on counterfactual actions
+    /// (e.g. a supervised cfr-bootstrap that only saw one action per
+    /// position).
+    LmSoftmax,
+}
+
+impl Default for InferenceMode {
+    fn default() -> Self {
+        InferenceMode::ArgmaxVal
+    }
+}
+
 /// The piece that pairs a `GoMctsTransformer` with a `Tokenizer<G>`. This
 /// is what gets handed to `GoMcts<G, M>` as the model `M`.
 pub struct TransformerGenerativeModel<G: GameState, T: Tokenizer<G>> {
     pub net: GoMctsTransformer,
     pub tokenizer: T,
+    pub inference_mode: InferenceMode,
     _phantom: std::marker::PhantomData<G>,
 }
 
 impl<G: GameState, T: Tokenizer<G>> TransformerGenerativeModel<G, T> {
     pub fn new(net: GoMctsTransformer, tokenizer: T) -> Self {
-        Self { net, tokenizer, _phantom: std::marker::PhantomData }
+        Self {
+            net,
+            tokenizer,
+            inference_mode: InferenceMode::default(),
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
+    /// Builder-style override for the inference mode.
+    pub fn with_inference_mode(mut self, mode: InferenceMode) -> Self {
+        self.inference_mode = mode;
+        self
     }
 
     /// Encode → forward → return (last-position logits over vocab, scalar
@@ -386,17 +465,23 @@ impl<G: GameState, T: Tokenizer<G>> TransformerGenerativeModel<G, T> {
         forward_histories_batch(&self.net, &self.tokenizer, histories)
     }
 
-    /// ArgmaxVal\*-style policy (paper-faithful inference): for each
-    /// legal action `a`, query V(h ⊕ a) and softmax over those values.
-    /// This is the path that actually flows value-head learning into the
-    /// behaviour policy — the LM-head softmax we tried first is just an
-    /// imitation loop with no improvement signal.
-    ///
-    /// Batched: all `legal` candidates go through one forward pass via
-    /// `forward_history_batch`. For Euchre (1-5 legal at most times)
-    /// this is roughly a 3-5× per-decision inference speedup on GPU and
-    /// helps materially on CPU too.
+    /// Compute the action distribution over `legal` using the configured
+    /// `inference_mode`. ArgmaxVal\* (default) batches `|legal|` post-
+    /// action histories into one forward; LmSoftmax does one forward at
+    /// the prefix and masks the LM logits.
     fn masked_policy(&self, history: &IStateKey, legal: &[Action]) -> Vec<f64> {
+        match self.inference_mode {
+            InferenceMode::ArgmaxVal => self.masked_policy_argmaxval(history, legal),
+            InferenceMode::LmSoftmax => self.masked_policy_lm_softmax(history, legal),
+        }
+    }
+
+    /// ArgmaxVal\* (AlphaZero-style): for each legal action `a`, query
+    /// V(h ⊕ a) and softmax over those values. Requires a value head
+    /// trained against counterfactual actions (e.g. MCTS root-value
+    /// targets). Batched: one forward over `|legal|` post-action
+    /// histories.
+    fn masked_policy_argmaxval(&self, history: &IStateKey, legal: &[Action]) -> Vec<f64> {
         let histories: Vec<IStateKey> = legal
             .iter()
             .map(|&a| {
@@ -410,15 +495,49 @@ impl<G: GameState, T: Tokenizer<G>> TransformerGenerativeModel<G, T> {
             Err(_) => return vec![1.0 / legal.len() as f64; legal.len()],
         };
         let values: Vec<f64> = values.into_iter().map(|v| v as f64).collect();
-        let temp = POLICY_SOFTMAX_TEMP;
-        let max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-        let exps: Vec<f64> = values.iter().map(|s| ((s - max) / temp).exp()).collect();
-        let total: f64 = exps.iter().sum();
-        if total == 0.0 || !total.is_finite() {
-            return vec![1.0 / legal.len() as f64; legal.len()];
-        }
-        exps.into_iter().map(|e| e / total).collect()
+        softmax_with_temp(&values, POLICY_SOFTMAX_TEMP)
+            .unwrap_or_else(|| vec![1.0 / legal.len() as f64; legal.len()])
     }
+
+    /// LM-head softmax: one forward at `history`, take logits at the
+    /// last position, restrict to the tokens of `legal`, softmax. Use
+    /// when the LM head was trained with cross-entropy on the action
+    /// distribution (e.g. CFR-supervised bootstrap) and the value head
+    /// has not seen counterfactual actions.
+    fn masked_policy_lm_softmax(&self, history: &IStateKey, legal: &[Action]) -> Vec<f64> {
+        let logits = match self.forward_history(history) {
+            Ok((l, _)) => l,
+            Err(_) => return vec![1.0 / legal.len() as f64; legal.len()],
+        };
+        let scores: Vec<f64> = legal
+            .iter()
+            .map(|a| {
+                let t = self.tokenizer.action_token(*a) as usize;
+                logits.get(t).copied().unwrap_or(f32::NEG_INFINITY) as f64
+            })
+            .collect();
+        softmax_with_temp(&scores, POLICY_SOFTMAX_TEMP)
+            .unwrap_or_else(|| vec![1.0 / legal.len() as f64; legal.len()])
+    }
+}
+
+/// Numerically-stable softmax of `scores` with temperature, returning
+/// `None` when the inputs are degenerate (all NEG_INFINITY / NaN / zero
+/// total). Callers fall back to uniform in that case.
+fn softmax_with_temp(scores: &[f64], temperature: f64) -> Option<Vec<f64>> {
+    if scores.is_empty() {
+        return None;
+    }
+    let max = scores.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    if !max.is_finite() {
+        return None;
+    }
+    let exps: Vec<f64> = scores.iter().map(|s| ((s - max) / temperature).exp()).collect();
+    let total: f64 = exps.iter().sum();
+    if total == 0.0 || !total.is_finite() {
+        return None;
+    }
+    Some(exps.into_iter().map(|e| e / total).collect())
 }
 
 impl<G: GameState, T: Tokenizer<G>> GenerativeModel<G> for TransformerGenerativeModel<G, T> {
@@ -443,6 +562,19 @@ impl<G: GameState, T: Tokenizer<G>> GenerativeModel<G> for TransformerGenerative
 
     fn policy(&mut self, history: &IStateKey, legal: &[Action]) -> Vec<f64> {
         self.masked_policy(history, legal)
+    }
+
+    /// Override: single batched forward over all `histories`. Used by
+    /// `GoMcts::run_search_parallel` to merge K concurrent sims' leaf
+    /// evaluations into one GPU call.
+    fn batch_value(&mut self, histories: &[IStateKey]) -> Vec<f64> {
+        if histories.is_empty() {
+            return Vec::new();
+        }
+        match self.forward_history_batch(histories) {
+            Ok((_, values)) => values.into_iter().map(|v| v as f64).collect(),
+            Err(_) => vec![0.0; histories.len()],
+        }
     }
 }
 
@@ -536,13 +668,26 @@ pub struct McfsConfig {
     /// Mixing weight: played-action prob = (1-ε)·visit_prob + ε·dirichlet.
     /// Set to 0.0 to disable noise entirely. AlphaZero uses 0.25.
     pub root_dirichlet_eps: f64,
+    /// MCTS rollout phase length per leaf expansion (paper Algorithm 1
+    /// uses ~4-10). 0 = AlphaZero-style (no rollout). Propagated into
+    /// `GoMctsConfig` when the self-play helper builds its search.
+    pub n_rollout_steps: usize,
+    /// Parallel-sim width inside one game's MCTS (virtual loss).
+    /// Propagated into `GoMctsConfig.n_parallel_sims`. 1 = sequential
+    /// (default).
+    pub n_parallel_sims: usize,
 }
 
 impl Default for McfsConfig {
     fn default() -> Self {
         // Default: NO noise — preserves prior behaviour. Callers opting
         // into E3 set `root_dirichlet_eps > 0`.
-        Self { root_dirichlet_alpha: f64::INFINITY, root_dirichlet_eps: 0.0 }
+        Self {
+            root_dirichlet_alpha: f64::INFINITY,
+            root_dirichlet_eps: 0.0,
+            n_rollout_steps: 0,
+            n_parallel_sims: 1,
+        }
     }
 }
 
@@ -927,7 +1072,7 @@ const POLICY_SOFTMAX_TEMP: f64 = 0.5;
 /// Pad `tokens` to length `max_context` with `pad_token`. Returns the
 /// padded vec and an "attention length" telling the caller where the real
 /// data ends (so it can index the right last-position logits).
-fn pad_to(tokens: &[u32], max_context: usize, pad_token: u32) -> (Vec<u32>, usize) {
+pub(crate) fn pad_to(tokens: &[u32], max_context: usize, pad_token: u32) -> (Vec<u32>, usize) {
     let n = tokens.len().min(max_context);
     let mut out = vec![pad_token; max_context];
     out[..n].copy_from_slice(&tokens[..n]);
@@ -1107,8 +1252,9 @@ where
 // single GPU launch, fixing the WSL2 D3DKMTSubmitCommandToHwQueue
 // bottleneck.
 
-/// Internal channel message for the batching service.
-enum ServiceRequest {
+/// Channel message for the batching service. `pub(crate)` so the
+/// tch-backed sibling module can share the same wire format.
+pub(crate) enum ServiceRequest {
     /// Forward this list of histories, reply on `response_tx` with
     /// per-history (logits, value).
     Forward {
@@ -1122,7 +1268,7 @@ enum ServiceRequest {
 /// the sender is `Send` so it can be cloned into each thread.
 #[derive(Clone)]
 pub struct RemoteModel {
-    request_tx: std::sync::mpsc::Sender<ServiceRequest>,
+    pub(crate) request_tx: std::sync::mpsc::Sender<ServiceRequest>,
 }
 
 impl RemoteModel {
@@ -1180,6 +1326,17 @@ impl<G: GameState> GenerativeModel<G> for RemoteModel {
 
     fn policy(&mut self, history: &IStateKey, legal: &[Action]) -> Vec<f64> {
         self.masked_policy_via_service(history, legal)
+    }
+
+    /// Override: send ALL histories in one service request → one
+    /// batched forward at the service. This is the key win for the
+    /// parallel-sim path: K sims' leaf values become one GPU call.
+    fn batch_value(&mut self, histories: &[IStateKey]) -> Vec<f64> {
+        if histories.is_empty() {
+            return Vec::new();
+        }
+        let (_, values) = self.forward(histories.to_vec());
+        values.into_iter().map(|v| v as f64).collect()
     }
 }
 
@@ -1554,6 +1711,76 @@ fn finish_mean_se(scores: &[f64]) -> (f64, f64) {
 /// Use `EU_BATCH_GAMES` env var in the trainer to invoke this code
 /// path; setting it to 1 falls back to the original sequential
 /// `collect_self_play_game_alphazero`.
+/// N-device version of `collect_self_play_games_batched_alphazero`.
+/// Each device runs the full single-device pipeline (service thread +
+/// game threads) in parallel; games are split evenly across them.
+/// Because each CUDA device has its own context + stream, the GPU
+/// kernels and host-side prep on different devices overlap — that's
+/// the speedup target (~25% headroom we measured in the single-device
+/// profile).
+///
+/// `nets[i]` must hold the same weights as every other replica (use
+/// `sync_replicas_from_primary` before each iter's self-play).
+pub fn collect_self_play_games_batched_alphazero_multi_device<G, T, FNS>(
+    nets: &[&GoMctsTransformer],
+    tokenizer: &T,
+    new_state: FNS,
+    n_games: usize,
+    max_batch_size: usize,
+    mcts_iter: usize,
+    mcfs_cfg: McfsConfig,
+    base_seed: u64,
+) -> Vec<TrainExample>
+where
+    G: GameState + games::resample::ResampleFromInfoState + Send,
+    T: Tokenizer<G> + Send + Sync,
+    FNS: Fn() -> G + Send + Sync + Copy,
+{
+    let n_devices = nets.len().max(1);
+    if n_devices == 1 {
+        return collect_self_play_games_batched_alphazero(
+            nets[0], tokenizer, new_state, n_games, max_batch_size, mcts_iter, mcfs_cfg, base_seed,
+        );
+    }
+    let per_device = n_games.div_ceil(n_devices);
+    // Per-device chunks (sum == n_games).
+    let chunks: Vec<usize> = (0..n_devices)
+        .map(|i| {
+            let start = i * per_device;
+            let end = ((i + 1) * per_device).min(n_games);
+            end.saturating_sub(start)
+        })
+        .collect();
+    std::thread::scope(|s| {
+        let mut handles = Vec::with_capacity(n_devices);
+        for (i, &chunk) in chunks.iter().enumerate() {
+            if chunk == 0 {
+                continue;
+            }
+            let net = nets[i];
+            // Stagger seeds so devices don't replay identical games.
+            let seed = base_seed.wrapping_add((i as u64) * 7_000_003);
+            handles.push(s.spawn(move || {
+                collect_self_play_games_batched_alphazero::<G, T, FNS>(
+                    net,
+                    tokenizer,
+                    new_state,
+                    chunk,
+                    max_batch_size,
+                    mcts_iter,
+                    mcfs_cfg,
+                    seed,
+                )
+            }));
+        }
+        let mut all = Vec::with_capacity(n_games);
+        for h in handles {
+            all.extend(h.join().expect("device worker panicked"));
+        }
+        all
+    })
+}
+
 pub fn collect_self_play_games_batched_alphazero<G, T, FNS>(
     net: &GoMctsTransformer,
     tokenizer: &T,
@@ -1592,6 +1819,8 @@ where
                         uct_c: 0.4,
                         n_iterations: mcts_iter,
                         mu: 0.01,
+                        n_rollout_steps: mcfs.n_rollout_steps,
+                        n_parallel_sims: mcfs.n_parallel_sims,
                     },
                     remote,
                     SeedableRng::seed_from_u64(seed.wrapping_add(2)),
@@ -2160,7 +2389,7 @@ mod tests {
         use super::super::gomcts::{GoMcts, GoMctsConfig, UniformRandomModel};
         let mut rng: StdRng = SeedableRng::seed_from_u64(5);
         let mut search = GoMcts::<KPGameState, UniformRandomModel>::new(
-            GoMctsConfig { uct_c: 0.4, n_iterations: 32, mu: 0.01 },
+            GoMctsConfig { uct_c: 0.4, n_iterations: 32, mu: 0.01, n_rollout_steps: 0, n_parallel_sims: 1 },
             UniformRandomModel,
             SeedableRng::seed_from_u64(99),
         );

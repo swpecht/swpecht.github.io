@@ -58,6 +58,15 @@ pub trait GenerativeModel<G: GameState>: Send {
     fn policy(&mut self, history: &IStateKey, legal: &[Action]) -> Vec<f64> {
         vec![1.0 / legal.len() as f64; legal.len()]
     }
+
+    /// Batched leaf-value query. Default impl just loops `value()`; the
+    /// real win comes from overriding this in `RemoteModel` /
+    /// `TransformerGenerativeModel` to make ONE forward over the entire
+    /// `histories` slice. Used by `run_search_parallel` to merge K
+    /// concurrent sims' leaf evaluations into a single GPU call.
+    fn batch_value(&mut self, histories: &[IStateKey]) -> Vec<f64> {
+        histories.iter().map(|h| self.value(h)).collect()
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -69,13 +78,41 @@ pub struct GoMctsConfig {
     /// Illegality penalty applied to children whose simulation produced an
     /// illegal sampled trajectory. Paper uses 0.01.
     pub mu: f64,
+    /// Number of model-sampled moves to roll out from a newly-expanded
+    /// leaf before falling back to `model.value()`. Paper Algorithm 1
+    /// uses ~4-10. 0 = AlphaZero-style (no rollout, value head at leaf).
+    /// Provides extra search depth essentially for free since each
+    /// rollout step is one model.sample call instead of an alternative
+    /// node expansion.
+    pub n_rollout_steps: usize,
+    /// AlphaZero-style parallel-simulation width: run this many sims
+    /// concurrently within one game's MCTS so their leaf-value forwards
+    /// can be batched into one `batch_value` call. 1 = sequential
+    /// (default; unchanged from previous behaviour). Higher values give
+    /// the GPU larger per-call batches without needing more games in
+    /// parallel.
+    pub n_parallel_sims: usize,
 }
 
 impl Default for GoMctsConfig {
     fn default() -> Self {
-        Self { uct_c: 0.4, n_iterations: 256, mu: 0.01 }
+        Self {
+            uct_c: 0.4,
+            n_iterations: 256,
+            mu: 0.01,
+            n_rollout_steps: 0,
+            n_parallel_sims: 1,
+        }
     }
 }
+
+/// Virtual-loss magnitude applied while a parallel sim is descending
+/// through a path. Adds `visits +=1, value_sum -= VIRTUAL_LOSS` per
+/// (history, action) in the in-flight trajectory so UCT pushes other
+/// concurrent sims toward different branches. Reverted in
+/// `backup_with_virtual_loss` when the real leaf value arrives.
+/// AlphaZero uses 1.0; we match.
+const VIRTUAL_LOSS: f64 = 1.0;
 
 /// Tree node stats for one observation history.
 #[derive(Default, Debug, Clone)]
@@ -105,6 +142,54 @@ impl ChildStats {
 }
 
 /// GO-MCTS search bot. `M` is the generative model.
+/// Per-simulation pause state for `run_search_parallel`. Each `Sim`
+/// holds its own determinised world + trajectory; the outer scheduler
+/// drives them in lockstep so leaf-value calls can be batched.
+#[derive(Clone)]
+enum SimPhase {
+    /// Sim is mid-descent. Call `advance_sim_until_pause` to step.
+    InProgress,
+    /// At a newly-expanded leaf. The history is what the model.value
+    /// (or batch_value) call should be made against.
+    NeedLeafValue { history: IStateKey },
+    /// Opponent's turn. Need a model.sample(history, legal) action.
+    NeedOpponentSample { history: IStateKey, legal: Vec<Action> },
+    /// Sim finished; `value` is the search-player payoff. `illegal`
+    /// flags the (currently unreachable) μ-penalty path.
+    Done { value: f64, illegal: bool },
+    /// Sim slot exhausted (no more iterations to launch). Skipped by
+    /// the scheduler.
+    Inactive,
+}
+
+struct Sim<G> {
+    w: G,
+    trajectory: Vec<(IStateKey, Action)>,
+    saw_illegal: bool,
+    phase: SimPhase,
+}
+
+impl<G: GameState> Sim<G> {
+    fn new(w: G) -> Self {
+        Self { w, trajectory: Vec::new(), saw_illegal: false, phase: SimPhase::InProgress }
+    }
+    fn is_done(&self) -> bool {
+        matches!(self.phase, SimPhase::Done { .. } | SimPhase::Inactive)
+    }
+    fn resume_leaf_value(&mut self, value: f64) {
+        self.phase = SimPhase::Done { value, illegal: self.saw_illegal };
+    }
+    fn resume_opponent_sample(&mut self, action: Action, legal: &[Action]) {
+        if !legal.contains(&action) {
+            self.saw_illegal = true;
+            self.phase = SimPhase::Done { value: 0.0, illegal: true };
+            return;
+        }
+        self.w.apply_action(action);
+        self.phase = SimPhase::InProgress;
+    }
+}
+
 pub struct GoMcts<G, M> {
     config: GoMctsConfig,
     model: M,
@@ -153,9 +238,13 @@ impl<G: GameState + ResampleFromInfoState, M: GenerativeModel<G>> GoMcts<G, M> {
         let search_player = gs.cur_player();
         let root_key = gs.istate_key(search_player);
 
-        for _ in 0..self.config.n_iterations {
-            let w = gs.resample_from_istate(search_player, &mut self.rng);
-            let _ = self.simulate(w, search_player);
+        if self.config.n_parallel_sims > 1 {
+            self.run_search_parallel(gs, search_player);
+        } else {
+            for _ in 0..self.config.n_iterations {
+                let w = gs.resample_from_istate(search_player, &mut self.rng);
+                let _ = self.simulate(w, search_player);
+            }
         }
 
         let actions = actions!(gs);
@@ -223,9 +312,14 @@ impl<G: GameState + ResampleFromInfoState, M: GenerativeModel<G>> GoMcts<G, M> {
             if cur == search_player {
                 // Search-player node.
                 if !self.nodes.contains_key(&history) {
-                    // Leaf — expand, evaluate via model, break.
+                    // Leaf — expand, then either eval at the leaf (when
+                    // n_rollout_steps == 0) or roll out for N_steps more
+                    // moves before evaluating. The rollout follows the
+                    // paper's Algorithm 1; extra search depth essentially
+                    // for free since each step is just one model.sample
+                    // call we'd be making anyway in deeper iterations.
                     self.expand(history, &buf);
-                    leaf_value = Some(self.model.value(&w.istate_key(search_player)));
+                    leaf_value = Some(self.rollout_value(&mut w, search_player));
                     break;
                 }
                 let a = self.select_uct(&history, &buf);
@@ -252,6 +346,245 @@ impl<G: GameState + ResampleFromInfoState, M: GenerativeModel<G>> GoMcts<G, M> {
         let value = leaf_value.unwrap_or(0.0);
         self.backup(&trajectory, value, saw_illegal_opponent);
         value
+    }
+
+    /// Parallel-sim variant. Runs `n_parallel_sims` simulations
+    /// concurrently as a state machine, batching their leaf-value
+    /// forwards into a single `batch_value` call per "tick" of the
+    /// outer loop. Opponent samples still go through `model.sample`
+    /// per-sim (they're cheap individually; the dominant per-call
+    /// cost is the leaf forward, which is what we batch).
+    ///
+    /// No virtual loss in v1: sims diverge naturally after the first
+    /// opponent move because each one starts with an independent
+    /// determinization. The wave of K parallel sims explores at most
+    /// K root actions in the worst case (typically fewer); subsequent
+    /// waves cover the rest as UCT's log-N exploration term grows.
+    fn run_search_parallel(&mut self, gs: &G, search_player: Player) {
+        let k = self.config.n_parallel_sims.max(1);
+        let n_target = self.config.n_iterations;
+        if n_target == 0 {
+            return;
+        }
+        let active = k.min(n_target);
+        let mut sims: Vec<Sim<G>> = (0..active)
+            .map(|_| {
+                let w = gs.resample_from_istate(search_player, &mut self.rng);
+                Sim::new(w)
+            })
+            .collect();
+        let mut launched: usize = active;
+        let mut completed: usize = 0;
+        // Scratch buffers reused per tick.
+        let mut leaf_indices: Vec<usize> = Vec::with_capacity(active);
+        let mut leaf_histories: Vec<IStateKey> = Vec::with_capacity(active);
+
+        while completed < n_target {
+            // Phase 1: advance every still-active sim to its next pause point.
+            for (i, sim) in sims.iter_mut().enumerate() {
+                if sim.is_done() {
+                    continue;
+                }
+                self.advance_sim_until_pause(sim, search_player);
+                let _ = i;
+            }
+            // Phase 2: batch the leaf-value requests (the expensive ones).
+            leaf_indices.clear();
+            leaf_histories.clear();
+            for (i, sim) in sims.iter().enumerate() {
+                if let SimPhase::NeedLeafValue { history } = &sim.phase {
+                    leaf_indices.push(i);
+                    leaf_histories.push(*history);
+                }
+            }
+            if !leaf_histories.is_empty() {
+                let values = self.model.batch_value(&leaf_histories);
+                for (idx, v) in leaf_indices.iter().zip(values.into_iter()) {
+                    sims[*idx].resume_leaf_value(v);
+                }
+            }
+            // Phase 3: process opponent samples one-by-one (small batch
+            // already happens inside `model.sample` via |legal|-way
+            // ArgmaxVal\*). Cross-sim batching of these would require
+            // changing the trait; not done in v1.
+            for sim in sims.iter_mut() {
+                if let SimPhase::NeedOpponentSample { history, legal } = sim.phase.clone() {
+                    let a = self.model.sample(&history, &legal, &mut self.rng);
+                    sim.resume_opponent_sample(a, &legal);
+                }
+            }
+            // Phase 4: drain any sim that finished this tick, account
+            // for it in the visit/value stats, and either start a fresh
+            // one (still within budget) or mark the slot inactive.
+            for sim in sims.iter_mut() {
+                if let SimPhase::Done { value, illegal } = sim.phase {
+                    let trajectory = std::mem::take(&mut sim.trajectory);
+                    self.backup_with_virtual_loss(&trajectory, value, illegal);
+                    completed += 1;
+                    if launched < n_target {
+                        let w = gs.resample_from_istate(search_player, &mut self.rng);
+                        *sim = Sim::new(w);
+                        launched += 1;
+                    } else {
+                        sim.phase = SimPhase::Inactive;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Apply virtual loss at `(history, action)` — visits +=1,
+    /// value_sum -= VIRTUAL_LOSS. Called when a parallel sim descends
+    /// through this node so concurrent sims' UCT scoring will see this
+    /// edge as temporarily worse and pick different paths.
+    fn apply_virtual_loss(&mut self, history: &IStateKey, action: Action) {
+        let node = self.nodes.get_mut(history).expect("node must exist before VL");
+        let child = node.children.get_mut(&action).expect("child must exist before VL");
+        child.visits += 1;
+        child.value_sum -= VIRTUAL_LOSS;
+        node.total_visits += 1;
+    }
+
+    /// Back up the trajectory after a parallel sim's leaf value arrives.
+    /// Undoes the virtual loss applied during descent, then folds in the
+    /// real value. Net effect on each child is identical to the
+    /// sequential `backup()` (visits +1, value_sum += value) — the
+    /// virtual loss is only ever observed by OTHER concurrent sims
+    /// during their UCT selection.
+    fn backup_with_virtual_loss(
+        &mut self,
+        trajectory: &[(IStateKey, Action)],
+        value: f64,
+        illegal: bool,
+    ) {
+        for (history, action) in trajectory {
+            let node = self.nodes.get_mut(history).expect("must exist");
+            let child = node.children.get_mut(action).expect("child must exist");
+            // Step 1: revert the virtual loss.
+            child.value_sum += VIRTUAL_LOSS;
+            // Step 2: apply the real backup.
+            if illegal {
+                // Sequential `backup()` treats illegal as "visits
+                // unchanged, value_sum -= μ". The VL already
+                // incremented visits + total_visits, so we undo those
+                // here so the net is "visits unchanged".
+                child.visits -= 1;
+                node.total_visits -= 1;
+                child.value_sum -= self.config.mu;
+            } else {
+                // VL already added visits + total_visits; we just add
+                // the value.
+                child.value_sum += value;
+            }
+        }
+    }
+
+    /// Advance one `Sim` until it either finishes or needs a model call.
+    /// Mirrors the body of `simulate()` but uses the Sim's externalised
+    /// state so we can pause/resume across the batched forwards.
+    fn advance_sim_until_pause(&mut self, sim: &mut Sim<G>, search_player: Player) {
+        let mut buf: Vec<Action> = Vec::new();
+        loop {
+            match sim.phase {
+                SimPhase::Done { .. } | SimPhase::Inactive | SimPhase::NeedLeafValue { .. } | SimPhase::NeedOpponentSample { .. } => {
+                    return;
+                }
+                SimPhase::InProgress => {}
+            }
+            if sim.w.is_terminal() {
+                sim.phase = SimPhase::Done { value: sim.w.evaluate(search_player), illegal: sim.saw_illegal };
+                return;
+            }
+            if sim.w.is_chance_node() {
+                buf.clear();
+                sim.w.legal_actions(&mut buf);
+                if let Some(a) = buf.choose(&mut self.rng) {
+                    sim.w.apply_action(*a);
+                }
+                continue;
+            }
+            let cur = sim.w.cur_player();
+            let history = sim.w.istate_key(search_player);
+            buf.clear();
+            sim.w.legal_actions(&mut buf);
+            if cur == search_player {
+                if !self.nodes.contains_key(&history) {
+                    self.expand(history, &buf);
+                    // Rollout phase (n_rollout_steps moves from the new
+                    // leaf) before requesting the value. For parallel-
+                    // sim mode we run the rollout synchronously here —
+                    // the rollout's own `model.sample` calls go through
+                    // the standard path and aren't cross-sim-batched.
+                    // Then we yield a single `NeedLeafValue` request.
+                    if self.config.n_rollout_steps > 0 {
+                        let leaf_value = self.rollout_value(&mut sim.w, search_player);
+                        sim.phase = SimPhase::Done { value: leaf_value, illegal: sim.saw_illegal };
+                    } else {
+                        sim.phase = SimPhase::NeedLeafValue { history: sim.w.istate_key(search_player) };
+                    }
+                    return;
+                }
+                let a = self.select_uct(&history, &buf);
+                // Apply virtual loss: this in-flight sim provisionally
+                // "spends" a visit at (history, a) with a negative
+                // value. Other concurrent sims see this and avoid the
+                // path — encouraging diverse search across K sims.
+                // Reverted in `backup_with_virtual_loss` when the
+                // leaf returns.
+                self.apply_virtual_loss(&history, a);
+                sim.trajectory.push((history, a));
+                sim.w.apply_action(a);
+            } else {
+                // Opponent move: yield to the outer loop so it can
+                // dispatch the sample. We pass the legal-actions buffer
+                // we already populated.
+                sim.phase = SimPhase::NeedOpponentSample { history, legal: buf.clone() };
+                return;
+            }
+        }
+    }
+
+    /// Roll out `n_rollout_steps` model-sampled moves from `w`, advancing
+    /// the determinised game state. Returns the search player's
+    /// payoff if a terminal is reached during rollout, otherwise the
+    /// model's value estimate at the rollout's final position. With
+    /// `n_rollout_steps == 0` this is just `model.value(...)` at the
+    /// leaf — preserving the AlphaZero default.
+    fn rollout_value(&mut self, w: &mut G, search_player: Player) -> f64 {
+        let mut buf = Vec::new();
+        for _ in 0..self.config.n_rollout_steps {
+            if w.is_terminal() {
+                return w.evaluate(search_player);
+            }
+            if w.is_chance_node() {
+                buf.clear();
+                w.legal_actions(&mut buf);
+                if let Some(a) = buf.choose(&mut self.rng) {
+                    w.apply_action(*a);
+                }
+                continue;
+            }
+            let history = w.istate_key(search_player);
+            buf.clear();
+            w.legal_actions(&mut buf);
+            if buf.is_empty() {
+                break;
+            }
+            let a = self.model.sample(&history, &buf, &mut self.rng);
+            if !buf.contains(&a) {
+                // Illegal sample mid-rollout; bail out with neutral
+                // value. (The caller's outer simulate() doesn't see this
+                // as an illegality penalty — the rollout is auxiliary
+                // search, not a tree path that gets stat-credited.)
+                return 0.0;
+            }
+            w.apply_action(a);
+        }
+        if w.is_terminal() {
+            w.evaluate(search_player)
+        } else {
+            self.model.value(&w.istate_key(search_player))
+        }
     }
 
     /// Create a new tree node for `history`, pre-populating each legal
@@ -530,13 +863,40 @@ mod tests {
     };
     use rand::{rngs::StdRng, seq::IndexedRandom, SeedableRng};
 
+    /// Parallel-sim mode with k=4 produces a non-degenerate policy.
+    /// Identical structure to `gomcts_uniform_model_kuhn_smoke`; pins
+    /// that the state-machine refactor doesn't crash and gives a valid
+    /// distribution.
+    #[test]
+    fn gomcts_parallel_sims_kuhn_smoke() {
+        let mut bot: GoMcts<_, UniformRandomModel> = GoMcts::new(
+            GoMctsConfig {
+                uct_c: 0.4,
+                n_iterations: 512,
+                mu: 0.01,
+                n_rollout_steps: 0,
+                n_parallel_sims: 4,
+            },
+            UniformRandomModel,
+            SeedableRng::seed_from_u64(7),
+        );
+        let gs = KuhnPoker::from_actions(&[KPAction::Jack, KPAction::Queen]);
+        let probs = bot.action_probabilities(&gs);
+        let mass: f64 = probs.to_vec().iter().map(|(_, p)| *p).sum();
+        assert!((mass - 1.0).abs() < 1e-6, "probs should sum to 1, got {}", mass);
+        assert!(
+            probs.to_vec().iter().any(|(_, p)| *p > 0.0),
+            "expected at least one action visited"
+        );
+    }
+
     /// GO-MCTS + UniformRandomModel on Kuhn should find that the worse
     /// hand loses on average. Sanity check for the search wiring with no
     /// learning involved.
     #[test]
     fn gomcts_uniform_model_kuhn_smoke() {
         let mut bot: GoMcts<_, UniformRandomModel> = GoMcts::new(
-            GoMctsConfig { uct_c: 0.4, n_iterations: 512, mu: 0.01 },
+            GoMctsConfig { uct_c: 0.4, n_iterations: 512, mu: 0.01, n_rollout_steps: 0, n_parallel_sims: 1 },
             UniformRandomModel,
             SeedableRng::seed_from_u64(7),
         );
@@ -614,7 +974,7 @@ mod tests {
             acts.clear();
         }
         let mut bot: GoMcts<_, UniformRandomModel> = GoMcts::new(
-            GoMctsConfig { uct_c: 0.4, n_iterations: 16, mu: 0.01 },
+            GoMctsConfig { uct_c: 0.4, n_iterations: 16, mu: 0.01, n_rollout_steps: 0, n_parallel_sims: 1 },
             UniformRandomModel,
             SeedableRng::seed_from_u64(3),
         );

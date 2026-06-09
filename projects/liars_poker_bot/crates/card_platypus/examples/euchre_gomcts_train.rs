@@ -51,6 +51,12 @@
 //!                         would have. AdamW state is NOT
 //!                         saved/restored — momentum recovers
 //!                         within a few hundred batches.
+//!   EU_ROLLOUT_STEPS      MCTS rollout phase length per         (default 0)
+//!                         leaf expansion (paper Algorithm 1
+//!                         uses ~4-10). 0 = AlphaZero-style (no
+//!                         rollout, value head at leaf). Higher
+//!                         = more search depth per decision,
+//!                         essentially for free.
 //!   EU_INIT_WEIGHTS       load weights from this safetensors   (default unset)
 //!                         path BEFORE iter 1, but treat them
 //!                         as initial state (NO Population
@@ -68,12 +74,17 @@ use card_platypus::algorithms::{
         collect_population_game, collect_population_games_batched,
         collect_self_play_game_alphazero, collect_self_play_game_mcts_cfg,
         collect_self_play_game_mcts_with_value_oracle, collect_self_play_games_batched_alphazero,
-        default_device, euchre::EuchreTokenizer, eval_vs_random_batched, head_to_head_eval,
-        head_to_head_eval_batched, train, GoMctsTransformer, McfsConfig, Population, TrainExample,
-        TransformerConfig, TransformerGenerativeModel,
+        collect_self_play_games_batched_alphazero_multi_device, default_device, default_devices,
+        euchre::EuchreTokenizer, eval_vs_random_batched, head_to_head_eval,
+        head_to_head_eval_batched, sync_replicas_from_primary, train, GoMctsTransformer,
+        McfsConfig, Population, TrainExample, TransformerConfig, TransformerGenerativeModel,
     },
     ismcts::Evaluator,
     open_hand_solver::OpenHandSolver,
+};
+#[cfg(feature = "tch_spike")]
+use card_platypus::algorithms::gomcts_transformer_tch::{
+    collect_self_play_games_batched_alphazero_tch, GoMctsTransformerTch,
 };
 use games::{
     gamestates::euchre::{Euchre, EuchreGameState},
@@ -108,7 +119,7 @@ fn main() {
     let mcts_iter: usize = parse("EU_MCTS_ITER", 16);
     let epochs: usize = parse("EU_EPOCHS_PER_ITER", 4);
     let batch_size: usize = parse("EU_BATCH_SIZE", 64);
-    let lr: f64 = parse("EU_LR", 1e-3);
+    let lr: f64 = parse("EU_LR", 1e-4);
     let eval_games: usize = parse("EU_EVAL_GAMES", 200);
     let h2h_games: usize = parse("EU_H2H_GAMES", 100);
     let dirichlet_alpha: f64 = parse("EU_DIRICHLET_ALPHA", 0.3);
@@ -119,6 +130,12 @@ fn main() {
     let batch_games: usize = parse("EU_BATCH_GAMES", 1).max(1);
     let batch_max: usize = parse("EU_BATCH_MAX", 512);
     let resume_from: usize = parse("EU_RESUME_FROM", 0);
+    let rollout_steps: usize = parse("EU_ROLLOUT_STEPS", 0);
+    let parallel_sims: usize = parse("EU_PARALLEL_SIMS", 1).max(1);
+    let num_devices: usize = parse("EU_NUM_DEVICES", 1).max(1);
+    let use_tch: bool = parse::<usize>("EU_USE_TCH", 0) == 1;
+    let use_tch_graph: bool = parse::<usize>("EU_USE_TCH_GRAPH", 0) == 1;
+    let tch_graph_batch: usize = parse("EU_TCH_GRAPH_BATCH", 0); // 0 = auto
     let init_weights: Option<PathBuf> = std::env::var("EU_INIT_WEIGHTS").ok().map(PathBuf::from);
     assert!(
         pimcts_bootstrap == 0 || alphazero == 0,
@@ -186,6 +203,34 @@ fn main() {
     }
     let live = EModel::new(net, EuchreTokenizer);
     let mut pop = Population::new(live);
+    // Multi-device replicas (E5 stream overlap). When EU_NUM_DEVICES > 1
+    // we build N-1 additional GoMctsTransformer replicas on independent
+    // CUDA devices and sync them from the primary after each training
+    // step. Self-play then spreads games across (1 + replicas.len())
+    // pipelines, with each pipeline owning its own service thread +
+    // CUDA stream → host work on one device overlaps GPU work on the
+    // others.
+    let mut replicas: Vec<GoMctsTransformer> = Vec::new();
+    if num_devices > 1 {
+        let all_devices = default_devices(num_devices);
+        // all_devices[0] is the same kind as the primary's; the primary
+        // already exists on a device from `default_device()`. We use
+        // [1..N] for the replicas.
+        for d in all_devices.into_iter().skip(1) {
+            let mut r = GoMctsTransformer::new(cfg, d).expect("build replica");
+            // Sync initial weights from primary so iter-1 self-play
+            // uses identical models on all devices.
+            let tmp = tempfile::NamedTempFile::new().expect("tmp");
+            pop.live.net.save(tmp.path()).expect("save primary");
+            r.load(tmp.path()).expect("load replica");
+            replicas.push(r);
+        }
+        println!(
+            "device replicas: {} ({} total devices for self-play)",
+            replicas.len(),
+            1 + replicas.len()
+        );
+    }
     // Replay prior snapshots so the Population matches the state at
     // end-of-iter `resume_from`. Each prior iter wrote its weights to
     // `iter_NNN.safetensors`; we load each into a fresh transformer and
@@ -211,6 +256,30 @@ fn main() {
             resume_from + 1
         );
     }
+    // EU_USE_TCH=1: build a tch replica synced from the candle primary.
+    // Self-play inference will go through this replica (much lower
+    // per-launch overhead on WSL2). Candle still owns training.
+    #[cfg(feature = "tch_spike")]
+    let mut tch_net: Option<GoMctsTransformerTch> = if use_tch {
+        let dev = match pop.live.net.device() {
+            candle_core::Device::Cuda(_) => tch::Device::Cuda(0),
+            _ => tch::Device::Cpu,
+        };
+        let mut t = GoMctsTransformerTch::new(cfg, dev).expect("build tch net");
+        let tmp = tempfile::NamedTempFile::new().expect("tmp");
+        pop.live.net.save(tmp.path()).expect("save primary for tch sync");
+        t.load_safetensors(tmp.path()).expect("load tch weights");
+        println!("tch self-play enabled (EU_USE_TCH=1), device={:?}", dev);
+        Some(t)
+    } else {
+        None
+    };
+    #[cfg(not(feature = "tch_spike"))]
+    {
+        if use_tch {
+            panic!("EU_USE_TCH=1 requires building with --features tch_spike");
+        }
+    }
     let mut rng: StdRng = SeedableRng::seed_from_u64(base_seed.wrapping_add(resume_from as u64));
 
     let raw0 = eval_vs_random(&mut pop.live, eval_games, base_seed.wrapping_add(99));
@@ -235,14 +304,37 @@ fn main() {
         let mcfs_cfg = McfsConfig {
             root_dirichlet_alpha: dirichlet_alpha,
             root_dirichlet_eps: dirichlet_eps,
+            n_rollout_steps: rollout_steps,
+            n_parallel_sims: parallel_sims,
         };
         let mcts_examples = if pimcts_bootstrap == 1 {
             collect_mcts_examples_with_oracle(
                 &mut pop.live, n_mcts, mcts_iter, mcfs_cfg, ohs_k, seed,
             )
         } else if alphazero == 1 && batch_games > 1 {
+            #[cfg(feature = "tch_spike")]
+            let tch_ref = tch_net.as_ref();
+            #[cfg(not(feature = "tch_spike"))]
+            let tch_ref: Option<&()> = None;
+            // Default graph batch to a value sized for typical request
+            // bursts: batch_games × parallel_sims × 8 (legal actions
+            // upper bound) is the rough cap; if user gives 0, fall back
+            // to that estimate but clamp at batch_max so the captured
+            // graph never exceeds the request cap.
+            let auto_gb = (batch_games as i64)
+                .saturating_mul(parallel_sims.max(1) as i64)
+                .saturating_mul(8);
+            let gb = if tch_graph_batch == 0 {
+                auto_gb.min(batch_max as i64).max(64)
+            } else {
+                tch_graph_batch as i64
+            };
             collect_mcts_examples_alphazero_batched(
                 &mut pop.live,
+                &replicas,
+                tch_ref,
+                use_tch_graph,
+                gb,
                 n_mcts,
                 mcts_iter,
                 mcfs_cfg,
@@ -277,6 +369,18 @@ fn main() {
         pop.snapshot().expect("snapshot");
         let ckpt_path = ckpt_dir.join(format!("iter_{:03}.safetensors", iter));
         pop.live.net.save(&ckpt_path).expect("save");
+        // Sync replicas from the freshly-trained primary so next iter's
+        // self-play uses the updated weights on every device.
+        if !replicas.is_empty() {
+            sync_replicas_from_primary(&pop.live.net, &mut replicas)
+                .expect("sync replicas");
+        }
+        // Sync tch replica from the freshly-trained candle primary so
+        // next iter's tch-backed self-play uses the updated weights.
+        #[cfg(feature = "tch_spike")]
+        if let Some(t) = tch_net.as_mut() {
+            t.load_safetensors(&ckpt_path).expect("sync tch from candle ckpt");
+        }
 
         let mean = if batch_games > 1 {
             let (m, _) = eval_vs_random_batched::<EuchreGameState, _, _>(
@@ -371,7 +475,7 @@ fn collect_mcts_examples(
     let placeholder_net = GoMctsTransformer::new(cfg, device).expect("build placeholder");
     let placeholder = EModel::new(placeholder_net, EuchreTokenizer);
     let mut search: GoMcts<EuchreGameState, EModel> = GoMcts::new(
-        GoMctsConfig { uct_c: 0.4, n_iterations: mcts_iter, mu: 0.01 },
+        GoMctsConfig { uct_c: 0.4, n_iterations: mcts_iter, mu: 0.01, n_rollout_steps: mcfs_cfg.n_rollout_steps, n_parallel_sims: mcfs_cfg.n_parallel_sims },
         placeholder,
         SeedableRng::seed_from_u64(seed.wrapping_add(2)),
     );
@@ -411,7 +515,7 @@ fn collect_mcts_examples_alphazero(
     let placeholder_net = GoMctsTransformer::new(cfg, device).expect("build placeholder");
     let placeholder = EModel::new(placeholder_net, EuchreTokenizer);
     let mut search: GoMcts<EuchreGameState, EModel> = GoMcts::new(
-        GoMctsConfig { uct_c: 0.4, n_iterations: mcts_iter, mu: 0.01 },
+        GoMctsConfig { uct_c: 0.4, n_iterations: mcts_iter, mu: 0.01, n_rollout_steps: mcfs_cfg.n_rollout_steps, n_parallel_sims: mcfs_cfg.n_parallel_sims },
         placeholder,
         SeedableRng::seed_from_u64(seed.wrapping_add(2)),
     );
@@ -434,8 +538,22 @@ fn collect_mcts_examples_alphazero(
 /// E5: cross-game batched AlphaZero self-play. Spins up `batch_games`
 /// game threads that share one batched forward service so the GPU sees
 /// one large forward call instead of `batch_games` small ones.
+///
+/// When `replicas` is non-empty (multi-device mode), uses
+/// `collect_self_play_games_batched_alphazero_multi_device` so the
+/// games-per-chunk are spread across the primary + replica nets. Each
+/// device runs its own service pipeline → CUDA contexts overlap.
+#[cfg(feature = "tch_spike")]
+type TchOpt<'a> = Option<&'a GoMctsTransformerTch>;
+#[cfg(not(feature = "tch_spike"))]
+type TchOpt<'a> = Option<&'a ()>;
+
 fn collect_mcts_examples_alphazero_batched(
-    model: &mut EModel,
+    primary: &mut EModel,
+    replicas: &[GoMctsTransformer],
+    tch_net: TchOpt,
+    use_tch_graph: bool,
+    tch_graph_batch: i64,
     n_games: usize,
     mcts_iter: usize,
     mcfs_cfg: McfsConfig,
@@ -447,23 +565,71 @@ fn collect_mcts_examples_alphazero_batched(
         return Vec::new();
     }
     let mut out = Vec::new();
-    // Run games in chunks of `batch_games` so memory and thread counts
-    // stay bounded.
-    let chunks = (n_games + batch_games - 1) / batch_games;
+    let n_devices = 1 + replicas.len();
+    // Each "chunk" runs `batch_games * n_devices` games concurrently
+    // (batch_games per device replica). That keeps per-device service
+    // load identical to single-device mode.
+    let chunk_size = batch_games * n_devices;
+    let chunks = n_games.div_ceil(chunk_size);
+    // Build the slice of net references once. Borrow lifetimes are
+    // tied to the closures inside the loop below; reconstructed each
+    // iter so the &mut on `primary` can still be reused.
     for chunk_idx in 0..chunks {
-        let games_this_chunk = batch_games.min(n_games - chunk_idx * batch_games);
+        let games_this_chunk = chunk_size.min(n_games - chunk_idx * chunk_size);
         let chunk_seed = seed.wrapping_add((chunk_idx as u64) * 1_000);
-        let exs = collect_self_play_games_batched_alphazero::<EuchreGameState, _, _>(
-            &model.net,
-            &model.tokenizer,
-            Euchre::new_state,
-            games_this_chunk,
-            batch_max,
-            mcts_iter,
-            mcfs_cfg,
-            chunk_seed,
-        );
-        out.extend(exs);
+        #[cfg(feature = "tch_spike")]
+        if let Some(t) = tch_net {
+            // Tch backend: ignore candle replicas; tch service handles
+            // batching directly on its CUDA stream.
+            let exs = collect_self_play_games_batched_alphazero_tch::<EuchreGameState, _, _>(
+                t,
+                &primary.tokenizer,
+                Euchre::new_state,
+                games_this_chunk,
+                batch_max,
+                mcts_iter,
+                mcfs_cfg,
+                chunk_seed,
+                use_tch_graph,
+                tch_graph_batch,
+            );
+            out.extend(exs);
+            continue;
+        }
+        if n_devices == 1 {
+            let exs = collect_self_play_games_batched_alphazero::<EuchreGameState, _, _>(
+                &primary.net,
+                &primary.tokenizer,
+                Euchre::new_state,
+                games_this_chunk,
+                batch_max,
+                mcts_iter,
+                mcfs_cfg,
+                chunk_seed,
+            );
+            out.extend(exs);
+        } else {
+            let mut nets: Vec<&GoMctsTransformer> = Vec::with_capacity(n_devices);
+            nets.push(&primary.net);
+            for r in replicas {
+                nets.push(r);
+            }
+            let exs = collect_self_play_games_batched_alphazero_multi_device::<
+                EuchreGameState,
+                _,
+                _,
+            >(
+                &nets,
+                &primary.tokenizer,
+                Euchre::new_state,
+                games_this_chunk,
+                batch_max,
+                mcts_iter,
+                mcfs_cfg,
+                chunk_seed,
+            );
+            out.extend(exs);
+        }
     }
     out
 }
@@ -495,7 +661,7 @@ fn collect_mcts_examples_with_oracle(
     let placeholder_net = GoMctsTransformer::new(cfg, device).expect("build placeholder");
     let placeholder = EModel::new(placeholder_net, EuchreTokenizer);
     let mut search: GoMcts<EuchreGameState, EModel> = GoMcts::new(
-        GoMctsConfig { uct_c: 0.4, n_iterations: mcts_iter, mu: 0.01 },
+        GoMctsConfig { uct_c: 0.4, n_iterations: mcts_iter, mu: 0.01, n_rollout_steps: mcfs_cfg.n_rollout_steps, n_parallel_sims: mcfs_cfg.n_parallel_sims },
         placeholder,
         SeedableRng::seed_from_u64(seed.wrapping_add(2)),
     );

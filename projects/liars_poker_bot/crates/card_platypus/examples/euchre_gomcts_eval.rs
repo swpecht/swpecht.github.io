@@ -17,6 +17,10 @@
 //!   EU_MCTS_ITER       per-decision MCTS budget for the wrapped eval (default 32)
 //!   EU_SEED            base RNG seed        (default 0)
 //!   EU_SKIP_MCTS=1     skip the MCTS eval (raw only)
+//!   EU_INFER           argmaxval | lm   (default argmaxval). lm = use the
+//!                      LM head softmax directly. Use for supervised
+//!                      bootstraps where the value head hasn't seen
+//!                      counterfactual actions.
 //!
 //! Run:
 //!   EU_GAMES=2000 cargo run -p card_platypus --release --example euchre_gomcts_eval
@@ -24,8 +28,8 @@
 use card_platypus::algorithms::{
     gomcts::{GenerativeModel, GoMcts, GoMctsConfig},
     gomcts_transformer::{
-        default_device, euchre::EuchreTokenizer, GoMctsTransformer, TransformerConfig,
-        TransformerGenerativeModel,
+        default_device, euchre::EuchreTokenizer, GoMctsTransformer, InferenceMode,
+        TransformerConfig, TransformerGenerativeModel,
     },
 };
 use card_platypus::agents::Agent;
@@ -69,12 +73,17 @@ fn main() {
     );
 
     let cfg = pick_config();
+    let infer_mode = match std::env::var("EU_INFER").as_deref() {
+        Ok("lm") | Ok("LmSoftmax") => InferenceMode::LmSoftmax,
+        _ => InferenceMode::ArgmaxVal,
+    };
     println!(
-        "Euchre GO-MCTS eval: weights={}, games={}, mcts_iter={}, skip_mcts={}",
+        "Euchre GO-MCTS eval: weights={}, games={}, mcts_iter={}, skip_mcts={}, infer={:?}",
         weights.display(),
         n_games,
         mcts_iter,
-        skip_mcts
+        skip_mcts,
+        infer_mode,
     );
     println!(
         "transformer: d={}, layers={}, heads={}, d_ff={}, vocab={}, max_ctx={}",
@@ -106,7 +115,7 @@ fn main() {
     println!("\n[2/3] raw transformer (no MCTS wrapping)…");
     let mut net = GoMctsTransformer::new(cfg, default_device()).expect("build");
     net.load(&weights).expect("load weights");
-    let mut model = EModel::new(net, EuchreTokenizer);
+    let mut model = EModel::new(net, EuchreTokenizer).with_inference_mode(infer_mode);
     let t0 = Instant::now();
     let (raw_mean, raw_se) = eval_raw(&mut model, n_games, base_seed.wrapping_add(13));
     let raw_secs = t0.elapsed().as_secs_f64();
@@ -131,7 +140,7 @@ fn main() {
     // --- GO-MCTS over the transformer.
     println!("\n[3/3] GO-MCTS over the transformer ({} sims/decision)…", mcts_iter);
     let search = GoMcts::new(
-        GoMctsConfig { uct_c: 0.4, n_iterations: mcts_iter, mu: 0.01 },
+        GoMctsConfig { uct_c: 0.4, n_iterations: mcts_iter, mu: 0.01, n_rollout_steps: 0, n_parallel_sims: 1 },
         model,
         SeedableRng::seed_from_u64(base_seed.wrapping_add(17)),
     );
