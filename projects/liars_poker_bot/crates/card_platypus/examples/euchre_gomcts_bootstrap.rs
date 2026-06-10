@@ -11,7 +11,10 @@
 //!   cargo run -p card_platypus --release --example euchre_gomcts_bootstrap
 //!
 //! Knobs:
-//!   EU_BOOT_AGENT        random | cfr3 | cfr3_eps            (default cfr3_eps)
+//!   EU_BOOT_AGENT        random | cfr3 | cfr3_eps | cfr3_eps_vs_cfr0  (default cfr3_eps)
+//!                        cfr3_eps_vs_cfr0: recorded team = cfr3+ε,
+//!                        opponents = cfr0; outcomes teach the value
+//!                        head what beats cfr0 (exploiter bootstrap).
 //!                        - random: pure uniform-random play.
 //!                          Paper-faithful (Hearts used 4M random
 //!                          games). Cheap to generate, gives the
@@ -50,6 +53,7 @@
 //!                        saved to it before training. Lets hyperparam
 //!                        re-runs skip the collection phase entirely.
 //!                        (default <EU_BOOT_OUT dir>/dataset_<agent>_<games>.rmp)
+//!   EU_BOOT_INIT         warm-start checkpoint to fine-tune from (default unset)
 //!   EU_BOOT_SEED         base RNG seed                        (default 0)
 //!   EUCHRE_CFR3_WEIGHTS  cfr3 weights dir (only used by cfr3 agents)
 //!                        (default /home/steven/card_platypus/infostate.three_card_played_f32)
@@ -98,6 +102,12 @@ enum BootAgent {
     Random,
     Cfr3,
     Cfr3Eps,
+    /// Exploiter data: the recorded team plays cfr3 with ε-exploration,
+    /// the OPPONENT team plays cfr0. Outcomes therefore measure what
+    /// works *against cfr0* — the value head becomes an approximate
+    /// best-response evaluator vs cfr0 (entry 38: imitation alone caps
+    /// at ~49% pts because cfr3 ≈ cfr0 head-to-head).
+    Cfr3EpsVsCfr0,
 }
 
 impl BootAgent {
@@ -106,6 +116,7 @@ impl BootAgent {
             BootAgent::Random => "random",
             BootAgent::Cfr3 => "cfr3",
             BootAgent::Cfr3Eps => "cfr3_eps",
+            BootAgent::Cfr3EpsVsCfr0 => "cfr3_eps_vs_cfr0",
         }
     }
 }
@@ -114,6 +125,7 @@ fn main() {
     let agent_kind = match std::env::var("EU_BOOT_AGENT").as_deref() {
         Ok("random") => BootAgent::Random,
         Ok("cfr3") => BootAgent::Cfr3,
+        Ok("cfr3_eps_vs_cfr0") => BootAgent::Cfr3EpsVsCfr0,
         _ => BootAgent::Cfr3Eps,
     };
     let eps: f64 = parse("EU_BOOT_EPS", 0.15);
@@ -127,6 +139,14 @@ fn main() {
         "EUCHRE_CFR3_WEIGHTS",
         "/home/steven/card_platypus/infostate.three_card_played_f32",
     );
+    let cfr0_path: PathBuf = parse_path(
+        "EUCHRE_CFR0_WEIGHTS",
+        "/home/steven/card_platypus/infostate.baseline",
+    );
+    // Optional warm start: fine-tune from an existing checkpoint
+    // (e.g. the cfr3_eps bootstrap) instead of a fresh random init.
+    let init_weights: Option<PathBuf> =
+        std::env::var("EU_BOOT_INIT").ok().map(PathBuf::from);
     // NOTE: keep these off /tmp — a reboot on 2026-06-10 wiped every
     // checkpoint of the project's first week of training runs.
     let out_path: PathBuf = parse_path(
@@ -147,8 +167,14 @@ fn main() {
         std::fs::create_dir_all(parent).expect("create data dir");
     }
 
-    if matches!(agent_kind, BootAgent::Cfr3 | BootAgent::Cfr3Eps) {
+    if matches!(
+        agent_kind,
+        BootAgent::Cfr3 | BootAgent::Cfr3Eps | BootAgent::Cfr3EpsVsCfr0
+    ) {
         assert!(cfr3_path.exists(), "cfr3 weights not found at {}", cfr3_path.display());
+    }
+    if matches!(agent_kind, BootAgent::Cfr3EpsVsCfr0) {
+        assert!(cfr0_path.exists(), "cfr0 weights not found at {}", cfr0_path.display());
     }
 
     let cfg = pick_config();
@@ -190,6 +216,7 @@ fn main() {
         std::thread::scope(|s| {
             for t in 0..n_threads {
                 let cfr3_path = cfr3_path.clone();
+                let cfr0_path = cfr0_path.clone();
                 let shared = Arc::clone(&shared);
                 s.spawn(move || {
                     // Per-worker agent state. cfr3 carries the mmap-backed
@@ -197,12 +224,22 @@ fn main() {
                     // they all share the file via mmap). Random has no
                     // state.
                     let mut cfr3 = match agent_kind {
-                        BootAgent::Cfr3 | BootAgent::Cfr3Eps => Some(EuchreCfres::new_euchre(
-                            StdRng::seed_from_u64(base_seed.wrapping_add(1_000 + t as u64)),
-                            3,
-                            Some(&cfr3_path),
-                        )),
+                        BootAgent::Cfr3 | BootAgent::Cfr3Eps | BootAgent::Cfr3EpsVsCfr0 => {
+                            Some(EuchreCfres::new_euchre(
+                                StdRng::seed_from_u64(base_seed.wrapping_add(1_000 + t as u64)),
+                                3,
+                                Some(&cfr3_path),
+                            ))
+                        }
                         BootAgent::Random => None,
+                    };
+                    let mut cfr0 = match agent_kind {
+                        BootAgent::Cfr3EpsVsCfr0 => Some(EuchreCfres::new_euchre(
+                            StdRng::seed_from_u64(base_seed.wrapping_add(2_000 + t as u64)),
+                            0,
+                            Some(&cfr0_path),
+                        )),
+                        _ => None,
                     };
                     let start = t * games_per_thread;
                     let end = ((t + 1) * games_per_thread).min(n_games);
@@ -219,6 +256,13 @@ fn main() {
                             BootAgent::Cfr3Eps => play_one_cfr3_eps_game(
                                 cfr3.as_mut().unwrap(),
                                 eps,
+                                &mut rng,
+                            ),
+                            BootAgent::Cfr3EpsVsCfr0 => play_one_cfr3_eps_vs_cfr0_game(
+                                cfr3.as_mut().unwrap(),
+                                cfr0.as_mut().unwrap(),
+                                eps,
+                                game_idx % 2,
                                 &mut rng,
                             ),
                             BootAgent::Random => play_one_random_game(&mut rng),
@@ -287,6 +331,11 @@ fn main() {
     } else {
         GoMctsTransformerTch::new(cfg, device).expect("build")
     };
+    if let Some(init) = init_weights.as_ref() {
+        assert!(init.exists(), "EU_BOOT_INIT={} not found", init.display());
+        net.load_safetensors(init).expect("load EU_BOOT_INIT");
+        println!("fine-tuning from {}", init.display());
+    }
     let tokenizer = EuchreTokenizer;
     let mut rng: StdRng = SeedableRng::seed_from_u64(base_seed.wrapping_add(7));
 
@@ -441,6 +490,68 @@ fn play_one_cfr3_eps_game(
 
     let mut out = Vec::new();
     for p in 0..n_players {
+        let v = gs.evaluate(p) as f32;
+        for (h, a, explore) in per_player[p].drain(..) {
+            out.push(if explore {
+                TrainExample::explore(h, a, v)
+            } else {
+                TrainExample::hard(h, a, v)
+            });
+        }
+    }
+    out
+}
+
+/// Exploiter data: `hero_team` (0 → seats 0+2, 1 → seats 1+3) plays
+/// cfr3 with ε-exploration and is recorded; the other team plays cfr0
+/// and is NOT recorded. Outcomes are the hero seats' terminal payoffs —
+/// i.e. results achieved *against cfr0's actual play*.
+fn play_one_cfr3_eps_vs_cfr0_game(
+    cfr3: &mut EuchreCfres,
+    cfr0: &mut EuchreCfres,
+    eps: f64,
+    hero_team: usize,
+    rng: &mut StdRng,
+) -> Vec<TrainExample> {
+    use rand::RngExt;
+    let mut gs = Euchre::new_state();
+    let mut buf = Vec::new();
+
+    while gs.is_chance_node() {
+        buf.clear();
+        gs.legal_actions(&mut buf);
+        let a = *buf.choose(rng).expect("non-empty chance");
+        gs.apply_action(a);
+    }
+
+    let n_players = gs.num_players();
+    let mut per_player: Vec<Vec<(IStateKey, Action, bool)>> = vec![Vec::new(); n_players];
+
+    while !gs.is_terminal() {
+        let p = gs.cur_player();
+        if p % 2 == hero_team {
+            let history = gs.istate_key(p);
+            let explore = rng.random::<f64>() < eps;
+            let action = if explore {
+                buf.clear();
+                gs.legal_actions(&mut buf);
+                *buf.choose(rng).expect("non-empty legal")
+            } else {
+                cfr3.step(&gs)
+            };
+            per_player[p].push((history, action, explore));
+            gs.apply_action(action);
+        } else {
+            let action = cfr0.step(&gs);
+            gs.apply_action(action);
+        }
+    }
+
+    let mut out = Vec::new();
+    for p in 0..n_players {
+        if p % 2 != hero_team {
+            continue;
+        }
         let v = gs.evaluate(p) as f32;
         for (h, a, explore) in per_player[p].drain(..) {
             out.push(if explore {
