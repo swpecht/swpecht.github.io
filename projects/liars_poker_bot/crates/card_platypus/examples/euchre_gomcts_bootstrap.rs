@@ -195,9 +195,33 @@ fn main() {
         cfg.d_model, cfg.n_layers, cfg.n_heads, cfg.d_ff, cfg.vocab_size, cfg.max_context,
     );
 
-    // --- Phase 1: load cached dataset, or run parallel self-play collection ---
+    // --- Phase 1: load cached dataset(s), or run parallel self-play collection ---
+    // EU_BOOT_DATA also accepts a comma-separated list of cache files;
+    // they are concatenated and collection is skipped (for training on
+    // merged datasets, e.g. cfr3_eps + exploiter).
     let t0 = Instant::now();
-    let mut examples: Vec<TrainExample> = if data_path.exists() {
+    let multi_paths: Option<Vec<PathBuf>> = std::env::var("EU_BOOT_DATA")
+        .ok()
+        .filter(|v| v.contains(','))
+        .map(|v| v.split(',').map(PathBuf::from).collect());
+    let mut examples: Vec<TrainExample> = if let Some(paths) = multi_paths {
+        let mut exs: Vec<TrainExample> = Vec::new();
+        for path in &paths {
+            assert!(path.exists(), "dataset cache {} not found", path.display());
+            let bytes = std::fs::read(path).expect("read dataset cache");
+            let part: Vec<TrainExample> =
+                rmp_serde::from_slice(&bytes).expect("decode dataset cache");
+            println!("loaded {} cached examples from {}", part.len(), path.display());
+            exs.extend(part);
+        }
+        println!(
+            "merged {} examples from {} caches in {:.1}s",
+            exs.len(),
+            paths.len(),
+            t0.elapsed().as_secs_f64(),
+        );
+        exs
+    } else if data_path.exists() {
         let bytes = std::fs::read(&data_path).expect("read dataset cache");
         let exs: Vec<TrainExample> =
             rmp_serde::from_slice(&bytes).expect("decode dataset cache");
