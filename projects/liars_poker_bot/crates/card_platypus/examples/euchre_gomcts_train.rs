@@ -91,9 +91,20 @@ fn main() {
     let h2h_games: usize = parse("EU_H2H_GAMES", 100);
     let dirichlet_alpha: f64 = parse("EU_DIRICHLET_ALPHA", 0.3);
     let dirichlet_eps: f64 = parse("EU_DIRICHLET_EPS", 0.0);
-    let batch_games: usize = parse("EU_BATCH_GAMES", 16).max(1);
+    // Cross-game concurrency. Sweep at paper config, EU_GAMES_PER_ITER=200,
+    // showed throughput climbing through bg=128 then plateauing; iter wall
+    // ~26 s at bg=128 vs ~41 s at bg=24. Past bg=128 the chunk loop
+    // starves at small game counts but doesn't hurt at the production
+    // 3750-game scale.
+    let batch_games: usize = parse("EU_BATCH_GAMES", 128).max(1);
     let batch_max: usize = parse("EU_BATCH_MAX", 512);
-    let tch_graph_batch: i64 = parse("EU_TCH_GRAPH_BATCH", 48);
+    // Captured CUDA-graph batch size. Smaller wins than expected — real
+    // request bursts are tighter than batch_games would suggest because
+    // MCTS-iter requests arrive interleaved across game threads, so each
+    // burst is closer to ~16 histories than the worst-case
+    // batch_games × parallel_sims × |legal|. gb=16 + the eager fallback
+    // for over-size batches outperformed gb=24/32/48 across the sweep.
+    let tch_graph_batch: i64 = parse("EU_TCH_GRAPH_BATCH", 16);
     let resume_from: usize = parse("EU_RESUME_FROM", 0);
     let rollout_steps: usize = parse("EU_ROLLOUT_STEPS", 0);
     let parallel_sims: usize = parse("EU_PARALLEL_SIMS", 1).max(1);
@@ -252,8 +263,14 @@ fn main() {
             }
         }
 
-        // --- Pop self-play. Eager mode (two concurrent CUDA captures
-        // don't compose cleanly on PyTorch). ------------------------
+        // --- Pop self-play. Graph capture used to fail here with
+        // "operation not permitted when stream is capturing" when two
+        // service threads (live + frozen) entered capture mode
+        // simultaneously, but that was while candle was still in the
+        // process holding its own CUDA contexts; under the tch-only
+        // stack the two captures don't interfere. Default on; flip
+        // EU_POP_USE_GRAPH=0 to fall back to eager if WSL2 regresses. -
+        let pop_use_graph = parse::<usize>("EU_POP_USE_GRAPH", 1) == 1;
         let pop_examples = collect_pop_examples_batched_tch::<_, _, _>(
             &mut pop,
             &tokenizer,
@@ -262,8 +279,8 @@ fn main() {
             batch_games,
             &mut rng,
             seed.wrapping_add(7),
-            false,
-            1,
+            pop_use_graph,
+            if pop_use_graph { tch_graph_batch } else { 1 },
         );
 
         let mut examples = mcts_examples;
