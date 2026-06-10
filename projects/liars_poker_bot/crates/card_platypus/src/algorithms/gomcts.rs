@@ -264,11 +264,14 @@ impl<G: GameState + ResampleFromInfoState, M: GenerativeModel<G>> GoMcts<G, M> {
             .map(|n| n.total_visits as f64)
             .unwrap_or(0.0);
         if total == 0.0 {
-            // No simulation produced data — fall back to uniform. (Should be
-            // unreachable in practice unless n_iterations == 0.)
-            let p = 1.0 / actions.len() as f64;
-            for a in &actions {
-                probs[*a] = p;
+            // No simulation produced data (n_iterations == 0, or every
+            // sim aborted). Fall back to the model's raw policy — NOT
+            // uniform — so a search budget of 0 degenerates to the raw
+            // agent, as the eval helpers' docs promise. (A 2026-06-10
+            // tournament at ITER=0 silently played uniform-random here.)
+            let p = self.model.policy(&root_key, &actions);
+            for (i, a) in actions.iter().enumerate() {
+                probs[*a] = p[i];
             }
             return probs;
         }
