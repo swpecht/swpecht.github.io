@@ -267,14 +267,15 @@ fn main() {
                     tch_graph_batch,
                 );
                 mcts_examples.extend(exs);
-                // Each chunk's scoped self-play just dropped 128 game
-                // threads' worth of MCTS trees, rollout tensors, and
-                // captured-graph state. Without reclaiming here the
-                // CUDACachingAllocator pool grows monotonically across
-                // chunks — fine for non-rollout self-play, fatal for
-                // rollout-to-terminal where every leaf evaluation
-                // produces ~10 extra tensors. Reclaim between chunks.
-                empty_cuda_cache();
+                // Tempting to call `empty_cuda_cache()` here to keep
+                // the rollout pool flat — DON'T. PyTorch's CUDA-graph
+                // private memory pool intersects badly with
+                // `emptyCache()` between captures; at ~30 chunks per
+                // production iter we hit "operation not permitted
+                // when stream is capturing" at the next graph
+                // replay's sync. Instead we keep batch_games small
+                // enough that the pool can survive an iter, and
+                // reclaim once at iter-end below.
             }
         }
 
@@ -297,8 +298,10 @@ fn main() {
             pop_use_graph,
             if pop_use_graph { tch_graph_batch } else { 1 },
         );
-        // Same reclaim as between MCTS chunks: pop self-play just
-        // dropped two service threads' worth of tensors.
+        // Pop self-play just dropped two service threads' worth of
+        // tensors and (since EU_POP_USE_GRAPH=1 by default) two
+        // captured graphs. No live graph remains in scope, so
+        // emptyCache here is safe and helps the upcoming train step.
         empty_cuda_cache();
 
         let mut examples = mcts_examples;
