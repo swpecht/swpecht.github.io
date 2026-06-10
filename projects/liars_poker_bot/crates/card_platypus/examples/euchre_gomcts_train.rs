@@ -247,6 +247,14 @@ fn main() {
         };
 
         // --- MCTS-driven AlphaZero self-play (cross-game batched + CUDA graph). --
+        // EU_USE_GRAPH=0 disables CUDA-graph capture for the MCTS
+        // self-play path. Needed for paper-faithful rollout runs:
+        // the captured-graph private memory pool + emptyCache between
+        // iters (which we need to reclaim rollout tensors) hit
+        // "operation not permitted when stream is capturing" at
+        // iter 2's first replay. Eager mode is ~2× slower per
+        // inference but stable across iters.
+        let use_graph_mcts = parse::<usize>("EU_USE_GRAPH", 1) == 1;
         let mut mcts_examples = Vec::new();
         if n_mcts > 0 {
             let chunk_size = batch_games;
@@ -263,8 +271,8 @@ fn main() {
                     mcts_iter,
                     mcfs_cfg,
                     chunk_seed,
-                    /* use_graph = */ true,
-                    tch_graph_batch,
+                    use_graph_mcts,
+                    if use_graph_mcts { tch_graph_batch } else { 1 },
                 );
                 mcts_examples.extend(exs);
                 // Tempting to call `empty_cuda_cache()` here to keep
