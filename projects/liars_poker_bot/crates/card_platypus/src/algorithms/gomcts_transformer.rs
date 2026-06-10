@@ -1573,7 +1573,11 @@ where
     if n_games == 0 {
         return (0.0, 0.0);
     }
-    let max_batch = (n_games * 16).max(32);
+    // Cap requests-per-forward: each request carries ~6 histories
+    // (legal+1), and attention activations scale with the row count —
+    // an uncapped n_games*16 at n=2000 OOMed a 16 GB card (the
+    // (B,8,48,48) attention scores alone would be ~8.8 GB).
+    let max_batch = (n_games * 16).clamp(32, 256);
     let (request_tx, request_rx) = mpsc::channel::<ServiceRequest>();
     let scores: Vec<f64> = std::thread::scope(|s| {
         let svc = s.spawn(move || {
@@ -1636,7 +1640,11 @@ where
     if n_games == 0 {
         return (0.0, 0.5);
     }
-    let max_batch = (n_games * 16).max(32);
+    // Cap requests-per-forward: each request carries ~6 histories
+    // (legal+1), and attention activations scale with the row count —
+    // an uncapped n_games*16 at n=2000 OOMed a 16 GB card (the
+    // (B,8,48,48) attention scores alone would be ~8.8 GB).
+    let max_batch = (n_games * 16).clamp(32, 256);
     let (req_a_tx, req_a_rx) = mpsc::channel::<ServiceRequest>();
     let (req_b_tx, req_b_rx) = mpsc::channel::<ServiceRequest>();
     let scores: Vec<f64> = std::thread::scope(|s| {
@@ -1756,7 +1764,11 @@ where
     if n_games == 0 {
         return (0.0, 0.0);
     }
-    let max_batch = (n_games * 16).max(32);
+    // Cap requests-per-forward: each request carries ~6 histories
+    // (legal+1), and attention activations scale with the row count —
+    // an uncapped n_games*16 at n=2000 OOMed a 16 GB card (the
+    // (B,8,48,48) attention scores alone would be ~8.8 GB).
+    let max_batch = (n_games * 16).clamp(32, 256);
     let (request_tx, request_rx) = mpsc::channel::<ServiceRequest>();
     let scores: Vec<f64> = std::thread::scope(|s| {
         let svc = s.spawn(move || {
@@ -1802,7 +1814,11 @@ where
     if n_games == 0 {
         return (0.0, 0.5);
     }
-    let max_batch = (n_games * 16).max(32);
+    // Cap requests-per-forward: each request carries ~6 histories
+    // (legal+1), and attention activations scale with the row count —
+    // an uncapped n_games*16 at n=2000 OOMed a 16 GB card (the
+    // (B,8,48,48) attention scores alone would be ~8.8 GB).
+    let max_batch = (n_games * 16).clamp(32, 256);
     let (req_a_tx, req_a_rx) = mpsc::channel::<ServiceRequest>();
     let (req_b_tx, req_b_rx) = mpsc::channel::<ServiceRequest>();
     let scores: Vec<f64> = std::thread::scope(|s| {
@@ -1863,7 +1879,11 @@ where
     if n_games == 0 {
         return Vec::new();
     }
-    let max_batch = (n_games * 16).max(32);
+    // Cap requests-per-forward: each request carries ~6 histories
+    // (legal+1), and attention activations scale with the row count —
+    // an uncapped n_games*16 at n=2000 OOMed a 16 GB card (the
+    // (B,8,48,48) attention scores alone would be ~8.8 GB).
+    let max_batch = (n_games * 16).clamp(32, 256);
     let (req_live_tx, req_live_rx) = mpsc::channel::<ServiceRequest>();
     let (req_frozen_tx, req_frozen_rx) = mpsc::channel::<ServiceRequest>();
     let all: Vec<Vec<TrainExample>> = std::thread::scope(|s| {
@@ -1926,7 +1946,11 @@ where
     if n_games == 0 {
         return Vec::new();
     }
-    let max_batch = (n_games * 16).max(32);
+    // Cap requests-per-forward: each request carries ~6 histories
+    // (legal+1), and attention activations scale with the row count —
+    // an uncapped n_games*16 at n=2000 OOMed a 16 GB card (the
+    // (B,8,48,48) attention scores alone would be ~8.8 GB).
+    let max_batch = (n_games * 16).clamp(32, 256);
     let (req_live_tx, req_live_rx) = mpsc::channel::<ServiceRequest>();
     let (req_frozen_tx, req_frozen_rx) = mpsc::channel::<ServiceRequest>();
     let all: Vec<Vec<TrainExample>> = std::thread::scope(|s| {
