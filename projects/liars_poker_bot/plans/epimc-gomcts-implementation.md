@@ -1169,3 +1169,5 @@ expert+ε bootstrap → greedy-LM inference, no search:
 | # | when | what | config | result | conclusion |
 |---|---|---|---|---|---|
 | OH-1 | 2026-06-10 | PIMCTS collection cost profile | 12 threads, r50 | t4: 7.5 games/s; t10: 0.21 games/s (r20: 0.38) | cost explodes with trick count (open-hand tree). → banded collection with cost-weighted quotas: t1-3 30k, t4-5 20k, t6-7 12k, t8-10 9k games (≈1.1M examples est.) |
+| OH-2 | 2026-06-10 | Pipeline validation: t1-3-only model | 270k examples, 6 epochs (~4 min GPU); eval 300 games/trick vs PIMCTS-50 table, greedy-LM | t1 +0.23±0.26 (67% win), t2 −0.44±0.26, t3 +0.12±0.22; pooled **−0.03** | end-to-end pipeline works; already pimcts-parity on its training range from a 6-min bootstrap. Full-range model pending bands t4-10 |
+| OH-3 | 2026-06-10 | Interim t1-5 model (bands 1+2, 600k examples) | 6 epochs; eval 300 games/trick vs PIMCTS-50, greedy-LM | t1 +0.25, t2 −0.37, t3 +0.18, t4 −0.19, t5 −0.06; pooled **−0.037 ± ~0.10** (n=1500) | pimcts-parity across t1-5 already. t2 consistently weakest (hook-rule bidding?). Bands t6-7, t8-10 collecting overnight |
