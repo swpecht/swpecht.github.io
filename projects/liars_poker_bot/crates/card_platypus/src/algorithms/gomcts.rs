@@ -85,6 +85,14 @@ pub struct GoMctsConfig {
     /// rollout step is one model.sample call instead of an alternative
     /// node expansion.
     pub n_rollout_steps: usize,
+    /// When true, rollouts ignore `n_rollout_steps` and continue
+    /// sampling until the game reaches a terminal state, then return
+    /// the real game payoff. Paper-faithful: V learns from actual game
+    /// rewards instead of from V's own estimate at a fixed-length
+    /// horizon, breaking the AlphaZero-style fixed-point trap where
+    /// V(h) = mean(V(h⊕a*)) has many valid solutions including
+    /// degenerate ones.
+    pub rollout_to_terminal: bool,
     /// AlphaZero-style parallel-simulation width: run this many sims
     /// concurrently within one game's MCTS so their leaf-value forwards
     /// can be batched into one `batch_value` call. 1 = sequential
@@ -101,6 +109,7 @@ impl Default for GoMctsConfig {
             n_iterations: 256,
             mu: 0.01,
             n_rollout_steps: 0,
+            rollout_to_terminal: false,
             n_parallel_sims: 1,
         }
     }
@@ -516,7 +525,7 @@ impl<G: GameState + ResampleFromInfoState, M: GenerativeModel<G>> GoMcts<G, M> {
                     // the rollout's own `model.sample` calls go through
                     // the standard path and aren't cross-sim-batched.
                     // Then we yield a single `NeedLeafValue` request.
-                    if self.config.n_rollout_steps > 0 {
+                    if self.config.n_rollout_steps > 0 || self.config.rollout_to_terminal {
                         let leaf_value = self.rollout_value(&mut sim.w, search_player);
                         sim.phase = SimPhase::Done { value: leaf_value, illegal: sim.saw_illegal };
                     } else {
@@ -544,15 +553,27 @@ impl<G: GameState + ResampleFromInfoState, M: GenerativeModel<G>> GoMcts<G, M> {
         }
     }
 
-    /// Roll out `n_rollout_steps` model-sampled moves from `w`, advancing
-    /// the determinised game state. Returns the search player's
-    /// payoff if a terminal is reached during rollout, otherwise the
-    /// model's value estimate at the rollout's final position. With
-    /// `n_rollout_steps == 0` this is just `model.value(...)` at the
-    /// leaf — preserving the AlphaZero default.
+    /// Roll out model-sampled moves from `w`, advancing the
+    /// determinised game state. Two modes:
+    ///   * `rollout_to_terminal=true`: keep rolling until terminal,
+    ///     return the real game payoff. Paper-faithful — V learns
+    ///     from real reward.
+    ///   * `rollout_to_terminal=false`: cap at `n_rollout_steps`, then
+    ///     fall back to `model.value(...)` at the rollout's final
+    ///     position. With both 0 this is just `model.value(...)` at
+    ///     the leaf — preserving the original AlphaZero default.
     fn rollout_value(&mut self, w: &mut G, search_player: Player) -> f64 {
         let mut buf = Vec::new();
-        for _ in 0..self.config.n_rollout_steps {
+        // usize::MAX in the terminal-mode lets the loop run to game
+        // end. Euchre / Kuhn / Bluff are all finite-horizon so this
+        // terminates; if it didn't, the caller would have to add its
+        // own safety cap.
+        let cap = if self.config.rollout_to_terminal {
+            usize::MAX
+        } else {
+            self.config.n_rollout_steps
+        };
+        for _ in 0..cap {
             if w.is_terminal() {
                 return w.evaluate(search_player);
             }
@@ -573,9 +594,12 @@ impl<G: GameState + ResampleFromInfoState, M: GenerativeModel<G>> GoMcts<G, M> {
             let a = self.model.sample(&history, &buf, &mut self.rng);
             if !buf.contains(&a) {
                 // Illegal sample mid-rollout; bail out with neutral
-                // value. (The caller's outer simulate() doesn't see this
-                // as an illegality penalty — the rollout is auxiliary
-                // search, not a tree path that gets stat-credited.)
+                // value. (The caller's outer simulate() doesn't see
+                // this as an illegality penalty — the rollout is
+                // auxiliary search, not a tree path that gets
+                // stat-credited.) Paper-faithful mode shouldn't hit
+                // this since the model.sample legality check happens
+                // upstream, but defensively return 0.
                 return 0.0;
             }
             w.apply_action(a);
@@ -583,6 +607,8 @@ impl<G: GameState + ResampleFromInfoState, M: GenerativeModel<G>> GoMcts<G, M> {
         if w.is_terminal() {
             w.evaluate(search_player)
         } else {
+            // Only reachable in capped mode when the cap is exhausted
+            // before terminal. Paper-faithful mode never lands here.
             self.model.value(&w.istate_key(search_player))
         }
     }
@@ -875,6 +901,7 @@ mod tests {
                 n_iterations: 512,
                 mu: 0.01,
                 n_rollout_steps: 0,
+                rollout_to_terminal: false,
                 n_parallel_sims: 4,
             },
             UniformRandomModel,
@@ -896,7 +923,7 @@ mod tests {
     #[test]
     fn gomcts_uniform_model_kuhn_smoke() {
         let mut bot: GoMcts<_, UniformRandomModel> = GoMcts::new(
-            GoMctsConfig { uct_c: 0.4, n_iterations: 512, mu: 0.01, n_rollout_steps: 0, n_parallel_sims: 1 },
+            GoMctsConfig { uct_c: 0.4, n_iterations: 512, mu: 0.01, n_rollout_steps: 0, rollout_to_terminal: false, n_parallel_sims: 1 },
             UniformRandomModel,
             SeedableRng::seed_from_u64(7),
         );
@@ -974,7 +1001,7 @@ mod tests {
             acts.clear();
         }
         let mut bot: GoMcts<_, UniformRandomModel> = GoMcts::new(
-            GoMctsConfig { uct_c: 0.4, n_iterations: 16, mu: 0.01, n_rollout_steps: 0, n_parallel_sims: 1 },
+            GoMctsConfig { uct_c: 0.4, n_iterations: 16, mu: 0.01, n_rollout_steps: 0, rollout_to_terminal: false, n_parallel_sims: 1 },
             UniformRandomModel,
             SeedableRng::seed_from_u64(3),
         );

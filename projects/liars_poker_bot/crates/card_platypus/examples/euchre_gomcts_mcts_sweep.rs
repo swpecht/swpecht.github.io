@@ -156,6 +156,7 @@ fn eval_search_via_service(
                         n_iterations: mcts_iter,
                         mu: 0.01,
                         n_rollout_steps: 0,
+                        rollout_to_terminal: false,
                         n_parallel_sims: 1,
                     },
                     remote,

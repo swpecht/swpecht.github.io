@@ -261,6 +261,7 @@ fn load_gomcts(seed: u64) -> EuchreAgent {
             n_iterations: mcts_iter,
             mu: 0.01,
             n_rollout_steps: rollout_steps,
+            rollout_to_terminal: false,
             n_parallel_sims: parallel_sims,
         },
         model,

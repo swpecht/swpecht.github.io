@@ -123,8 +123,11 @@ pub struct McfsConfig {
     pub root_dirichlet_alpha: f64,
     /// Mixing weight: played-action prob = (1-ε)·visit_prob + ε·dirichlet.
     pub root_dirichlet_eps: f64,
-    /// MCTS rollout phase length per leaf expansion.
+    /// MCTS rollout phase length per leaf expansion (capped mode).
     pub n_rollout_steps: usize,
+    /// Paper-faithful rollout: ignore `n_rollout_steps`, keep
+    /// sampling until terminal, return the real game payoff.
+    pub rollout_to_terminal: bool,
     /// Parallel-sim width inside one game's MCTS (virtual loss).
     pub n_parallel_sims: usize,
 }
@@ -135,6 +138,7 @@ impl Default for McfsConfig {
             root_dirichlet_alpha: f64::INFINITY,
             root_dirichlet_eps: 0.0,
             n_rollout_steps: 0,
+            rollout_to_terminal: false,
             n_parallel_sims: 1,
         }
     }
@@ -1152,6 +1156,7 @@ where
                         n_iterations: mcts_iter,
                         mu: 0.01,
                         n_rollout_steps: mcfs.n_rollout_steps,
+                        rollout_to_terminal: mcfs.rollout_to_terminal,
                         n_parallel_sims: mcfs.n_parallel_sims,
                     },
                     remote,

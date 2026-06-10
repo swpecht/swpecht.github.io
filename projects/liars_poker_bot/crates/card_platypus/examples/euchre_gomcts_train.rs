@@ -107,6 +107,12 @@ fn main() {
     let tch_graph_batch: i64 = parse("EU_TCH_GRAPH_BATCH", 16);
     let resume_from: usize = parse("EU_RESUME_FROM", 0);
     let rollout_steps: usize = parse("EU_ROLLOUT_STEPS", 0);
+    // Paper-faithful rollout: ignore the step cap, sample until the
+    // determinised world reaches a terminal state, return the actual
+    // game payoff. This is what makes V learn from real reward
+    // instead of from V's own estimate at a fixed horizon (the
+    // suspected source of the value-head fixed-point plateau).
+    let rollout_to_terminal: bool = parse::<usize>("EU_ROLLOUT_TO_TERMINAL", 0) == 1;
     let parallel_sims: usize = parse("EU_PARALLEL_SIMS", 1).max(1);
     let init_weights: Option<PathBuf> = std::env::var("EU_INIT_WEIGHTS").ok().map(PathBuf::from);
     let ckpt_dir: PathBuf = parse_path("EU_CKPT_DIR", "/tmp/euchre_gomcts");
@@ -236,6 +242,7 @@ fn main() {
             root_dirichlet_alpha: dirichlet_alpha,
             root_dirichlet_eps: dirichlet_eps,
             n_rollout_steps: rollout_steps,
+            rollout_to_terminal,
             n_parallel_sims: parallel_sims,
         };
 
