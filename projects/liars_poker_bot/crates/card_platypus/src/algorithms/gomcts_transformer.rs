@@ -363,6 +363,91 @@ where
     gs.evaluate(a_seat)
 }
 
+/// MCTS-at-eval variant of `play_one_hand_subject_vs_random`. The
+/// subject runs the supplied GoMcts search at every decision instead
+/// of falling out to a raw `model.sample()` (which is ArgmaxVal* —
+/// one forward pass, no search). Tests whether the training plateau
+/// is partly an eval-time underutilization of search.
+pub(crate) fn play_one_hand_subject_vs_random_mcts<G, M>(
+    search: &mut crate::algorithms::gomcts::GoMcts<G, M>,
+    new_state: impl Fn() -> G,
+    game_idx: usize,
+    rng: &mut StdRng,
+) -> f64
+where
+    G: GameState + games::resample::ResampleFromInfoState,
+    M: crate::algorithms::gomcts::GenerativeModel<G>,
+{
+    use crate::agents::Agent;
+    let mut gs = new_state();
+    let mut buf = Vec::new();
+    while gs.is_chance_node() {
+        buf.clear();
+        gs.legal_actions(&mut buf);
+        let a = *buf.choose(rng).expect("non-empty chance");
+        gs.apply_action(a);
+    }
+    let n_players = gs.num_players();
+    let subject_seat = game_idx % n_players;
+    while !gs.is_terminal() {
+        let p = gs.cur_player();
+        buf.clear();
+        gs.legal_actions(&mut buf);
+        let a = if p == subject_seat {
+            search.step(&gs)
+        } else {
+            *buf.choose(rng).expect("non-empty legal")
+        };
+        gs.apply_action(a);
+    }
+    gs.evaluate(subject_seat)
+}
+
+/// MCTS-at-h2h variant of `play_one_hand_a_vs_b`. Each side gets its
+/// own GoMcts (over its own RemoteModel) so we can A/B with one side
+/// searching and one side not, or both searching at different
+/// budgets.
+pub(crate) fn play_one_hand_a_vs_b_mcts<G, MA, MB>(
+    search_a: &mut crate::algorithms::gomcts::GoMcts<G, MA>,
+    search_b: &mut crate::algorithms::gomcts::GoMcts<G, MB>,
+    new_state: impl Fn() -> G,
+    game_idx: usize,
+    rng: &mut StdRng,
+) -> f64
+where
+    G: GameState + games::resample::ResampleFromInfoState,
+    MA: crate::algorithms::gomcts::GenerativeModel<G>,
+    MB: crate::algorithms::gomcts::GenerativeModel<G>,
+{
+    use crate::agents::Agent;
+    let mut gs = new_state();
+    let mut buf = Vec::new();
+    while gs.is_chance_node() {
+        buf.clear();
+        gs.legal_actions(&mut buf);
+        let act = *buf.choose(rng).expect("non-empty chance");
+        gs.apply_action(act);
+    }
+    let n_players = gs.num_players();
+    let a_offset = game_idx % 2;
+    let is_a = |seat: usize| -> bool {
+        if n_players == 2 {
+            seat == a_offset
+        } else {
+            (seat % 2) == a_offset
+        }
+    };
+    while !gs.is_terminal() {
+        let p = gs.cur_player();
+        buf.clear();
+        gs.legal_actions(&mut buf);
+        let act = if is_a(p) { search_a.step(&gs) } else { search_b.step(&gs) };
+        gs.apply_action(act);
+    }
+    let a_seat = (0..n_players).find(|s| is_a(*s)).unwrap_or(0);
+    gs.evaluate(a_seat)
+}
+
 pub(crate) fn play_one_hand_pop<G>(
     live: &mut RemoteModel,
     frozen: &mut RemoteModel,
@@ -1193,6 +1278,161 @@ where
 // =====================================================================
 
 /// Tch port of `eval_vs_random_batched`. Returns (mean_subject_payoff, SEM).
+/// Eval against random opponents WITH MCTS at the subject's
+/// decisions. Same scoped-thread architecture as the existing
+/// `eval_vs_random_batched_tch`; each game thread additionally
+/// constructs its own GoMcts<G, RemoteModel> at the given budget
+/// and routes the subject's move through `search.step(&gs)` instead
+/// of `model.sample(...)`. mcts_iter=0 degenerates to a single
+/// model.value evaluation per legal action — i.e. essentially
+/// equivalent to the raw eval path.
+pub fn eval_vs_random_batched_with_mcts_tch<G, T, FNS>(
+    net: &GoMctsTransformerTch,
+    tokenizer: &T,
+    new_state: FNS,
+    n_games: usize,
+    base_seed: u64,
+    use_graph: bool,
+    graph_batch_size: i64,
+    mcts_iter: usize,
+) -> (f64, f64)
+where
+    G: GameState + games::resample::ResampleFromInfoState + Send,
+    T: Tokenizer<G> + Send + Sync,
+    FNS: Fn() -> G + Send + Sync + Copy,
+{
+    use std::sync::mpsc;
+    if n_games == 0 {
+        return (0.0, 0.0);
+    }
+    let max_batch = (n_games * 16).max(32);
+    let (request_tx, request_rx) = mpsc::channel::<ServiceRequest>();
+    let scores: Vec<f64> = std::thread::scope(|s| {
+        let svc = s.spawn(move || {
+            serve_batched_tch(net, tokenizer, request_rx, max_batch, use_graph, graph_batch_size)
+        });
+        let mut handles = Vec::with_capacity(n_games);
+        for game_idx in 0..n_games {
+            let req_tx = request_tx.clone();
+            let seed = base_seed.wrapping_add(game_idx as u64);
+            handles.push(s.spawn(move || {
+                let remote = RemoteModel { request_tx: req_tx };
+                let mut search = crate::algorithms::gomcts::GoMcts::<G, RemoteModel>::new(
+                    crate::algorithms::gomcts::GoMctsConfig {
+                        uct_c: 0.4,
+                        n_iterations: mcts_iter,
+                        mu: 0.01,
+                        n_rollout_steps: 0,
+                        rollout_to_terminal: false,
+                        n_parallel_sims: 1,
+                    },
+                    remote,
+                    SeedableRng::seed_from_u64(seed.wrapping_add(2)),
+                );
+                let mut rng: StdRng = SeedableRng::seed_from_u64(seed);
+                play_one_hand_subject_vs_random_mcts(
+                    &mut search, new_state, game_idx, &mut rng,
+                )
+            }));
+        }
+        drop(request_tx);
+        let scores: Vec<f64> = handles.into_iter().map(|h| h.join().expect("game")).collect();
+        svc.join().expect("service");
+        scores
+    });
+    finish_mean_se(&scores)
+}
+
+/// H2H with MCTS on both sides at independent budgets.
+/// `mcts_iter_a == mcts_iter_b == 0` falls through to single-forward
+/// ArgmaxVal* on each move; the function is otherwise structurally
+/// identical to `head_to_head_eval_batched_tch`.
+pub fn head_to_head_eval_batched_with_mcts_tch<G, T, FNS>(
+    net_a: &GoMctsTransformerTch,
+    net_b: &GoMctsTransformerTch,
+    tokenizer: &T,
+    new_state: FNS,
+    n_games: usize,
+    base_seed: u64,
+    use_graph: bool,
+    graph_batch_size: i64,
+    mcts_iter_a: usize,
+    mcts_iter_b: usize,
+) -> (f64, f64)
+where
+    G: GameState + games::resample::ResampleFromInfoState + Send,
+    T: Tokenizer<G> + Send + Sync,
+    FNS: Fn() -> G + Send + Sync + Copy,
+{
+    use std::sync::mpsc;
+    if n_games == 0 {
+        return (0.0, 0.5);
+    }
+    let max_batch = (n_games * 16).max(32);
+    let (req_a_tx, req_a_rx) = mpsc::channel::<ServiceRequest>();
+    let (req_b_tx, req_b_rx) = mpsc::channel::<ServiceRequest>();
+    let scores: Vec<f64> = std::thread::scope(|s| {
+        let svc_a = s.spawn(move || {
+            serve_batched_tch(net_a, tokenizer, req_a_rx, max_batch, use_graph, graph_batch_size)
+        });
+        let svc_b = s.spawn(move || {
+            serve_batched_tch(net_b, tokenizer, req_b_rx, max_batch, use_graph, graph_batch_size)
+        });
+        let mut handles = Vec::with_capacity(n_games);
+        for game_idx in 0..n_games {
+            let req_a = req_a_tx.clone();
+            let req_b = req_b_tx.clone();
+            let seed = base_seed.wrapping_add(game_idx as u64);
+            handles.push(s.spawn(move || {
+                let remote_a = RemoteModel { request_tx: req_a };
+                let remote_b = RemoteModel { request_tx: req_b };
+                let mut search_a = crate::algorithms::gomcts::GoMcts::<G, RemoteModel>::new(
+                    crate::algorithms::gomcts::GoMctsConfig {
+                        uct_c: 0.4,
+                        n_iterations: mcts_iter_a,
+                        mu: 0.01,
+                        n_rollout_steps: 0,
+                        rollout_to_terminal: false,
+                        n_parallel_sims: 1,
+                    },
+                    remote_a,
+                    SeedableRng::seed_from_u64(seed.wrapping_add(2)),
+                );
+                let mut search_b = crate::algorithms::gomcts::GoMcts::<G, RemoteModel>::new(
+                    crate::algorithms::gomcts::GoMctsConfig {
+                        uct_c: 0.4,
+                        n_iterations: mcts_iter_b,
+                        mu: 0.01,
+                        n_rollout_steps: 0,
+                        rollout_to_terminal: false,
+                        n_parallel_sims: 1,
+                    },
+                    remote_b,
+                    SeedableRng::seed_from_u64(seed.wrapping_add(3)),
+                );
+                let mut rng: StdRng = SeedableRng::seed_from_u64(seed);
+                play_one_hand_a_vs_b_mcts(
+                    &mut search_a, &mut search_b, new_state, game_idx, &mut rng,
+                )
+            }));
+        }
+        drop(req_a_tx);
+        drop(req_b_tx);
+        let scores: Vec<f64> = handles.into_iter().map(|h| h.join().expect("game")).collect();
+        svc_a.join().expect("service A");
+        svc_b.join().expect("service B");
+        scores
+    });
+    let (mean, _se) = finish_mean_se(&scores);
+    let decided: Vec<&f64> = scores.iter().filter(|v| v.abs() > 1e-9).collect();
+    let win_rate = if decided.is_empty() {
+        0.5
+    } else {
+        decided.iter().filter(|v| ***v > 0.0).count() as f64 / decided.len() as f64
+    };
+    (mean, win_rate)
+}
+
 pub fn eval_vs_random_batched_tch<G, T, FNS>(
     net: &GoMctsTransformerTch,
     tokenizer: &T,

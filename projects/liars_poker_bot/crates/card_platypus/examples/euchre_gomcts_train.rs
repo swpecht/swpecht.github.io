@@ -267,6 +267,14 @@ fn main() {
                     tch_graph_batch,
                 );
                 mcts_examples.extend(exs);
+                // Each chunk's scoped self-play just dropped 128 game
+                // threads' worth of MCTS trees, rollout tensors, and
+                // captured-graph state. Without reclaiming here the
+                // CUDACachingAllocator pool grows monotonically across
+                // chunks — fine for non-rollout self-play, fatal for
+                // rollout-to-terminal where every leaf evaluation
+                // produces ~10 extra tensors. Reclaim between chunks.
+                empty_cuda_cache();
             }
         }
 
@@ -289,6 +297,9 @@ fn main() {
             pop_use_graph,
             if pop_use_graph { tch_graph_batch } else { 1 },
         );
+        // Same reclaim as between MCTS chunks: pop self-play just
+        // dropped two service threads' worth of tensors.
+        empty_cuda_cache();
 
         let mut examples = mcts_examples;
         examples.extend(pop_examples);
