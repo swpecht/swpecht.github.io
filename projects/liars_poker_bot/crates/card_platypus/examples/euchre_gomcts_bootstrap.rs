@@ -39,6 +39,9 @@
 //!   EU_BOOT_BATCH        training batch size                  (default 256)
 //!   EU_BOOT_LR           learning rate                        (default 5e-4)
 //!   EU_BOOT_CONFIG       smoke|medium|paper                   (default paper)
+//!   EU_BOOT_VHEAD        scalar | outcome                     (default scalar)
+//!                        outcome = paper Eq. 1 categorical head over
+//!                        Euchre's 6 discrete payoffs, CE loss.
 //!   EU_BOOT_OUT          output safetensors path
 //!                        (default /home/steven/card_platypus/gomcts/bootstrap.safetensors)
 //!   EU_BOOT_DATA         dataset cache path (rmp). If the file exists,
@@ -57,7 +60,7 @@ use card_platypus::{
         cfres::EuchreCfres,
         gomcts_transformer::{
             enable_tf32, euchre::EuchreTokenizer, train_tch_with_callback, GoMctsTransformerTch,
-            TrainExample, TransformerConfig,
+            TrainExample, TransformerConfig, EUCHRE_OUTCOME_VALUES,
         },
     },
 };
@@ -276,7 +279,14 @@ fn main() {
     }
     let device = tch::Device::cuda_if_available();
     println!("training device: {:?}", device);
-    let mut net = GoMctsTransformerTch::new(cfg, device).expect("build");
+    let outcome_head = std::env::var("EU_BOOT_VHEAD").as_deref() == Ok("outcome");
+    println!("value head: {}", if outcome_head { "categorical outcome (paper Eq. 1)" } else { "scalar" });
+    let mut net = if outcome_head {
+        GoMctsTransformerTch::new_with_outcomes(cfg, device, EUCHRE_OUTCOME_VALUES.to_vec())
+            .expect("build")
+    } else {
+        GoMctsTransformerTch::new(cfg, device).expect("build")
+    };
     let tokenizer = EuchreTokenizer;
     let mut rng: StdRng = SeedableRng::seed_from_u64(base_seed.wrapping_add(7));
 

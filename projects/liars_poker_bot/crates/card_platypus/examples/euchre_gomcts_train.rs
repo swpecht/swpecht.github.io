@@ -63,13 +63,14 @@
 //!   EU_CKPT_DIR           directory for snapshots / final     (default /home/steven/card_platypus/gomcts/train)
 //!   EU_SEED               base RNG seed                       (default 0)
 //!   EU_CONFIG             "smoke" | "medium" | "paper"        (default medium)
+//!   EU_VHEAD              scalar | outcome (must match EU_INIT_WEIGHTS; default scalar)
 
 use card_platypus::algorithms::gomcts_transformer::{
     collect_paper_pop_examples_batched_tch, collect_pop_examples_batched_tch,
     collect_self_play_games_batched_alphazero_tch, empty_cuda_cache, enable_tf32,
     euchre::EuchreTokenizer, eval_vs_random_batched_tch, head_to_head_eval_batched_tch,
     train_tch_with_callback, ActionTokenFn, GoMctsTransformerTch, McfsConfig, PopulationTch,
-    Tokenizer, TransformerConfig,
+    Tokenizer, TransformerConfig, EUCHRE_OUTCOME_VALUES,
 };
 use games::gamestates::euchre::Euchre;
 use rand::{rngs::StdRng, SeedableRng};
@@ -185,7 +186,12 @@ fn main() {
     );
 
     // --- Build the live tch net + population. ----------------------------------
-    let mut net = GoMctsTransformerTch::new(cfg, device).expect("build tch net");
+    let mut net = if std::env::var("EU_VHEAD").as_deref() == Ok("outcome") {
+        GoMctsTransformerTch::new_with_outcomes(cfg, device, EUCHRE_OUTCOME_VALUES.to_vec())
+            .expect("build tch net")
+    } else {
+        GoMctsTransformerTch::new(cfg, device).expect("build tch net")
+    };
     if resume_from > 0 {
         let resume_path = ckpt_dir.join(format!("iter_{:03}.safetensors", resume_from));
         assert!(

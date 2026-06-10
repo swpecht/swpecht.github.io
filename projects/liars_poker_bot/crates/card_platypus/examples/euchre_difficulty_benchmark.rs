@@ -59,7 +59,7 @@ use card_platypus::{
         gomcts::{GoMcts, GoMctsConfig},
         gomcts_transformer::{
             euchre::EuchreTokenizer, forward_histories_batch_tch, GoMctsTransformerTch,
-            InferenceMode, Tokenizer, TransformerConfig,
+            InferenceMode, Tokenizer, TransformerConfig, EUCHRE_OUTCOME_VALUES,
         },
         open_hand_solver::OpenHandSolver,
         pimcts::PIMCTSBot,
@@ -144,6 +144,7 @@ fn load_cfr(env_var: &str, default: &str, max_cards_played: usize, seed: u64) ->
 ///   EUCHRE_GOMCTS_LAMBDA        λ for gated mode (default 0.05)
 ///   EUCHRE_GOMCTS_TEMP          value-softmax temp (default 0.5;
 ///                               paper's deterministic argmax ≈ 0.05)
+///   EUCHRE_GOMCTS_VHEAD         scalar|outcome (must match training)
 /// `GenerativeModel` impl that owns a tch transformer directly (no
 /// service thread). Calls `forward_histories_batch_tch` per query.
 /// Suitable for the round-robin tournament where each agent's `step`
@@ -288,8 +289,17 @@ fn load_gomcts(seed: u64) -> EuchreAgent {
             EuchreTokenizer::MAX_CONTEXT,
         ),
     };
-    let mut net =
-        GoMctsTransformerTch::new(cfg, tch::Device::cuda_if_available()).expect("build transformer");
+    let mut net = if env::var("EUCHRE_GOMCTS_VHEAD").as_deref() == Ok("outcome") {
+        GoMctsTransformerTch::new_with_outcomes(
+            cfg,
+            tch::Device::cuda_if_available(),
+            EUCHRE_OUTCOME_VALUES.to_vec(),
+        )
+        .expect("build transformer")
+    } else {
+        GoMctsTransformerTch::new(cfg, tch::Device::cuda_if_available())
+            .expect("build transformer")
+    };
     net.load_safetensors(&path).expect("load gomcts checkpoint");
     let lambda: f64 = env::var("EUCHRE_GOMCTS_LAMBDA")
         .ok()

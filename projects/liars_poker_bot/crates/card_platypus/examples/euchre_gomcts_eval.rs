@@ -20,6 +20,7 @@
 //!   EU_TEMP            value-softmax temperature (default 0.5; the
 //!                      paper's deterministic ArgmaxVal* ≈ 0.05)
 //!   EU_SEED            base RNG seed        (default 0)
+//!   EU_VHEAD           scalar | outcome (must match training; default scalar)
 //!   EU_SKIP_MCTS=1     skip the MCTS eval (raw only)
 //!
 //! Run:
@@ -30,6 +31,7 @@ use card_platypus::algorithms::{
     gomcts_transformer::{
         eval_vs_random_batched_tch_infer, euchre::EuchreTokenizer, ActionTokenFn, InferenceMode,
         GoMctsTransformerTch, RemoteModel, ServiceRequest, Tokenizer, TransformerConfig,
+        EUCHRE_OUTCOME_VALUES,
     },
 };
 use games::{
@@ -122,7 +124,12 @@ fn main() {
 
     // --- Build the tch net + share across both raw & MCTS conditions.
     let device = tch::Device::cuda_if_available();
-    let mut net = GoMctsTransformerTch::new(cfg, device).expect("build");
+    let mut net = if std::env::var("EU_VHEAD").as_deref() == Ok("outcome") {
+        GoMctsTransformerTch::new_with_outcomes(cfg, device, EUCHRE_OUTCOME_VALUES.to_vec())
+            .expect("build")
+    } else {
+        GoMctsTransformerTch::new(cfg, device).expect("build")
+    };
     net.load_safetensors(&weights).expect("load weights");
     let tokenizer = EuchreTokenizer;
 

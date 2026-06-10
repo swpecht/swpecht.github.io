@@ -847,6 +847,13 @@ pub struct GoMctsTransformerTch {
     ln_f: nn::LayerNorm,
     lm_head: nn::Linear,
     value_head: nn::Linear,
+    /// Paper-faithful categorical value: a linear head over discrete
+    /// game outcomes (Euchre: {-4,-2,-1,+1,+2,+4}). When present,
+    /// `forward()`'s value output is the expectation Σ p(o|h)·v(o)
+    /// (paper Eq. 1) and training uses cross-entropy on the outcome
+    /// class instead of scalar MSE. `None` = legacy scalar head.
+    outcome_head: Option<nn::Linear>,
+    outcome_values: Option<Tensor>,
 }
 
 unsafe impl Sync for GoMctsTransformerTch {}
@@ -868,8 +875,37 @@ struct Block {
     head_dim: i64,
 }
 
+/// The discrete per-hand payoffs Euchre can produce, for the
+/// categorical outcome head. Order defines the class indices.
+pub const EUCHRE_OUTCOME_VALUES: [f32; 6] = [-4.0, -2.0, -1.0, 1.0, 2.0, 4.0];
+
 impl GoMctsTransformerTch {
     pub fn new(cfg: TransformerConfig, device: Device) -> Result<Self> {
+        Self::new_inner(cfg, device, None)
+    }
+
+    /// Build with the paper's categorical outcome head. `outcome_values`
+    /// lists every discrete payoff the game can produce (class i ↔
+    /// outcome_values[i]). Checkpoints written with/without the head are
+    /// not interchangeable.
+    pub fn new_with_outcomes(
+        cfg: TransformerConfig,
+        device: Device,
+        outcome_values: Vec<f32>,
+    ) -> Result<Self> {
+        assert!(!outcome_values.is_empty());
+        Self::new_inner(cfg, device, Some(outcome_values))
+    }
+
+    pub fn has_outcome_head(&self) -> bool {
+        self.outcome_head.is_some()
+    }
+
+    fn new_inner(
+        cfg: TransformerConfig,
+        device: Device,
+        outcome_values: Option<Vec<f32>>,
+    ) -> Result<Self> {
         let vs = nn::VarStore::new(device);
         let root = &vs.root();
         let d = cfg.d_model as i64;
@@ -910,6 +946,11 @@ impl GoMctsTransformerTch {
             nn::LinearConfig { bias: false, ..Default::default() },
         );
         let value_head = nn::linear(root / "value_head", d, 1, Default::default());
+        let outcome_head = outcome_values.as_ref().map(|vals| {
+            nn::linear(root / "outcome_head", d, vals.len() as i64, Default::default())
+        });
+        let outcome_vals_t = outcome_values
+            .map(|vals| Tensor::from_slice(&vals).to_kind(Kind::Float).to_device(device));
 
         Ok(Self {
             cfg,
@@ -921,6 +962,8 @@ impl GoMctsTransformerTch {
             ln_f,
             lm_head,
             value_head,
+            outcome_head,
+            outcome_values: outcome_vals_t,
         })
     }
 
@@ -1013,8 +1056,19 @@ impl GoMctsTransformerTch {
     }
 
     /// Forward pass. `tokens` is (B, T) int64.
-    /// Returns `(lm_logits (B, T, V), value (B, T))`.
+    /// Returns `(lm_logits (B, T, V), value (B, T))`. With the outcome
+    /// head enabled, `value` is the expectation Σ p(o|h)·v(o) so every
+    /// downstream consumer (ArgmaxVal\*, MCTS leaf values, evals) works
+    /// unchanged.
     pub fn forward(&self, tokens: &Tensor) -> (Tensor, Tensor) {
+        let (lm_logits, value, _) = self.forward_full(tokens);
+        (lm_logits, value)
+    }
+
+    /// Forward returning the raw outcome-class logits (B, T, C) as well,
+    /// when the categorical head is enabled. Training needs them for the
+    /// cross-entropy loss.
+    pub fn forward_full(&self, tokens: &Tensor) -> (Tensor, Tensor, Option<Tensor>) {
         let (_b, t) = tokens.size2().expect("(B,T) input");
         assert!(t <= self.cfg.max_context as i64);
 
@@ -1028,9 +1082,40 @@ impl GoMctsTransformerTch {
         }
         let x = x.apply(&self.ln_f);
         let lm_logits = self.lm_head.forward(&x);
-        let value = self.value_head.forward(&x).squeeze_dim(-1);
-        (lm_logits, value)
+        match (&self.outcome_head, &self.outcome_values) {
+            (Some(head), Some(vals)) => {
+                let outcome_logits = head.forward(&x); // (B, T, C)
+                let probs = outcome_logits.softmax(-1, Kind::Float);
+                // (B, T, C) · (C,) → (B, T)
+                let value = probs.matmul(&vals.unsqueeze(-1)).squeeze_dim(-1);
+                (lm_logits, value, Some(outcome_logits))
+            }
+            _ => {
+                let value = self.value_head.forward(&x).squeeze_dim(-1);
+                (lm_logits, value, None)
+            }
+        }
     }
+
+    /// The outcome-class payoff values, if the categorical head is on.
+    pub fn outcome_values_vec(&self) -> Option<Vec<f32>> {
+        let vals = self.outcome_values.as_ref()?;
+        Vec::<f32>::try_from(vals.to_device(Device::Cpu)).ok()
+    }
+}
+
+/// Nearest outcome class index for a scalar payoff.
+pub fn outcome_class_of(outcome_values: &[f32], value: f32) -> i64 {
+    let mut best = 0usize;
+    let mut best_d = f32::INFINITY;
+    for (i, &o) in outcome_values.iter().enumerate() {
+        let d = (value - o).abs();
+        if d < best_d {
+            best_d = d;
+            best = i;
+        }
+    }
+    best as i64
 }
 
 fn block_forward(b: &Block, x: &Tensor) -> Tensor {
@@ -1925,6 +2010,10 @@ where
     let mut opt = nn::AdamW::default().build(&net.vs, lr)
         .map_err(|e| anyhow!("build AdamW: {e}"))?;
 
+    // Categorical outcome head: precompute the class payoffs once so
+    // per-example targets are a plain nearest-value lookup.
+    let outcome_vals: Option<Vec<f32>> = net.outcome_values_vec();
+
     let mut idx: Vec<usize> = (0..examples.len()).collect();
     let mut last_loss = f32::NAN;
 
@@ -1988,7 +2077,7 @@ where
             let input = Tensor::from_slice(&batch_tokens)
                 .reshape([b as i64, max_context as i64])
                 .to_device(device);
-            let (lm_logits, value) = net.forward(&input);
+            let (lm_logits, value, outcome_logits) = net.forward_full(&input);
 
             let prefix_t = Tensor::from_slice(&prefix_positions).to_device(device);
             let action_t = Tensor::from_slice(&action_positions).to_device(device);
@@ -2026,12 +2115,38 @@ where
             let weight_sum = weights_t.sum(Kind::Float).clamp_min(1e-6);
             let lm_loss = (per_example_ce * &weights_t).sum(Kind::Float) / weight_sum;
 
-            // Value MSE at both prefix and action positions, averaged.
-            let diff_pre = &val_at_prefix - &val_targets;
-            let diff_post = &val_at_action - &val_targets;
-            let val_loss = ((diff_pre.square().mean(Kind::Float)
-                + diff_post.square().mean(Kind::Float))
-                * 0.5) as Tensor;
+            // Value loss at both prefix and action positions, averaged.
+            // Scalar head: MSE. Categorical outcome head: CE against the
+            // nearest-payoff class (paper's outcome-distribution loss).
+            let val_loss = match (&outcome_logits, &outcome_vals) {
+                (Some(ol), Some(vals)) => {
+                    let n_classes = vals.len() as i64;
+                    let class_targets: Vec<i64> = target_values
+                        .iter()
+                        .map(|&v| outcome_class_of(vals, v))
+                        .collect();
+                    let targets_t = Tensor::from_slice(&class_targets).to_device(device);
+                    let gather_at = |pos: &Tensor| -> Tensor {
+                        let idx3 = pos
+                            .unsqueeze(-1)
+                            .unsqueeze(-1)
+                            .expand([b as i64, 1, n_classes], false);
+                        ol.gather(1, &idx3, false).squeeze_dim(1)
+                    };
+                    let ce_pre = gather_at(&prefix_t).cross_entropy_for_logits(&targets_t);
+                    let ce_post = gather_at(&action_t).cross_entropy_for_logits(&targets_t);
+                    // Keep val_at_* alive for the scalar branch only.
+                    let _ = (&val_at_prefix, &val_at_action);
+                    ((ce_pre + ce_post) * 0.5) as Tensor
+                }
+                _ => {
+                    let diff_pre = &val_at_prefix - &val_targets;
+                    let diff_post = &val_at_action - &val_targets;
+                    ((diff_pre.square().mean(Kind::Float)
+                        + diff_post.square().mean(Kind::Float))
+                        * 0.5) as Tensor
+                }
+            };
 
             let total_loss = lm_loss * LM_LOSS_WEIGHT + val_loss * VALUE_LOSS_WEIGHT;
             opt.backward_step(&total_loss);
@@ -2053,6 +2168,7 @@ where
 pub struct SnapshotTch {
     file: tempfile::NamedTempFile,
     cfg: TransformerConfig,
+    outcome_values: Option<Vec<f32>>,
 }
 
 impl SnapshotTch {
@@ -2064,11 +2180,14 @@ impl SnapshotTch {
         let file = tempfile::NamedTempFile::new()
             .map_err(|e| anyhow!("tempfile: {e}"))?;
         net.save_safetensors(file.path())?;
-        Ok(Self { file, cfg: *net.config() })
+        Ok(Self { file, cfg: *net.config(), outcome_values: net.outcome_values_vec() })
     }
 
     pub fn hydrate(&self, device: Device) -> Result<GoMctsTransformerTch> {
-        let mut net = GoMctsTransformerTch::new(self.cfg, device)?;
+        let mut net = match &self.outcome_values {
+            Some(vals) => GoMctsTransformerTch::new_with_outcomes(self.cfg, device, vals.clone())?,
+            None => GoMctsTransformerTch::new(self.cfg, device)?,
+        };
         net.load_safetensors(self.file.path())?;
         Ok(net)
     }
@@ -2362,5 +2481,64 @@ mod tests {
                 "V(h⊕{a:?}) should approach {target}: got {v:.3}"
             );
         }
+    }
+
+    /// The categorical outcome head must (a) train via CE, (b) expose
+    /// its expectation through the same `forward` value channel, and
+    /// (c) respect the policy_weight mask exactly like the scalar head.
+    #[test]
+    fn outcome_head_learns_expected_value() {
+        let tok = kuhn::KuhnTokenizer;
+        let cfg = TransformerConfig::kuhn_small(
+            kuhn::KuhnTokenizer::VOCAB_SIZE,
+            kuhn::KuhnTokenizer::MAX_CONTEXT,
+        );
+        let mut net = GoMctsTransformerTch::new_with_outcomes(
+            cfg,
+            Device::Cpu,
+            vec![-2.0, -1.0, 1.0, 2.0],
+        )
+        .expect("build");
+        assert!(net.has_outcome_head());
+
+        let gs = KuhnPoker::from_actions(&[KPAction::Jack, KPAction::Queen]);
+        let h = gs.istate_key(0);
+        let bet: Action = KPAction::Bet.into();
+        let pass: Action = KPAction::Pass.into();
+        let mut examples = Vec::new();
+        for _ in 0..64 {
+            examples.push(TrainExample::hard(h, bet, 2.0));
+            examples.push(TrainExample::explore(h, pass, -1.0));
+        }
+        let mut rng: StdRng = SeedableRng::seed_from_u64(0);
+        train_tch(&mut net, &tok, &examples, 40, 32, 5e-3, &mut rng).expect("train");
+
+        let h_toks = tok.encode(&h);
+        for (a, target) in [(bet, 2.0_f64), (pass, -1.0_f64)] {
+            let mut toks = h_toks.clone();
+            toks.push(tok.action_token(a));
+            let (padded, n) = pad_to(&toks, cfg.max_context, tok.pad_token());
+            let input = Tensor::from_slice(
+                &padded.iter().map(|&u| u as i64).collect::<Vec<_>>(),
+            )
+            .reshape([1, cfg.max_context as i64]);
+            let (_, val) = net.forward(&input);
+            let v = val.get(0).double_value(&[(n - 1) as i64]);
+            assert!(
+                (v - target).abs() < 0.5,
+                "expected V(h⊕{a:?}) ≈ {target} via outcome expectation, got {v:.3}"
+            );
+        }
+
+        // Save/load roundtrip with the extra head.
+        let tmp = tempfile::NamedTempFile::new().expect("tmp");
+        net.save_safetensors(tmp.path()).expect("save");
+        let mut net2 = GoMctsTransformerTch::new_with_outcomes(
+            cfg,
+            Device::Cpu,
+            vec![-2.0, -1.0, 1.0, 2.0],
+        )
+        .expect("build2");
+        net2.load_safetensors(tmp.path()).expect("load");
     }
 }
