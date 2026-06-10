@@ -2455,6 +2455,47 @@ pub mod euchre {
     }
 }
 
+pub mod oh_hell {
+    use super::*;
+    use games::gamestates::oh_hell::OhHellGameState;
+
+    /// Oh Hell action ids are u8: cards in [0, 52), bids in
+    /// [52, 52 + n_tricks]. With 3 players the max n_tricks is 10 →
+    /// bids occupy [52, 62]. Shifting +1 reserves 0 for PAD → 64-token
+    /// vocab.
+    #[derive(Clone, Copy)]
+    pub struct OhHellTokenizer;
+
+    impl OhHellTokenizer {
+        pub const VOCAB_SIZE: usize = 64;
+        /// 3-player / 10-trick istate = 10 own cards + 1 trump +
+        /// 3 bids + 30 plays = 44 tokens; +1 appended action in
+        /// training. 48 gives headroom.
+        pub const MAX_CONTEXT: usize = 48;
+    }
+
+    impl Tokenizer<OhHellGameState> for OhHellTokenizer {
+        fn vocab_size(&self) -> usize {
+            Self::VOCAB_SIZE
+        }
+        fn max_context(&self) -> usize {
+            Self::MAX_CONTEXT
+        }
+        fn encode(&self, history: &IStateKey) -> Vec<u32> {
+            history.iter().map(|&a| self.action_token(a)).collect()
+        }
+        fn action_token(&self, a: Action) -> u32 {
+            let v: u8 = a.into();
+            debug_assert!(
+                (v as usize) < Self::VOCAB_SIZE - 1,
+                "Oh Hell action {} outside expected 0..63 range",
+                v
+            );
+            (v as u32) + 1
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2579,5 +2620,41 @@ mod tests {
         )
         .expect("build2");
         net2.load_safetensors(tmp.path()).expect("load");
+    }
+
+    /// Worst-case Oh Hell istates (3 players, 10 tricks) must fit the
+    /// tokenizer's context and vocab bounds for every player.
+    #[test]
+    fn oh_hell_tokenizer_bounds() {
+        use games::gamestates::oh_hell::OhHell;
+        use rand::seq::IndexedRandom;
+        let tok = oh_hell::OhHellTokenizer;
+        let mut rng: StdRng = SeedableRng::seed_from_u64(3);
+        for _ in 0..5 {
+            let mut gs = OhHell::new_state(3, 10);
+            let mut buf = Vec::new();
+            while !gs.is_terminal() {
+                buf.clear();
+                gs.legal_actions(&mut buf);
+                let a = *buf.choose(&mut rng).expect("legal");
+                if !gs.is_chance_node() {
+                    let h = gs.istate_key(gs.cur_player());
+                    let toks = tok.encode(&h);
+                    assert!(
+                        toks.len() + 1 <= oh_hell::OhHellTokenizer::MAX_CONTEXT,
+                        "istate too long: {}",
+                        toks.len()
+                    );
+                    assert!(toks
+                        .iter()
+                        .all(|&t| (t as usize) < oh_hell::OhHellTokenizer::VOCAB_SIZE));
+                }
+                gs.apply_action(a);
+            }
+            for p in 0..3 {
+                let toks = tok.encode(&gs.istate_key(p));
+                assert!(toks.len() + 1 <= oh_hell::OhHellTokenizer::MAX_CONTEXT);
+            }
+        }
     }
 }

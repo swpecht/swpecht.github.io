@@ -1144,3 +1144,28 @@ rotating EPIMC seat across games. Total wall time: ~49s.
     OpenHandSolver the leaf evaluator is already near-optimal in the
     determinised world, so the strategy-fusion error is small. A weaker
     leaf might amplify the gap EPIMC is supposed to close.
+
+## Oh Hell GO-MCTS (started 2026-06-10, after the Euchre wrap-up)
+
+User directive: train for Oh Hell across all hand sizes (3 players →
+n_tricks 1..=10, the engine max for 64-token istates); **PIMCTS-50 is
+the agent to beat** (no cross-trick CFR weights exist; pimcts is the
+strongest general agent in the codebase for OH).
+
+Approach: transfer the Euchre-winning recipe directly —
+expert+ε bootstrap → greedy-LM inference, no search:
+
+  - `OhHellTokenizer` (vocab 64 = PAD + 52 cards + 11 bids, ctx 48);
+    bounds pinned by `oh_hell_tokenizer_bounds` test.
+  - `oh_hell_gomcts_bootstrap`: all seats PIMCTS-50
+    (OpenHandSolver::new_oh_hell) with ε=0.15; exploration moves
+    recorded `policy_weight=0`; n_tricks sampled per game; per-band
+    dataset caches merged at train time. Scalar V head (OH payoffs are
+    mean-centred, not discrete).
+  - `oh_hell_gomcts_eval`: subject rotates, other seats PIMCTS-50;
+    `evaluate` is mean-centred so mean > 0 vs pimcts table = beating it.
+    Per-trick-count breakdown.
+
+| # | when | what | config | result | conclusion |
+|---|---|---|---|---|---|
+| OH-1 | 2026-06-10 | PIMCTS collection cost profile | 12 threads, r50 | t4: 7.5 games/s; t10: 0.21 games/s (r20: 0.38) | cost explodes with trick count (open-hand tree). → banded collection with cost-weighted quotas: t1-3 30k, t4-5 20k, t6-7 12k, t8-10 9k games (≈1.1M examples est.) |
