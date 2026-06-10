@@ -321,9 +321,22 @@ impl RemoteModel {
                 .action_token_fn
                 .as_ref()
                 .expect("LmSoftmax / λ-gated inference requires action_token_fn");
-            // One request: [h, h⊕a1, …, h⊕ak]. logits[0] is the LM
-            // distribution over the next token at h; values[1..] are
-            // V(h⊕a) for the value softmax.
+            // Pure LM mode only needs h's last-position logits — one row
+            // instead of |legal|+1. Matters: frozen opponents in the
+            // paper self-play loop are 3 of 4 seats.
+            if self.mode == InferenceMode::LmSoftmax {
+                let (logits, _) = self.forward(vec![*history]);
+                let lm_logits: Vec<f64> = legal
+                    .iter()
+                    .map(|&a| {
+                        logits[0].get(tok_fn(a) as usize).copied().unwrap_or(f32::MIN) as f64
+                    })
+                    .collect();
+                return Self::masked_softmax(&lm_logits, &all_true, 1.0);
+            }
+            // λ-gated ArgmaxVal*: one request [h, h⊕a1, …, h⊕ak].
+            // logits[0] is the LM distribution over the next token at h;
+            // values[1..] are V(h⊕a) for the value softmax.
             let mut histories = Vec::with_capacity(legal.len() + 1);
             histories.push(*history);
             histories.extend(legal.iter().map(|&a| {

@@ -43,7 +43,13 @@ what we concluded. Detailed notes for each are in the sections below.
 | 26 | 2026-06-08→09 | tch-rs port + CUDA-graph forward | dropped candle entirely; TF32; thread caps; batch retunes | ~5× self-play throughput, −49% iter wall, then −20% more | see commits c501aed…ab82b61. Set up for rollout-to-terminal runs that never happened (see 27) |
 | 27 | 2026-06-10 | **Machine reboot wiped /tmp** | — | ALL checkpoints lost (smoke/medium/paper ckpts, cfr3 + random bootstraps) + libtorch itself | everything default-pathed under /tmp. Fixed: libtorch → ~/libtorch, ckpts/datasets → /home/steven/card_platypus/gomcts/, bootstrap collection now caches its dataset to disk (re-train without re-collect) |
 | 28 | 2026-06-10 | Re-read paper closely (ar5iv full text) | — | 5 implementation discrepancies found, 2 of them load-bearing (see "Paper-faithfulness audit") | (a) paper does NO search during self-play training — greedy ArgmaxVal\* live seat vs LM-sampling frozen seats, live data only; (b) ArgmaxVal\* is λ-gated by the LM head (p ≥ 0.01–0.05) — directly mitigates our "broken V head" failure; (c) value = outcome-class distribution (CE), not scalar MSE; (d) rollout is N_steps-capped (2–5), NOT to-terminal; (e) Skat bootstrap needed random + weak-bot MIX — pure random was "unstable" (precedent for our cfr3+ε mix) |
-| 29 | 2026-06-10 | ε-exploration bootstrap (cfr3_eps) | 200k games, all seats cfr3 with ε=0.15 uniform deviations; exploration moves recorded with policy_weight=0 (V trains, LM masked); paper config, 6 epochs, batch=256, lr=1e-4 | RUNNING | hypothesis H1: get cfr3-strength LM head AND a working V head (counterfactual coverage at cfr3-reachable states) in one bootstrap. Unit test `policy_weight_masks_lm_but_trains_value` pins the mask semantics |
+| 29 | 2026-06-10 | ε-exploration bootstrap (cfr3_eps) | 200k games, all seats cfr3 with ε=0.15 uniform deviations; exploration moves recorded with policy_weight=0 (V trains, LM masked); paper config, 6 epochs, batch=256, lr=1e-4 | 4.66M examples (700k exploration), 49 min collect (68 games/s × 24 threads) + 61 min train; loss 0.48 → 0.29 | hypothesis H1: get cfr3-strength LM head AND a working V head (counterfactual coverage at cfr3-reachable states) in one bootstrap. Unit test `policy_weight_masks_lm_but_trains_value` pins the mask semantics |
+| 30 | 2026-06-10 | **H1 VALIDATED**: ε-bootstrap eval, n=2000 raw vs random | EU_INFER ∈ {lm, argmax, gated λ=.05 temp=.05} | **lm +0.578 ± 0.046**, **argmax +0.336**, **gated +0.594** | every prior record beaten. V head fixed: ungated ArgmaxVal\* went −0.118 (pure cfr3) → +0.336; ε-counterfactual coverage was the missing ingredient. λ-gate + near-greedy temp is best (+0.594) — beats the old *search-wrapped* best (+0.358) with zero search. tch eval: n=2000 in 2 s (was 76 s) |
+| 31 | 2026-06-10 | MCTS=100 wrap over ε-bootstrap (n=400, gated) | EU_MCTS_ITER=100, same seeds' raw=+0.725±0.10 | gomcts **+0.625 ± 0.10** | search does NOT improve on the raw gated policy vs random opponents (overlapping CIs, trending worse), at 4.6 s/hand. Use raw gated for tournaments; revisit search only vs strong opponents |
+| 32 | 2026-06-10 | Found+fixed ITER=0 uniform bug | GoMcts::run_search zero-visit fallback returned uniform, not model policy | first tournament arm at ITER=0 opened 0-8 vs cfr0 (4% pts) while the same weights were +0.59 raw | every past "mcts_iter=0 ≈ raw" claim was wrong; now falls back to `model.policy()`. Re-ran |
+| 33 | 2026-06-10 | **Difficulty tournament: ε-bootstrap raw gated** | EUCHRE_GOMCTS_ITER=0 (raw policy), INFER=gated λ=.05 t=.05, 30 matches/pair | **vs cfr0: 12-18, 45.8% pts** (was 0-30, 21.2%); **vs pimcts: 14-16, 48.8% pts** (was 0-30, 18.6%); vs random 30-0, 85.6%; calibration cfr0-vs-pimcts 15-15 | statistical tie with pimcts, near-tie with cfr0, with NO search at 2 ms/decision. The two original targets are within ~1 SE; "beat cfr0" needs a few more points |
+| 34 | 2026-06-10 | LM-mode arm vs cfr0 | INFER=lm, ITER=0, 50 matches | 22-28 (44%), **48.2% pts** over 496 hands | pure cfr3-imitation is ≥ gated vs cfr0 (48.2 vs 45.8 pt%, within noise). cfr3-imitation alone nearly ties cfr0 |
+| 35 | 2026-06-10 | MCTS=100 arm vs cfr0 (killed early) | INFER=gated, ITER=100 | 2-4 after 6 matches, 37.8% pts, ~28 s/hand | search trending worse than raw vs cfr0 too (cf. entry 31 vs random). GO-MCTS search over this V head adds nothing at any opponent strength — V noise compounds in the tree. Killed to free GPU |
 
 ### Paper-faithfulness audit (2026-06-10)
 
@@ -68,8 +74,11 @@ runs/decision, C 0.1–0.4, λ 0.01–0.05, μ 0.01.
 
 | condition | mean vs random (n=2000) | 95% CI |
 |---|---|---|
+| **ε-bootstrap raw (gated ArgmaxVal\*, λ=.05 t=.05)** | **+0.594** | [+0.506, +0.684] |
+| **ε-bootstrap raw (LM-policy)** | **+0.578** | [+0.488, +0.668] |
+| ε-bootstrap raw (ungated ArgmaxVal\*, t=.5) | +0.336 | [+0.247, +0.425] |
 | Random baseline | +0.068 | [−0.023, +0.159] |
-| GO-MCTS smoke + MCTS=16 search | **+0.358** | [+0.268, +0.448] |
+| GO-MCTS smoke + MCTS=16 search | +0.358 | [+0.268, +0.448] |
 | **cfr3 bootstrap raw (LM-policy)** | **+0.350** | [+0.261, +0.439] |
 | **Random bootstrap raw (ArgmaxVal\*)** | **+0.219** | [+0.129, +0.309] |
 | GO-MCTS smoke raw | +0.217 | [+0.127, +0.307] |
