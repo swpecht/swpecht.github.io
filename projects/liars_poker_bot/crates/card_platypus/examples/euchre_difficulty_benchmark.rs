@@ -238,7 +238,11 @@ impl card_platypus::algorithms::gomcts::GenerativeModel<EuchreGameState> for Tch
                         .unwrap_or(f32::MIN) as f64
                 })
                 .collect();
-            let p_lm = softmax(&lm_logits, &all_true, 1.0);
+            let p_lm = softmax(
+                &lm_logits,
+                &all_true,
+                if self.mode == InferenceMode::LmSoftmax { self.temp } else { 1.0 },
+            );
             match self.mode {
                 InferenceMode::LmSoftmax => p_lm,
                 InferenceMode::ArgmaxVal => {
@@ -352,7 +356,7 @@ fn load_agent(name: &str, seed: u64) -> EuchreAgent {
     match name {
         "random" => Box::new(RandomAgent::new(seed)),
         "pimcts" => Box::new(PIMCTSBot::new(
-            50,
+            parse_env("EUCHRE_PIMCTS_ROLLOUTS", 50),
             OpenHandSolver::new_euchre(),
             StdRng::seed_from_u64(seed),
         )),

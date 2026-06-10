@@ -74,6 +74,48 @@ because pure random was **unstable** — supports the cfr3+ε mixture.
 Self-play scale 500k–2M games/iter × 10–20 iters. Eval MCTS: 100
 runs/decision, C 0.1–0.4, λ 0.01–0.05, μ 0.01.
 
+| 40 | 2026-06-10 | Inference sweep (exploiter ckpt) vs cfr0 | 100 matches/arm: gated λ∈{.02,.05} t∈{.05,.2}, ungated argmax, lm | lm 47.7% > gated .05/.2 45.9% > gated .05/.05 45.6% > gated .02 44.7% ≫ ungated argmax 34.6% | the LM head (cfr3 imitation) carries everything vs cfr0; the V head only subtracts when given more freedom. All modes saturate at cfr3's own 48.4%. cfr0 holds a small consistent edge (~2-4 pts share) over the entire cfr/pimcts/transformer family |
+| 41 | 2026-06-10 | **Greedy-LM mode** (temp 0.05 instead of sampled temp 1.0) vs cfr0 | 100 + 300 matches, 2 seeds | n=100: 52-48, 50.4% pts (first ≥50% arm!); n=300: 48.3%, 49.1% pts. Pooled: **49.3% ± 1.3 over ~3.9k hands** | greedy imitation > sampled imitation (+1.5pts) and is the best inference mode overall — but it lands exactly AT the cfr3 ceiling (48.5%), i.e. statistical parity with cfr0, not superiority |
+
+| 42 | 2026-06-10 | pimcts-200 vs cfr0 (stronger-expert existence check) | EUCHRE_PIMCTS_ROLLOUTS=200, 100 matches | 51-49, **50.2% pts** | 4× search budget is ALSO only parity. Every strong agent in the codebase (cfr3, pimcts-50, pimcts-200, our transformer) lands at 48-50% vs cfr0 — cfr0 is at the practical skill frontier of this family; Euchre match play has a thin skill margin among strong agents |
+
+| 43 | 2026-06-10 | **Combined 7M bootstrap (final model of the session)** | cfr3_eps 4.66M + exploiter 2.36M examples merged, outcome head, 6 epochs; eval greedy-LM | raw vs random: greedy-LM **+0.649** (session best), lm-sampled +0.628, gated +0.598. Tournament (greedy-LM): **vs cfr0 49.2% pts (n=3002 hands)** — tie; **vs pimcts 59-41, 52.7% pts** — first measured WIN over pimcts (~1.8 SE); vs random 100-0, 87.4% | checkpoint: /home/steven/card_platypus/gomcts/bootstrap_combined.safetensors, EU_VHEAD=outcome EU_CONFIG=paper, inference = greedy-LM (INFER=lm TEMP=0.05, no search, ~1 ms/decision) |
+
+### Session assessment (2026-06-10, final)
+
+**Where we ended**: `bootstrap_combined.safetensors` + greedy-LM inference is
+the strongest GO-MCTS agent to date: ties cfr0 (49.2% pts, n=3002 hands),
+beats pimcts (52.7% pts), +0.649/hand vs random — at ~1 ms/decision with no
+search. At the season start the best transformer sat at 21.2% pts vs cfr0.
+
+**Original targets**: "beat PIMCTS" — met (52.7%, marginal significance);
+"tie cfr0" — met (49.2%, n=3002). "MORE powerful than cfr0" (today's goal) —
+**not met, and the evidence says it is not reachable by any agent in this
+codebase**: cfr3 scores 48.5% vs cfr0 (n≈2400 hands), pimcts-200 scores
+50.2%. cfr0 = near-Nash CFR bidding + PIMCTS play sits at the practical
+skill frontier of Euchre match play; the per-hand skill margin between any
+two strong agents is ~0-2 points of share, swamped by deal variance.
+
+**Ruled out this session** (each with measurements):
+  - GO-MCTS search over the learned model: subtracts at every budget
+    (entries 31, 35) — V-head noise compounds in the tree.
+  - Paper-style self-play: holds h2h parity but erodes absolute strength;
+    structurally cannot exceed a strong-expert bootstrap (entry 37).
+  - Exploiter value training vs cfr0: no gain (entry 39) — the λ-gate
+    leaves V too little room, and cfr0's exploitable margin for this
+    function class is ≈ 0.
+  - Gate/temperature sweeps: greedy-LM dominates; every V-involving mode
+    is equal or worse vs strong opponents (entries 40-41).
+
+**If "beat cfr0 clearly" is still the goal**, the honest options are:
+  1. accept that the metric may be saturated: validate with a much larger
+     cfr0 pairing (1000+ matches) whether ANY agent separates from cfr0;
+  2. paper-scale self-play compute (5-10M games/iter × 10-20 iters) from a
+     random bootstrap — the paper's actual regime, untested here;
+  3. an expert stronger than the cfr family to imitate (none exists in the
+     codebase today — building one, e.g. deep EPIMC or solver-grade play,
+     is its own project).
+
 ### Headline numbers so far
 
 | condition | mean vs random (n=2000) | 95% CI |

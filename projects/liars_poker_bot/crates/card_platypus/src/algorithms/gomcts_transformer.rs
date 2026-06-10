@@ -332,7 +332,9 @@ impl RemoteModel {
                         logits[0].get(tok_fn(a) as usize).copied().unwrap_or(f32::MIN) as f64
                     })
                     .collect();
-                return Self::masked_softmax(&lm_logits, &all_true, 1.0);
+                // temp defaults to POLICY_SOFTMAX_TEMP; small temp ≈
+                // greedy imitation, 1.0 = generative sampling.
+                return Self::masked_softmax(&lm_logits, &all_true, self.temp);
             }
             // λ-gated ArgmaxVal*: one request [h, h⊕a1, …, h⊕ak].
             // logits[0] is the LM distribution over the next token at h;
