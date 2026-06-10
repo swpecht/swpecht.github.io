@@ -11,7 +11,7 @@
 //!   cargo run -p card_platypus --release --example euchre_gomcts_bootstrap
 //!
 //! Knobs:
-//!   EU_BOOT_AGENT        random | cfr3                       (default cfr3)
+//!   EU_BOOT_AGENT        random | cfr3 | cfr3_eps            (default cfr3_eps)
 //!                        - random: pure uniform-random play.
 //!                          Paper-faithful (Hearts used 4M random
 //!                          games). Cheap to generate, gives the
@@ -24,6 +24,15 @@
 //!                          because cfr3 is sharply peaked → V
 //!                          extrapolates poorly to off-policy
 //!                          actions → ArgmaxVal\* breaks.
+//!                        - cfr3_eps: cfr3 seats with ε-greedy
+//!                          uniform exploration. Exploration moves
+//!                          are recorded with policy_weight=0 so
+//!                          the LM head still imitates pure cfr3
+//!                          while the V head gets counterfactual
+//!                          outcome coverage at cfr3-reachable
+//!                          states. Designed to fix BOTH failure
+//!                          modes above.
+//!   EU_BOOT_EPS          exploration prob for cfr3_eps        (default 0.15)
 //!   EU_BOOT_GAMES        games to play                        (default 5000)
 //!   EU_BOOT_THREADS      data-collection worker threads       (default 8)
 //!   EU_BOOT_EPOCHS       training epochs over collected data  (default 20)
@@ -31,9 +40,15 @@
 //!   EU_BOOT_LR           learning rate                        (default 5e-4)
 //!   EU_BOOT_CONFIG       smoke|medium|paper                   (default paper)
 //!   EU_BOOT_OUT          output safetensors path
-//!                        (default /tmp/euchre_gomcts_bootstrap/bootstrap.safetensors)
+//!                        (default /home/steven/card_platypus/gomcts/bootstrap.safetensors)
+//!   EU_BOOT_DATA         dataset cache path (rmp). If the file exists,
+//!                        collection is skipped and examples are loaded
+//!                        from it; otherwise collected examples are
+//!                        saved to it before training. Lets hyperparam
+//!                        re-runs skip the collection phase entirely.
+//!                        (default <EU_BOOT_OUT dir>/dataset_<agent>_<games>.rmp)
 //!   EU_BOOT_SEED         base RNG seed                        (default 0)
-//!   EUCHRE_CFR3_WEIGHTS  cfr3 weights dir (only used by cfr3 agent)
+//!   EUCHRE_CFR3_WEIGHTS  cfr3 weights dir (only used by cfr3 agents)
 //!                        (default /home/steven/card_platypus/infostate.three_card_played_f32)
 
 use card_platypus::{
@@ -41,8 +56,8 @@ use card_platypus::{
     algorithms::{
         cfres::EuchreCfres,
         gomcts_transformer::{
-            euchre::EuchreTokenizer, train_tch_with_callback, GoMctsTransformerTch, TrainExample,
-            TransformerConfig,
+            enable_tf32, euchre::EuchreTokenizer, train_tch_with_callback, GoMctsTransformerTch,
+            TrainExample, TransformerConfig,
         },
     },
 };
@@ -79,13 +94,26 @@ fn pick_config() -> TransformerConfig {
 enum BootAgent {
     Random,
     Cfr3,
+    Cfr3Eps,
+}
+
+impl BootAgent {
+    fn slug(self) -> &'static str {
+        match self {
+            BootAgent::Random => "random",
+            BootAgent::Cfr3 => "cfr3",
+            BootAgent::Cfr3Eps => "cfr3_eps",
+        }
+    }
 }
 
 fn main() {
     let agent_kind = match std::env::var("EU_BOOT_AGENT").as_deref() {
         Ok("random") => BootAgent::Random,
-        _ => BootAgent::Cfr3,
+        Ok("cfr3") => BootAgent::Cfr3,
+        _ => BootAgent::Cfr3Eps,
     };
+    let eps: f64 = parse("EU_BOOT_EPS", 0.15);
     let n_games: usize = parse("EU_BOOT_GAMES", 5000);
     let n_threads: usize = parse("EU_BOOT_THREADS", 8).max(1);
     let n_epochs: usize = parse("EU_BOOT_EPOCHS", 20);
@@ -96,101 +124,145 @@ fn main() {
         "EUCHRE_CFR3_WEIGHTS",
         "/home/steven/card_platypus/infostate.three_card_played_f32",
     );
+    // NOTE: keep these off /tmp — a reboot on 2026-06-10 wiped every
+    // checkpoint of the project's first week of training runs.
     let out_path: PathBuf = parse_path(
         "EU_BOOT_OUT",
-        "/tmp/euchre_gomcts_bootstrap/bootstrap.safetensors",
+        "/home/steven/card_platypus/gomcts/bootstrap.safetensors",
     );
+    let data_path: PathBuf = std::env::var("EU_BOOT_DATA").map(PathBuf::from).unwrap_or_else(|_| {
+        out_path
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."))
+            .join(format!("dataset_{}_{}.rmp", agent_kind.slug(), n_games))
+    });
 
     if let Some(parent) = out_path.parent() {
         std::fs::create_dir_all(parent).expect("create out dir");
     }
+    if let Some(parent) = data_path.parent() {
+        std::fs::create_dir_all(parent).expect("create data dir");
+    }
 
-    if matches!(agent_kind, BootAgent::Cfr3) {
+    if matches!(agent_kind, BootAgent::Cfr3 | BootAgent::Cfr3Eps) {
         assert!(cfr3_path.exists(), "cfr3 weights not found at {}", cfr3_path.display());
     }
 
     let cfg = pick_config();
     println!(
-        "Bootstrap: agent={:?}, games={}, threads={}, epochs={}, batch={}, lr={}, out={}",
+        "Bootstrap: agent={:?}, eps={}, games={}, threads={}, epochs={}, batch={}, lr={}, out={}, data={}",
         agent_kind,
+        eps,
         n_games,
         n_threads,
         n_epochs,
         batch_size,
         lr,
         out_path.display(),
+        data_path.display(),
     );
     println!(
         "transformer: d={}, layers={}, heads={}, d_ff={}, vocab={}, max_ctx={}",
         cfg.d_model, cfg.n_layers, cfg.n_heads, cfg.d_ff, cfg.vocab_size, cfg.max_context,
     );
 
-    // --- Phase 1: parallel cfr3-vs-cfr3 data collection ---
+    // --- Phase 1: load cached dataset, or run parallel self-play collection ---
     let t0 = Instant::now();
-    let games_per_thread = (n_games + n_threads - 1) / n_threads;
-    let shared: Arc<Mutex<Vec<TrainExample>>> = Arc::new(Mutex::new(Vec::with_capacity(n_games * 80)));
-    let progress: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
+    let mut examples: Vec<TrainExample> = if data_path.exists() {
+        let bytes = std::fs::read(&data_path).expect("read dataset cache");
+        let exs: Vec<TrainExample> =
+            rmp_serde::from_slice(&bytes).expect("decode dataset cache");
+        println!(
+            "loaded {} cached examples from {} in {:.1}s (collection skipped)",
+            exs.len(),
+            data_path.display(),
+            t0.elapsed().as_secs_f64(),
+        );
+        exs
+    } else {
+        let games_per_thread = (n_games + n_threads - 1) / n_threads;
+        let shared: Arc<Mutex<Vec<TrainExample>>> =
+            Arc::new(Mutex::new(Vec::with_capacity(n_games * 80)));
 
-    std::thread::scope(|s| {
-        for t in 0..n_threads {
-            let cfr3_path = cfr3_path.clone();
-            let shared = Arc::clone(&shared);
-            let progress = Arc::clone(&progress);
-            s.spawn(move || {
-                // Per-worker agent state. cfr3 carries the mmap-backed
-                // CFR weight table (cheap to construct per thread —
-                // they all share the file via mmap). Random has no
-                // state.
-                let mut cfr3 = match agent_kind {
-                    BootAgent::Cfr3 => Some(EuchreCfres::new_euchre(
-                        StdRng::seed_from_u64(base_seed.wrapping_add(1_000 + t as u64)),
-                        3,
-                        Some(&cfr3_path),
-                    )),
-                    BootAgent::Random => None,
-                };
-                let start = t * games_per_thread;
-                let end = ((t + 1) * games_per_thread).min(n_games);
-                let mut local: Vec<TrainExample> = Vec::with_capacity((end - start) * 80);
-                let mut last_log = Instant::now();
-                for game_idx in start..end {
-                    let mut rng: StdRng =
-                        SeedableRng::seed_from_u64(base_seed.wrapping_add(100 + game_idx as u64));
-                    let exs = match agent_kind {
-                        BootAgent::Cfr3 => play_one_cfr3_game(cfr3.as_mut().unwrap(), &mut rng),
-                        BootAgent::Random => play_one_random_game(&mut rng),
+        std::thread::scope(|s| {
+            for t in 0..n_threads {
+                let cfr3_path = cfr3_path.clone();
+                let shared = Arc::clone(&shared);
+                s.spawn(move || {
+                    // Per-worker agent state. cfr3 carries the mmap-backed
+                    // CFR weight table (cheap to construct per thread —
+                    // they all share the file via mmap). Random has no
+                    // state.
+                    let mut cfr3 = match agent_kind {
+                        BootAgent::Cfr3 | BootAgent::Cfr3Eps => Some(EuchreCfres::new_euchre(
+                            StdRng::seed_from_u64(base_seed.wrapping_add(1_000 + t as u64)),
+                            3,
+                            Some(&cfr3_path),
+                        )),
+                        BootAgent::Random => None,
                     };
-                    local.extend(exs);
-                    if last_log.elapsed().as_secs() > 5 {
-                        let done = game_idx + 1 - start;
-                        let total = end - start;
-                        eprintln!(
-                            "thread {}: {}/{} games done ({}%), {} examples buffered",
-                            t,
-                            done,
-                            total,
-                            done * 100 / total.max(1),
-                            local.len()
+                    let start = t * games_per_thread;
+                    let end = ((t + 1) * games_per_thread).min(n_games);
+                    let mut local: Vec<TrainExample> = Vec::with_capacity((end - start) * 80);
+                    let mut last_log = Instant::now();
+                    for game_idx in start..end {
+                        let mut rng: StdRng = SeedableRng::seed_from_u64(
+                            base_seed.wrapping_add(100 + game_idx as u64),
                         );
-                        last_log = Instant::now();
+                        let exs = match agent_kind {
+                            BootAgent::Cfr3 => {
+                                play_one_cfr3_game(cfr3.as_mut().unwrap(), &mut rng)
+                            }
+                            BootAgent::Cfr3Eps => play_one_cfr3_eps_game(
+                                cfr3.as_mut().unwrap(),
+                                eps,
+                                &mut rng,
+                            ),
+                            BootAgent::Random => play_one_random_game(&mut rng),
+                        };
+                        local.extend(exs);
+                        if last_log.elapsed().as_secs() > 5 {
+                            let done = game_idx + 1 - start;
+                            let total = end - start;
+                            eprintln!(
+                                "thread {}: {}/{} games done ({}%), {} examples buffered",
+                                t,
+                                done,
+                                total,
+                                done * 100 / total.max(1),
+                                local.len()
+                            );
+                            last_log = Instant::now();
+                        }
                     }
-                }
-                let _ = progress;
-                let mut s = shared.lock().expect("lock");
-                let added = local.len();
-                s.extend(local);
-                eprintln!("thread {} done: contributed {} examples", t, added);
-            });
-        }
-    });
+                    let mut s = shared.lock().expect("lock");
+                    let added = local.len();
+                    s.extend(local);
+                    eprintln!("thread {} done: contributed {} examples", t, added);
+                });
+            }
+        });
 
-    let mut examples: Vec<TrainExample> =
-        Arc::try_unwrap(shared).ok().unwrap().into_inner().unwrap();
+        let exs: Vec<TrainExample> =
+            Arc::try_unwrap(shared).ok().unwrap().into_inner().unwrap();
+        let bytes = rmp_serde::to_vec(&exs).expect("encode dataset cache");
+        std::fs::write(&data_path, &bytes).expect("write dataset cache");
+        println!(
+            "cached {} examples ({:.1} MB) to {}",
+            exs.len(),
+            bytes.len() as f64 / 1e6,
+            data_path.display(),
+        );
+        exs
+    };
     let collect_secs = t0.elapsed().as_secs_f64();
+    let n_explore = examples.iter().filter(|e| e.policy_weight == 0.0).count();
     println!(
-        "collected {} examples from {} {:?}-vs-self games in {:.1}s ({:.1} games/s, \
-         {:.1} examples/s)",
+        "dataset ready: {} examples ({} exploration / {} on-policy) from {} {:?} games in {:.1}s \
+         ({:.1} games/s, {:.1} examples/s)",
         examples.len(),
+        n_explore,
+        examples.len() - n_explore,
         n_games,
         agent_kind,
         collect_secs,
@@ -199,6 +271,9 @@ fn main() {
     );
 
     // --- Phase 2: train transformer on collected examples ---
+    if parse::<usize>("TF32", 1) == 1 {
+        enable_tf32();
+    }
     let device = tch::Device::cuda_if_available();
     println!("training device: {:?}", device);
     let mut net = GoMctsTransformerTch::new(cfg, device).expect("build");
@@ -308,6 +383,61 @@ fn play_one_random_game(rng: &mut StdRng) -> Vec<TrainExample> {
         let v = gs.evaluate(p) as f32;
         for (h, a) in per_player[p].drain(..) {
             out.push(TrainExample::hard(h, a, v));
+        }
+    }
+    out
+}
+
+/// Play one full Euchre game where every seat plays cfr3 but, with
+/// probability ε per decision, takes a uniform-random legal action
+/// instead. Exploration moves are recorded with `TrainExample::explore`
+/// (policy_weight = 0): they train the value head on the *real outcome*
+/// of deviating at a cfr3-reachable state — exactly the counterfactual
+/// coverage ArgmaxVal\* needs — without teaching the LM head to play
+/// randomly. cfr3 moves are recorded as normal hard targets.
+fn play_one_cfr3_eps_game(
+    cfr3: &mut EuchreCfres,
+    eps: f64,
+    rng: &mut StdRng,
+) -> Vec<TrainExample> {
+    use rand::RngExt;
+    let mut gs = Euchre::new_state();
+    let mut buf = Vec::new();
+
+    while gs.is_chance_node() {
+        buf.clear();
+        gs.legal_actions(&mut buf);
+        let a = *buf.choose(rng).expect("non-empty chance");
+        gs.apply_action(a);
+    }
+
+    let n_players = gs.num_players();
+    let mut per_player: Vec<Vec<(IStateKey, Action, bool)>> = vec![Vec::new(); n_players];
+
+    while !gs.is_terminal() {
+        let p = gs.cur_player();
+        let history = gs.istate_key(p);
+        let explore = rng.random::<f64>() < eps;
+        let action = if explore {
+            buf.clear();
+            gs.legal_actions(&mut buf);
+            *buf.choose(rng).expect("non-empty legal")
+        } else {
+            cfr3.step(&gs)
+        };
+        per_player[p].push((history, action, explore));
+        gs.apply_action(action);
+    }
+
+    let mut out = Vec::new();
+    for p in 0..n_players {
+        let v = gs.evaluate(p) as f32;
+        for (h, a, explore) in per_player[p].drain(..) {
+            out.push(if explore {
+                TrainExample::explore(h, a, v)
+            } else {
+                TrainExample::hard(h, a, v)
+            });
         }
     }
     out

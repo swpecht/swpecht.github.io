@@ -40,6 +40,29 @@ what we concluded. Detailed notes for each are in the sections below.
 | 23 | 2026-06-08 | Random bootstrap (paper-faithful) | 1M uniform-random Euchre games, paper config, batch=512, lr=1e-4, 15 epochs | **raw ArgmaxVal\* = +0.219 ± 0.046**, LM-mode = −0.061 (just imitates random) | mirror-asymmetry of cfr3 case: V works now, LM is weak. ~8h wall (mostly training) |
 | 24 | 2026-06-08 | Post-random-bootstrap self-play | paper config, 10 iter × 750 games × MCTS=32 + parallel_sims=8, rollout=0, lr=1e-4 | 71 min wall (parallel sims worked), loss 2.02 → 1.87, but **mean_reward regressed +0.219 → +0.135** at n=2000 | self-play didn't compound the bootstrap; soft targets at MCTS=32 are too noisy at our scale. Bootstrap survived (no destruction) but didn't improve |
 | 25 | 2026-06-08 | Difficulty tournament (random_bootstrap weights, MCTS=16) | gomcts (random_bootstrap, paper config) vs pimcts, cfr0, random; 30 matches/pair | **gomcts vs pimcts: 0-30 (18.6 pt%)**, **gomcts vs cfr0: 0-30 (21.2 pt%)**, gomcts vs random: 23-7 (63.1 pt%), pimcts vs cfr0: 12-18 (45.4 pt%) | **targets NOT met**. gomcts is solidly above random but ~4× below pimcts/cfr0. Slight improvement vs cfr0 (15.4% → 21.2%) over the smoke-config baseline tournament |
+| 26 | 2026-06-08→09 | tch-rs port + CUDA-graph forward | dropped candle entirely; TF32; thread caps; batch retunes | ~5× self-play throughput, −49% iter wall, then −20% more | see commits c501aed…ab82b61. Set up for rollout-to-terminal runs that never happened (see 27) |
+| 27 | 2026-06-10 | **Machine reboot wiped /tmp** | — | ALL checkpoints lost (smoke/medium/paper ckpts, cfr3 + random bootstraps) + libtorch itself | everything default-pathed under /tmp. Fixed: libtorch → ~/libtorch, ckpts/datasets → /home/steven/card_platypus/gomcts/, bootstrap collection now caches its dataset to disk (re-train without re-collect) |
+| 28 | 2026-06-10 | Re-read paper closely (ar5iv full text) | — | 5 implementation discrepancies found, 2 of them load-bearing (see "Paper-faithfulness audit") | (a) paper does NO search during self-play training — greedy ArgmaxVal\* live seat vs LM-sampling frozen seats, live data only; (b) ArgmaxVal\* is λ-gated by the LM head (p ≥ 0.01–0.05) — directly mitigates our "broken V head" failure; (c) value = outcome-class distribution (CE), not scalar MSE; (d) rollout is N_steps-capped (2–5), NOT to-terminal; (e) Skat bootstrap needed random + weak-bot MIX — pure random was "unstable" (precedent for our cfr3+ε mix) |
+| 29 | 2026-06-10 | ε-exploration bootstrap (cfr3_eps) | 200k games, all seats cfr3 with ε=0.15 uniform deviations; exploration moves recorded with policy_weight=0 (V trains, LM masked); paper config, 6 epochs, batch=256, lr=1e-4 | RUNNING | hypothesis H1: get cfr3-strength LM head AND a working V head (counterfactual coverage at cfr3-reachable states) in one bootstrap. Unit test `policy_weight_masks_lm_but_trains_value` pins the mask semantics |
+
+### Paper-faithfulness audit (2026-06-10)
+
+Re-read arXiv 2404.13150 end-to-end after the self-play plateau. Where
+our implementation diverges, with severity:
+
+| # | paper | ours (before 06-10) | severity / action |
+|---|---|---|---|
+| 1 | **No MCTS during training.** Self-play data = greedy ArgmaxVal\* (live, current weights) vs 3 seats LM-sampling a uniformly-drawn previous iteration; **only the live seat's data trains**. GO-MCTS used only at final eval | MCTS-soft-target AlphaZero loop + all-seats data | **load-bearing.** Also explains cost: paper games are ~30 forwards each, no search. Implemented as `EU_PAPER_LOOP=1` (collect_paper_pop_examples_batched_tch) |
+| 2 | **ArgmaxVal\* is λ-gated**: only actions with LM-prob ≥ λ (0.05 Hearts/Skat, 0.01 Crew) compete on value; deterministic argmax | un-gated softmax(V/0.5) sampling | **load-bearing** for the broken-V failure (entry 18): the gate would have excluded the actions V couldn't rank. Implemented: EU_INFER=gated + EU_LAMBDA + EU_TEMP in eval; EUCHRE_GOMCTS_INFER=gated in difficulty bench; RemoteModel.with_inference |
+| 3 | Value head = **outcome-class distribution** (CE over discrete outcomes; Hearts 2234, Skat 397, Crew 2), V = Σ p(o)·v(o) | scalar V + MSE | medium. Euchre has ~6 outcome classes (±1, ±2, ±4) — natural categorical head. Do if V quality still limits after ε-bootstrap |
+| 4 | Rollout = N_steps player moves (2–5) then model V at leaf; real outcome only if terminal reached | rollout_to_terminal mode (built 06-09) rolls to terminal always | minor; rollout-to-terminal is *more* grounded but slower. The 06-09 mode was mislabeled "paper-faithful" |
+| 5 | AdamW lr=1e-4, **3 epochs**/iter, loss 0.9/0.1 | lr ok; we used up to 25 epochs on bootstrap (loss flat after ~1) | minor; 25 was wasted compute. New default 6 |
+
+Other paper numbers for calibration: bootstrap = 4M random games
+(Hearts/Crew); Skat needed 4M games from random+XSkat permutations
+because pure random was **unstable** — supports the cfr3+ε mixture.
+Self-play scale 500k–2M games/iter × 10–20 iters. Eval MCTS: 100
+runs/decision, C 0.1–0.4, λ 0.01–0.05, μ 0.01.
 
 ### Headline numbers so far
 

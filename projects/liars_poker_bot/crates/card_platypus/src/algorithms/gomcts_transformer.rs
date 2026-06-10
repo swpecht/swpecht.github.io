@@ -89,7 +89,7 @@ impl TransformerConfig {
 }
 
 /// One self-play step from the search player's POV.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct TrainExample {
     pub history: IStateKey,
     pub action: Action,
@@ -99,11 +99,26 @@ pub struct TrainExample {
     /// (AlphaZero-style); when `None` we fall back to a hard target
     /// using `action` (REINFORCE-style sampled-action imitation).
     pub policy_target: Option<Vec<(Action, f32)>>,
+    /// Per-example LM-loss weight. 1.0 for on-policy actions; 0.0 for
+    /// ε-exploration actions whose *value* outcome we want the V head
+    /// to learn (counterfactual coverage) without teaching the LM head
+    /// to imitate the random deviation.
+    #[serde(default = "default_policy_weight")]
+    pub policy_weight: f32,
+}
+
+fn default_policy_weight() -> f32 {
+    1.0
 }
 
 impl TrainExample {
     pub fn hard(history: IStateKey, action: Action, value: f32) -> Self {
-        Self { history, action, value, policy_target: None }
+        Self { history, action, value, policy_target: None, policy_weight: 1.0 }
+    }
+    /// Exploration example: trains the value head only. The LM-head
+    /// loss is masked out via `policy_weight = 0`.
+    pub fn explore(history: IStateKey, action: Action, value: f32) -> Self {
+        Self { history, action, value, policy_target: None, policy_weight: 0.0 }
     }
     pub fn soft(
         history: IStateKey,
@@ -111,7 +126,7 @@ impl TrainExample {
         value: f32,
         policy_target: Vec<(Action, f32)>,
     ) -> Self {
-        Self { history, action, value, policy_target: Some(policy_target) }
+        Self { history, action, value, policy_target: Some(policy_target), policy_weight: 1.0 }
     }
 }
 
@@ -207,15 +222,64 @@ pub enum ServiceRequest {
     },
 }
 
+/// Maps a game `Action` to its tokenizer token — needed client-side to
+/// read LM logits over legal actions. Build from the game's tokenizer:
+/// `Arc::new(move |a| tokenizer.action_token(a))`.
+pub type ActionTokenFn = std::sync::Arc<dyn Fn(Action) -> u32 + Send + Sync>;
+
 /// A `GenerativeModel` implementation that forwards every call over an
 /// mpsc channel to a central batching service. Owned per game thread;
 /// the sender is `Send` so it can be cloned into each thread.
 #[derive(Clone)]
 pub struct RemoteModel {
     pub request_tx: std::sync::mpsc::Sender<ServiceRequest>,
+    /// How `sample`/`policy` turn (LM logits, values) into a
+    /// distribution. Default `ArgmaxVal` (paper's ArgmaxVal\* with
+    /// softmax temperature).
+    pub mode: InferenceMode,
+    /// Legality threshold λ (paper §GO-MCTS, 0.01–0.05). When > 0 in
+    /// `ArgmaxVal` mode, actions whose LM-head prob (softmax over the
+    /// legal-action tokens at `h`) is below λ are excluded before the
+    /// value softmax. Requires `action_token_fn`. 0.0 disables gating.
+    pub lambda: f64,
+    /// Softmax temperature for the value-based policy. The paper's
+    /// ArgmaxVal\* is a deterministic argmax — approximate with a small
+    /// temp (e.g. 0.05). Default 0.5 matches the historical eval
+    /// numbers in the experiment log.
+    pub temp: f64,
+    pub action_token_fn: Option<ActionTokenFn>,
 }
 
 impl RemoteModel {
+    pub fn new(request_tx: std::sync::mpsc::Sender<ServiceRequest>) -> Self {
+        Self {
+            request_tx,
+            mode: InferenceMode::ArgmaxVal,
+            lambda: 0.0,
+            temp: POLICY_SOFTMAX_TEMP,
+            action_token_fn: None,
+        }
+    }
+
+    /// Builder: set the inference mode / λ-gate / token mapping.
+    pub fn with_inference(
+        mut self,
+        mode: InferenceMode,
+        lambda: f64,
+        action_token_fn: Option<ActionTokenFn>,
+    ) -> Self {
+        self.mode = mode;
+        self.lambda = lambda;
+        self.action_token_fn = action_token_fn;
+        self
+    }
+
+    /// Builder: set the value-softmax temperature.
+    pub fn with_temp(mut self, temp: f64) -> Self {
+        self.temp = temp.max(1e-3);
+        self
+    }
+
     /// Block until the service responds. The (logits, value) vectors are
     /// aligned with the input `histories` order.
     fn forward(&self, histories: Vec<IStateKey>) -> (Vec<Vec<f32>>, Vec<f32>) {
@@ -226,25 +290,77 @@ impl RemoteModel {
         response_rx.recv().expect("service dropped response channel")
     }
 
-    fn masked_policy_via_service(&self, history: &IStateKey, legal: &[Action]) -> Vec<f64> {
-        let histories: Vec<IStateKey> = legal
+    /// Softmax of `vals` (already divided by temperature where needed),
+    /// restricted to indices where `mask` is true; masked-out entries
+    /// get probability 0.
+    fn masked_softmax(vals: &[f64], mask: &[bool], temp: f64) -> Vec<f64> {
+        let max = vals
             .iter()
-            .map(|&a| {
+            .zip(mask)
+            .filter(|(_, &m)| m)
+            .map(|(&v, _)| v)
+            .fold(f64::NEG_INFINITY, f64::max);
+        let exps: Vec<f64> = vals
+            .iter()
+            .zip(mask)
+            .map(|(&v, &m)| if m { ((v - max) / temp).exp() } else { 0.0 })
+            .collect();
+        let total: f64 = exps.iter().sum();
+        if total == 0.0 || !total.is_finite() {
+            let n_on = mask.iter().filter(|&&m| m).count().max(1);
+            return mask.iter().map(|&m| if m { 1.0 / n_on as f64 } else { 0.0 }).collect();
+        }
+        exps.into_iter().map(|e| e / total).collect()
+    }
+
+    fn masked_policy_via_service(&self, history: &IStateKey, legal: &[Action]) -> Vec<f64> {
+        let needs_lm = self.mode == InferenceMode::LmSoftmax || self.lambda > 0.0;
+        let all_true = vec![true; legal.len()];
+        if needs_lm {
+            let tok_fn = self
+                .action_token_fn
+                .as_ref()
+                .expect("LmSoftmax / λ-gated inference requires action_token_fn");
+            // One request: [h, h⊕a1, …, h⊕ak]. logits[0] is the LM
+            // distribution over the next token at h; values[1..] are
+            // V(h⊕a) for the value softmax.
+            let mut histories = Vec::with_capacity(legal.len() + 1);
+            histories.push(*history);
+            histories.extend(legal.iter().map(|&a| {
                 let mut h = *history;
                 h.push(a);
                 h
-            })
-            .collect();
-        let (_, values) = self.forward(histories);
-        let temp = POLICY_SOFTMAX_TEMP;
-        let values: Vec<f64> = values.into_iter().map(|v| v as f64).collect();
-        let max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-        let exps: Vec<f64> = values.iter().map(|s| ((s - max) / temp).exp()).collect();
-        let total: f64 = exps.iter().sum();
-        if total == 0.0 || !total.is_finite() {
-            return vec![1.0 / legal.len() as f64; legal.len()];
+            }));
+            let (logits, values) = self.forward(histories);
+            let lm_logits: Vec<f64> = legal
+                .iter()
+                .map(|&a| logits[0].get(tok_fn(a) as usize).copied().unwrap_or(f32::MIN) as f64)
+                .collect();
+            let p_lm = Self::masked_softmax(&lm_logits, &all_true, 1.0);
+            match self.mode {
+                InferenceMode::LmSoftmax => p_lm,
+                InferenceMode::ArgmaxVal => {
+                    let vals: Vec<f64> = values[1..].iter().map(|&v| v as f64).collect();
+                    let mut gate: Vec<bool> = p_lm.iter().map(|&p| p >= self.lambda).collect();
+                    if !gate.iter().any(|&g| g) {
+                        gate = all_true;
+                    }
+                    Self::masked_softmax(&vals, &gate, self.temp)
+                }
+            }
+        } else {
+            let histories: Vec<IStateKey> = legal
+                .iter()
+                .map(|&a| {
+                    let mut h = *history;
+                    h.push(a);
+                    h
+                })
+                .collect();
+            let (_, values) = self.forward(histories);
+            let values: Vec<f64> = values.into_iter().map(|v| v as f64).collect();
+            Self::masked_softmax(&values, &all_true, self.temp)
         }
-        exps.into_iter().map(|e| e / total).collect()
     }
 }
 
@@ -490,6 +606,73 @@ where
         }
     }
     out
+}
+
+/// Paper-faithful population game (GO-MCTS paper §5.2):
+///   - The live seat plays greedy λ-gated ArgmaxVal\* (the caller
+///     configures `live`'s RemoteModel with a small temperature and
+///     λ-gate), except with probability `eps` it takes a uniform-random
+///     exploration action instead.
+///   - The other seats SAMPLE from the frozen snapshot's LM head (the
+///     caller configures `frozen` with `InferenceMode::LmSoftmax`).
+///   - Only the live seat's (history, action, outcome) tuples are
+///     recorded ("We only used the observation data for the
+///     ArgMaxVal* players"). Exploration actions are recorded with
+///     `TrainExample::explore` (policy_weight = 0) so they train the
+///     value head only — our addition to keep counterfactual coverage
+///     alive across self-play iterations.
+pub(crate) fn play_one_hand_paper_pop<G>(
+    live: &mut RemoteModel,
+    frozen: &mut RemoteModel,
+    new_state: impl Fn() -> G,
+    game_idx: usize,
+    eps: f64,
+    rng: &mut StdRng,
+) -> Vec<TrainExample>
+where
+    G: GameState,
+{
+    let mut gs = new_state();
+    let mut buf = Vec::new();
+    while gs.is_chance_node() {
+        buf.clear();
+        gs.legal_actions(&mut buf);
+        let act = *buf.choose(rng).expect("non-empty chance");
+        gs.apply_action(act);
+    }
+    let n_players = gs.num_players();
+    let live_seat = game_idx % n_players;
+    let mut live_steps: Vec<(IStateKey, Action, bool)> = Vec::new();
+    while !gs.is_terminal() {
+        let p = gs.cur_player();
+        buf.clear();
+        gs.legal_actions(&mut buf);
+        let history = gs.istate_key(p);
+        let act = if p == live_seat {
+            let explore = rng.random::<f64>() < eps;
+            let act = if explore {
+                *buf.choose(rng).expect("non-empty legal")
+            } else {
+                <RemoteModel as GenerativeModel<G>>::sample(live, &history, &buf, rng)
+            };
+            live_steps.push((history, act, explore));
+            act
+        } else {
+            <RemoteModel as GenerativeModel<G>>::sample(frozen, &history, &buf, rng)
+        };
+        gs.apply_action(act);
+    }
+    let v = gs.evaluate(live_seat) as f32;
+    live_steps
+        .into_iter()
+        .map(|(h, a, explore)| {
+            if explore {
+                TrainExample::explore(h, a, v)
+            } else {
+                TrainExample::hard(h, a, v)
+            }
+        })
+        .collect()
 }
 
 // =====================================================================
@@ -1234,7 +1417,7 @@ where
             let seed = base_seed.wrapping_add(100 + game_idx as u64);
             let mcfs = mcfs_cfg;
             game_handles.push(s.spawn(move || {
-                let remote = RemoteModel { request_tx: request_tx_clone };
+                let remote = RemoteModel::new(request_tx_clone);
                 let mut search = crate::algorithms::gomcts::GoMcts::<G, RemoteModel>::new(
                     crate::algorithms::gomcts::GoMctsConfig {
                         uct_c: 0.4,
@@ -1316,7 +1499,7 @@ where
             let req_tx = request_tx.clone();
             let seed = base_seed.wrapping_add(game_idx as u64);
             handles.push(s.spawn(move || {
-                let remote = RemoteModel { request_tx: req_tx };
+                let remote = RemoteModel::new(req_tx);
                 let mut search = crate::algorithms::gomcts::GoMcts::<G, RemoteModel>::new(
                     crate::algorithms::gomcts::GoMctsConfig {
                         uct_c: 0.4,
@@ -1384,8 +1567,8 @@ where
             let req_b = req_b_tx.clone();
             let seed = base_seed.wrapping_add(game_idx as u64);
             handles.push(s.spawn(move || {
-                let remote_a = RemoteModel { request_tx: req_a };
-                let remote_b = RemoteModel { request_tx: req_b };
+                let remote_a = RemoteModel::new(req_a);
+                let remote_b = RemoteModel::new(req_b);
                 let mut search_a = crate::algorithms::gomcts::GoMcts::<G, RemoteModel>::new(
                     crate::algorithms::gomcts::GoMctsConfig {
                         uct_c: 0.4,
@@ -1447,6 +1630,43 @@ where
     T: Tokenizer<G> + Send + Sync,
     FNS: Fn() -> G + Send + Sync + Copy,
 {
+    eval_vs_random_batched_tch_infer(
+        net,
+        tokenizer,
+        new_state,
+        n_games,
+        base_seed,
+        use_graph,
+        graph_batch_size,
+        InferenceMode::ArgmaxVal,
+        0.0,
+        None,
+        POLICY_SOFTMAX_TEMP,
+    )
+}
+
+/// Like `eval_vs_random_batched_tch` but with explicit inference mode:
+/// `LmSoftmax`, or `ArgmaxVal` with λ-legality-gating when `lambda > 0`
+/// (requires `action_token_fn`).
+#[allow(clippy::too_many_arguments)]
+pub fn eval_vs_random_batched_tch_infer<G, T, FNS>(
+    net: &GoMctsTransformerTch,
+    tokenizer: &T,
+    new_state: FNS,
+    n_games: usize,
+    base_seed: u64,
+    use_graph: bool,
+    graph_batch_size: i64,
+    mode: InferenceMode,
+    lambda: f64,
+    action_token_fn: Option<ActionTokenFn>,
+    temp: f64,
+) -> (f64, f64)
+where
+    G: GameState + Send,
+    T: Tokenizer<G> + Send + Sync,
+    FNS: Fn() -> G + Send + Sync + Copy,
+{
     use std::sync::mpsc;
     if n_games == 0 {
         return (0.0, 0.0);
@@ -1460,9 +1680,11 @@ where
         let mut handles = Vec::with_capacity(n_games);
         for game_idx in 0..n_games {
             let req_tx = request_tx.clone();
+            let atf = action_token_fn.clone();
             let seed = base_seed.wrapping_add(game_idx as u64);
             handles.push(s.spawn(move || {
-                let mut remote = RemoteModel { request_tx: req_tx };
+                let mut remote =
+                    RemoteModel::new(req_tx).with_inference(mode, lambda, atf).with_temp(temp);
                 let mut rng: StdRng = SeedableRng::seed_from_u64(seed);
                 play_one_hand_subject_vs_random(&mut remote, new_state, game_idx, &mut rng)
             }));
@@ -1511,8 +1733,8 @@ where
             let req_b = req_b_tx.clone();
             let seed = base_seed.wrapping_add(game_idx as u64);
             handles.push(s.spawn(move || {
-                let mut remote_a = RemoteModel { request_tx: req_a };
-                let mut remote_b = RemoteModel { request_tx: req_b };
+                let mut remote_a = RemoteModel::new(req_a);
+                let mut remote_b = RemoteModel::new(req_b);
                 let mut rng: StdRng = SeedableRng::seed_from_u64(seed);
                 play_one_hand_a_vs_b(&mut remote_a, &mut remote_b, new_state, game_idx, &mut rng)
             }));
@@ -1572,11 +1794,78 @@ where
             let req_frozen = req_frozen_tx.clone();
             let seed = base_seed.wrapping_add(game_idx as u64);
             handles.push(s.spawn(move || {
-                let mut remote_live = RemoteModel { request_tx: req_live };
-                let mut remote_frozen = RemoteModel { request_tx: req_frozen };
+                let mut remote_live = RemoteModel::new(req_live);
+                let mut remote_frozen = RemoteModel::new(req_frozen);
                 let mut rng: StdRng = SeedableRng::seed_from_u64(seed);
                 play_one_hand_pop(
                     &mut remote_live, &mut remote_frozen, new_state, game_idx, &mut rng,
+                )
+            }));
+        }
+        drop(req_live_tx);
+        drop(req_frozen_tx);
+        let out: Vec<Vec<TrainExample>> =
+            handles.into_iter().map(|h| h.join().expect("game")).collect();
+        svc_live.join().expect("service live");
+        svc_frozen.join().expect("service frozen");
+        out
+    });
+    all.into_iter().flatten().collect()
+}
+
+/// Batched paper-faithful population self-play (see
+/// `play_one_hand_paper_pop`). The live service plays greedy gated
+/// ArgmaxVal\* at temperature `live_temp`; the frozen service is
+/// sampled via its LM head. Returns only the live seats' examples.
+#[allow(clippy::too_many_arguments)]
+pub fn collect_paper_pop_games_batched_tch<G, T, FNS>(
+    net_live: &GoMctsTransformerTch,
+    net_frozen: &GoMctsTransformerTch,
+    tokenizer: &T,
+    new_state: FNS,
+    n_games: usize,
+    base_seed: u64,
+    use_graph: bool,
+    graph_batch_size: i64,
+    lambda: f64,
+    live_temp: f64,
+    eps: f64,
+    action_token_fn: ActionTokenFn,
+) -> Vec<TrainExample>
+where
+    G: GameState + Send,
+    T: Tokenizer<G> + Send + Sync,
+    FNS: Fn() -> G + Send + Sync + Copy,
+{
+    use std::sync::mpsc;
+    if n_games == 0 {
+        return Vec::new();
+    }
+    let max_batch = (n_games * 16).max(32);
+    let (req_live_tx, req_live_rx) = mpsc::channel::<ServiceRequest>();
+    let (req_frozen_tx, req_frozen_rx) = mpsc::channel::<ServiceRequest>();
+    let all: Vec<Vec<TrainExample>> = std::thread::scope(|s| {
+        let svc_live = s.spawn(move || {
+            serve_batched_tch(net_live, tokenizer, req_live_rx, max_batch, use_graph, graph_batch_size)
+        });
+        let svc_frozen = s.spawn(move || {
+            serve_batched_tch(net_frozen, tokenizer, req_frozen_rx, max_batch, use_graph, graph_batch_size)
+        });
+        let mut handles = Vec::with_capacity(n_games);
+        for game_idx in 0..n_games {
+            let req_live = req_live_tx.clone();
+            let req_frozen = req_frozen_tx.clone();
+            let atf = action_token_fn.clone();
+            let seed = base_seed.wrapping_add(game_idx as u64);
+            handles.push(s.spawn(move || {
+                let mut remote_live = RemoteModel::new(req_live)
+                    .with_inference(InferenceMode::ArgmaxVal, lambda, Some(atf.clone()))
+                    .with_temp(live_temp);
+                let mut remote_frozen = RemoteModel::new(req_frozen)
+                    .with_inference(InferenceMode::LmSoftmax, 0.0, Some(atf));
+                let mut rng: StdRng = SeedableRng::seed_from_u64(seed);
+                play_one_hand_paper_pop(
+                    &mut remote_live, &mut remote_frozen, new_state, game_idx, eps, &mut rng,
                 )
             }));
         }
@@ -1652,6 +1941,7 @@ where
             let mut prefix_positions: Vec<i64> = Vec::with_capacity(b);
             let mut action_positions: Vec<i64> = Vec::with_capacity(b);
             let mut soft_target_flat: Vec<f32> = Vec::with_capacity(b * vocab);
+            let mut policy_weights: Vec<f32> = Vec::with_capacity(b);
             for &ex_idx in chunk {
                 let ex = &examples[ex_idx];
                 let history_tokens = tokenizer.encode(&ex.history);
@@ -1692,6 +1982,7 @@ where
                     }
                 }
                 soft_target_flat.extend_from_slice(&row);
+                policy_weights.push(ex.policy_weight);
             }
 
             let input = Tensor::from_slice(&batch_tokens)
@@ -1722,12 +2013,18 @@ where
                 .reshape([b as i64, vocab as i64])
                 .to_device(device);
 
-            // Soft cross-entropy: -mean(sum(target * log_softmax(logits))).
+            // Soft cross-entropy: -mean(sum(target * log_softmax(logits))),
+            // weighted per-example so ε-exploration actions (weight 0)
+            // contribute value signal only. Normalised by the weight sum
+            // so a batch's LM gradient scale is independent of how many
+            // exploration examples it happened to draw.
             let log_probs = lm_at_prefix.log_softmax(-1, Kind::Float);
-            let lm_loss = (&soft_targets * &log_probs)
+            let weights_t = Tensor::from_slice(&policy_weights).to_device(device);
+            let per_example_ce = (&soft_targets * &log_probs)
                 .sum_dim_intlist([-1i64].as_ref(), false, Kind::Float)
-                .neg()
-                .mean(Kind::Float);
+                .neg();
+            let weight_sum = weights_t.sum(Kind::Float).clamp_min(1e-6);
+            let lm_loss = (per_example_ce * &weights_t).sum(Kind::Float) / weight_sum;
 
             // Value MSE at both prefix and action positions, averaged.
             let diff_pre = &val_at_prefix - &val_targets;
@@ -1867,6 +2164,62 @@ where
     out
 }
 
+/// Paper-loop variant of `collect_pop_examples_batched_tch`: greedy
+/// gated ArgmaxVal\* live seat (+ ε-exploration), LM-sampling frozen
+/// opponents, live-seat data only. One frozen snapshot is drawn per
+/// `batch_games`-sized chunk.
+#[allow(clippy::too_many_arguments)]
+pub fn collect_paper_pop_examples_batched_tch<G, T, FNS>(
+    pop: &mut PopulationTch,
+    tokenizer: &T,
+    new_state: FNS,
+    n_games: usize,
+    batch_games: usize,
+    rng: &mut StdRng,
+    seed: u64,
+    use_graph: bool,
+    graph_batch_size: i64,
+    lambda: f64,
+    live_temp: f64,
+    eps: f64,
+    action_token_fn: ActionTokenFn,
+) -> Vec<TrainExample>
+where
+    G: GameState + Send,
+    T: Tokenizer<G> + Send + Sync,
+    FNS: Fn() -> G + Send + Sync + Copy,
+{
+    if n_games == 0 || pop.num_snapshots() == 0 {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    let chunks = n_games.div_ceil(batch_games);
+    for chunk_idx in 0..chunks {
+        let games_this_chunk = batch_games.min(n_games - chunk_idx * batch_games);
+        let frozen = pop
+            .sample_frozen(rng)
+            .expect("hydrate frozen")
+            .expect("snapshots non-empty");
+        let chunk_seed = seed.wrapping_add((chunk_idx as u64) * 1_000_000 + rng.random::<u64>());
+        let exs = collect_paper_pop_games_batched_tch::<G, _, _>(
+            &pop.live,
+            &frozen,
+            tokenizer,
+            new_state,
+            games_this_chunk,
+            chunk_seed,
+            use_graph,
+            graph_batch_size,
+            lambda,
+            live_temp,
+            eps,
+            action_token_fn.clone(),
+        );
+        out.extend(exs);
+    }
+    out
+}
+
 // =====================================================================
 // Per-game tokenizer impls.
 // =====================================================================
@@ -1940,6 +2293,74 @@ pub mod euchre {
                 v
             );
             (v as u32) + 1
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use games::gamestates::kuhn_poker::{KPAction, KuhnPoker};
+
+    /// `policy_weight = 0` examples (ε-exploration moves) must train the
+    /// value head — that's the counterfactual coverage ArgmaxVal* needs —
+    /// WITHOUT training the LM head to imitate the exploration noise.
+    #[test]
+    fn policy_weight_masks_lm_but_trains_value() {
+        let tok = kuhn::KuhnTokenizer;
+        let cfg = TransformerConfig::kuhn_small(
+            kuhn::KuhnTokenizer::VOCAB_SIZE,
+            kuhn::KuhnTokenizer::MAX_CONTEXT,
+        );
+        let mut net = GoMctsTransformerTch::new(cfg, Device::Cpu).expect("build");
+
+        let gs = KuhnPoker::from_actions(&[KPAction::Jack, KPAction::Queen]);
+        let h = gs.istate_key(0);
+        let bet: Action = KPAction::Bet.into();
+        let pass: Action = KPAction::Pass.into();
+
+        // Equal counts of (weighted bet, +1) and (masked pass, -1).
+        // With masking, the LM head only ever sees bet as a target;
+        // the value head sees both branches' outcomes.
+        let mut examples = Vec::new();
+        for _ in 0..64 {
+            examples.push(TrainExample::hard(h, bet, 1.0));
+            examples.push(TrainExample::explore(h, pass, -1.0));
+        }
+        let mut rng: StdRng = SeedableRng::seed_from_u64(0);
+        train_tch(&mut net, &tok, &examples, 40, 32, 5e-3, &mut rng).expect("train");
+
+        let forward_at = |toks: &[u32]| -> (Tensor, f64, usize) {
+            let (padded, n) = pad_to(toks, cfg.max_context, tok.pad_token());
+            let input = Tensor::from_slice(
+                &padded.iter().map(|&u| u as i64).collect::<Vec<_>>(),
+            )
+            .reshape([1, cfg.max_context as i64]);
+            let (lm, val) = net.forward(&input);
+            let v = val.get(0).double_value(&[(n - 1) as i64]);
+            (lm, v, n)
+        };
+
+        // LM head at h: the weighted action must dominate the masked one.
+        let h_toks = tok.encode(&h);
+        let (lm, _, n) = forward_at(&h_toks);
+        let lm_last = lm.get(0).get((n - 1) as i64);
+        let bet_logit = lm_last.double_value(&[tok.action_token(bet) as i64]);
+        let pass_logit = lm_last.double_value(&[tok.action_token(pass) as i64]);
+        assert!(
+            bet_logit > pass_logit + 1.0,
+            "LM must prefer the policy-weighted action: bet={bet_logit:.3} pass={pass_logit:.3}"
+        );
+
+        // Value head at h⊕a: the masked example's value must be learned.
+        for (a, target) in [(bet, 1.0_f64), (pass, -1.0_f64)] {
+            let mut toks = h_toks.clone();
+            toks.push(tok.action_token(a));
+            let (_, v, _) = forward_at(&toks);
+            assert!(
+                (v - target).abs() < 0.4,
+                "V(h⊕{a:?}) should approach {target}: got {v:.3}"
+            );
         }
     }
 }

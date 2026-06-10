@@ -7,10 +7,18 @@
 //!   - GO-MCTS-wrapped transformer (search at every decision)
 //!
 //! Knobs:
-//!   EU_WEIGHTS         safetensors path     (default /tmp/euchre_gomcts/final.safetensors)
-//!   EU_CONFIG          model architecture   (default smoke; must match training!)
+//!   EU_WEIGHTS         safetensors path     (default /home/steven/card_platypus/gomcts/bootstrap.safetensors)
+//!   EU_CONFIG          model architecture   (default paper; must match training!)
 //!   EU_GAMES           hands per condition  (default 2000)
 //!   EU_MCTS_ITER       per-decision MCTS budget for the wrapped eval (default 32)
+//!   EU_INFER           argmax | lm | gated  (default argmax)
+//!                      - argmax: ArgmaxVal* softmax over V(h⊕a)
+//!                      - lm: LM-head softmax over legal-action tokens
+//!                      - gated: ArgmaxVal* restricted to actions whose
+//!                        LM prob ≥ EU_LAMBDA (paper's λ legality gate)
+//!   EU_LAMBDA          legality threshold for gated mode (default 0.05)
+//!   EU_TEMP            value-softmax temperature (default 0.5; the
+//!                      paper's deterministic ArgmaxVal* ≈ 0.05)
 //!   EU_SEED            base RNG seed        (default 0)
 //!   EU_SKIP_MCTS=1     skip the MCTS eval (raw only)
 //!
@@ -20,8 +28,8 @@
 use card_platypus::algorithms::{
     gomcts::{GoMcts, GoMctsConfig},
     gomcts_transformer::{
-        eval_vs_random_batched_tch, euchre::EuchreTokenizer, GoMctsTransformerTch, RemoteModel,
-        ServiceRequest, TransformerConfig,
+        eval_vs_random_batched_tch_infer, euchre::EuchreTokenizer, ActionTokenFn, InferenceMode,
+        GoMctsTransformerTch, RemoteModel, ServiceRequest, Tokenizer, TransformerConfig,
     },
 };
 use games::{
@@ -40,20 +48,38 @@ fn pick_config() -> TransformerConfig {
     let c = EuchreTokenizer::MAX_CONTEXT;
     match std::env::var("EU_CONFIG").as_deref() {
         Ok("medium") => TransformerConfig::euchre_medium(v, c),
-        Ok("paper") => TransformerConfig::paper_default(v, c),
-        _ => TransformerConfig::euchre_smoke(v, c),
+        Ok("smoke") => TransformerConfig::euchre_smoke(v, c),
+        _ => TransformerConfig::paper_default(v, c),
+    }
+}
+
+fn pick_inference() -> (InferenceMode, f64, &'static str) {
+    let lambda: f64 = parse("EU_LAMBDA", 0.05);
+    match std::env::var("EU_INFER").as_deref() {
+        Ok("lm") => (InferenceMode::LmSoftmax, 0.0, "lm"),
+        Ok("gated") => (InferenceMode::ArgmaxVal, lambda, "gated"),
+        _ => (InferenceMode::ArgmaxVal, 0.0, "argmax"),
     }
 }
 
 fn main() {
     let weights: PathBuf =
         PathBuf::from(std::env::var("EU_WEIGHTS").unwrap_or_else(|_| {
-            "/tmp/euchre_gomcts/final.safetensors".to_string()
+            "/home/steven/card_platypus/gomcts/bootstrap.safetensors".to_string()
         }));
     let n_games: usize = parse("EU_GAMES", 2000);
     let mcts_iter: usize = parse("EU_MCTS_ITER", 32);
     let base_seed: u64 = parse("EU_SEED", 0);
     let skip_mcts = std::env::var("EU_SKIP_MCTS").ok().as_deref() == Some("1");
+    let (infer_mode, lambda, infer_name) = pick_inference();
+    let temp: f64 = parse("EU_TEMP", 0.5);
+    let action_token_fn: Option<ActionTokenFn> = if infer_mode == InferenceMode::LmSoftmax
+        || lambda > 0.0
+    {
+        Some(std::sync::Arc::new(move |a| EuchreTokenizer.action_token(a)))
+    } else {
+        None
+    };
 
     assert!(
         weights.exists(),
@@ -63,11 +89,14 @@ fn main() {
 
     let cfg = pick_config();
     println!(
-        "Euchre GO-MCTS eval: weights={}, games={}, mcts_iter={}, skip_mcts={}",
+        "Euchre GO-MCTS eval: weights={}, games={}, mcts_iter={}, skip_mcts={}, infer={}, lambda={}, temp={}",
         weights.display(),
         n_games,
         mcts_iter,
         skip_mcts,
+        infer_name,
+        lambda,
+        temp,
     );
     println!(
         "transformer: d={}, layers={}, heads={}, d_ff={}, vocab={}, max_ctx={}",
@@ -99,9 +128,9 @@ fn main() {
 
     // --- Raw transformer via the batched eval helper (it already runs
     // the service-thread architecture under the hood).
-    println!("\n[2/3] raw transformer (no MCTS wrapping)…");
+    println!("\n[2/3] raw transformer (no MCTS wrapping, infer={infer_name})…");
     let t0 = Instant::now();
-    let (raw_mean, raw_se) = eval_vs_random_batched_tch::<EuchreGameState, _, _>(
+    let (raw_mean, raw_se) = eval_vs_random_batched_tch_infer::<EuchreGameState, _, _>(
         &net,
         &tokenizer,
         Euchre::new_state,
@@ -109,6 +138,10 @@ fn main() {
         base_seed.wrapping_add(13),
         /* use_graph = */ false,
         /* graph_batch_size = */ 1,
+        infer_mode,
+        lambda,
+        action_token_fn.clone(),
+        temp,
     );
     let raw_secs = t0.elapsed().as_secs_f64();
     println!(
@@ -120,8 +153,8 @@ fn main() {
         raw_secs
     );
     println!(
-        "kestrel: step=2 condition=raw_transformer mean={:.6} se={:.6} secs={:.4}",
-        raw_mean, raw_se, raw_secs
+        "kestrel: step=2 condition=raw_transformer_{} mean={:.6} se={:.6} secs={:.4}",
+        infer_name, raw_mean, raw_se, raw_secs
     );
 
     if skip_mcts {
@@ -143,6 +176,10 @@ fn main() {
         n_games,
         mcts_iter,
         base_seed.wrapping_add(23),
+        infer_mode,
+        lambda,
+        action_token_fn.clone(),
+        temp,
     );
     let mcts_secs = t0.elapsed().as_secs_f64();
     println!(
@@ -163,12 +200,17 @@ fn main() {
 /// rotating seat `game_idx % 4` and uniform-random fills the rest. Uses
 /// a single service thread for inference so the MCTS can batch
 /// per-decision leaf evaluations through `RemoteModel::batch_value`.
+#[allow(clippy::too_many_arguments)]
 fn eval_search_via_service(
     net: &GoMctsTransformerTch,
     tokenizer: &EuchreTokenizer,
     n_games: usize,
     mcts_iter: usize,
     base_seed: u64,
+    infer_mode: InferenceMode,
+    lambda: f64,
+    action_token_fn: Option<ActionTokenFn>,
+    temp: f64,
 ) -> (f64, f64) {
     use card_platypus::algorithms::gomcts_transformer::serve_batched_tch;
     let (request_tx, request_rx) = mpsc::channel::<ServiceRequest>();
@@ -181,7 +223,9 @@ fn eval_search_via_service(
             .map(|game_idx| {
                 let rng_seed = base_seed.wrapping_add(game_idx as u64);
                 let req_tx = request_tx.clone();
-                let mut remote = RemoteModel { request_tx: req_tx };
+                let mut remote = RemoteModel::new(req_tx)
+                    .with_inference(infer_mode, lambda, action_token_fn.clone())
+                    .with_temp(temp);
                 let mut search = GoMcts::<EuchreGameState, RemoteModel>::new(
                     GoMctsConfig {
                         uct_c: 0.4,

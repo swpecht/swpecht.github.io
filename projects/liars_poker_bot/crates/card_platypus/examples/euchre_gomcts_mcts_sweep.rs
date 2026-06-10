@@ -149,7 +149,7 @@ fn eval_search_via_service(
             .map(|game_idx| {
                 let rng_seed = base_seed.wrapping_add(game_idx as u64);
                 let req_tx = request_tx.clone();
-                let remote = RemoteModel { request_tx: req_tx };
+                let remote = RemoteModel::new(req_tx);
                 let mut search = GoMcts::<EuchreGameState, RemoteModel>::new(
                     GoMctsConfig {
                         uct_c: 0.4,

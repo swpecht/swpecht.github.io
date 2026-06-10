@@ -48,15 +48,28 @@
 //!   EU_PARALLEL_SIMS      per-game MCTS virtual-loss width    (default 1)
 //!   EU_RESUME_FROM        resume from `iter_NNN.safetensors`  (default 0)
 //!   EU_INIT_WEIGHTS       load these weights before iter 1    (default unset)
-//!   EU_CKPT_DIR           directory for snapshots / final     (default /tmp/euchre_gomcts)
+//!   EU_PAPER_LOOP         1 = paper-faithful self-play loop   (default 0)
+//!                         Replaces BOTH the MCTS-alphazero and the
+//!                         legacy pop phases with the paper's §5.2 loop:
+//!                         greedy λ-gated ArgmaxVal* live seat (+
+//!                         ε-exploration recorded as value-only
+//!                         examples), LM-sampling frozen opponents,
+//!                         live-seat data only. No search during
+//!                         collection → games are ~30 forwards each, so
+//!                         crank EU_GAMES_PER_ITER way up (paper: 500k).
+//!   EU_PAPER_LAMBDA       λ legality gate for the live seat   (default 0.05)
+//!   EU_PAPER_TEMP         live-seat value softmax temp        (default 0.05 ≈ greedy)
+//!   EU_PAPER_EPS          live-seat exploration prob          (default 0.10)
+//!   EU_CKPT_DIR           directory for snapshots / final     (default /home/steven/card_platypus/gomcts/train)
 //!   EU_SEED               base RNG seed                       (default 0)
 //!   EU_CONFIG             "smoke" | "medium" | "paper"        (default medium)
 
 use card_platypus::algorithms::gomcts_transformer::{
-    collect_pop_examples_batched_tch, collect_self_play_games_batched_alphazero_tch,
-    empty_cuda_cache, enable_tf32, euchre::EuchreTokenizer, eval_vs_random_batched_tch,
-    head_to_head_eval_batched_tch, train_tch_with_callback, GoMctsTransformerTch, McfsConfig,
-    PopulationTch, TransformerConfig,
+    collect_paper_pop_examples_batched_tch, collect_pop_examples_batched_tch,
+    collect_self_play_games_batched_alphazero_tch, empty_cuda_cache, enable_tf32,
+    euchre::EuchreTokenizer, eval_vs_random_batched_tch, head_to_head_eval_batched_tch,
+    train_tch_with_callback, ActionTokenFn, GoMctsTransformerTch, McfsConfig, PopulationTch,
+    Tokenizer, TransformerConfig,
 };
 use games::gamestates::euchre::Euchre;
 use rand::{rngs::StdRng, SeedableRng};
@@ -114,8 +127,13 @@ fn main() {
     // suspected source of the value-head fixed-point plateau).
     let rollout_to_terminal: bool = parse::<usize>("EU_ROLLOUT_TO_TERMINAL", 0) == 1;
     let parallel_sims: usize = parse("EU_PARALLEL_SIMS", 1).max(1);
+    let paper_loop: bool = parse::<usize>("EU_PAPER_LOOP", 0) == 1;
+    let paper_lambda: f64 = parse("EU_PAPER_LAMBDA", 0.05);
+    let paper_temp: f64 = parse("EU_PAPER_TEMP", 0.05);
+    let paper_eps: f64 = parse("EU_PAPER_EPS", 0.10);
     let init_weights: Option<PathBuf> = std::env::var("EU_INIT_WEIGHTS").ok().map(PathBuf::from);
-    let ckpt_dir: PathBuf = parse_path("EU_CKPT_DIR", "/tmp/euchre_gomcts");
+    // Off /tmp: the 2026-06-10 reboot wiped a week of checkpoints.
+    let ckpt_dir: PathBuf = parse_path("EU_CKPT_DIR", "/home/steven/card_platypus/gomcts/train");
     let base_seed: u64 = parse("EU_SEED", 0);
 
     std::fs::create_dir_all(&ckpt_dir).expect("create ckpt dir");
@@ -207,6 +225,14 @@ fn main() {
             resume_from + 1
         );
     }
+    // Iteration 1 needs a frozen opponent for the population phases —
+    // snapshot the starting weights (random init or EU_INIT_WEIGHTS
+    // bootstrap). Matches the paper's "opponents sample from the
+    // previous iteration": at iter 1 the previous iteration IS the
+    // bootstrap.
+    if pop.num_snapshots() == 0 {
+        pop.snapshot().expect("snapshot init weights");
+    }
 
     let mut rng: StdRng = SeedableRng::seed_from_u64(base_seed.wrapping_add(resume_from as u64));
 
@@ -232,10 +258,13 @@ fn main() {
         "iter", "examples", "mcts", "pop", "train_loss", "mean_reward", "h2h_mean", "h2h_win%", "secs"
     );
 
+    let action_token_fn: ActionTokenFn =
+        std::sync::Arc::new(move |a| EuchreTokenizer.action_token(a));
+
     for iter in (resume_from + 1)..=iters {
         let t0 = Instant::now();
         let seed = base_seed.wrapping_add(iter as u64);
-        let n_mcts = (games_per_iter as f64 * mcts_frac).round() as usize;
+        let n_mcts = if paper_loop { 0 } else { (games_per_iter as f64 * mcts_frac).round() as usize };
         let n_pop = games_per_iter - n_mcts;
 
         let mcfs_cfg = McfsConfig {
@@ -295,17 +324,35 @@ fn main() {
         // stack the two captures don't interfere. Default on; flip
         // EU_POP_USE_GRAPH=0 to fall back to eager if WSL2 regresses. -
         let pop_use_graph = parse::<usize>("EU_POP_USE_GRAPH", 1) == 1;
-        let pop_examples = collect_pop_examples_batched_tch::<_, _, _>(
-            &mut pop,
-            &tokenizer,
-            Euchre::new_state,
-            n_pop,
-            batch_games,
-            &mut rng,
-            seed.wrapping_add(7),
-            pop_use_graph,
-            if pop_use_graph { tch_graph_batch } else { 1 },
-        );
+        let pop_examples = if paper_loop {
+            collect_paper_pop_examples_batched_tch::<_, _, _>(
+                &mut pop,
+                &tokenizer,
+                Euchre::new_state,
+                n_pop,
+                batch_games,
+                &mut rng,
+                seed.wrapping_add(7),
+                pop_use_graph,
+                if pop_use_graph { tch_graph_batch } else { 1 },
+                paper_lambda,
+                paper_temp,
+                paper_eps,
+                action_token_fn.clone(),
+            )
+        } else {
+            collect_pop_examples_batched_tch::<_, _, _>(
+                &mut pop,
+                &tokenizer,
+                Euchre::new_state,
+                n_pop,
+                batch_games,
+                &mut rng,
+                seed.wrapping_add(7),
+                pop_use_graph,
+                if pop_use_graph { tch_graph_batch } else { 1 },
+            )
+        };
         // Pop self-play just dropped two service threads' worth of
         // tensors and (since EU_POP_USE_GRAPH=1 by default) two
         // captured graphs. No live graph remains in scope, so

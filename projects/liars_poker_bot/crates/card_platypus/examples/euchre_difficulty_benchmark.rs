@@ -59,7 +59,7 @@ use card_platypus::{
         gomcts::{GoMcts, GoMctsConfig},
         gomcts_transformer::{
             euchre::EuchreTokenizer, forward_histories_batch_tch, GoMctsTransformerTch,
-            TransformerConfig,
+            InferenceMode, Tokenizer, TransformerConfig,
         },
         open_hand_solver::OpenHandSolver,
         pimcts::PIMCTSBot,
@@ -77,7 +77,7 @@ const DEFAULT_CFR0: &str = "/home/steven/card_platypus/infostate.baseline";
 const DEFAULT_CFR1: &str = "/home/steven/card_platypus/infostate.one_card_played";
 const DEFAULT_CFR2: &str = "/home/steven/card_platypus/infostate.two_card_played";
 const DEFAULT_CFR3: &str = "/home/steven/card_platypus/infostate.three_card_played_f32";
-const DEFAULT_GOMCTS: &str = "/tmp/euchre_gomcts/final.safetensors";
+const DEFAULT_GOMCTS: &str = "/home/steven/card_platypus/gomcts/bootstrap.safetensors";
 
 type EuchreAgent = Box<dyn Agent<EuchreGameState>>;
 
@@ -134,10 +134,16 @@ fn load_cfr(env_var: &str, default: &str, max_cards_played: usize, seed: u64) ->
 ///   EUCHRE_GOMCTS_CONFIG        smoke|medium|paper (must match training)
 ///   EUCHRE_GOMCTS_ITER          per-decision MCTS budget (default 32)
 ///   EUCHRE_GOMCTS_ROLLOUT_STEPS rollout phase length per leaf (default 0)
-///   EUCHRE_GOMCTS_INFER         argmaxval|lm (default argmaxval). Use
-///                               `lm` for a supervised-only bootstrap
-///                               where the value head hasn't seen
-///                               counterfactual actions.
+///   EUCHRE_GOMCTS_INFER         argmaxval|lm|gated (default argmaxval).
+///                               `lm`: LM-head softmax (use for a
+///                               supervised-only bootstrap whose value
+///                               head hasn't seen counterfactual
+///                               actions). `gated`: ArgmaxVal* over the
+///                               actions whose LM prob ≥ λ — the
+///                               paper's legality/plausibility gate.
+///   EUCHRE_GOMCTS_LAMBDA        λ for gated mode (default 0.05)
+///   EUCHRE_GOMCTS_TEMP          value-softmax temp (default 0.5;
+///                               paper's deterministic argmax ≈ 0.05)
 /// `GenerativeModel` impl that owns a tch transformer directly (no
 /// service thread). Calls `forward_histories_batch_tch` per query.
 /// Suitable for the round-robin tournament where each agent's `step`
@@ -146,6 +152,9 @@ fn load_cfr(env_var: &str, default: &str, max_cards_played: usize, seed: u64) ->
 struct TchInlineModel {
     net: std::sync::Arc<GoMctsTransformerTch>,
     tokenizer: EuchreTokenizer,
+    mode: InferenceMode,
+    lambda: f64,
+    temp: f64,
 }
 
 impl card_platypus::algorithms::gomcts::GenerativeModel<EuchreGameState> for TchInlineModel {
@@ -177,31 +186,74 @@ impl card_platypus::algorithms::gomcts::GenerativeModel<EuchreGameState> for Tch
         history: &games::istate::IStateKey,
         legal: &[Action],
     ) -> Vec<f64> {
-        let histories: Vec<games::istate::IStateKey> = legal
-            .iter()
-            .map(|&a| {
-                let mut h = *history;
-                h.push(a);
-                h
-            })
-            .collect();
-        let (_, values) = match forward_histories_batch_tch(&self.net, &self.tokenizer, &histories)
-        {
-            Ok(x) => x,
-            Err(_) => return vec![1.0 / legal.len() as f64; legal.len()],
+        let uniform = || vec![1.0 / legal.len() as f64; legal.len()];
+        let needs_lm = self.mode == InferenceMode::LmSoftmax || self.lambda > 0.0;
+        // Forward [h, h⊕a1, …, h⊕ak] in one batch when the LM head is
+        // needed; logits[0] is the next-action distribution at h and
+        // values[1..] are V(h⊕a). Without the LM we skip the h row.
+        let mut histories: Vec<games::istate::IStateKey> = Vec::with_capacity(legal.len() + 1);
+        if needs_lm {
+            histories.push(*history);
+        }
+        histories.extend(legal.iter().map(|&a| {
+            let mut h = *history;
+            h.push(a);
+            h
+        }));
+        let (logits, values) =
+            match forward_histories_batch_tch(&self.net, &self.tokenizer, &histories) {
+                Ok(x) => x,
+                Err(_) => return uniform(),
+            };
+        let softmax = |vals: &[f64], mask: &[bool], temp: f64| -> Vec<f64> {
+            let max = vals
+                .iter()
+                .zip(mask)
+                .filter(|(_, &m)| m)
+                .map(|(&v, _)| v)
+                .fold(f64::NEG_INFINITY, f64::max);
+            if !max.is_finite() {
+                return uniform();
+            }
+            let exps: Vec<f64> = vals
+                .iter()
+                .zip(mask)
+                .map(|(&v, &m)| if m { ((v - max) / temp).exp() } else { 0.0 })
+                .collect();
+            let total: f64 = exps.iter().sum();
+            if total == 0.0 || !total.is_finite() {
+                return uniform();
+            }
+            exps.into_iter().map(|e| e / total).collect()
         };
-        let temp = 0.5;
-        let values: Vec<f64> = values.into_iter().map(|v| v as f64).collect();
-        let max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-        if !max.is_finite() {
-            return vec![1.0 / legal.len() as f64; legal.len()];
+        let all_true = vec![true; legal.len()];
+        if needs_lm {
+            let lm_logits: Vec<f64> = legal
+                .iter()
+                .map(|&a| {
+                    logits[0]
+                        .get(self.tokenizer.action_token(a) as usize)
+                        .copied()
+                        .unwrap_or(f32::MIN) as f64
+                })
+                .collect();
+            let p_lm = softmax(&lm_logits, &all_true, 1.0);
+            match self.mode {
+                InferenceMode::LmSoftmax => p_lm,
+                InferenceMode::ArgmaxVal => {
+                    let vals: Vec<f64> = values[1..].iter().map(|&v| v as f64).collect();
+                    let mut gate: Vec<bool> =
+                        p_lm.iter().map(|&p| p >= self.lambda).collect();
+                    if !gate.iter().any(|&g| g) {
+                        gate = all_true;
+                    }
+                    softmax(&vals, &gate, self.temp)
+                }
+            }
+        } else {
+            let vals: Vec<f64> = values.iter().map(|&v| v as f64).collect();
+            softmax(&vals, &all_true, self.temp)
         }
-        let exps: Vec<f64> = values.iter().map(|s| ((s - max) / temp).exp()).collect();
-        let total: f64 = exps.iter().sum();
-        if total == 0.0 || !total.is_finite() {
-            return vec![1.0 / legal.len() as f64; legal.len()];
-        }
-        exps.into_iter().map(|e| e / total).collect()
     }
 
     fn batch_value(&mut self, histories: &[games::istate::IStateKey]) -> Vec<f64> {
@@ -239,9 +291,25 @@ fn load_gomcts(seed: u64) -> EuchreAgent {
     let mut net =
         GoMctsTransformerTch::new(cfg, tch::Device::cuda_if_available()).expect("build transformer");
     net.load_safetensors(&path).expect("load gomcts checkpoint");
+    let lambda: f64 = env::var("EUCHRE_GOMCTS_LAMBDA")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0.05);
+    let (mode, lambda) = match env::var("EUCHRE_GOMCTS_INFER").as_deref() {
+        Ok("lm") => (InferenceMode::LmSoftmax, 0.0),
+        Ok("gated") => (InferenceMode::ArgmaxVal, lambda),
+        _ => (InferenceMode::ArgmaxVal, 0.0),
+    };
+    let temp: f64 = env::var("EUCHRE_GOMCTS_TEMP")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0.5);
     let model = TchInlineModel {
         net: std::sync::Arc::new(net),
         tokenizer: EuchreTokenizer,
+        mode,
+        lambda,
+        temp,
     };
     let mcts_iter: usize = env::var("EUCHRE_GOMCTS_ITER")
         .ok()
