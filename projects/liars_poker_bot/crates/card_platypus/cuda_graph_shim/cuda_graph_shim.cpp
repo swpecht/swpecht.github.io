@@ -16,6 +16,7 @@
 
 #include <ATen/cuda/CUDAGraph.h>
 #include <ATen/cuda/CUDAEvent.h>
+#include <ATen/Context.h>
 #include <c10/cuda/CUDAStream.h>
 #include <c10/cuda/CUDACachingAllocator.h>
 
@@ -57,6 +58,22 @@ void cgs_replay(void* g) {
 // allocator a clean slate without restarting the process.
 void cgs_empty_cache() {
     c10::cuda::CUDACachingAllocator::emptyCache();
+}
+
+// Enable TF32 (Tensor Float 32) for cuBLAS matmuls. TF32 trades ~5
+// bits of mantissa precision for use of the Ampere+ tensor-core
+// matmul path — typically 1.3-2x throughput on FP32 matmul. Set ONCE
+// at process startup, before any tensor work. Equivalent to:
+//   torch.backends.cuda.matmul.allow_tf32 = True
+void cgs_set_allow_tf32_matmul(bool on) {
+    at::globalContext().setAllowTF32CuBLAS(on);
+}
+
+// Same for cuDNN ops (mostly convolutions; minor effect for pure
+// transformer workloads but cheap to enable). Equivalent to:
+//   torch.backends.cudnn.allow_tf32 = True
+void cgs_set_allow_tf32_cudnn(bool on) {
+    at::globalContext().setAllowTF32CuDNN(on);
 }
 
 } // extern "C"

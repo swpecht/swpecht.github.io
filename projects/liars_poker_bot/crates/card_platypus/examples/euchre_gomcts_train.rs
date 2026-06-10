@@ -9,8 +9,15 @@
 //! Run:
 //!   cargo run -p card_platypus --release --example euchre_gomcts_train
 //!
-//! Memory tuning (set BEFORE the process starts — these are libtorch
+//! Perf tuning (in-process knobs):
+//!   TF32                  enable TF32 cuBLAS+cuDNN matmul (default 1)
+//!   TCH_NUM_THREADS       libtorch intra-op thread pool cap (default 2)
+//!
+//! Perf tuning (set BEFORE the process starts — these are libtorch
 //! init-time knobs, not Rust-level):
+//!   OMP_NUM_THREADS              Recommended `2`. Caps libgomp's
+//!     worker pool. Default is num_cores, which adds ~30 idle threads
+//!     and context-switch tax for no benefit on a GPU-bound workload.
 //!   PYTORCH_CUDA_ALLOC_CONF      Tunes the CUDACachingAllocator. The
 //!     value is a comma-separated list. Recommended for long runs:
 //!       expandable_segments:True   grow on demand instead of
@@ -47,7 +54,7 @@
 
 use card_platypus::algorithms::gomcts_transformer::{
     collect_pop_examples_batched_tch, collect_self_play_games_batched_alphazero_tch,
-    empty_cuda_cache, euchre::EuchreTokenizer, eval_vs_random_batched_tch,
+    empty_cuda_cache, enable_tf32, euchre::EuchreTokenizer, eval_vs_random_batched_tch,
     head_to_head_eval_batched_tch, train_tch_with_callback, GoMctsTransformerTch, McfsConfig,
     PopulationTch, TransformerConfig,
 };
@@ -95,6 +102,24 @@ fn main() {
     let base_seed: u64 = parse("EU_SEED", 0);
 
     std::fs::create_dir_all(&ckpt_dir).expect("create ckpt dir");
+
+    // --- Process-wide perf toggles. Must run before any tensor work. ----------
+    // TF32: ~5 bits of mantissa for 1.3-2x matmul on Ampere+ tensor
+    // cores. Set TF32=0 to disable for numerical-equivalence comparison.
+    if parse::<usize>("TF32", 1) == 1 {
+        enable_tf32();
+    }
+    // Cap libtorch's intra-op CPU thread pool. The profile shows ~30
+    // libgomp workers parked at any moment — the pool defaults to
+    // num_cores, which means a lot of context-switch tax for no
+    // benefit on a GPU-bound workload. 2 is enough for the small
+    // amount of CPU-side tensor work our service thread does
+    // (host->device copies, gather, readback).
+    tch::set_num_threads(parse::<i32>("TCH_NUM_THREADS", 2).max(1));
+    // For OMP_NUM_THREADS to cap libgomp itself it has to be set in
+    // the parent shell before this binary launches — libgomp reads
+    // it at lib-load time, not when we call set_num_threads here.
+    // See the header doc-comment.
 
     let device = tch::Device::cuda_if_available();
     let cfg = pick_config();

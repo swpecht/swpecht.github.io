@@ -809,6 +809,8 @@ extern "C" {
     fn cgs_capture_end(g: *mut std::ffi::c_void);
     fn cgs_replay(g: *mut std::ffi::c_void);
     fn cgs_empty_cache();
+    fn cgs_set_allow_tf32_matmul(on: bool);
+    fn cgs_set_allow_tf32_cudnn(on: bool);
 }
 
 /// Return every unused cached block in PyTorch's CUDACachingAllocator
@@ -818,6 +820,17 @@ extern "C" {
 /// tight inner loop.
 pub fn empty_cuda_cache() {
     unsafe { cgs_empty_cache() }
+}
+
+/// Globally enable TF32 for cuBLAS matmuls + cuDNN ops. ~5 bits of
+/// mantissa traded for the Ampere+ tensor-core path; expected
+/// 1.3-2x on matmul throughput. Call once at process startup before
+/// any tensor work — the global flag affects all subsequent ops.
+pub fn enable_tf32() {
+    unsafe {
+        cgs_set_allow_tf32_matmul(true);
+        cgs_set_allow_tf32_cudnn(true);
+    }
 }
 
 /// A captured CUDA graph for one fixed batch size. Owns the static
