@@ -27,6 +27,7 @@
 use card_platypus::{
     agents::Agent,
     algorithms::{
+        cfres::{CFRES, OH_MAX_ACTIONS},
         gomcts_transformer::{
             forward_histories_batch_tch, masked_policy, oh_hell::OhHellTokenizer,
             parse_env as parse, parse_env_path, GoMctsTransformerTch, InferenceMode, Tokenizer,
@@ -159,6 +160,27 @@ fn main() {
         let t0 = Instant::now();
         let mut scores: Vec<f64> = Vec::with_capacity(n_games);
         let mut wins = 0usize;
+        // CFR opponents: bid-phase CFRES weights (play phase hands off
+        // to OpenHandSolver internally). One instance per seat, shared
+        // across the trick count's games — the mmap/PHF store load is
+        // not free. Weights exist for t1–5 only.
+        let mut cfr_opponents: Vec<CFRES<OhHellGameState, OH_MAX_ACTIONS, u64>> =
+            if opponent_kind == "cfr" {
+                let dir = std::path::PathBuf::from(std::env::var("OH_CFR_DIR").unwrap_or_else(
+                    |_| "/home/steven/card_platypus".to_string(),
+                ))
+                .join(format!("oh_hell.{num_players}p_{n_tricks}t_bid"));
+                assert!(
+                    dir.exists(),
+                    "no CFR weights for t={n_tricks} at {} (trained for t1-5 only)",
+                    dir.display()
+                );
+                (0..num_players)
+                    .map(|_| CFRES::new_oh_hell(num_players, n_tricks, 0, Some(&dir)))
+                    .collect()
+            } else {
+                Vec::new()
+            };
         for game_idx in 0..n_games {
             let seed = base_seed
                 .wrapping_add(n_tricks as u64 * 1_000_000)
@@ -202,6 +224,8 @@ fn main() {
                         Some(bot) => bot.step(&gs),
                         None => model.act(&gs, &mut rng),
                     }
+                } else if opponent_kind == "cfr" {
+                    cfr_opponents[p].step(&gs)
                 } else {
                     opponents[p].act(&gs, &mut rng)
                 };

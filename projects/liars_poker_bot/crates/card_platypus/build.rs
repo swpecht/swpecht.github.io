@@ -1,6 +1,11 @@
 // build.rs: compile the cuda_graph_shim C++ wrapper. The shim binds
 // at::cuda::CUDAGraph from libtorch so we can capture / replay the
 // transformer forward pass — the main lever for WSL2 per-launch overhead.
+//
+// CPU-only libtorch (no libtorch_cuda.so in $LIBTORCH/lib — e.g. the
+// GPU-less deploy target) gets a no-op stub instead, so server binaries
+// link without any CUDA dependency. Graph capture is unavailable there;
+// the stub aborts loudly if a use_graph=true path is ever reached.
 
 fn main() {
     build_cuda_graph_shim();
@@ -16,26 +21,34 @@ fn build_cuda_graph_shim() {
     let include = libtorch.join("include");
     let include_api = libtorch.join("include/torch/csrc/api/include");
     let lib_dir = libtorch.join("lib");
+    let has_cuda = lib_dir.join("libtorch_cuda.so").exists();
 
-    cc::Build::new()
-        .cpp(true)
-        .std("c++17")
-        .file("cuda_graph_shim/cuda_graph_shim.cpp")
-        .include(&include)
-        .include(&include_api)
-        // libtorch is built with _GLIBCXX_USE_CXX11_ABI=1 on Linux.
-        .define("_GLIBCXX_USE_CXX11_ABI", "1")
-        // Suppress warnings inside libtorch headers that we can't fix.
-        .flag_if_supported("-Wno-unused-parameter")
-        .flag_if_supported("-Wno-deprecated-declarations")
-        .compile("cuda_graph_shim");
+    let mut build = cc::Build::new();
+    build.cpp(true).std("c++17");
+    if has_cuda {
+        build
+            .file("cuda_graph_shim/cuda_graph_shim.cpp")
+            .include(&include)
+            .include(&include_api)
+            // libtorch is built with _GLIBCXX_USE_CXX11_ABI=1 on Linux.
+            .define("_GLIBCXX_USE_CXX11_ABI", "1")
+            // Suppress warnings inside libtorch headers that we can't fix.
+            .flag_if_supported("-Wno-unused-parameter")
+            .flag_if_supported("-Wno-deprecated-declarations");
+    } else {
+        build.file("cuda_graph_shim/cpu_stub.cpp");
+    }
+    build.compile("cuda_graph_shim");
 
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     println!("cargo:rustc-link-lib=torch");
     println!("cargo:rustc-link-lib=torch_cpu");
-    println!("cargo:rustc-link-lib=torch_cuda");
     println!("cargo:rustc-link-lib=c10");
-    println!("cargo:rustc-link-lib=c10_cuda");
+    if has_cuda {
+        println!("cargo:rustc-link-lib=torch_cuda");
+        println!("cargo:rustc-link-lib=c10_cuda");
+    }
     println!("cargo:rerun-if-changed=cuda_graph_shim/cuda_graph_shim.cpp");
+    println!("cargo:rerun-if-changed=cuda_graph_shim/cpu_stub.cpp");
     println!("cargo:rerun-if-env-changed=LIBTORCH");
 }
