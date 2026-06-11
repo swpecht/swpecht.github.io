@@ -1,7 +1,10 @@
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
-    sync::Arc,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
 };
 
 use dashmap::DashMap;
@@ -10,11 +13,13 @@ use games::{
     actions,
     gamestates::{
         euchre::{
-            processors::{euchre_early_terminate, process_euchre_actions},
+            processors::{euchre_early_terminate, euchre_value_bounds, process_euchre_actions},
             EuchreGameState,
         },
         oh_hell::{
-            processors::{oh_hell_early_terminate, process_oh_hell_actions},
+            processors::{
+                oh_hell_early_terminate, oh_hell_value_bounds, process_oh_hell_actions,
+            },
             OhHellGameState,
         },
     },
@@ -41,6 +46,12 @@ pub struct Optimizations<G> {
     /// Determines if a game is already decided and can be finished by randomly
     /// playing move with no impact to the outcome
     pub can_early_terminate: fn(gs: &G) -> bool,
+    /// Sound (pessimistic, optimistic) bounds on the final value of this
+    /// state for `maximizing_player`. Whenever the optimistic bound can't
+    /// beat alpha (or the pessimistic bound already exceeds beta) the
+    /// whole subtree is pruned exactly — the returned bound is still a
+    /// valid fail-soft bound. Default is `(-inf, +inf)` (no pruning).
+    pub value_bounds: fn(gs: &G, maximizing_player: Player) -> (f64, f64),
     /// Decides whether `cur_player` maximizes or minimizes from the
     /// perspective of `maximizing_player`. The default is **paranoid**:
     /// only `maximizing_player` themselves maximizes; everyone else is
@@ -65,6 +76,7 @@ impl<G> Default for Optimizations<G> {
             max_depth_for_tt: DEFAULT_MAX_TT_DEPTH,
             action_processor: |_: &G, _: &mut Vec<Action>| {},
             can_early_terminate: |_: &G| false,
+            value_bounds: |_: &G, _| (f64::NEG_INFINITY, f64::INFINITY),
             // Paranoid: only the perspective player maximises.
             is_maximizer: |maximizing, cur_player| maximizing == cur_player,
             team_id_of: |p| p as u8,
@@ -80,6 +92,7 @@ impl Optimizations<EuchreGameState> {
             max_depth_for_tt: DEFAULT_MAX_TT_DEPTH,
             action_processor: process_euchre_actions,
             can_early_terminate: euchre_early_terminate,
+            value_bounds: euchre_value_bounds,
             // 2-team game: same parity = same team.
             is_maximizer: |m, c| m % 2 == c % 2,
             team_id_of: |p| (p % 2) as u8,
@@ -96,6 +109,7 @@ impl Optimizations<OhHellGameState> {
             max_depth_for_tt: DEFAULT_MAX_TT_DEPTH,
             action_processor: process_oh_hell_actions,
             can_early_terminate: oh_hell_early_terminate,
+            value_bounds: oh_hell_value_bounds,
             ..Optimizations::default()
         }
     }
@@ -178,10 +192,11 @@ impl<G: GameState> OpenHandSolver<G> {
     /// rollout `gs.clone()` (which heap-allocates `play_order` for Euchre). CFRES holds a
     /// concrete `OpenHandSolver` and calls this directly via the inherent method.
     pub fn evaluate_player_mut(&mut self, gs: &mut G, maximizing_player: Player) -> f64 {
+        let guess = first_guess(gs, maximizing_player, &self.optimizations);
         mtd_search(
             gs,
             maximizing_player,
-            0,
+            guess,
             self.cache.clone(),
             &self.optimizations,
         )
@@ -189,14 +204,31 @@ impl<G: GameState> OpenHandSolver<G> {
     }
 }
 
+/// Seed MTD-f with the midpoint of the a-priori value bounds instead of a
+/// blind 0. MTD-f converges to the same value from any starting guess; a
+/// closer guess just needs fewer zero-window passes.
+fn first_guess<G: GameState>(
+    gs: &G,
+    maximizing_player: Player,
+    optimizations: &Optimizations<G>,
+) -> i8 {
+    let (lo, hi) = (optimizations.value_bounds)(gs, maximizing_player);
+    if lo.is_finite() && hi.is_finite() {
+        ((lo + hi) / 2.0) as i8
+    } else {
+        0
+    }
+}
+
 impl<G: GameState> Evaluator<G> for OpenHandSolver<G> {
     /// Evaluates the gamestate for a maximizing player using alpha-beta search
     fn evaluate_player(&mut self, gs: &G, maximizing_player: Player) -> f64 {
         let mut owned = gs.clone();
+        let guess = first_guess(&owned, maximizing_player, &self.optimizations);
         mtd_search(
             &mut owned,
             maximizing_player,
-            0,
+            guess,
             self.cache.clone(),
             &self.optimizations,
         )
@@ -343,6 +375,11 @@ const DEFAULT_TT_CAP: usize = 1_000_000;
 #[derive(Clone)]
 struct TtImpl {
     map: Arc<DashMap<TranspositionKey, AlphaBetaResult, FxBuildHasher>>,
+    /// Approximate entry count. `DashMap::len()` read-locks every shard,
+    /// which is far too expensive to call on every insert (it dominated
+    /// the solver profile at ~30% of total cycles). A relaxed atomic
+    /// kept roughly in sync is all the cap-and-clear strategy needs.
+    approx_len: Arc<AtomicUsize>,
     cap: usize,
 }
 
@@ -354,6 +391,7 @@ impl TtImpl {
             .unwrap_or(DEFAULT_TT_CAP);
         Self {
             map: Arc::new(DashMap::with_hasher(FxBuildHasher)),
+            approx_len: Arc::new(AtomicUsize::new(0)),
             cap,
         }
     }
@@ -363,14 +401,20 @@ impl TtImpl {
     }
 
     fn insert(&self, k: TranspositionKey, v: AlphaBetaResult) {
-        if self.map.len() >= self.cap {
-            self.map.clear();
+        if self.approx_len.load(Ordering::Relaxed) >= self.cap {
+            self.clear();
         }
-        self.map.insert(k, v);
+        if self.map.insert(k, v).is_none() {
+            self.approx_len.fetch_add(1, Ordering::Relaxed);
+        }
     }
 
     fn clear(&self) {
         self.map.clear();
+        // Racy with concurrent inserts (their counts are lost), which can
+        // only under-count: the cap may be overshot slightly, never the
+        // other failure mode (clearing on every insert).
+        self.approx_len.store(0, Ordering::Relaxed);
     }
 }
 
@@ -438,6 +482,7 @@ mod tt_tests {
     fn cap_clear_wraps_around() {
         let tt = TtImpl {
             map: Arc::new(DashMap::with_hasher(FxBuildHasher)),
+            approx_len: Arc::new(AtomicUsize::new(0)),
             cap: 4,
         };
         for i in 0..3 {
@@ -489,6 +534,18 @@ fn alpha_beta<G: GameState>(
 
         trace!("early termination found for: {}, evaluation: {}", gs, v);
         return (v, None);
+    }
+
+    // A-priori value bounds: if even the optimistic bound can't beat
+    // alpha (or the pessimistic one already clears beta), prune without
+    // expanding — and without paying for the TT hash. The bound itself
+    // is a sound fail-soft return value.
+    let (value_lo, value_hi) = (optimizations.value_bounds)(gs, maximizing_player);
+    if value_hi <= alpha {
+        return (value_hi, None);
+    }
+    if value_lo >= beta {
+        return (value_lo, None);
     }
 
     let alpha_orig = alpha;

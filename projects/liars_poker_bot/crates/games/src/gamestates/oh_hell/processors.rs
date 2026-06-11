@@ -5,6 +5,10 @@
 //!
 //! * `oh_hell_early_terminate` short-circuits search when nothing remaining
 //!   can change any player's "made bid?" status.
+//! * `oh_hell_value_bounds` computes sound (pessimistic, optimistic) bounds
+//!   on the final mean-centred value so the solver can prune subtrees whose
+//!   score range is already decided — including mid-trick nodes, which the
+//!   transposition table never caches.
 //! * `process_oh_hell_actions` reorders and prunes legal actions in the play
 //!   phase: equivalent-rank cards in the same suit collapse to one option,
 //!   and known winners get tried first to maximise alpha-beta cutoffs.
@@ -65,6 +69,111 @@ fn higher_in_suit_mask(card: OHCard) -> u64 {
 /// terminal).
 pub fn oh_hell_early_terminate(gs: &OhHellGameState) -> bool {
     gs.is_terminal()
+}
+
+/// Sound (pessimistic, optimistic) bounds on the final mean-centred value
+/// of this state for `maximizing_player`, used by the alpha-beta solver to
+/// prune subtrees whose outcome range is already decided.
+///
+/// Per player q with `t_q` tricks won so far and `R` tricks still to be
+/// awarded, the final trick count lies in `[t_q, t_q + R]`, so the final
+/// score `t + 10·[t == bid_q]` lies between
+///   `s_min(q)`: `t_q` normally; if `t_q == bid_q` the cheapest escape is
+///   `t_q + 1` when `R ≥ 1`, else the bonus is forced (`t_q + 10`);
+///   `s_max(q)`: `max(t_q + R, bid_q + 10 if bid_q ∈ [t_q, t_q + R])`.
+/// These per-player ranges ignore the joint constraint that the remaining
+/// tricks sum to `R`, which only widens them — so the derived bounds on
+/// `v = s_p − mean = ((np−1)·s_p − Σ_others s_o) / np` stay sound.
+pub fn oh_hell_value_bounds(gs: &OhHellGameState, maximizing_player: usize) -> (f64, f64) {
+    if gs.phase() != OHPhase::Play {
+        return (f64::NEG_INFINITY, f64::INFINITY);
+    }
+    // This runs at every alpha-beta node, so it is written with integer
+    // arithmetic and direct indexing throughout; the only float ops are
+    // the two final divisions. (All intermediate quantities are small
+    // integers, so the f64 results are bit-identical to a float version.)
+    let np = gs.num_players();
+    let in_trick = gs.num_in_trick();
+    let trick_starter = gs.trick_starter();
+    let not_started =
+        gs.n_tricks() - gs.cards_played() / np - usize::from(in_trick > 0);
+
+    // Mid-trick, the in-progress trick can only be won by the current
+    // winner-so-far or a player who hasn't played to it yet — players who
+    // already played a losing card are shut out, which tightens their
+    // optimistic bound. Mid-trick nodes have no transposition-table
+    // caching, so this is their only cutoff besides alpha/beta itself.
+    // Card ids are suit-major / rank-ascending, so within a suit a plain
+    // id comparison orders by rank; the running best is always lead suit
+    // or trump, so a candidate from a third suit never wins.
+    let mut winner_so_far = usize::MAX;
+    if in_trick > 0 {
+        let trick = gs.current_trick();
+        let trump = gs.trump_suit().expect("trump set in play phase") as u8;
+        let mut best_id = trick[0].expect("lead card set") as u8;
+        let mut best_pos = 0;
+        for (i, c) in trick.iter().enumerate().take(in_trick).skip(1) {
+            let cid = c.expect("played slots filled") as u8;
+            let better = if cid / 13 == best_id / 13 {
+                cid > best_id
+            } else {
+                cid / 13 == trump
+            };
+            if better {
+                best_id = cid;
+                best_pos = i;
+            }
+        }
+        winner_so_far = (trick_starter + best_pos) % np;
+    }
+
+    let tricks_won = gs.tricks_won();
+    let bids = gs.bids();
+    let p = maximizing_player;
+    let (mut s_min_p, mut s_max_p) = (0i32, 0i32);
+    let (mut sum_min, mut sum_max) = (0i32, 0i32);
+    for q in 0..np {
+        let t = tricks_won[q] as i32;
+        let bid = bids[q].expect("bids set in play phase") as i32;
+        // Tricks q could still win: every not-yet-started trick, plus the
+        // in-progress one if q is winning it or hasn't played to it.
+        let eligible_current = in_trick > 0
+            && (q == winner_so_far || (q + np - trick_starter) % np >= in_trick);
+        let rem_q = not_started as i32 + i32::from(eligible_current);
+
+        let (mn, mx) = if rem_q == 0 {
+            // q can't win another trick: final count is locked at t.
+            let locked = if t == bid { t + 10 } else { t };
+            (locked, locked)
+        } else {
+            let mn = if t == bid { t + 1 } else { t };
+            let hi_tricks = t + rem_q;
+            let mx = if bid >= t && bid <= hi_tricks {
+                hi_tricks.max(bid + 10)
+            } else {
+                hi_tricks
+            };
+            (mn, mx)
+        };
+        sum_min += mn;
+        sum_max += mx;
+        if q == p {
+            s_min_p = mn;
+            s_max_p = mx;
+        }
+    }
+
+    // Mirror `evaluate`'s exact expression shape (`score - sum / np`) so
+    // the bounds round identically to the values the game produces:
+    // ((np-1)·s - others)/np rounds differently from s - (s + others)/np
+    // by 1 ULP on thirds, which is enough to put a true terminal value
+    // epsilon-outside an algebraically-equal bound. Both expressions are
+    // monotone in the (small, exactly-representable) integer inputs, so
+    // soundness carries over bit-for-bit.
+    let npf = np as f64;
+    let lo = s_min_p as f64 - ((s_min_p + (sum_max - s_max_p)) as f64) / npf;
+    let hi = s_max_p as f64 - ((s_max_p + (sum_min - s_min_p)) as f64) / npf;
+    (lo, hi)
 }
 
 /// Filter and reorder the legal action list to make alpha-beta cheaper.
@@ -193,6 +302,53 @@ mod tests {
         gs.apply_action(OHAction::Bid(1).into());
         gs.apply_action(OHAction::Bid(1).into());
         gs
+    }
+
+    /// `oh_hell_value_bounds` must bracket the true terminal value along
+    /// every random playout, for every perspective player. Walks random
+    /// games to terminal and checks each intermediate play-phase state's
+    /// bounds against the eventual `evaluate` result of that playout
+    /// (every reachable terminal value must lie within the bounds of all
+    /// its ancestors).
+    #[test]
+    fn value_bounds_bracket_terminal_values() {
+        use rand::{rngs::StdRng, seq::IndexedRandom, SeedableRng};
+        let mut rng: StdRng = SeedableRng::seed_from_u64(0xB07);
+        for n_tricks in 1..=4 {
+            for _ in 0..50 {
+                let mut gs = OhHell::new_state(3, n_tricks);
+                let mut bounds_along_path: Vec<[(f64, f64); 3]> = Vec::new();
+                while !gs.is_terminal() {
+                    if gs.phase() == OHPhase::Play {
+                        let mut snapshot = [(0.0, 0.0); 3];
+                        for (p, s) in snapshot.iter_mut().enumerate() {
+                            *s = oh_hell_value_bounds(&gs, p);
+                        }
+                        bounds_along_path.push(snapshot);
+                    }
+                    let acts = actions!(gs);
+                    let a = *acts.choose(&mut rng).unwrap();
+                    gs.apply_action(a);
+                }
+                for p in 0..3 {
+                    let v = gs.evaluate(p);
+                    for (i, snapshot) in bounds_along_path.iter().enumerate() {
+                        let (lo, hi) = snapshot[p];
+                        assert!(
+                            lo <= v && v <= hi,
+                            "bounds ({}, {}) at play-state #{} don't bracket terminal \
+                             value {} for player {} (state: {})",
+                            lo,
+                            hi,
+                            i,
+                            v,
+                            p,
+                            gs
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[test]

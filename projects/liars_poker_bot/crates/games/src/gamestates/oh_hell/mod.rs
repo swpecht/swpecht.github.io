@@ -787,28 +787,43 @@ impl GameState for OhHellGameState {
         // (0..np for players, np for stock), in ascending absolute-rank
         // order. With 13 cards per suit this is at most 52 bits, fits in
         // a u64.
+        //
+        // Iterate per-owner rather than per-card-per-owner: each owner's
+        // cards land at `popcount(in_play below the bit)` nibbles, so the
+        // inner owner-identification loop disappears. Owner 0 writes
+        // nothing (nibble 0), so its loop is skipped entirely.
+        let union_hands: u64 = self.hands[..np].iter().fold(0, |a, b| a | b);
         let mut suit_sigs = [0u64; 4];
         for (suit_idx, sig) in suit_sigs.iter_mut().enumerate() {
             let suit_full = SUIT_MASK[suit_idx];
             let in_play = suit_full & !used_mask;
+            if in_play == 0 {
+                continue;
+            }
 
             let mut s = 0u64;
-            let mut pos: u32 = 0;
-            let mut m = in_play;
-            while m != 0 {
-                let card_bit = m & m.wrapping_neg();
-                m &= m - 1;
-                let mut owner = np as u64;
-                for p in 0..np {
-                    if self.hands[p] & card_bit != 0 {
-                        owner = p as u64;
-                        break;
-                    }
+            for p in 1..np {
+                let mut m = self.hands[p] & in_play;
+                while m != 0 {
+                    let bit = m & m.wrapping_neg();
+                    m &= m - 1;
+                    let pos = (in_play & (bit - 1)).count_ones();
+                    s |= (p as u64) << (pos * 4);
                 }
-                s |= owner << (pos * 4);
-                pos += 1;
             }
-            *sig = s;
+            let mut m = in_play & !union_hands;
+            while m != 0 {
+                let bit = m & m.wrapping_neg();
+                m &= m - 1;
+                let pos = (in_play & (bit - 1)).count_ones();
+                s |= (np as u64) << (pos * 4);
+            }
+            // Include the in-play count (bits 56..60; the owner nibbles
+            // use at most 13×4 = 52 bits). Without it, a run of player-0
+            // owned cards at the top of a suit is indistinguishable from
+            // those cards being out of play, so two genuinely different
+            // states could share a signature and poison the TT.
+            *sig = s | ((in_play.count_ones() as u64) << 56);
         }
 
         // Trump's signature goes in slot 0; the three non-trump

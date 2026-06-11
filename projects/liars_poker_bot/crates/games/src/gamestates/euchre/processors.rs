@@ -61,6 +61,37 @@ pub fn euchre_early_terminate(gs: &EuchreGameState) -> bool {
     false
 }
 
+/// Sound (pessimistic, optimistic) bounds on the terminal value of this
+/// state for `maximizing_player`'s team, used by the alpha-beta solver to
+/// prune subtrees whose score range is already decided.
+///
+/// With `a` tricks for team 0, `b` for team 1 and `r = 5 - a - b` still
+/// open, every achievable final split is `(a + k, 5 - a - k)` for
+/// `k ∈ [0, r]`. The score function maps each split to one of a handful
+/// of values (±1, ±2, ±march), so min/max over the splits bound the true
+/// value exactly. Once a team has 3+ tricks and the other has 1+, the
+/// score is fully locked and the whole subtree collapses — including
+/// mid-trick nodes, which the transposition table never caches.
+pub fn euchre_value_bounds(gs: &EuchreGameState, maximizing_player: Player) -> (f64, f64) {
+    if gs.phase() != EPhase::Play {
+        return (f64::NEG_INFINITY, f64::INFINITY);
+    }
+    let (a, b) = (gs.tricks_won[0], gs.tricks_won[1]);
+    let r = 5 - a - b;
+    let mut lo = f64::INFINITY;
+    let mut hi = f64::NEG_INFINITY;
+    for k in 0..=r {
+        let s = gs.score(a + k, 5 - a - k);
+        lo = lo.min(s);
+        hi = hi.max(s);
+    }
+    if maximizing_player % 2 == 0 {
+        (lo, hi)
+    } else {
+        (-hi, -lo)
+    }
+}
+
 fn process_play_actions(gs: &EuchreGameState, actions: &mut Vec<Action>) {
     // if have the highest trump, and it's a new trick, likely want to play that, evaluate it first
     evaluate_highest_trump_first(gs, actions);
@@ -218,13 +249,55 @@ mod tests {
     use itertools::Itertools;
 
     use crate::{
+        actions,
         gamestates::euchre::{
-            actions::EAction, processors::evaluate_highest_trump_first, EuchreGameState,
+            actions::EAction, processors::evaluate_highest_trump_first, Euchre, EuchreGameState,
         },
         GameState,
     };
 
-    use super::remove_equivlent_cards;
+    use super::{euchre_value_bounds, remove_equivlent_cards};
+
+    /// `euchre_value_bounds` must bracket the true terminal value along
+    /// every random playout, for every perspective player.
+    #[test]
+    fn value_bounds_bracket_terminal_values() {
+        use rand::{rngs::StdRng, seq::IndexedRandom, SeedableRng};
+        let mut rng: StdRng = SeedableRng::seed_from_u64(0xE0B);
+        for _ in 0..100 {
+            let mut gs = Euchre::new_state();
+            let mut bounds_along_path: Vec<[(f64, f64); 4]> = Vec::new();
+            while !gs.is_terminal() {
+                if gs.phase() == super::EPhase::Play {
+                    let mut snapshot = [(0.0, 0.0); 4];
+                    for (p, s) in snapshot.iter_mut().enumerate() {
+                        *s = euchre_value_bounds(&gs, p);
+                    }
+                    bounds_along_path.push(snapshot);
+                }
+                let acts = actions!(gs);
+                let a = *acts.choose(&mut rng).unwrap();
+                gs.apply_action(a);
+            }
+            for p in 0..4 {
+                let v = gs.evaluate(p);
+                for (i, snapshot) in bounds_along_path.iter().enumerate() {
+                    let (lo, hi) = snapshot[p];
+                    assert!(
+                        lo <= v && v <= hi,
+                        "bounds ({}, {}) at play-state #{} don't bracket terminal \
+                         value {} for player {} (state: {})",
+                        lo,
+                        hi,
+                        i,
+                        v,
+                        p,
+                        gs
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn test_highest_trump() {
