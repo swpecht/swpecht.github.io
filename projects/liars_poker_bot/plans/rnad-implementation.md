@@ -266,3 +266,31 @@ knobs: `OH_RNAD_WEIGHTS` (default
 target machine needs CPU libtorch on LD_LIBRARY_PATH and the two weight
 sets copied to the paths above; `cargo xtask deploy` currently handles
 neither (it only rsyncs the euchre_server binary).
+
+## Oh Hell 4-player run (entry 8)
+
+Goal: a 4-player variant of the OH R-NaD network. Two constraints found up
+front:
+- **The engine caps 4-player at 7 tricks**: the 64-slot `IStateKey` budget
+  (`2·np·nt + np + 1 ≤ 64` ⇒ `max_tricks_for(4) = 7`), not the deck.
+  Raising it means widening a core type used by CFR keys/indexers — out of
+  scope. So "4-player" = 4p, t1–7.
+- That also means the worst 4p istate is 40 tokens, fitting the standard
+  48-context `OhHellTokenizer` — no architecture change, and the 3-player
+  champion warm-starts the 4p net with a FULL weight load (cards and bids
+  tokenize identically; a briefly-prototyped 64-context tokenizer +
+  partial pos_emb transfer was deleted as unnecessary).
+
+Setup: `oh_hell_rnad_train` as-is with `RN_PLAYERS=4 RN_TRICKS_MAX=7
+RN_EVAL_TRICKS=2,4,6 RN_INIT=oh_hell/rnad_best.safetensors` (the 3p R-NaD
+champion), 6000 iters × 256 games, otherwise the entry-6 recipe
+(reg_every=500, η 0.3→0.075 + lr 3e-5→3e-6 annealed, value_weight 0.25,
+spread_penalty — which generalises to n=4 as actor pays, three others
+split). Checkpoints: `oh_hell/rnad4/`, log `rnad4/train_run1.log`, kestrel
+`oh-hell4-rnad-1`.
+
+Zero-shot note: at iter 0 the 3p champion already scores +2.0…+2.6/hand vs
+random at 4p (n=100/t) — cross-player-count transfer is substantial,
+echoing the OH-5 cross-trick-count result.
+
+Results: (pending)
