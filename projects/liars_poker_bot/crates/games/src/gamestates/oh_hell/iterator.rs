@@ -25,7 +25,9 @@
 //! rollouts and CFR only learns the bidding sub-game. The canonical
 //! istate at a bidding decision point depends only on
 //!
-//!     (own_canonical_hand, face_up_rank, prior_bids)
+//! ```text
+//! (own_canonical_hand, face_up_rank, prior_bids)
+//! ```
 //!
 //! and every (hand-shape, face_up_rank, prior_bid_sequence) is its own
 //! distinct iso class — so a HashSet would just be an expensive identity

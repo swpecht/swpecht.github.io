@@ -8,11 +8,20 @@ use std::{collections::HashMap, fs::OpenOptions, sync::Mutex};
 use actix_web::{middleware::Logger, web, App, HttpResponse, HttpServer};
 use card_platypus::{
     agents::Agent,
-    algorithms::{open_hand_solver::OpenHandSolver, pimcts::PIMCTSBot},
+    algorithms::{
+        cfres::{CFRES, OH_MAX_ACTIONS},
+        gomcts_transformer::{
+            forward_histories_batch_tch, masked_policy, oh_hell::OhHellTokenizer,
+            GoMctsTransformerTch, InferenceMode, Tokenizer, TransformerConfig,
+        },
+        open_hand_solver::OpenHandSolver,
+        pimcts::PIMCTSBot,
+    },
 };
 use games::{
     actions,
     gamestates::oh_hell::{OHPhase, OhHell, OhHellGameState},
+    istate::IStateKey,
     Action, GameState,
 };
 use log::{info, set_max_level, LevelFilter};
@@ -49,14 +58,196 @@ pub fn default_hand_sequence() -> Vec<usize> {
     seq
 }
 
-/// Look up the bot strategy in use for a given hand size. PIMCTS for
-/// every size today; this list will grow as CFRES weights for specific
-/// hand sizes get trained and wired in.
-pub fn strategy_for_hand_size(_n_tricks: usize) -> &'static str {
-    "PIMCTS"
+/// Per-hand-size strategy the deployment WANTS, from the R-NaD
+/// tournament evals (plans/rnad-implementation.md): serve R-NaD at the
+/// hand sizes where it outperforms both PIMCTS and the CFR bid weights,
+/// CFR where it doesn't, PIMCTS where neither stronger option exists.
+/// `strategy_for_hand_size` reports what the running process actually
+/// loaded — a desired agent whose weights are missing on disk falls
+/// back (R-NaD → CFR → PIMCTS) with a startup warning.
+fn desired_strategy(n_tricks: usize) -> &'static str {
+    match n_tricks {
+        // 1-trick hands are nearly pure bidding — exactly what the CFR
+        // bid weights solved. R-NaD only ties them there (+0.03±0.08
+        // per hand, n=3000) while clearly beating PIMCTS, so per the
+        // outperform-both-or-CFR rule, CFR keeps t1.
+        1 => "CFR",
+        // rnad_best beats PIMCTS-50 at every other size (+0.68..+1.51
+        // per hand, ≥3.5σ at n=300/t; pooled +1.19 over t1-10) and the
+        // CFR bid weights at t2-5 (+0.32..+1.43, ≥4σ at n=3000). See
+        // plans/rnad-implementation.md OH entries.
+        2..=10 => "R-NaD",
+        _ => "PIMCTS",
+    }
 }
 
-pub(crate) type Bot = PIMCTSBot<OhHellGameState, OpenHandSolver<OhHellGameState>>;
+/// The strategy actually being served per hand size, resolved at
+/// startup from `desired_strategy` ∩ weights-on-disk. Index 1..=10.
+static STRATEGY_TABLE: std::sync::OnceLock<[&'static str; 11]> = std::sync::OnceLock::new();
+
+/// Look up the bot strategy in use for a given hand size (shown on the
+/// landing page).
+pub fn strategy_for_hand_size(n_tricks: usize) -> &'static str {
+    STRATEGY_TABLE
+        .get()
+        .map(|t| t[n_tricks.clamp(1, 10)])
+        .unwrap_or("PIMCTS")
+}
+
+type OhCfres = CFRES<OhHellGameState, OH_MAX_ACTIONS, u64>;
+
+/// Greedy-LM transformer agent (R-NaD checkpoint). One forward pass per
+/// decision via the LM head masked to legal actions — CPU-friendly
+/// (~tens of ms per move on the paper config, no CUDA required).
+pub(crate) struct RnadAgent {
+    net: GoMctsTransformerTch,
+    tokenizer: OhHellTokenizer,
+    rng: StdRng,
+}
+
+/// Near-greedy softmax temperature; matches the eval harnesses'
+/// deployed-agent configuration (OH_TEMP=0.05).
+const RNAD_TEMP: f64 = 0.05;
+
+impl RnadAgent {
+    fn load(path: &std::path::Path) -> anyhow::Result<Self> {
+        let cfg = TransformerConfig::paper_default(
+            OhHellTokenizer::VOCAB_SIZE,
+            OhHellTokenizer::MAX_CONTEXT,
+        );
+        // cuda_if_available: GPU when present, plain CPU inference on
+        // the GPU-less deploy target.
+        let mut net = GoMctsTransformerTch::new(cfg, tch::Device::cuda_if_available())?;
+        net.load_safetensors(path)?;
+        Ok(Self {
+            net,
+            tokenizer: OhHellTokenizer,
+            rng: StdRng::from_rng(&mut rng()),
+        })
+    }
+
+    fn step(&mut self, gs: &OhHellGameState) -> Action {
+        let mut legal = Vec::new();
+        gs.legal_actions(&mut legal);
+        if legal.len() == 1 {
+            return legal[0];
+        }
+        let h: IStateKey = gs.istate_key(gs.cur_player());
+        let probs = masked_policy(
+            InferenceMode::LmSoftmax,
+            0.0,
+            RNAD_TEMP,
+            |a| self.tokenizer.action_token(a),
+            &h,
+            &legal,
+            |histories| forward_histories_batch_tch(&self.net, &self.tokenizer, &histories).ok(),
+        );
+        use rand::RngExt;
+        let mut r: f64 = self.rng.random::<f64>();
+        for (i, p) in probs.iter().enumerate() {
+            r -= *p;
+            if r <= 0.0 {
+                return legal[i];
+            }
+        }
+        legal[legal.len() - 1]
+    }
+}
+
+/// The serving bot: dispatches each decision to the strongest available
+/// agent for the current hand size (see `desired_strategy`).
+pub(crate) struct Bot {
+    pimcts: PIMCTSBot<OhHellGameState, OpenHandSolver<OhHellGameState>>,
+    cfr: HashMap<usize, OhCfres>,
+    rnad: Option<RnadAgent>,
+}
+
+impl Bot {
+    /// Production loadout: R-NaD checkpoint + CFR bid weights + PIMCTS
+    /// fallback. Missing weight files demote the affected hand sizes
+    /// down the strategy ladder rather than failing startup.
+    pub(crate) fn load_production() -> Self {
+        let rnad_path = std::env::var("OH_RNAD_WEIGHTS").unwrap_or_else(|_| {
+            "/home/steven/card_platypus/gomcts/oh_hell/rnad_best.safetensors".to_string()
+        });
+        let rnad = match RnadAgent::load(std::path::Path::new(&rnad_path)) {
+            Ok(agent) => Some(agent),
+            Err(e) => {
+                log::warn!("R-NaD weights unavailable at {rnad_path}: {e:#}; falling back");
+                None
+            }
+        };
+        let cfr_base =
+            std::env::var("OH_CFR_DIR").unwrap_or_else(|_| "/home/steven/card_platypus".into());
+        let mut cfr = HashMap::new();
+        for t in 1..=10usize {
+            let dir = std::path::PathBuf::from(&cfr_base)
+                .join(format!("oh_hell.{NUM_PLAYERS}p_{t}t_bid"));
+            if dir.exists() {
+                cfr.insert(t, OhCfres::new_oh_hell(NUM_PLAYERS, t, 0, Some(&dir)));
+            }
+        }
+        let bot = Self {
+            pimcts: PIMCTSBot::new(
+                BOT_ROLLOUTS,
+                OpenHandSolver::new_oh_hell(),
+                StdRng::from_rng(&mut rng()),
+            ),
+            cfr,
+            rnad,
+        };
+        bot.publish_strategy_table();
+        bot
+    }
+
+    /// Test/fallback loadout: PIMCTS at every hand size.
+    pub(crate) fn pimcts_only(rollouts: usize) -> Self {
+        let bot = Self {
+            pimcts: PIMCTSBot::new(
+                rollouts,
+                OpenHandSolver::new_oh_hell(),
+                StdRng::from_rng(&mut rng()),
+            ),
+            cfr: HashMap::new(),
+            rnad: None,
+        };
+        bot.publish_strategy_table();
+        bot
+    }
+
+    fn resolve_strategy(&self, n_tricks: usize) -> &'static str {
+        let desired = desired_strategy(n_tricks);
+        // Demote down the ladder when the desired weights didn't load.
+        if desired == "R-NaD" && self.rnad.is_some() {
+            "R-NaD"
+        } else if desired != "PIMCTS" && self.cfr.contains_key(&n_tricks) {
+            "CFR"
+        } else {
+            "PIMCTS"
+        }
+    }
+
+    fn publish_strategy_table(&self) {
+        let mut table = ["PIMCTS"; 11];
+        for (t, entry) in table.iter_mut().enumerate().skip(1) {
+            *entry = self.resolve_strategy(t);
+        }
+        let _ = STRATEGY_TABLE.set(table);
+        info!("bot strategy per hand size (1..=10): {:?}", &table[1..]);
+    }
+
+    pub(crate) fn step(&mut self, gs: &OhHellGameState) -> Action {
+        match self.resolve_strategy(gs.n_tricks()) {
+            "R-NaD" => self.rnad.as_mut().expect("resolved R-NaD implies loaded").step(gs),
+            "CFR" => self
+                .cfr
+                .get_mut(&gs.n_tricks())
+                .expect("resolved CFR implies loaded")
+                .step(gs),
+            _ => self.pimcts.step(gs),
+        }
+    }
+}
 
 pub(crate) struct AppState {
     pub(crate) games: Mutex<HashMap<Uuid, GameData>>,
@@ -65,14 +256,9 @@ pub(crate) struct AppState {
 
 impl Default for AppState {
     fn default() -> Self {
-        let bot = PIMCTSBot::new(
-            BOT_ROLLOUTS,
-            OpenHandSolver::new_oh_hell(),
-            StdRng::from_rng(&mut rng()),
-        );
         Self {
             games: Default::default(),
-            bot: Mutex::new(bot),
+            bot: Mutex::new(Bot::load_production()),
         }
     }
 }
@@ -367,13 +553,9 @@ mod tests {
     };
 
     fn make_test_bot() -> Mutex<Bot> {
-        Mutex::new(PIMCTSBot::new(
-            // 1 rollout keeps the fuzz fast; the bot's policy quality is
-            // not what we're testing here.
-            1,
-            OpenHandSolver::new_oh_hell(),
-            StdRng::from_rng(&mut rng()),
-        ))
+        // 1 rollout keeps the fuzz fast; the bot's policy quality is
+        // not what we're testing here.
+        Mutex::new(Bot::pimcts_only(1))
     }
 
     /// Test-only hand sequence: 3 → 2 → 1 → 2 → 3. Mirrors the shape of

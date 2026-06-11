@@ -5,6 +5,10 @@ edition = "2021"
 
 [dependencies]
 actix-web = "4"
+anyhow = { workspace = true }
+# Same pin as card_platypus — needed for tch::Device when constructing
+# the R-NaD transformer agent.
+tch = { version = "0.18" }
 card_platypus = { path = "../card_platypus" }
 games = { path = "../games" }
 web_common = { path = "../web_common" }

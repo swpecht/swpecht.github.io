@@ -198,3 +198,71 @@ visible at this power; (c) the measurement is bounded by the exploiter,
 which shares the target's function class and init — a stronger exploiter
 (longer runs, from-scratch + diverse seeds, or search-based) is needed to
 separate them. Logs: `rnad/exploit_{bootstrap,rnad_best}.log`.
+
+## Oh Hell run 1 (entry 6) — the big win
+
+`examples/oh_hell_rnad_train.rs`: 3-player, trick counts 1–10 cycled through
+every self-play batch, warm start `bootstrap_v2` (PIMCTS-50 bootstrap), with
+every Euchre lesson applied: reg_every=500, lr 3e-5→3e-6 + η 0.3→0.075
+annealed over the final third, value_weight=0.25 (±10 payoffs), and the new
+`spread_penalty` routing (actor pays −η·logratio, the other two players
+split the bonus — preserves Oh Hell's mean-centred 3-player zero-sum).
+8000 iters × 256 games = 2M self-play games, 3.3 h on the 4080.
+
+Training dynamics (log: `oh_hell/rnad/train_run1.log`, kestrel
+`oh-hell-rnad-1`):
+- kl_outer contracted geometrically: 0.48 → 0.10 → 0.06 → ~0.03 (plateau at
+  the pre-anneal lr noise floor) → 0.008 after the anneal. Textbook
+  outer-loop convergence — compare Euchre run 1, which plateaued at ~0.03
+  with no anneal and oscillated.
+- No late-run decay (unlike Euchre at reg_every=200): vs_init climbed to
+  ~+1.0–1.4/hand and HELD through iter 8000.
+
+Checkpoint sweep (`oh_hell_rnad_select`, 1000 games × t1–10 each, n=10k
+pooled per checkpoint): every checkpoint from iter 1000 on lands at
++1.07–1.33 pooled vs the bootstrap; rnad_iter_05500 nominally best (+1.327)
+→ `oh_hell/rnad_best.safetensors`. (rnad_final vs rnad_iter_08000 are
+identical weights and differ by 0.011 — the seed-noise scale.)
+
+Tournament vs the previous champions (`oh_hell_gomcts_eval`, n=300/t,
+greedy-LM temp 0.05; borderline cells re-run at n=3000):
+
+| t | vs PIMCTS-50 | vs CFR bid weights |
+|---|---|---|
+| 1 | **+0.48 ± 0.08** (n=3000) | +0.03 ± 0.08 (n=3000) — tie |
+| 2 | +1.46 | +0.76 |
+| 3 | +1.36 | +0.32 ± 0.07 (n=3000) |
+| 4 | +1.32 | +0.40 ± 0.07 (n=3000) |
+| 5 | +1.51 | +1.43 |
+| 6 | +1.51 | — (no CFR weights) |
+| 7 | +0.90 | — |
+| 8 | +0.68 | — |
+| 9 | +1.41 | — |
+| 10 | +1.49 | — |
+
+Pooled vs PIMCTS: **+1.19/hand over 3000 games** — versus −0.18 for
+bootstrap_v2 on the identical eval. rnad_best beats PIMCTS at every trick
+count and the CFR bid weights at t2–5; the only non-win is the t1 CFR tie
+(1-trick hands are nearly pure bidding, which CFR solved near-exactly).
+**rnad_best is the strongest Oh Hell agent in the repo, decisively.**
+
+Why Oh Hell worked where Euchre barely moved: the bootstrap was far from
+equilibrium (negative vs random at t8!), self-play natively covers the
+post-deviation contexts the OH-4 diagnosis showed PIMCTS data misses, and
+the slow-refresh + anneal regime let each fixed point actually converge.
+
+## Serving (entry 7)
+
+`oh_hell_server` now dispatches per hand size (`desired_strategy` in
+main.rs): CFR bid weights at t=1, R-NaD greedy-LM at t=2–10, PIMCTS as the
+ladder fallback when weights are missing on disk. The R-NaD agent is one
+masked LM forward per decision — ~8 ms on CPU (paper config), verified
+against CPU-only libtorch 2.5.0: `build.rs` autodetects a missing
+libtorch_cuda.so, compiles a no-op cuda_graph_shim stub, and skips the CUDA
+link flags, so the GPU-less deploy target builds and runs. Weights path
+knobs: `OH_RNAD_WEIGHTS` (default
+`/home/steven/card_platypus/gomcts/oh_hell/rnad_best.safetensors`),
+`OH_CFR_DIR` (default `/home/steven/card_platypus`). NOTE for deploy: the
+target machine needs CPU libtorch on LD_LIBRARY_PATH and the two weight
+sets copied to the paths above; `cargo xtask deploy` currently handles
+neither (it only rsyncs the euchre_server binary).
