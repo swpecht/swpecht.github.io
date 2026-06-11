@@ -79,7 +79,7 @@ fn main() {
         let trajs = collect_rnad_games_batched_tch::<_, _, _>(
             &trainer.net,
             &tokenizer,
-            KuhnPoker::new_state,
+            |_| KuhnPoker::new_state(),
             games_per_iter,
             base_seed.wrapping_add(1 + iter as u64 * games_per_iter as u64),
             atf.clone(),

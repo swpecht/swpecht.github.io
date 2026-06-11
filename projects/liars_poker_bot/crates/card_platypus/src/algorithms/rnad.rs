@@ -74,6 +74,16 @@ pub struct RnadConfig {
     pub reg_update_every: usize,
     /// Step rows per forward/optimizer step inside one learner step.
     pub minibatch_steps: usize,
+    /// Reward-transform routing. `false` (default): two-team zero-sum —
+    /// the actor's team pays −η·logratio, the opposing team receives
+    /// +η·… (correct for 2p games and 4p partnerships, keeps the
+    /// transformed game zero-sum). `true`: the actor pays −η·logratio
+    /// and every OTHER player receives +η·logratio/(n−1) — preserves
+    /// zero-sum for n individual players (3-player Oh Hell, whose
+    /// `evaluate` is mean-centred) and reduces exactly to the 2p
+    /// formula at n=2. Don't use for partnership games: the actor's
+    /// partner would wrongly receive a share of the bonus.
+    pub spread_penalty: bool,
 }
 
 impl Default for RnadConfig {
@@ -88,6 +98,7 @@ impl Default for RnadConfig {
             grad_clip: 5.0,
             reg_update_every: 100,
             minibatch_steps: 1024,
+            spread_penalty: false,
         }
     }
 }
@@ -140,10 +151,9 @@ fn team_of(player: usize) -> usize {
 
 fn play_one_hand_rnad<G: GameState>(
     actor: &mut RemoteModel,
-    new_state: impl Fn() -> G,
+    mut gs: G,
     rng: &mut StdRng,
 ) -> RnadTrajectory {
-    let mut gs = new_state();
     let mut buf = Vec::new();
     let mut steps = Vec::new();
     while !gs.is_terminal() {
@@ -182,6 +192,9 @@ fn play_one_hand_rnad<G: GameState>(
 /// Collect `n_games` self-play trajectories with every seat sampling
 /// the live policy. Same scoped-thread + batching-service architecture
 /// as the GO-MCTS self-play paths.
+///
+/// `new_state` receives the game index, so callers can vary game
+/// parameters across the batch (e.g. cycling Oh Hell trick counts).
 #[allow(clippy::too_many_arguments)]
 pub fn collect_rnad_games_batched_tch<G, T, FNS>(
     net: &GoMctsTransformerTch,
@@ -196,7 +209,7 @@ pub fn collect_rnad_games_batched_tch<G, T, FNS>(
 where
     G: GameState + Send,
     T: Tokenizer<G> + Send + Sync,
-    FNS: Fn() -> G + Send + Sync + Copy,
+    FNS: Fn(usize) -> G + Send + Sync + Copy,
 {
     use std::sync::mpsc;
     if n_games == 0 {
@@ -220,7 +233,7 @@ where
                     .with_inference(InferenceMode::LmSoftmax, 0.0, Some(atf))
                     .with_temp(1.0);
                 let mut rng: StdRng = SeedableRng::seed_from_u64(seed);
-                play_one_hand_rnad(&mut actor, new_state, &mut rng)
+                play_one_hand_rnad(&mut actor, new_state(game_idx), &mut rng)
             }));
         }
         drop(request_tx);
@@ -239,10 +252,9 @@ fn play_one_hand_exploiter<G: GameState>(
     live: &mut RemoteModel,
     frozen: &mut RemoteModel,
     live_team: usize,
-    new_state: impl Fn() -> G,
+    mut gs: G,
     rng: &mut StdRng,
 ) -> RnadTrajectory {
-    let mut gs = new_state();
     let mut buf = Vec::new();
     let mut steps = Vec::new();
     while !gs.is_terminal() {
@@ -308,7 +320,7 @@ pub fn collect_exploiter_games_batched_tch<G, T, FNS>(
 where
     G: GameState + Send,
     T: Tokenizer<G> + Send + Sync,
-    FNS: Fn() -> G + Send + Sync + Copy,
+    FNS: Fn(usize) -> G + Send + Sync + Copy,
 {
     use std::sync::mpsc;
     if n_games == 0 {
@@ -342,7 +354,7 @@ where
                     &mut live_actor,
                     &mut frozen_actor,
                     game_idx % 2,
-                    new_state,
+                    new_state(game_idx),
                     &mut rng,
                 )
             }));
@@ -483,6 +495,20 @@ impl<G: GameState, T: Tokenizer<G>> RnadTrainer<G, T> {
         self.learner_iters
     }
 
+    /// Update the optimizer learning rate (lr-annealing schedules: damp
+    /// the late-run orbit around the fixed point).
+    pub fn set_lr(&mut self, lr: f64) {
+        self.opt.set_lr(lr);
+    }
+
+    /// Update η mid-run (η-annealing: shrink the smoothing gap between
+    /// the regularized fixed point and the unregularized equilibrium as
+    /// the outer loop settles). `cfg` is public so this is sugar, but it
+    /// keeps schedule code symmetric with `set_lr`.
+    pub fn set_eta(&mut self, eta: f64) {
+        self.cfg.eta = eta;
+    }
+
     /// π_reg ← current live weights (the R-NaD "update" step). Returns
     /// `kl_outer`: KL(π_now ‖ π_reg_outgoing) over the retained recent
     /// states, measured BEFORE the swap — the distance this fixed-point
@@ -581,16 +607,31 @@ impl<G: GameState, T: Tokenizer<G>> RnadTrainer<G, T> {
         for traj in trajs {
             let k = traj.steps.len();
             let mut team_acc = [0.0_f64; 2];
+            let mut own_acc = vec![0.0_f64; traj.payoffs.len()];
             for i in (0..k).rev() {
                 let g = offset + i;
                 let st = &traj.steps[i];
                 let log_ratio = ((eval.logp[g] - eval.logp_reg[g]) as f64)
                     .clamp(-cfg.log_ratio_clip, cfg.log_ratio_clip);
                 let penalty = cfg.eta * log_ratio;
-                let tm = team_of(st.player);
-                team_acc[tm] -= penalty;
-                team_acc[1 - tm] += penalty;
-                let g_t = traj.payoffs[st.player] + team_acc[tm];
+                let reg_stream = if cfg.spread_penalty {
+                    let np = own_acc.len();
+                    let share = penalty / (np - 1).max(1) as f64;
+                    for (q, acc) in own_acc.iter_mut().enumerate() {
+                        if q == st.player {
+                            *acc -= penalty;
+                        } else {
+                            *acc += share;
+                        }
+                    }
+                    own_acc[st.player]
+                } else {
+                    let tm = team_of(st.player);
+                    team_acc[tm] -= penalty;
+                    team_acc[1 - tm] += penalty;
+                    team_acc[tm]
+                };
+                let g_t = traj.payoffs[st.player] + reg_stream;
                 returns[g] = g_t as f32;
                 let adv = g_t - eval.value[g] as f64;
                 abs_adv_sum += adv.abs();
@@ -740,7 +781,7 @@ mod tests {
             let trajs = collect_rnad_games_batched_tch::<_, _, _>(
                 &trainer.net,
                 &tok,
-                KuhnPoker::new_state,
+                |_| KuhnPoker::new_state(),
                 64,
                 1000 + it as u64 * 64,
                 atf.clone(),

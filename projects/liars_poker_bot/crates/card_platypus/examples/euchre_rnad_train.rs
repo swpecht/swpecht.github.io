@@ -20,6 +20,14 @@
 //!   RN_GAMES_PER_ITER self-play games per iteration         (default 256)
 //!   RN_ETA           regularization strength η              (default 0.2)
 //!   RN_LR            learning rate                          (default 2e-5)
+//!   RN_ETA_FINAL     η at the end of the anneal             (default RN_ETA/4)
+//!   RN_LR_FINAL      lr at the end of the anneal            (default RN_LR/10)
+//!   RN_ANNEAL_START  fraction of iters before annealing     (default 0.65;
+//!                    ≥1.0 disables. Linear decay from the start values to
+//!                    the *_FINAL values over the remaining iters: lr decay
+//!                    damps the late-run orbit around the fixed point, η
+//!                    decay shrinks the smoothing gap between the
+//!                    regularized fixed point and the true equilibrium.)
 //!   RN_REG_EVERY     learner steps per π_reg refresh        (default 200)
 //!   RN_VALUE_WEIGHT  value-loss weight                      (default 1.0)
 //!   RN_NEURD_CLIP    NeuRD logit threshold β                (default 2.0)
@@ -162,13 +170,25 @@ fn main() {
     let (r0, r0_se, _, _) = eval_all(&trainer.net, base_seed.wrapping_add(999_983));
     println!("iter 0: vs_random={r0:+.4}±{r0_se:.4} (greedy-LM temp={eval_temp})");
 
+    let eta0 = rnad_cfg.eta;
+    let lr0 = rnad_cfg.lr;
+    let eta_final: f64 = parse("RN_ETA_FINAL", eta0 / 4.0);
+    let lr_final: f64 = parse("RN_LR_FINAL", lr0 / 10.0);
+    let anneal_start: f64 = parse("RN_ANNEAL_START", 0.65);
+
     let t_start = Instant::now();
     for iter in 1..=iters {
         let t0 = Instant::now();
+        let progress = iter as f64 / iters as f64;
+        if progress > anneal_start {
+            let f = ((progress - anneal_start) / (1.0 - anneal_start)).clamp(0.0, 1.0);
+            trainer.set_eta(eta0 + (eta_final - eta0) * f);
+            trainer.set_lr(lr0 + (lr_final - lr0) * f);
+        }
         let trajs = collect_rnad_games_batched_tch::<_, _, _>(
             &trainer.net,
             &tokenizer,
-            Euchre::new_state,
+            |_| Euchre::new_state(),
             games_per_iter,
             base_seed.wrapping_add(1 + iter as u64 * games_per_iter as u64),
             atf.clone(),
@@ -180,12 +200,13 @@ fn main() {
         let secs = t0.elapsed().as_secs_f64();
         println!(
             "kestrel: step={iter} policy_loss={:.6} value_loss={:.6} mean_abs_adv={:.6} \
-             entropy={:.6} kl_reg={:.6} steps={} games={} secs={:.4}",
+             entropy={:.6} kl_reg={:.6} eta={:.6} steps={} games={} secs={:.4}",
             stats.policy_loss,
             stats.value_loss,
             stats.mean_abs_adv,
             stats.mean_entropy,
             stats.mean_kl_reg,
+            trainer.cfg.eta,
             stats.n_steps,
             n_games,
             secs,
