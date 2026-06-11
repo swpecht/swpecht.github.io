@@ -248,13 +248,33 @@ where
 // Exploiter collection (approximate-exploitability harness)
 // =====================================================================
 
+/// Which seats the exploiter controls in best-response training.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExploiterSeating {
+    /// The exploiter plays one TEAM (`team_of`, i.e. seats of equal
+    /// parity), alternating teams by game index. Right for 2p games
+    /// and 4p partnerships (Euchre).
+    Team,
+    /// The exploiter plays exactly ONE seat, rotating through all
+    /// seats by game index — the literal unilateral-deviation test
+    /// for n-player games (3p Oh Hell): can a single defector profit
+    /// against n−1 copies of the frozen policy?
+    SingleSeat,
+}
+
 fn play_one_hand_exploiter<G: GameState>(
     live: &mut RemoteModel,
     frozen: &mut RemoteModel,
-    live_team: usize,
+    seating: ExploiterSeating,
+    game_idx: usize,
     mut gs: G,
     rng: &mut StdRng,
 ) -> RnadTrajectory {
+    let n_players = gs.num_players();
+    let is_live = |p: usize| match seating {
+        ExploiterSeating::Team => team_of(p) == game_idx % 2,
+        ExploiterSeating::SingleSeat => p == game_idx % n_players,
+    };
     let mut buf = Vec::new();
     let mut steps = Vec::new();
     while !gs.is_terminal() {
@@ -267,7 +287,7 @@ fn play_one_hand_exploiter<G: GameState>(
         }
         let p = gs.cur_player();
         let h = gs.istate_key(p);
-        let a = if team_of(p) == live_team {
+        let a = if is_live(p) {
             let probs = <RemoteModel as GenerativeModel<G>>::policy(live, &h, &buf);
             let mut r: f64 = rng.random::<f64>();
             let mut idx = buf.len() - 1;
@@ -296,12 +316,13 @@ fn play_one_hand_exploiter<G: GameState>(
 }
 
 /// Collect best-response training games: the live (exploiter) net plays
-/// one team — alternating teams by game index so both seat parities are
-/// covered — against a FROZEN target net at the other seats. Only the
-/// exploiter team's decisions are recorded, so `learner_step` trains a
-/// best response. Run the trainer with `eta = 0` (no reward transform);
-/// the exploiter's head-to-head EV against the target is then a lower
-/// bound on the target's exploitability.
+/// the `seating`-selected seats — rotating by game index so every seat
+/// parity/position is covered — against a FROZEN target net at the
+/// other seats. Only the exploiter's decisions are recorded, so
+/// `learner_step` trains a best response. Run the trainer with
+/// `eta = 0` (no reward transform); the exploiter's head-to-head EV
+/// against the target is then a lower bound on the target's
+/// exploitability.
 ///
 /// `frozen_temp` sets the target's sampling temperature: 0.05 ≈ exploit
 /// the deployed greedy-LM agent; 1.0 = exploit the policy distribution
@@ -316,6 +337,7 @@ pub fn collect_exploiter_games_batched_tch<G, T, FNS>(
     base_seed: u64,
     action_token_fn: ActionTokenFn,
     frozen_temp: f64,
+    seating: ExploiterSeating,
 ) -> Vec<RnadTrajectory>
 where
     G: GameState + Send,
@@ -353,7 +375,8 @@ where
                 play_one_hand_exploiter(
                     &mut live_actor,
                     &mut frozen_actor,
-                    game_idx % 2,
+                    seating,
+                    game_idx,
                     new_state(game_idx),
                     &mut rng,
                 )
@@ -367,6 +390,91 @@ where
         svc_frozen.join().expect("frozen service panicked");
         out
     })
+}
+
+/// Evaluate `subject` occupying ONE seat (rotating by game index)
+/// against `reference` at every other seat, both greedy-LM at their own
+/// temperatures. Returns (mean subject payoff, SEM). This is the
+/// unilateral-deviation payoff — for a policy at equilibrium it is ≤ 0
+/// up to noise no matter what `subject` is.
+#[allow(clippy::too_many_arguments)]
+pub fn eval_subject_vs_net_batched_tch<G, T, FNS>(
+    subject: &GoMctsTransformerTch,
+    reference: &GoMctsTransformerTch,
+    tokenizer: &T,
+    new_state: FNS,
+    n_games: usize,
+    base_seed: u64,
+    action_token_fn: ActionTokenFn,
+    subject_temp: f64,
+    reference_temp: f64,
+) -> (f64, f64)
+where
+    G: GameState + Send,
+    T: Tokenizer<G> + Send + Sync,
+    FNS: Fn(usize) -> G + Send + Sync + Copy,
+{
+    use std::sync::mpsc;
+    if n_games == 0 {
+        return (0.0, 0.0);
+    }
+    let max_batch = n_games.clamp(32, 512);
+    let (req_s_tx, req_s_rx) = mpsc::channel::<ServiceRequest>();
+    let (req_r_tx, req_r_rx) = mpsc::channel::<ServiceRequest>();
+    let scores: Vec<f64> = std::thread::scope(|s| {
+        let svc_s = s.spawn(move || {
+            serve_batched_tch(subject, tokenizer, req_s_rx, max_batch, false, 1)
+        });
+        let svc_r = s.spawn(move || {
+            serve_batched_tch(reference, tokenizer, req_r_rx, max_batch, false, 1)
+        });
+        let mut handles = Vec::with_capacity(n_games);
+        for game_idx in 0..n_games {
+            let req_s = req_s_tx.clone();
+            let req_r = req_r_tx.clone();
+            let atf = action_token_fn.clone();
+            let seed = base_seed.wrapping_add(game_idx as u64);
+            handles.push(s.spawn(move || {
+                let mut subj = RemoteModel::new(req_s)
+                    .with_inference(InferenceMode::LmSoftmax, 0.0, Some(atf.clone()))
+                    .with_temp(subject_temp);
+                let mut refr = RemoteModel::new(req_r)
+                    .with_inference(InferenceMode::LmSoftmax, 0.0, Some(atf))
+                    .with_temp(reference_temp);
+                let mut rng: StdRng = SeedableRng::seed_from_u64(seed);
+                let mut gs = new_state(game_idx);
+                let mut buf = Vec::new();
+                let n_players = gs.num_players();
+                let subject_seat = game_idx % n_players;
+                while !gs.is_terminal() {
+                    buf.clear();
+                    gs.legal_actions(&mut buf);
+                    if gs.is_chance_node() {
+                        let a = *buf.choose(&mut rng).expect("non-empty chance");
+                        gs.apply_action(a);
+                        continue;
+                    }
+                    let p = gs.cur_player();
+                    let h = gs.istate_key(p);
+                    let a = if p == subject_seat {
+                        <RemoteModel as GenerativeModel<G>>::sample(&mut subj, &h, &buf, &mut rng)
+                    } else {
+                        <RemoteModel as GenerativeModel<G>>::sample(&mut refr, &h, &buf, &mut rng)
+                    };
+                    gs.apply_action(a);
+                }
+                gs.evaluate(subject_seat)
+            }));
+        }
+        drop(req_s_tx);
+        drop(req_r_tx);
+        let scores: Vec<f64> =
+            handles.into_iter().map(|h| h.join().expect("game thread panicked")).collect();
+        svc_s.join().expect("subject service panicked");
+        svc_r.join().expect("reference service panicked");
+        scores
+    });
+    super::gomcts_transformer::finish_mean_se(&scores)
 }
 
 // =====================================================================

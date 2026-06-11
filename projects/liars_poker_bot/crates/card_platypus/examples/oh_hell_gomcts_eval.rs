@@ -189,14 +189,16 @@ fn main() {
             let subject_seat = game_idx % num_players;
             let mut opponents: Vec<Opponent> = (0..num_players)
                 .map(|i| {
-                    if opponent_kind == "random" {
-                        Opponent::Random
-                    } else {
+                    if opponent_kind == "pimcts" {
                         Opponent::Pimcts(PIMCTSBot::new(
                             rollouts,
                             OpenHandSolver::new_oh_hell(),
                             StdRng::seed_from_u64(seed.wrapping_add(50 + i as u64)),
                         ))
+                    } else {
+                        // `random`; also placeholder rows for `cfr` /
+                        // `model`, whose moves dispatch elsewhere.
+                        Opponent::Random
                     }
                 })
                 .collect();
@@ -226,6 +228,12 @@ fn main() {
                     }
                 } else if opponent_kind == "cfr" {
                     cfr_opponents[p].step(&gs)
+                } else if opponent_kind == "model" {
+                    // The transformer fills the non-subject seats —
+                    // with OH_SUBJECT=pimcts this measures a single
+                    // PIMCTS deviator against two copies of the model
+                    // (positive EV ⇒ the model profile is exploitable).
+                    model.act(&gs, &mut rng)
                 } else {
                     opponents[p].act(&gs, &mut rng)
                 };
