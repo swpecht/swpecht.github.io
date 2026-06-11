@@ -27,6 +27,10 @@ run_band () { # min max games
 
 run_band 1 3 30000
 run_band 4 5 20000
-run_band 6 7 12000
-run_band 8 10 9000
+# Quotas cut 2026-06-10 evening: measured t6-7 rate ~13 games/min and
+# t8-10 ~3-4/min — the original 12k/9k quotas were 15h/50h. Zero-shot
+# transfer from the t1-5 model to t6-8 is only ~0.3 below pimcts-parity,
+# so modest high-trick data for fine-tuning is the better trade.
+run_band 6 7 4000
+run_band 8 10 1500
 echo "ALL BANDS DONE"
