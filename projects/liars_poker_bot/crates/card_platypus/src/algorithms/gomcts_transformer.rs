@@ -1108,6 +1108,13 @@ impl GoMctsTransformerTch {
         self.device
     }
 
+    /// Trainable parameter store. Exposed for optimizers owned outside
+    /// this module (e.g. the R-NaD trainer persists one AdamW across
+    /// learner steps instead of rebuilding it per `train_tch` call).
+    pub fn var_store(&self) -> &nn::VarStore {
+        &self.vs
+    }
+
     pub fn config(&self) -> &TransformerConfig {
         &self.cfg
     }
@@ -1893,6 +1900,76 @@ where
             handles.push(s.spawn(move || {
                 let mut remote_a = RemoteModel::new(req_a);
                 let mut remote_b = RemoteModel::new(req_b);
+                let mut rng: StdRng = SeedableRng::seed_from_u64(seed);
+                play_one_hand_a_vs_b(&mut remote_a, &mut remote_b, new_state, game_idx, &mut rng)
+            }));
+        }
+        drop(req_a_tx);
+        drop(req_b_tx);
+        let scores: Vec<f64> = handles.into_iter().map(|h| h.join().expect("game")).collect();
+        svc_a.join().expect("service A");
+        svc_b.join().expect("service B");
+        scores
+    });
+    let (mean, _se) = finish_mean_se(&scores);
+    let decided: Vec<&f64> = scores.iter().filter(|v| v.abs() > 1e-9).collect();
+    let win_rate = if decided.is_empty() {
+        0.5
+    } else {
+        decided.iter().filter(|v| ***v > 0.0).count() as f64 / decided.len() as f64
+    };
+    (mean, win_rate)
+}
+
+/// `head_to_head_eval_batched_tch` with an explicit inference mode
+/// applied to BOTH sides (e.g. greedy-LM at temp 0.05 — the regime the
+/// experiment log found strongest). Returns (mean_a_payoff, a_win_rate).
+#[allow(clippy::too_many_arguments)]
+pub fn head_to_head_eval_batched_tch_infer<G, T, FNS>(
+    net_a: &GoMctsTransformerTch,
+    net_b: &GoMctsTransformerTch,
+    tokenizer: &T,
+    new_state: FNS,
+    n_games: usize,
+    base_seed: u64,
+    use_graph: bool,
+    graph_batch_size: i64,
+    mode: InferenceMode,
+    lambda: f64,
+    action_token_fn: Option<ActionTokenFn>,
+    temp: f64,
+) -> (f64, f64)
+where
+    G: GameState + Send,
+    T: Tokenizer<G> + Send + Sync,
+    FNS: Fn() -> G + Send + Sync + Copy,
+{
+    use std::sync::mpsc;
+    if n_games == 0 {
+        return (0.0, 0.5);
+    }
+    let max_batch = (n_games * 16).clamp(32, 256);
+    let (req_a_tx, req_a_rx) = mpsc::channel::<ServiceRequest>();
+    let (req_b_tx, req_b_rx) = mpsc::channel::<ServiceRequest>();
+    let scores: Vec<f64> = std::thread::scope(|s| {
+        let svc_a = s.spawn(move || {
+            serve_batched_tch(net_a, tokenizer, req_a_rx, max_batch, use_graph, graph_batch_size)
+        });
+        let svc_b = s.spawn(move || {
+            serve_batched_tch(net_b, tokenizer, req_b_rx, max_batch, use_graph, graph_batch_size)
+        });
+        let mut handles = Vec::with_capacity(n_games);
+        for game_idx in 0..n_games {
+            let req_a = req_a_tx.clone();
+            let req_b = req_b_tx.clone();
+            let atf = action_token_fn.clone();
+            let seed = base_seed.wrapping_add(game_idx as u64);
+            handles.push(s.spawn(move || {
+                let mut remote_a = RemoteModel::new(req_a)
+                    .with_inference(mode, lambda, atf.clone())
+                    .with_temp(temp);
+                let mut remote_b =
+                    RemoteModel::new(req_b).with_inference(mode, lambda, atf).with_temp(temp);
                 let mut rng: StdRng = SeedableRng::seed_from_u64(seed);
                 play_one_hand_a_vs_b(&mut remote_a, &mut remote_b, new_state, game_idx, &mut rng)
             }));

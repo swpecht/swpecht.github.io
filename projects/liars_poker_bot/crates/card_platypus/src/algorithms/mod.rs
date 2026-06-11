@@ -6,4 +6,5 @@ pub mod gomcts_transformer;
 pub mod ismcts;
 pub mod open_hand_solver;
 pub mod pimcts;
+pub mod rnad;
 pub mod tabular_best_response;

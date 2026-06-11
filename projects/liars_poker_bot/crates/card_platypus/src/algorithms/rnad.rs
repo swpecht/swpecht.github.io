@@ -1,0 +1,584 @@
+//! Regularized Nash Dynamics (R-NaD) — the DeepNash training scheme
+//! (Perolat et al., "Mastering the game of Stratego with model-free
+//! multiagent reinforcement learning", Science 2022) on top of the
+//! GO-MCTS transformer backbone.
+//!
+//! The algorithm iterates three steps:
+//!   1. Reward transformation: play the game with rewards augmented by
+//!      −η·log(π(a|h)/π_reg(a|h)) for the acting player's team (and
+//!      +η·… for the opposing team), where π_reg is a frozen
+//!      "regularization policy".
+//!   2. Dynamics: run policy-gradient style updates (NeuRD) until the
+//!      policy approaches the fixed point of the transformed game.
+//!   3. Update: set π_reg to the current policy and repeat.
+//!
+//! In two-player zero-sum games the sequence of fixed points converges
+//! to a Nash equilibrium. We treat 4-player partnership games (Euchre)
+//! as two-team zero-sum with `team = player % 2` — no formal guarantee
+//! carries over, but the same dynamics apply mechanically.
+//!
+//! Implementation notes:
+//!   * The policy is the LM head masked to legal-action tokens
+//!     (softmax, temperature 1.0); the value head provides V(h).
+//!   * NeuRD update on the sampled action only, importance-corrected
+//!     by 1/π_behavior(a|h) (clipped) so it matches the all-actions
+//!     replicator update in expectation. The gradient is taken on the
+//!     *centered legal logit* (logit minus mean legal logit), not
+//!     log π — that is the NeuRD/replicator-dynamics distinction that
+//!     avoids vanishing updates at deterministic policies.
+//!   * The NeuRD logit threshold β gates updates that would push an
+//!     already-saturated logit further out.
+//!   * Value targets are Monte-Carlo returns of the *transformed*
+//!     rewards (terminal payoff + the η log-ratio stream), so the
+//!     critic tracks the regularized game the policy is solving.
+//!   * Games here are short episodes (≤ ~30 decisions), trajectories
+//!     are consumed on-policy right after collection — plain MC
+//!     returns stand in for v-trace.
+
+use anyhow::{anyhow, Result};
+use rand::{rngs::StdRng, seq::IndexedRandom, RngExt, SeedableRng};
+use tch::{nn, nn::OptimizerConfig, Kind, Tensor};
+
+use games::{actions, istate::IStateKey, Action, GameState};
+
+use super::gomcts::GenerativeModel;
+use super::gomcts_transformer::{
+    forward_histories_batch_tch, pad_to, serve_batched_tch, ActionTokenFn, GoMctsTransformerTch,
+    InferenceMode, RemoteModel, ServiceRequest, SnapshotTch, Tokenizer,
+};
+use crate::{collections::actionvec::ActionVec, policy::Policy};
+
+// =====================================================================
+// Config / data types
+// =====================================================================
+
+#[derive(Clone, Copy, Debug)]
+pub struct RnadConfig {
+    /// Regularization strength η on the log(π/π_reg) reward term.
+    pub eta: f64,
+    /// AdamW learning rate.
+    pub lr: f64,
+    /// Weight on the value MSE relative to the NeuRD policy loss.
+    pub value_weight: f64,
+    /// NeuRD logit threshold β: no update that pushes a centered legal
+    /// logit beyond ±β.
+    pub neurd_clip: f64,
+    /// Cap on the 1/π_behavior importance weight.
+    pub is_clip: f64,
+    /// Cap on |log(π/π_reg)| inside the reward transform (NaN guard
+    /// for actions π_reg has nearly abandoned).
+    pub log_ratio_clip: f64,
+    /// Global grad-norm clip per optimizer step.
+    pub grad_clip: f64,
+    /// Learner steps between π_reg ← π refreshes (the R-NaD outer loop).
+    pub reg_update_every: usize,
+    /// Step rows per forward/optimizer step inside one learner step.
+    pub minibatch_steps: usize,
+}
+
+impl Default for RnadConfig {
+    fn default() -> Self {
+        Self {
+            eta: 0.2,
+            lr: 5e-5,
+            value_weight: 1.0,
+            neurd_clip: 2.0,
+            is_clip: 10.0,
+            log_ratio_clip: 10.0,
+            grad_clip: 5.0,
+            reg_update_every: 100,
+            minibatch_steps: 1024,
+        }
+    }
+}
+
+/// One decision point recorded during self-play.
+pub struct RnadStep {
+    pub player: usize,
+    pub history: IStateKey,
+    pub action: Action,
+    pub legal: Vec<Action>,
+    /// π_behavior(a|h) at sample time, for the importance correction.
+    pub behavior_prob: f32,
+}
+
+/// One self-play game: every player's decisions plus final payoffs.
+pub struct RnadTrajectory {
+    pub steps: Vec<RnadStep>,
+    /// Terminal payoff per player (Euchre: team-symmetric).
+    pub payoffs: Vec<f64>,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RnadStats {
+    pub policy_loss: f64,
+    pub value_loss: f64,
+    pub mean_abs_adv: f64,
+    pub mean_entropy: f64,
+    /// Mean KL(π‖π_reg) — convergence of the inner dynamics shows up
+    /// as this stabilizing between π_reg refreshes.
+    pub mean_kl_reg: f64,
+    pub n_steps: usize,
+}
+
+fn team_of(player: usize) -> usize {
+    // 2p zero-sum: identity. 4p partnership (Euchre 0&2 vs 1&3): p % 2.
+    player % 2
+}
+
+// =====================================================================
+// Self-play collection (batched-service architecture, all seats sample
+// the live policy's LM head at temperature 1.0)
+// =====================================================================
+
+fn play_one_hand_rnad<G: GameState>(
+    actor: &mut RemoteModel,
+    new_state: impl Fn() -> G,
+    rng: &mut StdRng,
+) -> RnadTrajectory {
+    let mut gs = new_state();
+    let mut buf = Vec::new();
+    let mut steps = Vec::new();
+    while !gs.is_terminal() {
+        buf.clear();
+        gs.legal_actions(&mut buf);
+        if gs.is_chance_node() {
+            let a = *buf.choose(rng).expect("non-empty chance");
+            gs.apply_action(a);
+            continue;
+        }
+        let p = gs.cur_player();
+        let h = gs.istate_key(p);
+        let probs = <RemoteModel as GenerativeModel<G>>::policy(actor, &h, &buf);
+        let mut r: f64 = rng.random::<f64>();
+        let mut idx = buf.len() - 1;
+        for (i, pr) in probs.iter().enumerate() {
+            r -= *pr;
+            if r <= 0.0 {
+                idx = i;
+                break;
+            }
+        }
+        steps.push(RnadStep {
+            player: p,
+            history: h,
+            action: buf[idx],
+            legal: buf.clone(),
+            behavior_prob: probs[idx].max(1e-9) as f32,
+        });
+        gs.apply_action(buf[idx]);
+    }
+    let n = gs.num_players();
+    RnadTrajectory { steps, payoffs: (0..n).map(|p| gs.evaluate(p)).collect() }
+}
+
+/// Collect `n_games` self-play trajectories with every seat sampling
+/// the live policy. Same scoped-thread + batching-service architecture
+/// as the GO-MCTS self-play paths.
+#[allow(clippy::too_many_arguments)]
+pub fn collect_rnad_games_batched_tch<G, T, FNS>(
+    net: &GoMctsTransformerTch,
+    tokenizer: &T,
+    new_state: FNS,
+    n_games: usize,
+    base_seed: u64,
+    action_token_fn: ActionTokenFn,
+    use_graph: bool,
+    graph_batch_size: i64,
+) -> Vec<RnadTrajectory>
+where
+    G: GameState + Send,
+    T: Tokenizer<G> + Send + Sync,
+    FNS: Fn() -> G + Send + Sync + Copy,
+{
+    use std::sync::mpsc;
+    if n_games == 0 {
+        return Vec::new();
+    }
+    // LmSoftmax requests are one history each; the service coalesces up
+    // to max_batch of them per forward.
+    let max_batch = n_games.clamp(32, 512);
+    let (request_tx, request_rx) = mpsc::channel::<ServiceRequest>();
+    std::thread::scope(|s| {
+        let svc = s.spawn(move || {
+            serve_batched_tch(net, tokenizer, request_rx, max_batch, use_graph, graph_batch_size)
+        });
+        let mut handles = Vec::with_capacity(n_games);
+        for game_idx in 0..n_games {
+            let req_tx = request_tx.clone();
+            let atf = action_token_fn.clone();
+            let seed = base_seed.wrapping_add(game_idx as u64);
+            handles.push(s.spawn(move || {
+                let mut actor = RemoteModel::new(req_tx)
+                    .with_inference(InferenceMode::LmSoftmax, 0.0, Some(atf))
+                    .with_temp(1.0);
+                let mut rng: StdRng = SeedableRng::seed_from_u64(seed);
+                play_one_hand_rnad(&mut actor, new_state, &mut rng)
+            }));
+        }
+        drop(request_tx);
+        let out: Vec<RnadTrajectory> =
+            handles.into_iter().map(|h| h.join().expect("game thread panicked")).collect();
+        svc.join().expect("service thread panicked");
+        out
+    })
+}
+
+// =====================================================================
+// Learner
+// =====================================================================
+
+/// Tokenized minibatch of decision points, resident on the net's device.
+struct RowBatch {
+    input: Tensor,      // (B, ctx) i64
+    prefix: Tensor,     // (B,) i64 — last real token index of `history`
+    action_tok: Tensor, // (B,) i64
+    legal_add: Tensor,  // (B, V) f32: 0 on legal tokens, -1e9 elsewhere
+    legal_bool: Tensor, // (B, V) f32: 1 on legal tokens
+    n_rows: i64,
+}
+
+fn build_rows<G: GameState, T: Tokenizer<G>>(
+    net: &GoMctsTransformerTch,
+    tokenizer: &T,
+    steps: &[&RnadStep],
+) -> RowBatch {
+    let cfg = net.config();
+    let device = net.device();
+    let (ctx, vocab) = (cfg.max_context, cfg.vocab_size);
+    let pad = tokenizer.pad_token();
+    let b = steps.len();
+    let mut tokens: Vec<i64> = Vec::with_capacity(b * ctx);
+    let mut prefix: Vec<i64> = Vec::with_capacity(b);
+    let mut action_tok: Vec<i64> = Vec::with_capacity(b);
+    let mut legal_add: Vec<f32> = vec![-1e9; b * vocab];
+    let mut legal_bool: Vec<f32> = vec![0.0; b * vocab];
+    for (i, st) in steps.iter().enumerate() {
+        let enc = tokenizer.encode(&st.history);
+        assert!(!enc.is_empty(), "R-NaD requires non-empty observation histories");
+        let (padded, real_len) = pad_to(&enc, ctx, pad);
+        tokens.extend(padded.iter().map(|&u| u as i64));
+        prefix.push((real_len - 1) as i64);
+        action_tok.push(tokenizer.action_token(st.action) as i64);
+        for &a in &st.legal {
+            let t = tokenizer.action_token(a) as usize;
+            legal_add[i * vocab + t] = 0.0;
+            legal_bool[i * vocab + t] = 1.0;
+        }
+    }
+    RowBatch {
+        input: Tensor::from_slice(&tokens).reshape([b as i64, ctx as i64]).to_device(device),
+        prefix: Tensor::from_slice(&prefix).to_device(device),
+        action_tok: Tensor::from_slice(&action_tok).to_device(device),
+        legal_add: Tensor::from_slice(&legal_add)
+            .reshape([b as i64, vocab as i64])
+            .to_device(device),
+        legal_bool: Tensor::from_slice(&legal_bool)
+            .reshape([b as i64, vocab as i64])
+            .to_device(device),
+        n_rows: b as i64,
+    }
+}
+
+/// Per-row quantities from one forward pass: LM logits at the prefix
+/// position (B, V) and V at the prefix position (B,).
+fn forward_rows(net: &GoMctsTransformerTch, rows: &RowBatch) -> (Tensor, Tensor) {
+    let vocab = net.config().vocab_size as i64;
+    let (lm, val) = net.forward(&rows.input);
+    let lm_idx = rows
+        .prefix
+        .unsqueeze(-1)
+        .unsqueeze(-1)
+        .expand([rows.n_rows, 1, vocab], false);
+    let lm_at_prefix = lm.gather(1, &lm_idx, false).squeeze_dim(1);
+    let val_at_prefix = val.gather(1, &rows.prefix.unsqueeze(-1), false).squeeze_dim(1);
+    (lm_at_prefix, val_at_prefix)
+}
+
+/// Centered legal logit of the sampled action: logit(a) − mean legal
+/// logit. The quantity NeuRD updates.
+fn centered_action_logit(lm: &Tensor, rows: &RowBatch) -> Tensor {
+    let legal_count = rows.legal_bool.sum_dim_intlist([-1i64].as_ref(), false, Kind::Float);
+    let legal_mean = (lm * &rows.legal_bool).sum_dim_intlist([-1i64].as_ref(), false, Kind::Float)
+        / legal_count.clamp_min(1.0);
+    let logit_a = lm.gather(1, &rows.action_tok.unsqueeze(-1), false).squeeze_dim(1);
+    logit_a - legal_mean
+}
+
+/// Detached per-step quantities from phase A of the learner.
+struct StepEval {
+    logp: Vec<f32>,      // log πθ(a|h)
+    logp_reg: Vec<f32>,  // log π_reg(a|h)
+    value: Vec<f32>,     // V(h)
+    c_logit: Vec<f32>,   // centered legal logit of a (for the NeuRD gate)
+    entropy: Vec<f32>,   // H(πθ(·|h))
+    kl_reg: Vec<f32>,    // KL(πθ ‖ π_reg) over legal actions
+}
+
+pub struct RnadTrainer<G, T> {
+    pub net: GoMctsTransformerTch,
+    reg: GoMctsTransformerTch,
+    opt: nn::Optimizer,
+    pub cfg: RnadConfig,
+    tokenizer: T,
+    learner_iters: usize,
+    _g: std::marker::PhantomData<G>,
+}
+
+impl<G: GameState, T: Tokenizer<G>> RnadTrainer<G, T> {
+    pub fn new(net: GoMctsTransformerTch, tokenizer: T, cfg: RnadConfig) -> Result<Self> {
+        let reg = SnapshotTch::from_model(&net)?.hydrate(net.device())?;
+        let opt = nn::AdamW::default()
+            .build(net.var_store(), cfg.lr)
+            .map_err(|e| anyhow!("build AdamW: {e}"))?;
+        Ok(Self { net, reg, opt, cfg, tokenizer, learner_iters: 0, _g: std::marker::PhantomData })
+    }
+
+    pub fn learner_iters(&self) -> usize {
+        self.learner_iters
+    }
+
+    /// π_reg ← current live weights (the R-NaD "update" step).
+    pub fn refresh_regularization_policy(&mut self) -> Result<()> {
+        self.reg = SnapshotTch::from_model(&self.net)?.hydrate(self.net.device())?;
+        Ok(())
+    }
+
+    /// Phase A: detached evaluation of every step under πθ and π_reg.
+    fn eval_steps(&self, steps: &[&RnadStep]) -> StepEval {
+        let mut out = StepEval {
+            logp: Vec::with_capacity(steps.len()),
+            logp_reg: Vec::with_capacity(steps.len()),
+            value: Vec::with_capacity(steps.len()),
+            c_logit: Vec::with_capacity(steps.len()),
+            entropy: Vec::with_capacity(steps.len()),
+            kl_reg: Vec::with_capacity(steps.len()),
+        };
+        for chunk in steps.chunks(self.cfg.minibatch_steps) {
+            let rows = build_rows(&self.net, &self.tokenizer, chunk);
+            tch::no_grad(|| {
+                let (lm, val) = forward_rows(&self.net, &rows);
+                let (lm_reg, _) = forward_rows(&self.reg, &rows);
+                let logp_full = (&lm + &rows.legal_add).log_softmax(-1, Kind::Float);
+                let logp_reg_full = (&lm_reg + &rows.legal_add).log_softmax(-1, Kind::Float);
+                let probs = logp_full.exp();
+                let gather_a = |t: &Tensor| {
+                    t.gather(1, &rows.action_tok.unsqueeze(-1), false).squeeze_dim(1)
+                };
+                let logp_a = gather_a(&logp_full);
+                let logp_reg_a = gather_a(&logp_reg_full);
+                let c = centered_action_logit(&lm, &rows);
+                // Illegal tokens carry prob exp(-1e9)=0, so their
+                // products vanish without explicit masking.
+                let entropy = -(&probs * &logp_full)
+                    .sum_dim_intlist([-1i64].as_ref(), false, Kind::Float);
+                let kl = (&probs * (&logp_full - &logp_reg_full))
+                    .sum_dim_intlist([-1i64].as_ref(), false, Kind::Float);
+                out.logp.extend(Vec::<f32>::try_from(logp_a).expect("logp"));
+                out.logp_reg.extend(Vec::<f32>::try_from(logp_reg_a).expect("logp_reg"));
+                out.value.extend(Vec::<f32>::try_from(val).expect("value"));
+                out.c_logit.extend(Vec::<f32>::try_from(c).expect("c_logit"));
+                out.entropy.extend(Vec::<f32>::try_from(entropy).expect("entropy"));
+                out.kl_reg.extend(Vec::<f32>::try_from(kl).expect("kl"));
+            });
+        }
+        out
+    }
+
+    /// One R-NaD learner step over a batch of on-policy trajectories:
+    /// transformed returns → advantages → gated NeuRD + value updates.
+    /// Refreshes π_reg every `cfg.reg_update_every` calls.
+    pub fn learner_step(
+        &mut self,
+        trajs: &[RnadTrajectory],
+        rng: &mut StdRng,
+    ) -> Result<RnadStats> {
+        let cfg = self.cfg;
+        let all_steps: Vec<&RnadStep> = trajs.iter().flat_map(|t| t.steps.iter()).collect();
+        let n = all_steps.len();
+        if n == 0 {
+            return Ok(RnadStats::default());
+        }
+        let eval = self.eval_steps(&all_steps);
+
+        // Transformed returns + advantages, per trajectory, reverse scan.
+        // Step s pays its team −η·logratio_s and the other team +η·…;
+        // G_t for the actor at t sums its team's stream over s ≥ t plus
+        // the terminal payoff.
+        let mut returns = vec![0.0_f32; n];
+        let mut coefs = vec![0.0_f32; n];
+        let mut abs_adv_sum = 0.0_f64;
+        let mut offset = 0usize;
+        for traj in trajs {
+            let k = traj.steps.len();
+            let mut team_acc = [0.0_f64; 2];
+            for i in (0..k).rev() {
+                let g = offset + i;
+                let st = &traj.steps[i];
+                let log_ratio = ((eval.logp[g] - eval.logp_reg[g]) as f64)
+                    .clamp(-cfg.log_ratio_clip, cfg.log_ratio_clip);
+                let penalty = cfg.eta * log_ratio;
+                let tm = team_of(st.player);
+                team_acc[tm] -= penalty;
+                team_acc[1 - tm] += penalty;
+                let g_t = traj.payoffs[st.player] + team_acc[tm];
+                returns[g] = g_t as f32;
+                let adv = g_t - eval.value[g] as f64;
+                abs_adv_sum += adv.abs();
+                // Sampled-action NeuRD: importance-correct by 1/π_b,
+                // then gate updates pushing a saturated logit outward.
+                let w = (1.0 / st.behavior_prob as f64).min(cfg.is_clip);
+                let mut coef = w * adv;
+                let c = eval.c_logit[g] as f64;
+                if (c >= cfg.neurd_clip && coef > 0.0) || (c <= -cfg.neurd_clip && coef < 0.0) {
+                    coef = 0.0;
+                }
+                coefs[g] = coef as f32;
+            }
+            offset += k;
+        }
+
+        // Phase C: gradient minibatches over shuffled steps.
+        let device = self.net.device();
+        let mut idx: Vec<usize> = (0..n).collect();
+        for i in (1..idx.len()).rev() {
+            let j = (rng.random::<u64>() as usize) % (i + 1);
+            idx.swap(i, j);
+        }
+        let mut policy_loss_sum = 0.0_f64;
+        let mut value_loss_sum = 0.0_f64;
+        let mut rows_done = 0usize;
+        for chunk in idx.chunks(cfg.minibatch_steps) {
+            let chunk_steps: Vec<&RnadStep> = chunk.iter().map(|&i| all_steps[i]).collect();
+            let chunk_coefs: Vec<f32> = chunk.iter().map(|&i| coefs[i]).collect();
+            let chunk_returns: Vec<f32> = chunk.iter().map(|&i| returns[i]).collect();
+            let rows = build_rows(&self.net, &self.tokenizer, &chunk_steps);
+            let (lm, val) = forward_rows(&self.net, &rows);
+            let c_a = centered_action_logit(&lm, &rows);
+            let coef_t = Tensor::from_slice(&chunk_coefs).to_device(device);
+            let ret_t = Tensor::from_slice(&chunk_returns).to_device(device);
+            let policy_loss = -(coef_t * c_a).mean(Kind::Float);
+            let value_loss = (val - ret_t).square().mean(Kind::Float);
+            let total = &policy_loss + &value_loss * cfg.value_weight;
+            self.opt.zero_grad();
+            total.backward();
+            self.opt.clip_grad_norm(cfg.grad_clip);
+            self.opt.step();
+            policy_loss_sum += policy_loss.double_value(&[]) * chunk.len() as f64;
+            value_loss_sum += value_loss.double_value(&[]) * chunk.len() as f64;
+            rows_done += chunk.len();
+        }
+
+        self.learner_iters += 1;
+        if cfg.reg_update_every > 0 && self.learner_iters % cfg.reg_update_every == 0 {
+            self.refresh_regularization_policy()?;
+        }
+
+        let nf = rows_done.max(1) as f64;
+        Ok(RnadStats {
+            policy_loss: policy_loss_sum / nf,
+            value_loss: value_loss_sum / nf,
+            mean_abs_adv: abs_adv_sum / n as f64,
+            mean_entropy: eval.entropy.iter().map(|&x| x as f64).sum::<f64>() / n as f64,
+            mean_kl_reg: eval.kl_reg.iter().map(|&x| x as f64).sum::<f64>() / n as f64,
+            n_steps: n,
+        })
+    }
+}
+
+// =====================================================================
+// Eval adapters
+// =====================================================================
+
+/// `Policy` view of a trained net: LM head masked to legal actions,
+/// softmax at temperature 1.0. Exact tree-walk consumers (the tabular
+/// best-response / exploitability oracle) use this.
+pub struct RnadNetPolicy<'a, G, T> {
+    net: &'a GoMctsTransformerTch,
+    tokenizer: T,
+    _g: std::marker::PhantomData<G>,
+}
+
+impl<'a, G: GameState, T: Tokenizer<G>> RnadNetPolicy<'a, G, T> {
+    pub fn new(net: &'a GoMctsTransformerTch, tokenizer: T) -> Self {
+        Self { net, tokenizer, _g: std::marker::PhantomData }
+    }
+}
+
+impl<G: GameState, T: Tokenizer<G>> Policy<G> for RnadNetPolicy<'_, G, T> {
+    fn action_probabilities(&mut self, gs: &G) -> ActionVec<f64> {
+        let legal = actions!(gs);
+        let h = gs.istate_key(gs.cur_player());
+        let (logits, _) = forward_histories_batch_tch(self.net, &self.tokenizer, &[h])
+            .expect("forward for policy eval");
+        let row = &logits[0];
+        let vals: Vec<f64> = legal
+            .iter()
+            .map(|&a| row.get(self.tokenizer.action_token(a) as usize).copied().unwrap_or(f32::MIN) as f64)
+            .collect();
+        let max = vals.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let exps: Vec<f64> = vals.iter().map(|&v| (v - max).exp()).collect();
+        let total: f64 = exps.iter().sum();
+        let mut out = ActionVec::new(&legal);
+        for (i, &a) in legal.iter().enumerate() {
+            out[a] = if total > 0.0 { exps[i] / total } else { 1.0 / legal.len() as f64 };
+        }
+        out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::algorithms::exploitability::exploitability;
+    use crate::algorithms::gomcts_transformer::{kuhn::KuhnTokenizer, TransformerConfig};
+    use games::gamestates::kuhn_poker::KuhnPoker;
+    use tch::Device;
+
+    /// End-to-end smoke: a few R-NaD iterations on Kuhn must run NaN-free
+    /// and leave exploitability at or below the uniform-policy level
+    /// (11/12 ≈ 0.917) — full convergence is exercised by the
+    /// kuhn_rnad_train example, not the unit test.
+    #[test]
+    fn rnad_kuhn_smoke() {
+        let tok = KuhnTokenizer;
+        let cfg = TransformerConfig::kuhn_small(
+            KuhnTokenizer::VOCAB_SIZE,
+            KuhnTokenizer::MAX_CONTEXT,
+        );
+        let net = GoMctsTransformerTch::new(cfg, Device::Cpu).expect("build");
+        let rnad_cfg = RnadConfig {
+            lr: 1e-3,
+            reg_update_every: 10,
+            minibatch_steps: 512,
+            ..Default::default()
+        };
+        let mut trainer: RnadTrainer<games::gamestates::kuhn_poker::KPGameState, _> =
+            RnadTrainer::new(net, tok, rnad_cfg).expect("trainer");
+        let atf: ActionTokenFn = std::sync::Arc::new(move |a| tok.action_token(a));
+        let mut rng: StdRng = SeedableRng::seed_from_u64(7);
+        let mut last = RnadStats::default();
+        for it in 0..20 {
+            let trajs = collect_rnad_games_batched_tch::<_, _, _>(
+                &trainer.net,
+                &tok,
+                KuhnPoker::new_state,
+                64,
+                1000 + it as u64 * 64,
+                atf.clone(),
+                false,
+                1,
+            );
+            last = trainer.learner_step(&trajs, &mut rng).expect("learner step");
+            assert!(last.policy_loss.is_finite() && last.value_loss.is_finite());
+        }
+        assert!(last.n_steps > 0);
+        let mut policy = RnadNetPolicy::new(&trainer.net, tok);
+        let data = exploitability(|| (KuhnPoker::game().new)(), &mut policy);
+        assert!(
+            data.nash_conv.is_finite() && data.nash_conv < 1.4,
+            "nash_conv after 20 iters should be sane: {}",
+            data.nash_conv
+        );
+    }
+}
