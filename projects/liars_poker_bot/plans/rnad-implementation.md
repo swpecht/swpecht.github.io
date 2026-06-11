@@ -179,3 +179,22 @@ no search.
    better advantage estimates; (d) categorical (outcome-head CE) value loss
    instead of MSE-on-expectation; (e) PIMCTS-opponent mixing in self-play to
    anchor the distribution near strong play.
+
+### Approximate exploitability (entry 5)
+
+`euchre_rnad_exploit` (η=0 NeuRD best response, warm-started from the
+target, 1000 iters × 256 games, exploiter team alternating, target played
+at deployed greedy temp 0.05; exploit-EV evals at n=2000 every 50 iters):
+
+- bootstrap_combined: max exploit EV **+0.024**/hand
+- rnad_best:          max exploit EV **+0.017**/hand
+
+Both are below the ≈+0.09 that max-over-20-noisy-evals would produce by
+chance on a truly-zero series — the exploiter found NOTHING against either
+target. Conclusions: (a) both policies are robust to single-forward-pass
+NeuRD exploitation at the 256k-game budget; (b) R-NaD's measurable gains
+(tournament/h2h edges) did not come from an exploitability reduction
+visible at this power; (c) the measurement is bounded by the exploiter,
+which shares the target's function class and init — a stronger exploiter
+(longer runs, from-scratch + diverse seeds, or search-based) is needed to
+separate them. Logs: `rnad/exploit_{bootstrap,rnad_best}.log`.
