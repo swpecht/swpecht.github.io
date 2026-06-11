@@ -34,7 +34,8 @@ use card_platypus::{
     agents::Agent,
     algorithms::{
         gomcts_transformer::{
-            enable_tf32, oh_hell::OhHellTokenizer, train_tch_with_callback, GoMctsTransformerTch,
+            enable_tf32, oh_hell::OhHellTokenizer, parse_env as parse,
+            parse_env_path as parse_path, train_tch_with_callback, GoMctsTransformerTch,
             TrainExample, TransformerConfig,
         },
         open_hand_solver::OpenHandSolver,
@@ -53,21 +54,13 @@ use std::{
     time::Instant,
 };
 
-fn parse<T: std::str::FromStr>(name: &str, default: T) -> T {
-    std::env::var(name).ok().and_then(|s| s.parse().ok()).unwrap_or(default)
-}
-fn parse_path(name: &str, default: &str) -> PathBuf {
-    std::env::var(name).map(PathBuf::from).unwrap_or_else(|_| PathBuf::from(default))
-}
-
 fn pick_config() -> TransformerConfig {
-    let v = OhHellTokenizer::VOCAB_SIZE;
-    let c = OhHellTokenizer::MAX_CONTEXT;
-    match std::env::var("OH_BOOT_CONFIG").as_deref() {
-        Ok("smoke") => TransformerConfig::euchre_smoke(v, c),
-        Ok("medium") => TransformerConfig::euchre_medium(v, c),
-        _ => TransformerConfig::paper_default(v, c),
-    }
+    TransformerConfig::from_env(
+        "OH_BOOT_CONFIG",
+        "paper",
+        OhHellTokenizer::VOCAB_SIZE,
+        OhHellTokenizer::MAX_CONTEXT,
+    )
 }
 
 fn main() {

@@ -18,14 +18,19 @@
 //!   OH_LAMBDA            λ gate for gated mode   (default 0.05)
 //!   OH_PLAYERS           players                 (default 3)
 //!   OH_MIN_TRICKS / OH_MAX_TRICKS                (default 1 / 10)
+//!   OH_SUBJECT           model | pimcts (default model). pimcts =
+//!                        calibration run: the subject seat is also
+//!                        PIMCTS-50, giving the reference score for
+//!                        each opponent/trick combination.
 //!   OH_SEED              base RNG seed           (default 0)
 
 use card_platypus::{
     agents::Agent,
     algorithms::{
         gomcts_transformer::{
-            forward_histories_batch_tch, oh_hell::OhHellTokenizer, GoMctsTransformerTch,
-            InferenceMode, Tokenizer, TransformerConfig,
+            forward_histories_batch_tch, masked_policy, oh_hell::OhHellTokenizer,
+            parse_env as parse, parse_env_path, GoMctsTransformerTch, InferenceMode, Tokenizer,
+            TransformerConfig,
         },
         open_hand_solver::OpenHandSolver,
         pimcts::PIMCTSBot,
@@ -37,11 +42,7 @@ use games::{
     Action, GameState,
 };
 use rand::{rngs::StdRng, seq::IndexedRandom, RngExt, SeedableRng};
-use std::{path::PathBuf, time::Instant};
-
-fn parse<T: std::str::FromStr>(name: &str, default: T) -> T {
-    std::env::var(name).ok().and_then(|s| s.parse().ok()).unwrap_or(default)
-}
+use std::time::Instant;
 
 struct InlineModel {
     net: GoMctsTransformerTch,
@@ -53,73 +54,15 @@ struct InlineModel {
 
 impl InlineModel {
     fn policy(&self, history: &IStateKey, legal: &[Action]) -> Vec<f64> {
-        let uniform = || vec![1.0 / legal.len() as f64; legal.len()];
-        let needs_lm = self.mode == InferenceMode::LmSoftmax || self.lambda > 0.0;
-        let mut histories: Vec<IStateKey> = Vec::with_capacity(legal.len() + 1);
-        if needs_lm {
-            histories.push(*history);
-        }
-        if self.mode != InferenceMode::LmSoftmax {
-            histories.extend(legal.iter().map(|&a| {
-                let mut h = *history;
-                h.push(a);
-                h
-            }));
-        }
-        let (logits, values) =
-            match forward_histories_batch_tch(&self.net, &self.tokenizer, &histories) {
-                Ok(x) => x,
-                Err(_) => return uniform(),
-            };
-        let softmax = |vals: &[f64], mask: &[bool], temp: f64| -> Vec<f64> {
-            let max = vals
-                .iter()
-                .zip(mask)
-                .filter(|(_, &m)| m)
-                .map(|(&v, _)| v)
-                .fold(f64::NEG_INFINITY, f64::max);
-            if !max.is_finite() {
-                return uniform();
-            }
-            let exps: Vec<f64> = vals
-                .iter()
-                .zip(mask)
-                .map(|(&v, &m)| if m { ((v - max) / temp).exp() } else { 0.0 })
-                .collect();
-            let total: f64 = exps.iter().sum();
-            if total == 0.0 || !total.is_finite() {
-                return uniform();
-            }
-            exps.into_iter().map(|e| e / total).collect()
-        };
-        let all_true = vec![true; legal.len()];
-        if needs_lm {
-            let lm_logits: Vec<f64> = legal
-                .iter()
-                .map(|&a| {
-                    logits[0]
-                        .get(self.tokenizer.action_token(a) as usize)
-                        .copied()
-                        .unwrap_or(f32::MIN) as f64
-                })
-                .collect();
-            match self.mode {
-                InferenceMode::LmSoftmax => softmax(&lm_logits, &all_true, self.temp),
-                InferenceMode::ArgmaxVal => {
-                    let p_lm = softmax(&lm_logits, &all_true, 1.0);
-                    let vals: Vec<f64> = values[1..].iter().map(|&v| v as f64).collect();
-                    let mut gate: Vec<bool> =
-                        p_lm.iter().map(|&p| p >= self.lambda).collect();
-                    if !gate.iter().any(|&g| g) {
-                        gate = all_true;
-                    }
-                    softmax(&vals, &gate, self.temp)
-                }
-            }
-        } else {
-            let vals: Vec<f64> = values.iter().map(|&v| v as f64).collect();
-            softmax(&vals, &all_true, self.temp)
-        }
+        masked_policy(
+            self.mode,
+            self.lambda,
+            self.temp,
+            |a| self.tokenizer.action_token(a),
+            history,
+            legal,
+            |histories| forward_histories_batch_tch(&self.net, &self.tokenizer, &histories).ok(),
+        )
     }
 
     fn act(&self, gs: &OhHellGameState, rng: &mut StdRng) -> Action {
@@ -160,9 +103,10 @@ impl Opponent {
 }
 
 fn main() {
-    let weights = PathBuf::from(std::env::var("OH_WEIGHTS").unwrap_or_else(|_| {
-        "/home/steven/card_platypus/gomcts/oh_hell/bootstrap.safetensors".to_string()
-    }));
+    let weights = parse_env_path(
+        "OH_WEIGHTS",
+        "/home/steven/card_platypus/gomcts/oh_hell/bootstrap.safetensors",
+    );
     let n_games: usize = parse("OH_GAMES", 600);
     let opponent_kind = std::env::var("OH_OPPONENT").unwrap_or_else(|_| "pimcts".into());
     let rollouts: usize = parse("OH_PIMCTS_ROLLOUTS", 50);
@@ -172,6 +116,7 @@ fn main() {
     let min_tricks: usize = parse("OH_MIN_TRICKS", 1);
     let max_tricks: usize = parse("OH_MAX_TRICKS", 10);
     let base_seed: u64 = parse("OH_SEED", 0);
+    let subject_kind = std::env::var("OH_SUBJECT").unwrap_or_else(|_| "model".into());
     let (mode, lambda) = match std::env::var("OH_INFER").as_deref() {
         Ok("gated") => (InferenceMode::ArgmaxVal, lambda),
         Ok("argmax") => (InferenceMode::ArgmaxVal, 0.0),
@@ -179,20 +124,19 @@ fn main() {
     };
     assert!(weights.exists(), "weights not found at {}", weights.display());
 
-    let v = OhHellTokenizer::VOCAB_SIZE;
-    let c = OhHellTokenizer::MAX_CONTEXT;
-    let cfg = match std::env::var("OH_CONFIG").as_deref() {
-        Ok("smoke") => TransformerConfig::euchre_smoke(v, c),
-        Ok("medium") => TransformerConfig::euchre_medium(v, c),
-        _ => TransformerConfig::paper_default(v, c),
-    };
+    let cfg = TransformerConfig::from_env(
+        "OH_CONFIG",
+        "paper",
+        OhHellTokenizer::VOCAB_SIZE,
+        OhHellTokenizer::MAX_CONTEXT,
+    );
     let mut net =
         GoMctsTransformerTch::new(cfg, tch::Device::cuda_if_available()).expect("build");
     net.load_safetensors(&weights).expect("load weights");
     let model = InlineModel { net, tokenizer: OhHellTokenizer, mode, lambda, temp };
 
     println!(
-        "OhHell gomcts eval: weights={}, opponent={}, games/trick={}, infer={:?} λ={} t={}, \
+        "OhHell gomcts eval: subject={subject_kind}, weights={}, opponent={}, games/trick={}, infer={:?} λ={} t={}, \
          players={}, tricks {}..={}",
         weights.display(),
         opponent_kind,
@@ -242,10 +186,22 @@ fn main() {
                 let a = *buf.choose(&mut rng).expect("chance");
                 gs.apply_action(a);
             }
+            let mut subject_pimcts = if subject_kind == "pimcts" {
+                Some(PIMCTSBot::new(
+                    rollouts,
+                    OpenHandSolver::new_oh_hell(),
+                    StdRng::seed_from_u64(seed.wrapping_add(99)),
+                ))
+            } else {
+                None
+            };
             while !gs.is_terminal() {
                 let p = gs.cur_player();
                 let a = if p == subject_seat {
-                    model.act(&gs, &mut rng)
+                    match subject_pimcts.as_mut() {
+                        Some(bot) => bot.step(&gs),
+                        None => model.act(&gs, &mut rng),
+                    }
                 } else {
                     opponents[p].act(&gs, &mut rng)
                 };

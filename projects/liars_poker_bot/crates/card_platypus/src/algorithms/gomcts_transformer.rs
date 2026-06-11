@@ -86,6 +86,21 @@ impl TransformerConfig {
     pub fn paper_default(vocab_size: usize, max_context: usize) -> Self {
         Self { vocab_size, max_context, d_model: 256, n_heads: 8, n_layers: 8, d_ff: 1024 }
     }
+
+    /// Pick a config by env knob: `smoke` | `medium` | `paper`. Unset or
+    /// unrecognized values fall back to `default` (which must be one of
+    /// those three names).
+    pub fn from_env(var: &str, default: &str, vocab_size: usize, max_context: usize) -> Self {
+        let value = std::env::var(var);
+        let pick = |name: &str| match name {
+            "smoke" => Some(Self::euchre_smoke(vocab_size, max_context)),
+            "medium" => Some(Self::euchre_medium(vocab_size, max_context)),
+            "paper" => Some(Self::paper_default(vocab_size, max_context)),
+            _ => None,
+        };
+        pick(value.as_deref().unwrap_or(default))
+            .unwrap_or_else(|| pick(default).expect("valid default config name"))
+    }
 }
 
 /// One self-play step from the search player's POV.
@@ -196,6 +211,20 @@ pub(crate) fn pad_to(tokens: &[u32], max_context: usize, pad_token: u32) -> (Vec
     (out, n)
 }
 
+/// Read an env-var experiment knob, falling back to `default` when the
+/// variable is unset or unparsable. Shared by the gomcts example
+/// harnesses, whose knobs are all env-driven.
+pub fn parse_env<T: std::str::FromStr>(name: &str, default: T) -> T {
+    std::env::var(name).ok().and_then(|s| s.parse().ok()).unwrap_or(default)
+}
+
+/// Path-valued variant of [`parse_env`].
+pub fn parse_env_path(name: &str, default: &str) -> std::path::PathBuf {
+    std::env::var(name)
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from(default))
+}
+
 pub(crate) fn finish_mean_se(scores: &[f64]) -> (f64, f64) {
     let n = scores.len() as f64;
     if n == 0.0 {
@@ -290,92 +319,109 @@ impl RemoteModel {
         response_rx.recv().expect("service dropped response channel")
     }
 
-    /// Softmax of `vals` (already divided by temperature where needed),
-    /// restricted to indices where `mask` is true; masked-out entries
-    /// get probability 0.
-    fn masked_softmax(vals: &[f64], mask: &[bool], temp: f64) -> Vec<f64> {
-        let max = vals
-            .iter()
-            .zip(mask)
-            .filter(|(_, &m)| m)
-            .map(|(&v, _)| v)
-            .fold(f64::NEG_INFINITY, f64::max);
-        let exps: Vec<f64> = vals
-            .iter()
-            .zip(mask)
-            .map(|(&v, &m)| if m { ((v - max) / temp).exp() } else { 0.0 })
-            .collect();
-        let total: f64 = exps.iter().sum();
-        if total == 0.0 || !total.is_finite() {
-            let n_on = mask.iter().filter(|&&m| m).count().max(1);
-            return mask.iter().map(|&m| if m { 1.0 / n_on as f64 } else { 0.0 }).collect();
-        }
-        exps.into_iter().map(|e| e / total).collect()
-    }
-
     fn masked_policy_via_service(&self, history: &IStateKey, legal: &[Action]) -> Vec<f64> {
-        let needs_lm = self.mode == InferenceMode::LmSoftmax || self.lambda > 0.0;
-        let all_true = vec![true; legal.len()];
-        if needs_lm {
-            let tok_fn = self
-                .action_token_fn
+        let tok_fn = |a: Action| {
+            self.action_token_fn
                 .as_ref()
-                .expect("LmSoftmax / λ-gated inference requires action_token_fn");
-            // Pure LM mode only needs h's last-position logits — one row
-            // instead of |legal|+1. Matters: frozen opponents in the
-            // paper self-play loop are 3 of 4 seats.
-            if self.mode == InferenceMode::LmSoftmax {
-                let (logits, _) = self.forward(vec![*history]);
-                let lm_logits: Vec<f64> = legal
-                    .iter()
-                    .map(|&a| {
-                        logits[0].get(tok_fn(a) as usize).copied().unwrap_or(f32::MIN) as f64
-                    })
-                    .collect();
-                // temp defaults to POLICY_SOFTMAX_TEMP; small temp ≈
-                // greedy imitation, 1.0 = generative sampling.
-                return Self::masked_softmax(&lm_logits, &all_true, self.temp);
-            }
-            // λ-gated ArgmaxVal*: one request [h, h⊕a1, …, h⊕ak].
-            // logits[0] is the LM distribution over the next token at h;
-            // values[1..] are V(h⊕a) for the value softmax.
-            let mut histories = Vec::with_capacity(legal.len() + 1);
-            histories.push(*history);
-            histories.extend(legal.iter().map(|&a| {
+                .expect("LmSoftmax / λ-gated inference requires action_token_fn")(a)
+        };
+        masked_policy(self.mode, self.lambda, self.temp, tok_fn, history, legal, |histories| {
+            Some(self.forward(histories))
+        })
+    }
+}
+
+/// Softmax of `vals` (already divided by temperature where needed),
+/// restricted to indices where `mask` is true; masked-out entries
+/// get probability 0.
+fn masked_softmax(vals: &[f64], mask: &[bool], temp: f64) -> Vec<f64> {
+    let max = vals
+        .iter()
+        .zip(mask)
+        .filter(|(_, &m)| m)
+        .map(|(&v, _)| v)
+        .fold(f64::NEG_INFINITY, f64::max);
+    let exps: Vec<f64> = vals
+        .iter()
+        .zip(mask)
+        .map(|(&v, &m)| if m { ((v - max) / temp).exp() } else { 0.0 })
+        .collect();
+    let total: f64 = exps.iter().sum();
+    if total == 0.0 || !total.is_finite() {
+        let n_on = mask.iter().filter(|&&m| m).count().max(1);
+        return mask.iter().map(|&m| if m { 1.0 / n_on as f64 } else { 0.0 }).collect();
+    }
+    exps.into_iter().map(|e| e / total).collect()
+}
+
+/// Turn one decision point into a distribution over `legal` according to
+/// `mode` / `lambda` / `temp` — the policy logic shared by the
+/// service-backed `RemoteModel` and the inline-tch eval harnesses.
+/// `forward` runs the model on a batch of histories and returns per-row
+/// (last-position LM logits, value), aligned with the input order;
+/// returning `None` (e.g. a tch error) falls back to a uniform policy.
+pub fn masked_policy(
+    mode: InferenceMode,
+    lambda: f64,
+    temp: f64,
+    action_token: impl Fn(Action) -> u32,
+    history: &IStateKey,
+    legal: &[Action],
+    mut forward: impl FnMut(Vec<IStateKey>) -> Option<(Vec<Vec<f32>>, Vec<f32>)>,
+) -> Vec<f64> {
+    let uniform = || vec![1.0 / legal.len() as f64; legal.len()];
+    let all_true = vec![true; legal.len()];
+    let lm_logits_for = |logits: &[Vec<f32>]| -> Vec<f64> {
+        legal
+            .iter()
+            .map(|&a| logits[0].get(action_token(a) as usize).copied().unwrap_or(f32::MIN) as f64)
+            .collect()
+    };
+    // Pure LM mode only needs h's last-position logits — one row
+    // instead of |legal|+1. Matters: frozen opponents in the
+    // paper self-play loop are 3 of 4 seats.
+    if mode == InferenceMode::LmSoftmax {
+        let Some((logits, _)) = forward(vec![*history]) else {
+            return uniform();
+        };
+        // temp defaults to POLICY_SOFTMAX_TEMP; small temp ≈
+        // greedy imitation, 1.0 = generative sampling.
+        masked_softmax(&lm_logits_for(&logits), &all_true, temp)
+    } else if lambda > 0.0 {
+        // λ-gated ArgmaxVal*: one request [h, h⊕a1, …, h⊕ak].
+        // logits[0] is the LM distribution over the next token at h;
+        // values[1..] are V(h⊕a) for the value softmax.
+        let mut histories = Vec::with_capacity(legal.len() + 1);
+        histories.push(*history);
+        histories.extend(legal.iter().map(|&a| {
+            let mut h = *history;
+            h.push(a);
+            h
+        }));
+        let Some((logits, values)) = forward(histories) else {
+            return uniform();
+        };
+        let p_lm = masked_softmax(&lm_logits_for(&logits), &all_true, 1.0);
+        let vals: Vec<f64> = values[1..].iter().map(|&v| v as f64).collect();
+        let mut gate: Vec<bool> = p_lm.iter().map(|&p| p >= lambda).collect();
+        if !gate.iter().any(|&g| g) {
+            gate = all_true;
+        }
+        masked_softmax(&vals, &gate, temp)
+    } else {
+        let histories: Vec<IStateKey> = legal
+            .iter()
+            .map(|&a| {
                 let mut h = *history;
                 h.push(a);
                 h
-            }));
-            let (logits, values) = self.forward(histories);
-            let lm_logits: Vec<f64> = legal
-                .iter()
-                .map(|&a| logits[0].get(tok_fn(a) as usize).copied().unwrap_or(f32::MIN) as f64)
-                .collect();
-            let p_lm = Self::masked_softmax(&lm_logits, &all_true, 1.0);
-            match self.mode {
-                InferenceMode::LmSoftmax => p_lm,
-                InferenceMode::ArgmaxVal => {
-                    let vals: Vec<f64> = values[1..].iter().map(|&v| v as f64).collect();
-                    let mut gate: Vec<bool> = p_lm.iter().map(|&p| p >= self.lambda).collect();
-                    if !gate.iter().any(|&g| g) {
-                        gate = all_true;
-                    }
-                    Self::masked_softmax(&vals, &gate, self.temp)
-                }
-            }
-        } else {
-            let histories: Vec<IStateKey> = legal
-                .iter()
-                .map(|&a| {
-                    let mut h = *history;
-                    h.push(a);
-                    h
-                })
-                .collect();
-            let (_, values) = self.forward(histories);
-            let values: Vec<f64> = values.into_iter().map(|v| v as f64).collect();
-            Self::masked_softmax(&values, &all_true, self.temp)
-        }
+            })
+            .collect();
+        let Some((_, values)) = forward(histories) else {
+            return uniform();
+        };
+        let values: Vec<f64> = values.into_iter().map(|v| v as f64).collect();
+        masked_softmax(&values, &all_true, temp)
     }
 }
 
@@ -889,10 +935,6 @@ struct Block {
     n_heads: i64,
     head_dim: i64,
 }
-
-/// The discrete per-hand payoffs Euchre can produce, for the
-/// categorical outcome head. Order defines the class indices.
-pub const EUCHRE_OUTCOME_VALUES: [f32; 6] = [-4.0, -2.0, -1.0, 1.0, 2.0, 4.0];
 
 impl GoMctsTransformerTch {
     pub fn new(cfg: TransformerConfig, device: Device) -> Result<Self> {
@@ -2420,6 +2462,10 @@ pub mod kuhn {
 pub mod euchre {
     use super::*;
     use games::gamestates::euchre::EuchreGameState;
+
+    /// The discrete per-hand payoffs Euchre can produce, for the
+    /// categorical outcome head. Order defines the class indices.
+    pub const OUTCOME_VALUES: [f32; 6] = [-4.0, -2.0, -1.0, 1.0, 2.0, 4.0];
 
     /// Euchre's `EAction` enum has 32 unique single-bit discriminants;
     /// shifting +1 reserves 0 for PAD → 33-token vocab.
