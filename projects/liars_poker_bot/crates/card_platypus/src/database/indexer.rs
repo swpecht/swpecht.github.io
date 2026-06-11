@@ -10,7 +10,7 @@ use games::{
             iterator::EuchreIsomorphicIStateIterator,
         },
         kuhn_poker::KuhnPoker,
-        oh_hell::actions::{OHCard, OH_DECK_SIZE},
+        oh_hell::actions::OH_DECK_SIZE,
     },
     iso::hand_indexer::{HandIndexer, IndexerState},
     istate::IStateKey,
@@ -251,7 +251,8 @@ impl PhfIndexer {
 ///     (one per prior-bid sequence × canonical (hand, face_up)).
 ///   * `[bidding_size .. total)` — play istates. Sub-layout by depth
 ///     `d ∈ [0, max_cards_played)`: `bid_full × waugh.size(1+d)`
-///     slots per depth.
+///     slots per depth, where `bid_full` counts only hook-legal
+///     complete bid profiles (total ≠ n_tricks).
 ///
 /// The HandIndexer (and the per-round-size cache) is rebuilt lazily on
 /// first use after deserialisation; only `(num_players, n_tricks,
@@ -267,12 +268,19 @@ pub struct WaughOhIndexer {
 
 struct WaughOhRuntime {
     bid_base: u64,
+    /// Number of hook-legal complete bid profiles: all `(n_tricks+1)^np`
+    /// sequences minus those summing to `n_tricks` (the dealer hook
+    /// forbids the last bid from making the total hit `n_tricks`).
     bid_full: u64,
     waugh: HandIndexer,
     waugh_size: Vec<u64>,       // waugh_size[r] = waugh.size(r), r ∈ [0, max_cards+2)
     bidding_offsets: Vec<u64>,  // [num_players + 1]
     bidding_size: u64,
     depth_offsets: Vec<u64>,    // [max_cards + 1]
+    /// sum_counts[k][s] = number of k-bid sequences (each in
+    /// [0, n_tricks]) summing to exactly s. Used to rank hook-legal
+    /// bid profiles.
+    sum_counts: Vec<Vec<u64>>,
     total: u64,
 }
 
@@ -305,21 +313,21 @@ impl WaughOhIndexer {
         //   [n_tricks]               face_up
         //   [n_tricks + 1 ..]        bids (discriminant ≥ OH_DECK_SIZE)
         //                            then plays (discriminant < OH_DECK_SIZE)
-        let mut num_bids = 0u8;
+        let mut bids: Vec<u8> = Vec::with_capacity(self.num_players);
         let mut num_plays = 0usize;
         for i in (n_tricks + 1)..key.len() {
             let d = key[i].0;
             if d >= OH_DECK_SIZE as u8 {
-                num_bids += 1;
+                bids.push(d - OH_DECK_SIZE as u8);
             } else {
                 num_plays += 1;
             }
         }
 
-        if num_plays == 0 && (num_bids as usize) < self.num_players {
+        if num_plays == 0 && bids.len() < self.num_players {
             // Bidding istate. perspective = number of prior bids seen.
-            let perspective = num_bids as usize;
-            let bid_idx = encode_bids_from_istate(key, n_tricks, perspective, rt.bid_base);
+            let perspective = bids.len();
+            let bid_idx = encode_bids(&bids, rt.bid_base);
             let waugh_idx = compute_waugh_idx(key, n_tricks, 0, &rt.waugh);
             rt.bidding_offsets[perspective] + bid_idx * rt.waugh_size[1] + waugh_idx
         } else {
@@ -331,7 +339,7 @@ impl WaughOhIndexer {
                 depth,
                 self.max_cards,
             );
-            let bid_idx = encode_bids_from_istate(key, n_tricks, self.num_players, rt.bid_base);
+            let bid_idx = rt.rank_legal_bid_profile(&bids, n_tricks);
             let waugh_idx = compute_waugh_idx(key, n_tricks, depth, &rt.waugh);
             rt.bidding_size
                 + rt.depth_offsets[depth]
@@ -344,7 +352,19 @@ impl WaughOhIndexer {
 impl WaughOhRuntime {
     fn build(num_players: usize, n_tricks: usize, max_cards: usize) -> Self {
         let bid_base = (n_tricks + 1) as u64;
-        let bid_full = bid_base.pow(num_players as u32);
+        // sum_counts[k][s]: k bids in [0, n_tricks] summing to s.
+        let mut sum_counts = vec![vec![0u64; num_players * n_tricks + 1]; num_players + 1];
+        sum_counts[0][0] = 1;
+        for k in 1..=num_players {
+            for s in 0..=k * n_tricks {
+                sum_counts[k][s] = (0..=n_tricks.min(s))
+                    .map(|d| sum_counts[k - 1][s - d])
+                    .sum();
+            }
+        }
+        // Complete bid profiles, minus those the dealer hook forbids
+        // (total == n_tricks).
+        let bid_full = bid_base.pow(num_players as u32) - sum_counts[num_players][n_tricks];
 
         let mut rounds = vec![n_tricks as u8, 1];
         for _ in 0..max_cards {
@@ -380,8 +400,32 @@ impl WaughOhRuntime {
             bidding_offsets,
             bidding_size,
             depth_offsets,
+            sum_counts,
             total: bidding_size + play_size,
         }
+    }
+
+    /// Rank a complete bid profile among the hook-legal profiles,
+    /// preserving the little-endian mixed-radix order of
+    /// `encode_bids_from_istate` restricted to legal profiles. Walks
+    /// digits from most significant (last bid) down, counting the legal
+    /// profiles under every smaller digit choice.
+    fn rank_legal_bid_profile(&self, bids: &[u8], n_tricks: usize) -> u64 {
+        let mut rank = 0u64;
+        let mut prefix_sum = 0usize;
+        for i in (0..bids.len()).rev() {
+            for d in 0..bids[i] as usize {
+                let free = self.bid_base.pow(i as u32);
+                let illegal = n_tricks
+                    .checked_sub(prefix_sum + d)
+                    .and_then(|need| self.sum_counts[i].get(need))
+                    .copied()
+                    .unwrap_or(0);
+                rank += free - illegal;
+            }
+            prefix_sum += bids[i] as usize;
+        }
+        rank
     }
 }
 
@@ -423,27 +467,15 @@ fn compute_waugh_idx(key: &IStateKey, n_tricks: usize, depth: usize, waugh: &Han
     idx
 }
 
-fn encode_bids_from_istate(
-    key: &IStateKey,
-    n_tricks: usize,
-    num_bids: usize,
-    bid_base: u64,
-) -> u64 {
-    let tail_start = n_tricks + 1;
+/// Little-endian mixed-radix encoding of a (possibly partial) bid
+/// sequence. Used for bidding-phase istates, where any prefix is
+/// reachable (the hook only constrains the final bid).
+fn encode_bids(bids: &[u8], bid_base: u64) -> u64 {
     let mut idx = 0u64;
     let mut mul = 1u64;
-    let mut seen = 0;
-    for i in tail_start..key.len() {
-        let d = key[i].0;
-        if d >= OH_DECK_SIZE as u8 {
-            if seen >= num_bids {
-                break;
-            }
-            let b = d - OH_DECK_SIZE as u8;
-            idx += (b as u64) * mul;
-            mul *= bid_base;
-            seen += 1;
-        }
+    for &b in bids {
+        idx += (b as u64) * mul;
+        mul *= bid_base;
     }
     idx
 }
