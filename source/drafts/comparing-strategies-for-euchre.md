@@ -1,6 +1,6 @@
 ---
 title: Comparing training time cost for euchre strategies
-date: 2026-06-07T00:00:00Z
+date: 2026-06-11T00:00:00Z
 ---
 
 Rework this to compare the training time required for different strategies, using both euchre and oh hell. Structure:
