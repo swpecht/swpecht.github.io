@@ -93,6 +93,7 @@ impl Default for RnadConfig {
 }
 
 /// One decision point recorded during self-play.
+#[derive(Clone)]
 pub struct RnadStep {
     pub player: usize,
     pub history: IStateKey,
@@ -118,6 +119,12 @@ pub struct RnadStats {
     /// Mean KL(π‖π_reg) — convergence of the inner dynamics shows up
     /// as this stabilizing between π_reg refreshes.
     pub mean_kl_reg: f64,
+    /// Outer-loop convergence metric, populated only on learner steps
+    /// that performed a π_reg refresh: KL(π_now ‖ π_reg_outgoing) over a
+    /// sample of recent decision states — i.e. how far this fixed-point
+    /// iteration moved the policy. The R-NaD fixed-point sequence has
+    /// converged when this →0 across successive refreshes.
+    pub kl_outer: Option<f64>,
     pub n_steps: usize,
 }
 
@@ -225,6 +232,132 @@ where
 }
 
 // =====================================================================
+// Exploiter collection (approximate-exploitability harness)
+// =====================================================================
+
+fn play_one_hand_exploiter<G: GameState>(
+    live: &mut RemoteModel,
+    frozen: &mut RemoteModel,
+    live_team: usize,
+    new_state: impl Fn() -> G,
+    rng: &mut StdRng,
+) -> RnadTrajectory {
+    let mut gs = new_state();
+    let mut buf = Vec::new();
+    let mut steps = Vec::new();
+    while !gs.is_terminal() {
+        buf.clear();
+        gs.legal_actions(&mut buf);
+        if gs.is_chance_node() {
+            let a = *buf.choose(rng).expect("non-empty chance");
+            gs.apply_action(a);
+            continue;
+        }
+        let p = gs.cur_player();
+        let h = gs.istate_key(p);
+        let a = if team_of(p) == live_team {
+            let probs = <RemoteModel as GenerativeModel<G>>::policy(live, &h, &buf);
+            let mut r: f64 = rng.random::<f64>();
+            let mut idx = buf.len() - 1;
+            for (i, pr) in probs.iter().enumerate() {
+                r -= *pr;
+                if r <= 0.0 {
+                    idx = i;
+                    break;
+                }
+            }
+            steps.push(RnadStep {
+                player: p,
+                history: h,
+                action: buf[idx],
+                legal: buf.clone(),
+                behavior_prob: probs[idx].max(1e-9) as f32,
+            });
+            buf[idx]
+        } else {
+            <RemoteModel as GenerativeModel<G>>::sample(frozen, &h, &buf, rng)
+        };
+        gs.apply_action(a);
+    }
+    let n = gs.num_players();
+    RnadTrajectory { steps, payoffs: (0..n).map(|p| gs.evaluate(p)).collect() }
+}
+
+/// Collect best-response training games: the live (exploiter) net plays
+/// one team — alternating teams by game index so both seat parities are
+/// covered — against a FROZEN target net at the other seats. Only the
+/// exploiter team's decisions are recorded, so `learner_step` trains a
+/// best response. Run the trainer with `eta = 0` (no reward transform);
+/// the exploiter's head-to-head EV against the target is then a lower
+/// bound on the target's exploitability.
+///
+/// `frozen_temp` sets the target's sampling temperature: 0.05 ≈ exploit
+/// the deployed greedy-LM agent; 1.0 = exploit the policy distribution
+/// the equilibrium argument is actually about.
+#[allow(clippy::too_many_arguments)]
+pub fn collect_exploiter_games_batched_tch<G, T, FNS>(
+    live: &GoMctsTransformerTch,
+    frozen: &GoMctsTransformerTch,
+    tokenizer: &T,
+    new_state: FNS,
+    n_games: usize,
+    base_seed: u64,
+    action_token_fn: ActionTokenFn,
+    frozen_temp: f64,
+) -> Vec<RnadTrajectory>
+where
+    G: GameState + Send,
+    T: Tokenizer<G> + Send + Sync,
+    FNS: Fn() -> G + Send + Sync + Copy,
+{
+    use std::sync::mpsc;
+    if n_games == 0 {
+        return Vec::new();
+    }
+    let max_batch = n_games.clamp(32, 512);
+    let (req_live_tx, req_live_rx) = mpsc::channel::<ServiceRequest>();
+    let (req_frozen_tx, req_frozen_rx) = mpsc::channel::<ServiceRequest>();
+    std::thread::scope(|s| {
+        let svc_live = s.spawn(move || {
+            serve_batched_tch(live, tokenizer, req_live_rx, max_batch, false, 1)
+        });
+        let svc_frozen = s.spawn(move || {
+            serve_batched_tch(frozen, tokenizer, req_frozen_rx, max_batch, false, 1)
+        });
+        let mut handles = Vec::with_capacity(n_games);
+        for game_idx in 0..n_games {
+            let req_live = req_live_tx.clone();
+            let req_frozen = req_frozen_tx.clone();
+            let atf = action_token_fn.clone();
+            let seed = base_seed.wrapping_add(game_idx as u64);
+            handles.push(s.spawn(move || {
+                let mut live_actor = RemoteModel::new(req_live)
+                    .with_inference(InferenceMode::LmSoftmax, 0.0, Some(atf.clone()))
+                    .with_temp(1.0);
+                let mut frozen_actor = RemoteModel::new(req_frozen)
+                    .with_inference(InferenceMode::LmSoftmax, 0.0, Some(atf))
+                    .with_temp(frozen_temp);
+                let mut rng: StdRng = SeedableRng::seed_from_u64(seed);
+                play_one_hand_exploiter(
+                    &mut live_actor,
+                    &mut frozen_actor,
+                    game_idx % 2,
+                    new_state,
+                    &mut rng,
+                )
+            }));
+        }
+        drop(req_live_tx);
+        drop(req_frozen_tx);
+        let out: Vec<RnadTrajectory> =
+            handles.into_iter().map(|h| h.join().expect("game thread panicked")).collect();
+        svc_live.join().expect("live service panicked");
+        svc_frozen.join().expect("frozen service panicked");
+        out
+    })
+}
+
+// =====================================================================
 // Learner
 // =====================================================================
 
@@ -322,6 +455,9 @@ pub struct RnadTrainer<G, T> {
     pub cfg: RnadConfig,
     tokenizer: T,
     learner_iters: usize,
+    /// Sample of the most recent batch's decision states, retained so a
+    /// π_reg refresh can measure `kl_outer` on-distribution.
+    recent_steps: Vec<RnadStep>,
     _g: std::marker::PhantomData<G>,
 }
 
@@ -331,17 +467,39 @@ impl<G: GameState, T: Tokenizer<G>> RnadTrainer<G, T> {
         let opt = nn::AdamW::default()
             .build(net.var_store(), cfg.lr)
             .map_err(|e| anyhow!("build AdamW: {e}"))?;
-        Ok(Self { net, reg, opt, cfg, tokenizer, learner_iters: 0, _g: std::marker::PhantomData })
+        Ok(Self {
+            net,
+            reg,
+            opt,
+            cfg,
+            tokenizer,
+            learner_iters: 0,
+            recent_steps: Vec::new(),
+            _g: std::marker::PhantomData,
+        })
     }
 
     pub fn learner_iters(&self) -> usize {
         self.learner_iters
     }
 
-    /// π_reg ← current live weights (the R-NaD "update" step).
-    pub fn refresh_regularization_policy(&mut self) -> Result<()> {
+    /// π_reg ← current live weights (the R-NaD "update" step). Returns
+    /// `kl_outer`: KL(π_now ‖ π_reg_outgoing) over the retained recent
+    /// states, measured BEFORE the swap — the distance this fixed-point
+    /// iteration travelled. `None` when there is nothing meaningful to
+    /// measure (no recent states yet, or η = 0 / exploiter mode where
+    /// π_reg plays no role).
+    pub fn refresh_regularization_policy(&mut self) -> Result<Option<f64>> {
+        let kl_outer = if self.cfg.eta != 0.0 && !self.recent_steps.is_empty() {
+            let refs: Vec<&RnadStep> = self.recent_steps.iter().collect();
+            let eval = self.eval_steps(&refs);
+            let n = eval.kl_reg.len().max(1) as f64;
+            Some(eval.kl_reg.iter().map(|&x| x as f64).sum::<f64>() / n)
+        } else {
+            None
+        };
         self.reg = SnapshotTch::from_model(&self.net)?.hydrate(self.net.device())?;
-        Ok(())
+        Ok(kl_outer)
     }
 
     /// Phase A: detached evaluation of every step under πθ and π_reg.
@@ -354,32 +512,43 @@ impl<G: GameState, T: Tokenizer<G>> RnadTrainer<G, T> {
             entropy: Vec::with_capacity(steps.len()),
             kl_reg: Vec::with_capacity(steps.len()),
         };
+        // η = 0 (exploiter / plain best-response mode): π_reg plays no
+        // role in the loss, so skip its forward — halves phase-A cost.
+        let skip_reg = self.cfg.eta == 0.0;
         for chunk in steps.chunks(self.cfg.minibatch_steps) {
             let rows = build_rows(&self.net, &self.tokenizer, chunk);
             tch::no_grad(|| {
                 let (lm, val) = forward_rows(&self.net, &rows);
-                let (lm_reg, _) = forward_rows(&self.reg, &rows);
                 let logp_full = (&lm + &rows.legal_add).log_softmax(-1, Kind::Float);
-                let logp_reg_full = (&lm_reg + &rows.legal_add).log_softmax(-1, Kind::Float);
                 let probs = logp_full.exp();
                 let gather_a = |t: &Tensor| {
                     t.gather(1, &rows.action_tok.unsqueeze(-1), false).squeeze_dim(1)
                 };
-                let logp_a = gather_a(&logp_full);
-                let logp_reg_a = gather_a(&logp_reg_full);
+                let logp_a = Vec::<f32>::try_from(gather_a(&logp_full)).expect("logp");
+                let (logp_reg_a, kl): (Vec<f32>, Vec<f32>) = if skip_reg {
+                    (logp_a.clone(), vec![0.0; chunk.len()])
+                } else {
+                    let (lm_reg, _) = forward_rows(&self.reg, &rows);
+                    let logp_reg_full =
+                        (&lm_reg + &rows.legal_add).log_softmax(-1, Kind::Float);
+                    let kl = (&probs * (&logp_full - &logp_reg_full))
+                        .sum_dim_intlist([-1i64].as_ref(), false, Kind::Float);
+                    (
+                        Vec::<f32>::try_from(gather_a(&logp_reg_full)).expect("logp_reg"),
+                        Vec::<f32>::try_from(kl).expect("kl"),
+                    )
+                };
                 let c = centered_action_logit(&lm, &rows);
                 // Illegal tokens carry prob exp(-1e9)=0, so their
                 // products vanish without explicit masking.
                 let entropy = -(&probs * &logp_full)
                     .sum_dim_intlist([-1i64].as_ref(), false, Kind::Float);
-                let kl = (&probs * (&logp_full - &logp_reg_full))
-                    .sum_dim_intlist([-1i64].as_ref(), false, Kind::Float);
-                out.logp.extend(Vec::<f32>::try_from(logp_a).expect("logp"));
-                out.logp_reg.extend(Vec::<f32>::try_from(logp_reg_a).expect("logp_reg"));
+                out.logp.extend(logp_a);
+                out.logp_reg.extend(logp_reg_a);
                 out.value.extend(Vec::<f32>::try_from(val).expect("value"));
                 out.c_logit.extend(Vec::<f32>::try_from(c).expect("c_logit"));
                 out.entropy.extend(Vec::<f32>::try_from(entropy).expect("entropy"));
-                out.kl_reg.extend(Vec::<f32>::try_from(kl).expect("kl"));
+                out.kl_reg.extend(kl);
             });
         }
         out
@@ -469,9 +638,16 @@ impl<G: GameState, T: Tokenizer<G>> RnadTrainer<G, T> {
             rows_done += chunk.len();
         }
 
+        // Retain a sample of this batch's states for the on-distribution
+        // kl_outer measurement at the next π_reg refresh. `idx` is
+        // already shuffled, so the prefix is an unbiased sample.
+        self.recent_steps =
+            idx.iter().take(cfg.minibatch_steps).map(|&i| all_steps[i].clone()).collect();
+
         self.learner_iters += 1;
+        let mut kl_outer = None;
         if cfg.reg_update_every > 0 && self.learner_iters % cfg.reg_update_every == 0 {
-            self.refresh_regularization_policy()?;
+            kl_outer = self.refresh_regularization_policy()?;
         }
 
         let nf = rows_done.max(1) as f64;
@@ -481,6 +657,7 @@ impl<G: GameState, T: Tokenizer<G>> RnadTrainer<G, T> {
             mean_abs_adv: abs_adv_sum / n as f64,
             mean_entropy: eval.entropy.iter().map(|&x| x as f64).sum::<f64>() / n as f64,
             mean_kl_reg: eval.kl_reg.iter().map(|&x| x as f64).sum::<f64>() / n as f64,
+            kl_outer,
             n_steps: n,
         })
     }
@@ -558,6 +735,7 @@ mod tests {
         let atf: ActionTokenFn = std::sync::Arc::new(move |a| tok.action_token(a));
         let mut rng: StdRng = SeedableRng::seed_from_u64(7);
         let mut last = RnadStats::default();
+        let mut saw_kl_outer = false;
         for it in 0..20 {
             let trajs = collect_rnad_games_batched_tch::<_, _, _>(
                 &trainer.net,
@@ -571,8 +749,15 @@ mod tests {
             );
             last = trainer.learner_step(&trajs, &mut rng).expect("learner step");
             assert!(last.policy_loss.is_finite() && last.value_loss.is_finite());
+            if let Some(k) = last.kl_outer {
+                assert!(k.is_finite() && k >= 0.0, "kl_outer must be a finite KL: {k}");
+                saw_kl_outer = true;
+            }
         }
         assert!(last.n_steps > 0);
+        // reg_update_every = 10 over 20 iters ⇒ refreshes at 10 and 20,
+        // each of which must report the outer-loop movement metric.
+        assert!(saw_kl_outer, "π_reg refreshes should emit kl_outer");
         let mut policy = RnadNetPolicy::new(&trainer.net, tok);
         let data = exploitability(|| (KuhnPoker::game().new)(), &mut policy);
         assert!(

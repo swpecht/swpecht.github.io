@@ -190,6 +190,13 @@ fn main() {
             n_games,
             secs,
         );
+        // Outer-loop convergence: distance this fixed-point iteration
+        // moved the policy. Emitted only on π_reg-refresh steps; the
+        // R-NaD fixed-point sequence has converged when this →0.
+        if let Some(kl_outer) = stats.kl_outer {
+            println!("iter {iter:>5}  π_reg refresh: kl_outer={kl_outer:.5}");
+            println!("kestrel: step={iter} kl_outer={kl_outer:.6}");
+        }
 
         if iter % eval_every == 0 || iter == iters {
             let (vs_rand, vs_rand_se, vs_init, vs_init_wr) =

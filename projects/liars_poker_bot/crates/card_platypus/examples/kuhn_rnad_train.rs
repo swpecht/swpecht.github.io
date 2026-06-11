@@ -89,6 +89,10 @@ fn main() {
         let stats = trainer.learner_step(&trajs, &mut rng).expect("learner step");
         let secs = t0.elapsed().as_secs_f64();
 
+        if let Some(kl_outer) = stats.kl_outer {
+            println!("kestrel: step={iter} kl_outer={kl_outer:.6}");
+        }
+
         if iter % eval_every == 0 || iter == iters {
             let mut policy = RnadNetPolicy::new(&trainer.net, tokenizer);
             let data = exploitability(|| (KuhnPoker::game().new)(), &mut policy);
