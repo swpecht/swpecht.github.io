@@ -69,4 +69,51 @@ and `gomcts/rnad/exploit_rnad_best_t100.log`.
 
 ## Results
 
-(pending)
+| # | deviator → target | exploit EV (lower bound on ε) |
+|---|---|---|
+| 1 | NeuRD single-seat → OH rnad_best @ temp 0.05 | **+0.061** max over 16 evals (series −0.10…+0.06, mean ≈ −0.04) |
+| 2 | NeuRD single-seat → OH rnad_best @ temp 1.0 | **+0.042** max (series similar) |
+| 3 | NeuRD single-seat → OH bootstrap_v2 (control) | **+1.28** max; ≈ +1.09 steady from iter 500 on |
+| 4 | NeuRD team → Euchre rnad_best @ temp 1.0, 2000 it | **+0.021** max (temp 0.05 prior run: +0.017) |
+| 5 | PIMCTS-50 single seat → 2 × OH rnad_best | **−1.16** pooled, n=3000; negative at every t (t1 −0.16 ns, t2–10 −0.62…−1.64) |
+
+Each probe-1/2/4 max is BELOW the ≈ +0.13 a max-over-noisy-evals would
+show on a truly-zero series — the exploiters genuinely found nothing.
+
+### The control is what makes the nulls meaningful
+
+Probe 3 used the identical method, budget, warm-start protocol, and
+function class as probes 1–2, and found a **+1.1/hand** deviation gain
+against bootstrap_v2 within 500 iterations — a ~25× larger signal than the
+best null-probe reading. The NeuRD exploiter demonstrably discovers large
+equilibrium gaps when they exist; against rnad_best it found noise.
+
+### Verdict
+
+By the pre-registered scale (ε ≲ +0.1 ⇒ at the measurement floor):
+
+- **Oh Hell (3-player): R-NaD's convergence worked in practice.** No single
+  deviator we could construct — adaptive neural best response against
+  either the deployed greedy agent or the underlying policy distribution,
+  or a PIMCTS-50 agent from a completely different function class — gains
+  anything against two copies of rnad_best, while the same machinery rips
+  a +1.1/hand hole in the pre-R-NaD policy. The theory's 2-player
+  guarantee did not formally extend to 3 players, but the empirical fixed
+  point is an ε-equilibrium with ε below ~0.1/hand at our measurement
+  power (against payoffs of ±10/hand and a field spread of +1.19/hand,
+  that is ≤ ~1% of the payoff scale).
+- **Euchre (4p teams): same conclusion at team granularity** — +0.02 max
+  across both target temperatures and 3000 total learner iterations, plus
+  the existing static probes (cfr0 ties at 50.0% pts, pimcts loses 46.2%).
+  Caveat: Euchre lacks an in-game positive control (no known-weak
+  checkpoint of the same architecture was probed), so its nulls lean on
+  the OH control validating the method.
+
+Honest limits of the claim: ε-bounds are lower bounds from the deviators we
+tried. A search-based deviator (PIMCTS with much larger budgets, or full
+belief-state solving), a from-scratch exploiter population, or longer
+budgets could still surface a gap; and "equilibrium among these deviators"
+says nothing about play against humans with out-of-distribution styles.
+But within the function classes that exist in this repo, both R-NaD bots
+are unexploitable at the resolution we can measure — and the same
+instrument confidently flags the non-R-NaD policy as broken.
