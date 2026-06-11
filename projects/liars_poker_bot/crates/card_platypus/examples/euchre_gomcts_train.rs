@@ -68,29 +68,22 @@
 use card_platypus::algorithms::gomcts_transformer::{
     collect_paper_pop_examples_batched_tch, collect_pop_examples_batched_tch,
     collect_self_play_games_batched_alphazero_tch, empty_cuda_cache, enable_tf32,
-    euchre::EuchreTokenizer, eval_vs_random_batched_tch, head_to_head_eval_batched_tch,
-    train_tch_with_callback, ActionTokenFn, GoMctsTransformerTch, McfsConfig, PopulationTch,
-    Tokenizer, TransformerConfig, EUCHRE_OUTCOME_VALUES,
+    euchre::{EuchreTokenizer, OUTCOME_VALUES as EUCHRE_OUTCOME_VALUES},
+    eval_vs_random_batched_tch, head_to_head_eval_batched_tch, parse_env as parse,
+    parse_env_path as parse_path, train_tch_with_callback, ActionTokenFn, GoMctsTransformerTch,
+    McfsConfig, PopulationTch, Tokenizer, TransformerConfig,
 };
 use games::gamestates::euchre::Euchre;
 use rand::{rngs::StdRng, SeedableRng};
 use std::{path::PathBuf, time::Instant};
 
-fn parse<T: std::str::FromStr>(name: &str, default: T) -> T {
-    std::env::var(name).ok().and_then(|s| s.parse().ok()).unwrap_or(default)
-}
-fn parse_path(name: &str, default: &str) -> PathBuf {
-    std::env::var(name).map(PathBuf::from).unwrap_or_else(|_| PathBuf::from(default))
-}
-
 fn pick_config() -> TransformerConfig {
-    let v = EuchreTokenizer::VOCAB_SIZE;
-    let c = EuchreTokenizer::MAX_CONTEXT;
-    match std::env::var("EU_CONFIG").as_deref() {
-        Ok("smoke") => TransformerConfig::euchre_smoke(v, c),
-        Ok("paper") => TransformerConfig::paper_default(v, c),
-        _ => TransformerConfig::euchre_medium(v, c),
-    }
+    TransformerConfig::from_env(
+        "EU_CONFIG",
+        "medium",
+        EuchreTokenizer::VOCAB_SIZE,
+        EuchreTokenizer::MAX_CONTEXT,
+    )
 }
 
 fn main() {

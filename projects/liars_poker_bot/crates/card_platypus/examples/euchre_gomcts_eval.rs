@@ -29,9 +29,10 @@
 use card_platypus::algorithms::{
     gomcts::{GoMcts, GoMctsConfig},
     gomcts_transformer::{
-        eval_vs_random_batched_tch_infer, euchre::EuchreTokenizer, ActionTokenFn, InferenceMode,
-        GoMctsTransformerTch, RemoteModel, ServiceRequest, Tokenizer, TransformerConfig,
-        EUCHRE_OUTCOME_VALUES,
+        eval_vs_random_batched_tch_infer,
+        euchre::{EuchreTokenizer, OUTCOME_VALUES as EUCHRE_OUTCOME_VALUES},
+        parse_env as parse, parse_env_path, ActionTokenFn, GoMctsTransformerTch, InferenceMode,
+        RemoteModel, ServiceRequest, Tokenizer, TransformerConfig,
     },
 };
 use games::{
@@ -41,18 +42,13 @@ use games::{
 use rand::{rngs::StdRng, seq::IndexedRandom, SeedableRng};
 use std::{path::PathBuf, sync::mpsc, time::Instant};
 
-fn parse<T: std::str::FromStr>(name: &str, default: T) -> T {
-    std::env::var(name).ok().and_then(|s| s.parse().ok()).unwrap_or(default)
-}
-
 fn pick_config() -> TransformerConfig {
-    let v = EuchreTokenizer::VOCAB_SIZE;
-    let c = EuchreTokenizer::MAX_CONTEXT;
-    match std::env::var("EU_CONFIG").as_deref() {
-        Ok("medium") => TransformerConfig::euchre_medium(v, c),
-        Ok("smoke") => TransformerConfig::euchre_smoke(v, c),
-        _ => TransformerConfig::paper_default(v, c),
-    }
+    TransformerConfig::from_env(
+        "EU_CONFIG",
+        "paper",
+        EuchreTokenizer::VOCAB_SIZE,
+        EuchreTokenizer::MAX_CONTEXT,
+    )
 }
 
 fn pick_inference() -> (InferenceMode, f64, &'static str) {
@@ -65,10 +61,10 @@ fn pick_inference() -> (InferenceMode, f64, &'static str) {
 }
 
 fn main() {
-    let weights: PathBuf =
-        PathBuf::from(std::env::var("EU_WEIGHTS").unwrap_or_else(|_| {
-            "/home/steven/card_platypus/gomcts/bootstrap.safetensors".to_string()
-        }));
+    let weights: PathBuf = parse_env_path(
+        "EU_WEIGHTS",
+        "/home/steven/card_platypus/gomcts/bootstrap.safetensors",
+    );
     let n_games: usize = parse("EU_GAMES", 2000);
     let mcts_iter: usize = parse("EU_MCTS_ITER", 32);
     let base_seed: u64 = parse("EU_SEED", 0);

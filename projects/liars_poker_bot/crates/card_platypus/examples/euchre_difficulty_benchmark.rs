@@ -49,7 +49,7 @@
 //! Run:
 //!   cargo run -p card_platypus --release --example euchre_difficulty_benchmark
 
-use std::{env, io::Write, path::PathBuf, time::Instant};
+use std::{env, io::Write, time::Instant};
 
 use card_platypus::{
     agents::Agent,
@@ -58,8 +58,10 @@ use card_platypus::{
         epimc::EPIMCBot,
         gomcts::{GoMcts, GoMctsConfig},
         gomcts_transformer::{
-            euchre::EuchreTokenizer, forward_histories_batch_tch, GoMctsTransformerTch,
-            InferenceMode, Tokenizer, TransformerConfig, EUCHRE_OUTCOME_VALUES,
+            euchre::{EuchreTokenizer, OUTCOME_VALUES as EUCHRE_OUTCOME_VALUES},
+            forward_histories_batch_tch, masked_policy, parse_env,
+            parse_env_path as weights_path, GoMctsTransformerTch, InferenceMode, Tokenizer,
+            TransformerConfig,
         },
         open_hand_solver::OpenHandSolver,
         pimcts::PIMCTSBot,
@@ -104,14 +106,6 @@ impl Agent<EuchreGameState> for RandomAgent {
     fn get_name(&self) -> String {
         "random".to_string()
     }
-}
-
-fn parse_env<T: std::str::FromStr>(name: &str, default: T) -> T {
-    env::var(name).ok().and_then(|s| s.parse().ok()).unwrap_or(default)
-}
-
-fn weights_path(env_var: &str, default: &str) -> PathBuf {
-    env::var(env_var).map(PathBuf::from).unwrap_or_else(|_| PathBuf::from(default))
 }
 
 fn load_cfr(env_var: &str, default: &str, max_cards_played: usize, seed: u64) -> EuchreAgent {
@@ -187,78 +181,15 @@ impl card_platypus::algorithms::gomcts::GenerativeModel<EuchreGameState> for Tch
         history: &games::istate::IStateKey,
         legal: &[Action],
     ) -> Vec<f64> {
-        let uniform = || vec![1.0 / legal.len() as f64; legal.len()];
-        let needs_lm = self.mode == InferenceMode::LmSoftmax || self.lambda > 0.0;
-        // Forward [h, h⊕a1, …, h⊕ak] in one batch when the LM head is
-        // needed; logits[0] is the next-action distribution at h and
-        // values[1..] are V(h⊕a). Without the LM we skip the h row.
-        let mut histories: Vec<games::istate::IStateKey> = Vec::with_capacity(legal.len() + 1);
-        if needs_lm {
-            histories.push(*history);
-        }
-        histories.extend(legal.iter().map(|&a| {
-            let mut h = *history;
-            h.push(a);
-            h
-        }));
-        let (logits, values) =
-            match forward_histories_batch_tch(&self.net, &self.tokenizer, &histories) {
-                Ok(x) => x,
-                Err(_) => return uniform(),
-            };
-        let softmax = |vals: &[f64], mask: &[bool], temp: f64| -> Vec<f64> {
-            let max = vals
-                .iter()
-                .zip(mask)
-                .filter(|(_, &m)| m)
-                .map(|(&v, _)| v)
-                .fold(f64::NEG_INFINITY, f64::max);
-            if !max.is_finite() {
-                return uniform();
-            }
-            let exps: Vec<f64> = vals
-                .iter()
-                .zip(mask)
-                .map(|(&v, &m)| if m { ((v - max) / temp).exp() } else { 0.0 })
-                .collect();
-            let total: f64 = exps.iter().sum();
-            if total == 0.0 || !total.is_finite() {
-                return uniform();
-            }
-            exps.into_iter().map(|e| e / total).collect()
-        };
-        let all_true = vec![true; legal.len()];
-        if needs_lm {
-            let lm_logits: Vec<f64> = legal
-                .iter()
-                .map(|&a| {
-                    logits[0]
-                        .get(self.tokenizer.action_token(a) as usize)
-                        .copied()
-                        .unwrap_or(f32::MIN) as f64
-                })
-                .collect();
-            let p_lm = softmax(
-                &lm_logits,
-                &all_true,
-                if self.mode == InferenceMode::LmSoftmax { self.temp } else { 1.0 },
-            );
-            match self.mode {
-                InferenceMode::LmSoftmax => p_lm,
-                InferenceMode::ArgmaxVal => {
-                    let vals: Vec<f64> = values[1..].iter().map(|&v| v as f64).collect();
-                    let mut gate: Vec<bool> =
-                        p_lm.iter().map(|&p| p >= self.lambda).collect();
-                    if !gate.iter().any(|&g| g) {
-                        gate = all_true;
-                    }
-                    softmax(&vals, &gate, self.temp)
-                }
-            }
-        } else {
-            let vals: Vec<f64> = values.iter().map(|&v| v as f64).collect();
-            softmax(&vals, &all_true, self.temp)
-        }
+        masked_policy(
+            self.mode,
+            self.lambda,
+            self.temp,
+            |a| self.tokenizer.action_token(a),
+            history,
+            legal,
+            |histories| forward_histories_batch_tch(&self.net, &self.tokenizer, &histories).ok(),
+        )
     }
 
     fn batch_value(&mut self, histories: &[games::istate::IStateKey]) -> Vec<f64> {
@@ -280,19 +211,12 @@ fn load_gomcts(seed: u64) -> EuchreAgent {
         "GO-MCTS weights not found at {} (set EUCHRE_GOMCTS_WEIGHTS to override)",
         path.display()
     );
-    let cfg = match env::var("EUCHRE_GOMCTS_CONFIG").as_deref() {
-        Ok("smoke") => {
-            TransformerConfig::euchre_smoke(EuchreTokenizer::VOCAB_SIZE, EuchreTokenizer::MAX_CONTEXT)
-        }
-        Ok("paper") => TransformerConfig::paper_default(
-            EuchreTokenizer::VOCAB_SIZE,
-            EuchreTokenizer::MAX_CONTEXT,
-        ),
-        _ => TransformerConfig::euchre_medium(
-            EuchreTokenizer::VOCAB_SIZE,
-            EuchreTokenizer::MAX_CONTEXT,
-        ),
-    };
+    let cfg = TransformerConfig::from_env(
+        "EUCHRE_GOMCTS_CONFIG",
+        "medium",
+        EuchreTokenizer::VOCAB_SIZE,
+        EuchreTokenizer::MAX_CONTEXT,
+    );
     let mut net = if env::var("EUCHRE_GOMCTS_VHEAD").as_deref() == Ok("outcome") {
         GoMctsTransformerTch::new_with_outcomes(
             cfg,
@@ -305,19 +229,13 @@ fn load_gomcts(seed: u64) -> EuchreAgent {
             .expect("build transformer")
     };
     net.load_safetensors(&path).expect("load gomcts checkpoint");
-    let lambda: f64 = env::var("EUCHRE_GOMCTS_LAMBDA")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0.05);
+    let lambda: f64 = parse_env("EUCHRE_GOMCTS_LAMBDA", 0.05);
     let (mode, lambda) = match env::var("EUCHRE_GOMCTS_INFER").as_deref() {
         Ok("lm") => (InferenceMode::LmSoftmax, 0.0),
         Ok("gated") => (InferenceMode::ArgmaxVal, lambda),
         _ => (InferenceMode::ArgmaxVal, 0.0),
     };
-    let temp: f64 = env::var("EUCHRE_GOMCTS_TEMP")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0.5);
+    let temp: f64 = parse_env("EUCHRE_GOMCTS_TEMP", 0.5);
     let model = TchInlineModel {
         net: std::sync::Arc::new(net),
         tokenizer: EuchreTokenizer,
@@ -325,18 +243,9 @@ fn load_gomcts(seed: u64) -> EuchreAgent {
         lambda,
         temp,
     };
-    let mcts_iter: usize = env::var("EUCHRE_GOMCTS_ITER")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(32);
-    let rollout_steps: usize = env::var("EUCHRE_GOMCTS_ROLLOUT_STEPS")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
-    let parallel_sims: usize = env::var("EUCHRE_GOMCTS_PARALLEL_SIMS")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(1);
+    let mcts_iter: usize = parse_env("EUCHRE_GOMCTS_ITER", 32);
+    let rollout_steps: usize = parse_env("EUCHRE_GOMCTS_ROLLOUT_STEPS", 0);
+    let parallel_sims: usize = parse_env("EUCHRE_GOMCTS_PARALLEL_SIMS", 1);
     let search = GoMcts::new(
         GoMctsConfig {
             uct_c: 0.4,

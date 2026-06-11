@@ -63,8 +63,10 @@ use card_platypus::{
     algorithms::{
         cfres::EuchreCfres,
         gomcts_transformer::{
-            enable_tf32, euchre::EuchreTokenizer, train_tch_with_callback, GoMctsTransformerTch,
-            TrainExample, TransformerConfig, EUCHRE_OUTCOME_VALUES,
+            enable_tf32,
+            euchre::{EuchreTokenizer, OUTCOME_VALUES as EUCHRE_OUTCOME_VALUES},
+            parse_env as parse, parse_env_path as parse_path, train_tch_with_callback,
+            GoMctsTransformerTch, TrainExample, TransformerConfig,
         },
     },
 };
@@ -80,21 +82,13 @@ use std::{
     time::Instant,
 };
 
-fn parse<T: std::str::FromStr>(name: &str, default: T) -> T {
-    std::env::var(name).ok().and_then(|s| s.parse().ok()).unwrap_or(default)
-}
-fn parse_path(name: &str, default: &str) -> PathBuf {
-    std::env::var(name).map(PathBuf::from).unwrap_or_else(|_| PathBuf::from(default))
-}
-
 fn pick_config() -> TransformerConfig {
-    let v = EuchreTokenizer::VOCAB_SIZE;
-    let c = EuchreTokenizer::MAX_CONTEXT;
-    match std::env::var("EU_BOOT_CONFIG").as_deref() {
-        Ok("smoke") => TransformerConfig::euchre_smoke(v, c),
-        Ok("medium") => TransformerConfig::euchre_medium(v, c),
-        _ => TransformerConfig::paper_default(v, c),
-    }
+    TransformerConfig::from_env(
+        "EU_BOOT_CONFIG",
+        "paper",
+        EuchreTokenizer::VOCAB_SIZE,
+        EuchreTokenizer::MAX_CONTEXT,
+    )
 }
 
 #[derive(Clone, Copy, Debug)]
