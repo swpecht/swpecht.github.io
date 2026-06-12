@@ -15,6 +15,7 @@ use games::{
     Action, GameState, Player,
 };
 use maud::{html, Markup};
+use rand::{rng, RngExt};
 use serde::Deserialize;
 use uuid::Uuid;
 use web_common::{
@@ -160,6 +161,9 @@ async fn new_game_handler(
         num_players,
         sequence,
     );
+    // Random initial rotation (same as euchre_server) so the creator
+    // isn't always the first hand's opening bidder.
+    gd.players.rotate_right(rng().random_range(0..num_players));
     progress_game(&mut gd, &data.bot, &game_id);
     data.games.lock().unwrap().insert(game_id, gd);
 
