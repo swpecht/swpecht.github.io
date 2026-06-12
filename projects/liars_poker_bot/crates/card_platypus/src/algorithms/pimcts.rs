@@ -172,6 +172,7 @@ mod tests {
 
     use games::{
         gamestates::{
+            catan::Catan,
             euchre::EuchreGameState,
             kuhn_poker::{KPAction, KuhnPoker},
             oh_hell::OhHell,
@@ -237,6 +238,43 @@ mod tests {
             gs.apply_action(action);
         }
         assert!(gs.is_terminal());
+    }
+
+    /// PIMCTS smoke test on Catan: resample worlds from an imperfect-info
+    /// state and pick actions via random-rollout evaluation. Random play
+    /// drives setup and chance nodes; PIMCTS then makes several decisions.
+    #[test]
+    fn pimcts_catan_picks_legal_actions() {
+        use games::actions;
+        let mut rng: StdRng = SeedableRng::seed_from_u64(13);
+        let mut agent = PIMCTSBot::new(
+            4,
+            crate::algorithms::ismcts::RandomRolloutEvaluator::new(1),
+            SeedableRng::seed_from_u64(13),
+        );
+        let mut gs = Catan::new_state(4);
+        // Random-play into the mid-game so hidden information (dev cards,
+        // steals) can exist.
+        let mut steps = 0;
+        while !gs.is_terminal() && steps < 80 {
+            let legal = actions!(gs);
+            gs.apply_action(*legal.choose(&mut rng).unwrap());
+            steps += 1;
+        }
+        // PIMCTS plays the next few decisions; chance nodes play randomly.
+        let mut decisions = 0;
+        while !gs.is_terminal() && decisions < 3 {
+            let legal = actions!(gs);
+            let a = if gs.is_chance_node() {
+                *legal.choose(&mut rng).unwrap()
+            } else {
+                decisions += 1;
+                agent.step(&gs)
+            };
+            assert!(legal.contains(&a), "PIMCTS chose illegal action {a}");
+            gs.apply_action(a);
+        }
+        assert_eq!(decisions, 3);
     }
 
     #[test]
