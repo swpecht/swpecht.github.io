@@ -293,4 +293,20 @@ Zero-shot note: at iter 0 the 3p champion already scores +2.0…+2.6/hand vs
 random at 4p (n=100/t) — cross-player-count transfer is substantial,
 echoing the OH-5 cross-trick-count result.
 
-Results: (pending)
+Results (log `rnad4/train_run1.log`, sweep `rnad4/select_sweep.log`,
+evals `rnad4/eval_best_{pimcts,random}.log`; 2.5 h train, 1.5M games):
+
+- Training mirrored the 3p run: kl_outer 0.090 (first refresh — much
+  smaller than 3p's 0.48, the warm start was already decent at 4p) →
+  ~0.03 plateau → 0.006 after the anneal. vs_init climbed to +1.06–1.23
+  by iter 6000 with NO overshoot — the final checkpoint won the sweep
+  (+1.03 pooled vs the 3p warm start at n=7000) → `rnad4_best.safetensors`.
+- **vs PIMCTS-50 (n=300/t): wins every hand size.** t1 +0.63, t2 +1.67,
+  t3 +2.26, t4 +2.04, t5 +1.68, t6 +1.28, t7 +1.66; pooled **+1.60/hand
+  over 2100 games** (3p was +1.19). Even t1 is an R-NaD win at 4p —
+  there are no 4p CFR bid weights to contest it.
+- vs random: +2.91/hand pooled.
+- Serving: `oh_hell_server` now offers 3- or 4-player games (1–3
+  humans); 4p dispatches to rnad4_best at every hand size.
+- (The 4p t7 PIMCTS eval alone took 6.5 h — 78 s/game with three
+  PIMCTS-50 opponents. The transformer side stays ~8 ms/decision.)
