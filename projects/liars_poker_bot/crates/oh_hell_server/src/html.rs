@@ -25,7 +25,7 @@ use web_common::{
 use crate::{
     default_hand_sequence, handle_ready_clear, handle_register_player, handle_take_action,
     new_hand, progress_game, strategy_for_hand_size, AppState, GameData, GameProcessingState,
-    NUM_PLAYERS,
+    DEFAULT_PLAYERS, MAX_HUMANS, SUPPORTED_PLAYERS,
 };
 
 const PLAYER_COOKIE: &str = "oh_hell_player_id";
@@ -68,11 +68,13 @@ async fn index(req: HttpRequest) -> impl Responder {
                 { "Oh Hell" }
             }
             p {
-                "This server runs a "
-                span class="font-bold" { (NUM_PLAYERS) "-player" }
-                " variant on the canonical Wikipedia schedule: deal 10 cards "
-                "to each player, then 9, all the way down to 1, then back up to 10. "
-                "The hand with the highest cumulative score after all 19 hands wins."
+                "This server supports "
+                span class="font-bold" { "3- and 4-player" }
+                " games on the canonical Wikipedia schedule: deal the maximum "
+                "hand size to each player, then one fewer each hand down to 1, "
+                "then back up. 3-player games deal up to 10 cards (19 hands); "
+                "4-player games deal up to 7 (13 hands). The player with the "
+                "highest cumulative score after the last hand wins."
             }
             p {
                 span class="font-bold" { "Common scoring. " }
@@ -82,26 +84,43 @@ async fn index(req: HttpRequest) -> impl Responder {
                 "hand can never equal the number of tricks (\"the hook\")."
             }
             p {
-                span class="font-bold" { "Optionally play with a friend. " }
-                "You can play with a friend against the ai bots by sharing the url "
-                "after you create a game. The remaining seats are filled by ai bots."
+                span class="font-bold" { "Optionally play with friends. " }
+                "You can play with up to " (MAX_HUMANS - 1) " human friends against "
+                "the ai bots by sharing the url after you create a game. The "
+                "remaining seats are filled by ai bots."
             }
             (strategy_table())
         }
         div class="grid justify-items-center gap-2" {
-            form method="post" action="/new" class="inline" {
-                input type="hidden" name="num_humans" value="1";
+            form method="post" action="/new" class="grid gap-2 justify-items-center" {
+                div class="flex gap-4 items-center" {
+                    label class="text-sm font-medium" for="num_players" { "Players at the table" }
+                    select
+                        name="num_players"
+                        id="num_players"
+                        class="bg-white outline outline-black rounded-lg px-2 py-1"
+                    {
+                        @for np in SUPPORTED_PLAYERS {
+                            option value=(np) selected[np == DEFAULT_PLAYERS] { (np) }
+                        }
+                    }
+                }
+                div class="flex gap-4 items-center" {
+                    label class="text-sm font-medium" for="num_humans" { "Human players" }
+                    select
+                        name="num_humans"
+                        id="num_humans"
+                        class="bg-white outline outline-black rounded-lg px-2 py-1"
+                    {
+                        @for h in 1..=MAX_HUMANS {
+                            option value=(h) { (h) }
+                        }
+                    }
+                }
                 button
                     type="submit"
                     class="bg-white outline outline-black hover:bg-slate-100 rounded-lg px-4 py-2 font-medium"
-                { "Play solo vs bots" }
-            }
-            form method="post" action="/new" class="inline" {
-                input type="hidden" name="num_humans" value="2";
-                button
-                    type="submit"
-                    class="bg-white outline outline-black hover:bg-slate-100 rounded-lg px-4 py-2 font-medium"
-                { "Play with a human friend" }
+                { "Create game" }
             }
         }
     };
@@ -113,6 +132,8 @@ async fn index(req: HttpRequest) -> impl Responder {
 #[derive(Deserialize)]
 struct NewGameForm {
     num_humans: usize,
+    #[serde(default)]
+    num_players: Option<usize>,
 }
 
 async fn new_game_handler(
@@ -121,22 +142,30 @@ async fn new_game_handler(
     data: web::Data<AppState>,
 ) -> impl Responder {
     let (player_id, cookie) = get_or_set_player_id(&req);
-    let num_humans = form.num_humans.clamp(1, 2);
+    let num_players = form
+        .num_players
+        .filter(|np| SUPPORTED_PLAYERS.contains(np))
+        .unwrap_or(DEFAULT_PLAYERS);
+    // A table can be all-human only when it has enough seats covered by
+    // the human cap (3p × 3 humans = no bots, which plays fine).
+    let num_humans = form.num_humans.clamp(1, MAX_HUMANS.min(num_players));
     let game_id = Uuid::new_v4();
 
-    let sequence = default_hand_sequence();
+    let sequence = default_hand_sequence(num_players);
     let first_size = sequence[0];
     let mut gd = GameData::new(
-        new_hand(first_size),
+        new_hand(num_players, first_size),
         player_id,
         num_humans,
-        NUM_PLAYERS,
+        num_players,
         sequence,
     );
     progress_game(&mut gd, &data.bot, &game_id);
     data.games.lock().unwrap().insert(game_id, gd);
 
-    log::info!("new oh hell game created: {game_id} (humans: {num_humans})");
+    log::info!(
+        "new oh hell game created: {game_id} (players: {num_players}, humans: {num_humans})"
+    );
 
     let url = format!("/game/{}", game_id);
     let mut resp = HttpResponse::SeeOther();
@@ -263,24 +292,39 @@ async fn game_action(
 
 // ---------- Strategy table (landing page) ----------
 
-/// Render the bot strategy per hand-size as a small table. Driven off
-/// `strategy_for_hand_size` so as the bot mix evolves the landing page
-/// stays accurate. The row set comes from the canonical hand schedule
-/// deduped (10..1 covers everything).
+/// Render the bot strategy per hand-size as a small table, one column
+/// per supported player count. Driven off `strategy_for_hand_size` so
+/// as the bot mix evolves the landing page stays accurate. The row set
+/// comes from each count's canonical hand schedule deduped; sizes a
+/// count doesn't play (e.g. 8–10 at 4 players) show "—".
 fn strategy_table() -> Markup {
-    let mut sizes: Vec<usize> = default_hand_sequence();
+    let mut sizes: Vec<usize> = default_hand_sequence(DEFAULT_PLAYERS);
+    for np in SUPPORTED_PLAYERS {
+        sizes.extend(default_hand_sequence(np));
+    }
     sizes.sort();
     sizes.dedup();
-    sizes.reverse(); // 10 down to 1
+    sizes.reverse(); // largest hand size down to 1
+    let max_for = |np: usize| -> usize {
+        default_hand_sequence(np).into_iter().max().unwrap_or(1)
+    };
     html! {
         div class="grid gap-1" {
             div class="font-bold" { "Bot strategy per hand size" }
-            div class="grid grid-cols-2 gap-x-4 text-sm" {
+            div class="grid grid-cols-3 gap-x-4 text-sm" {
                 div class="font-semibold" { "Hand size (tricks)" }
-                div class="font-semibold" { "Strategy" }
+                @for np in SUPPORTED_PLAYERS {
+                    div class="font-semibold" { (np) " players" }
+                }
                 @for n in sizes {
                     div { (n) }
-                    div { (strategy_for_hand_size(n)) }
+                    @for np in SUPPORTED_PLAYERS {
+                        @if n <= max_for(np) {
+                            div { (strategy_for_hand_size(np, n)) }
+                        } @else {
+                            div { "—" }
+                        }
+                    }
                 }
             }
         }

@@ -40,57 +40,69 @@ const SERVER_HOST: &str = "0.0.0.0";
 const SERVER_PORT: u16 = 4001;
 const LOG_FILE: &str = "oh_hell_server.log";
 
-/// Game shape served by this binary: three players. With 3 players ×
-/// 10-card hands × 2 hands per ascending/descending step + the face-up
-/// card, the deal fits within the 52-card deck.
-pub(crate) const NUM_PLAYERS: usize = 3;
+/// Player counts this binary serves. 3-player runs the canonical
+/// 10→1→10 schedule; 4-player is capped at 7-card hands by the game
+/// engine's 64-slot `IStateKey` budget (`max_tricks_for(4) = 7`), so it
+/// runs 7→1→7.
+pub(crate) const SUPPORTED_PLAYERS: [usize; 2] = [3, 4];
+pub(crate) const DEFAULT_PLAYERS: usize = 3;
+/// Maximum human seats per game. The rest are bot-controlled (a
+/// 3-player game with 3 humans has no bots at all).
+pub(crate) const MAX_HUMANS: usize = 3;
 /// PIMCTS rollout count per bot decision. Small enough to be quick on
 /// every move yet large enough that the bot looks competent.
 const BOT_ROLLOUTS: usize = 30;
 
-/// The canonical Wikipedia hand-size schedule: deal 10 cards each
-/// hand, decrement to 1, then ascend back to 10. 19 hands total. The
+/// The canonical Wikipedia hand-size schedule for a player count: deal
+/// the maximum hand size, decrement to 1, then ascend back up. 3p: 10
+/// max → 19 hands; 4p: 7 max (engine `IStateKey` cap) → 13 hands. The
 /// final cumulative score (under "common scoring") determines the
 /// winner.
-pub fn default_hand_sequence() -> Vec<usize> {
-    let mut seq: Vec<usize> = (1..=10).rev().collect();
-    seq.extend(2..=10);
+pub fn default_hand_sequence(num_players: usize) -> Vec<usize> {
+    let max = games::gamestates::oh_hell::max_tricks_for(num_players).min(10);
+    let mut seq: Vec<usize> = (1..=max).rev().collect();
+    seq.extend(2..=max);
     seq
 }
 
-/// Per-hand-size strategy the deployment WANTS, from the R-NaD
-/// tournament evals (plans/rnad-implementation.md): serve R-NaD at the
-/// hand sizes where it outperforms both PIMCTS and the CFR bid weights,
-/// CFR where it doesn't, PIMCTS where neither stronger option exists.
+/// Per-(player-count, hand-size) strategy the deployment WANTS, from
+/// the R-NaD tournament evals (plans/rnad-implementation.md): serve
+/// R-NaD where it outperforms both PIMCTS and the CFR bid weights, CFR
+/// where it doesn't, PIMCTS where neither stronger option exists.
 /// `strategy_for_hand_size` reports what the running process actually
 /// loaded — a desired agent whose weights are missing on disk falls
 /// back (R-NaD → CFR → PIMCTS) with a startup warning.
-fn desired_strategy(n_tricks: usize) -> &'static str {
-    match n_tricks {
-        // 1-trick hands are nearly pure bidding — exactly what the CFR
-        // bid weights solved. R-NaD only ties them there (+0.03±0.08
-        // per hand, n=3000) while clearly beating PIMCTS, so per the
-        // outperform-both-or-CFR rule, CFR keeps t1.
-        1 => "CFR",
-        // rnad_best beats PIMCTS-50 at every other size (+0.68..+1.51
-        // per hand, ≥3.5σ at n=300/t; pooled +1.19 over t1-10) and the
-        // CFR bid weights at t2-5 (+0.32..+1.43, ≥4σ at n=3000). See
-        // plans/rnad-implementation.md OH entries.
-        2..=10 => "R-NaD",
+fn desired_strategy(num_players: usize, n_tricks: usize) -> &'static str {
+    match (num_players, n_tricks) {
+        // 3p, 1-trick hands are nearly pure bidding — exactly what the
+        // CFR bid weights solved. R-NaD only ties them there
+        // (+0.03±0.08 per hand, n=3000) while clearly beating PIMCTS,
+        // so per the outperform-both-or-CFR rule, CFR keeps t1.
+        (3, 1) => "CFR",
+        // 3p: rnad_best beats PIMCTS-50 at every other size
+        // (+0.68..+1.51 per hand, ≥3.5σ at n=300/t; pooled +1.19 over
+        // t1-10) and the CFR bid weights at t2-5 (+0.32..+1.43, ≥4σ at
+        // n=3000).
+        (3, 2..=10) => "R-NaD",
+        // 4p: rnad4_best beats PIMCTS-50 at every hand size incl. t1
+        // (+0.63..+2.26 per hand, n=300/t; entry 8) and no 4p CFR
+        // weights exist.
+        (4, 1..=7) => "R-NaD",
         _ => "PIMCTS",
     }
 }
 
-/// The strategy actually being served per hand size, resolved at
-/// startup from `desired_strategy` ∩ weights-on-disk. Index 1..=10.
-static STRATEGY_TABLE: std::sync::OnceLock<[&'static str; 11]> = std::sync::OnceLock::new();
+/// The strategy actually being served, resolved at startup from
+/// `desired_strategy` ∩ weights-on-disk. Outer index `num_players - 3`
+/// (3p, 4p), inner index hand size 1..=10.
+static STRATEGY_TABLE: std::sync::OnceLock<[[&'static str; 11]; 2]> = std::sync::OnceLock::new();
 
-/// Look up the bot strategy in use for a given hand size (shown on the
-/// landing page).
-pub fn strategy_for_hand_size(n_tricks: usize) -> &'static str {
+/// Look up the bot strategy in use for a given player count and hand
+/// size (shown on the landing page).
+pub fn strategy_for_hand_size(num_players: usize, n_tricks: usize) -> &'static str {
     STRATEGY_TABLE
         .get()
-        .map(|t| t[n_tricks.clamp(1, 10)])
+        .map(|t| t[num_players.clamp(3, 4) - 3][n_tricks.clamp(1, 10)])
         .unwrap_or("PIMCTS")
 }
 
@@ -155,36 +167,50 @@ impl RnadAgent {
 }
 
 /// The serving bot: dispatches each decision to the strongest available
-/// agent for the current hand size (see `desired_strategy`).
+/// agent for the current player count and hand size (see
+/// `desired_strategy`).
 pub(crate) struct Bot {
     pimcts: PIMCTSBot<OhHellGameState, OpenHandSolver<OhHellGameState>>,
+    /// 3-player CFR bid weights, keyed by hand size (t1–5 on disk).
     cfr: HashMap<usize, OhCfres>,
-    rnad: Option<RnadAgent>,
+    /// 3-player R-NaD checkpoint.
+    rnad3: Option<RnadAgent>,
+    /// 4-player R-NaD checkpoint (entry 8; same architecture, the
+    /// tokenizer covers both player counts).
+    rnad4: Option<RnadAgent>,
 }
 
 impl Bot {
-    /// Production loadout: R-NaD checkpoint + CFR bid weights + PIMCTS
-    /// fallback. Missing weight files demote the affected hand sizes
-    /// down the strategy ladder rather than failing startup.
+    /// Production loadout: R-NaD checkpoints (3p + 4p) + 3p CFR bid
+    /// weights + PIMCTS fallback. Missing weight files demote the
+    /// affected configurations down the strategy ladder rather than
+    /// failing startup.
     pub(crate) fn load_production() -> Self {
-        let rnad_path = std::env::var("OH_RNAD_WEIGHTS").unwrap_or_else(|_| {
-            "/home/steven/card_platypus/gomcts/oh_hell/rnad_best.safetensors".to_string()
-        });
-        let rnad = match RnadAgent::load(std::path::Path::new(&rnad_path)) {
-            Ok(agent) => Some(agent),
-            Err(e) => {
-                log::warn!("R-NaD weights unavailable at {rnad_path}: {e:#}; falling back");
-                None
+        let load_rnad = |env: &str, default: &str| -> Option<RnadAgent> {
+            let path = std::env::var(env).unwrap_or_else(|_| default.to_string());
+            match RnadAgent::load(std::path::Path::new(&path)) {
+                Ok(agent) => Some(agent),
+                Err(e) => {
+                    log::warn!("R-NaD weights unavailable at {path}: {e:#}; falling back");
+                    None
+                }
             }
         };
+        let rnad3 = load_rnad(
+            "OH_RNAD_WEIGHTS",
+            "/home/steven/card_platypus/gomcts/oh_hell/rnad_best.safetensors",
+        );
+        let rnad4 = load_rnad(
+            "OH_RNAD4_WEIGHTS",
+            "/home/steven/card_platypus/gomcts/oh_hell/rnad4_best.safetensors",
+        );
         let cfr_base =
             std::env::var("OH_CFR_DIR").unwrap_or_else(|_| "/home/steven/card_platypus".into());
         let mut cfr = HashMap::new();
         for t in 1..=10usize {
-            let dir = std::path::PathBuf::from(&cfr_base)
-                .join(format!("oh_hell.{NUM_PLAYERS}p_{t}t_bid"));
+            let dir = std::path::PathBuf::from(&cfr_base).join(format!("oh_hell.3p_{t}t_bid"));
             if dir.exists() {
-                cfr.insert(t, OhCfres::new_oh_hell(NUM_PLAYERS, t, 0, Some(&dir)));
+                cfr.insert(t, OhCfres::new_oh_hell(3, t, 0, Some(&dir)));
             }
         }
         let bot = Self {
@@ -194,7 +220,8 @@ impl Bot {
                 StdRng::from_rng(&mut rng()),
             ),
             cfr,
-            rnad,
+            rnad3,
+            rnad4,
         };
         bot.publish_strategy_table();
         bot
@@ -209,18 +236,25 @@ impl Bot {
                 StdRng::from_rng(&mut rng()),
             ),
             cfr: HashMap::new(),
-            rnad: None,
+            rnad3: None,
+            rnad4: None,
         };
         bot.publish_strategy_table();
         bot
     }
 
-    fn resolve_strategy(&self, n_tricks: usize) -> &'static str {
-        let desired = desired_strategy(n_tricks);
+    fn resolve_strategy(&self, num_players: usize, n_tricks: usize) -> &'static str {
+        let desired = desired_strategy(num_players, n_tricks);
+        let rnad_loaded = match num_players {
+            3 => self.rnad3.is_some(),
+            4 => self.rnad4.is_some(),
+            _ => false,
+        };
         // Demote down the ladder when the desired weights didn't load.
-        if desired == "R-NaD" && self.rnad.is_some() {
+        // CFR weights are 3-player only.
+        if desired == "R-NaD" && rnad_loaded {
             "R-NaD"
-        } else if desired != "PIMCTS" && self.cfr.contains_key(&n_tricks) {
+        } else if desired != "PIMCTS" && num_players == 3 && self.cfr.contains_key(&n_tricks) {
             "CFR"
         } else {
             "PIMCTS"
@@ -228,17 +262,24 @@ impl Bot {
     }
 
     fn publish_strategy_table(&self) {
-        let mut table = ["PIMCTS"; 11];
-        for (t, entry) in table.iter_mut().enumerate().skip(1) {
-            *entry = self.resolve_strategy(t);
+        let mut table = [["PIMCTS"; 11]; 2];
+        for (npi, row) in table.iter_mut().enumerate() {
+            for (t, entry) in row.iter_mut().enumerate().skip(1) {
+                *entry = self.resolve_strategy(npi + 3, t);
+            }
         }
         let _ = STRATEGY_TABLE.set(table);
-        info!("bot strategy per hand size (1..=10): {:?}", &table[1..]);
+        info!("bot strategy per hand size, 3p (1..=10): {:?}", &table[0][1..]);
+        info!("bot strategy per hand size, 4p (1..=7): {:?}", &table[1][1..=7]);
     }
 
     pub(crate) fn step(&mut self, gs: &OhHellGameState) -> Action {
-        match self.resolve_strategy(gs.n_tricks()) {
-            "R-NaD" => self.rnad.as_mut().expect("resolved R-NaD implies loaded").step(gs),
+        let np = gs.num_players();
+        match self.resolve_strategy(np, gs.n_tricks()) {
+            "R-NaD" => match np {
+                4 => self.rnad4.as_mut().expect("resolved R-NaD implies loaded").step(gs),
+                _ => self.rnad3.as_mut().expect("resolved R-NaD implies loaded").step(gs),
+            },
             "CFR" => self
                 .cfr
                 .get_mut(&gs.n_tricks())
@@ -338,7 +379,7 @@ pub(crate) fn handle_register_player(
         return Err(HttpResponse::Forbidden().body("game already has all human seats filled"));
     }
     // Drop the new human into the first empty seat. Other seats stay
-    // bot-controlled. With NUM_PLAYERS=3 and num_humans=2 this gives
+    // bot-controlled. With 3 players and num_humans=2 this gives
     // seats [Some(creator), Some(joiner), None] — two humans across
     // from one bot.
     let slot = game_data
@@ -392,7 +433,7 @@ pub(crate) fn progress_game(
                         GameOver
                     } else {
                         let next_size = game_data.hand_sequence[game_data.hand_idx];
-                        game_data.gs = new_hand(next_size);
+                        game_data.gs = new_hand(game_data.players.len(), next_size);
                         next_seat_state(game_data)
                     }
                 } else {
@@ -493,8 +534,8 @@ fn finalise_hand(game_data: &mut GameData, game_id: &Uuid) {
     );
 }
 
-pub(crate) fn new_hand(n_tricks: usize) -> OhHellGameState {
-    OhHell::new_state(NUM_PLAYERS, n_tricks)
+pub(crate) fn new_hand(num_players: usize, n_tricks: usize) -> OhHellGameState {
+    OhHell::new_state(num_players, n_tricks)
 }
 
 #[actix_web::main]
@@ -565,15 +606,15 @@ mod tests {
         vec![3, 2, 1, 2, 3]
     }
 
-    fn play_random_game(bot: &Mutex<Bot>, human_id: usize) {
+    fn play_random_game(bot: &Mutex<Bot>, human_id: usize, num_players: usize) {
         let game_id = Uuid::new_v4();
         let sequence = test_hand_sequence();
         let first_size = sequence[0];
         let mut gd = GameData::new(
-            new_hand(first_size),
+            new_hand(num_players, first_size),
             human_id,
             1,
-            crate::NUM_PLAYERS,
+            num_players,
             sequence,
         );
         progress_game(&mut gd, bot, &game_id);
@@ -609,7 +650,16 @@ mod tests {
     fn random_play_does_not_panic() {
         let bot = make_test_bot();
         for _ in 0..40 {
-            play_random_game(&bot, 0);
+            play_random_game(&bot, 0, 3);
+        }
+        assert!(!bot.is_poisoned(), "bot mutex got poisoned during fuzz");
+    }
+
+    #[test]
+    fn random_play_does_not_panic_4p() {
+        let bot = make_test_bot();
+        for _ in 0..40 {
+            play_random_game(&bot, 0, 4);
         }
         assert!(!bot.is_poisoned(), "bot mutex got poisoned during fuzz");
     }
