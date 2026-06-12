@@ -432,6 +432,12 @@ pub(crate) fn progress_game(
                         );
                         GameOver
                     } else {
+                        // Rotate the deal: the engine always starts bidding
+                        // at seat 0 (the trained agents assume it), so shift
+                        // who occupies seat 0 each hand instead. Scores move
+                        // with their players.
+                        game_data.players.rotate_left(1);
+                        game_data.scores.rotate_left(1);
                         let next_size = game_data.hand_sequence[game_data.hand_idx];
                         game_data.gs = new_hand(game_data.players.len(), next_size);
                         next_seat_state(game_data)
@@ -644,6 +650,56 @@ mod tests {
             progress_game(&mut gd, bot, &game_id);
         }
         panic!("game did not reach GameOver within iteration cap");
+    }
+
+    /// The deal must rotate between hands: the engine always bids from
+    /// seat 0, so the server rotates seat occupancy after every hand.
+    /// With 3 players the single human should occupy seat 0, then 2,
+    /// then 1 across a 3-hand game.
+    #[test]
+    fn deal_rotates_between_hands() {
+        let bot = make_test_bot();
+        let game_id = Uuid::new_v4();
+        let human_id = 9;
+        let mut gd = GameData::new(new_hand(3, 1), human_id, 1, 3, vec![1, 1, 1]);
+        progress_game(&mut gd, &bot, &game_id);
+
+        let human_seat = |gd: &GameData| {
+            gd.players
+                .iter()
+                .position(|p| *p == Some(human_id))
+                .expect("human stays seated")
+        };
+        let mut seats = vec![(gd.hand_idx, human_seat(&gd))];
+        for _ in 0..2000 {
+            match &gd.display_state {
+                GameProcessingState::WaitingHumanMove => {
+                    let mut legal = Vec::new();
+                    gd.gs.legal_actions(&mut legal);
+                    let a = legal[rand::random::<u32>() as usize % legal.len()];
+                    handle_take_action(&mut gd, a, human_id).expect("take action");
+                }
+                GameProcessingState::WaitingBidClear { .. }
+                | GameProcessingState::WaitingTrickClear { .. }
+                | GameProcessingState::WaitingHandClear { .. } => {
+                    handle_ready_clear(&mut gd, human_id).expect("ready clear");
+                }
+                GameProcessingState::GameOver => break,
+                _ => {}
+            }
+            progress_game(&mut gd, &bot, &game_id);
+            if seats.last().unwrap().0 != gd.hand_idx
+                && gd.hand_idx < gd.hand_sequence.len()
+            {
+                seats.push((gd.hand_idx, human_seat(&gd)));
+            }
+        }
+        assert!(
+            matches!(gd.display_state, GameProcessingState::GameOver),
+            "game did not finish"
+        );
+        let seat_order: Vec<usize> = seats.iter().map(|(_, s)| *s).collect();
+        assert_eq!(seat_order, vec![0, 2, 1], "human seat should rotate each hand");
     }
 
     #[test]
