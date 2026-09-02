@@ -22,229 +22,237 @@
 <article>
 <h1>euchre-bench, take two: more time, more tools, mixed results</h1>
 <p class="post-meta">May 25, 2026</p>
-<h2 id="context">Context</h2>
-<p>I ran 8 LLM coding agents through the euchre benchmark with a Tavily web-search tool, a 12-hour budget, and a prompt instructing them to iterate aggressively. gpt-5.5 took #1 with a stateless 447-line heuristic, by re-running 100-game sessions against <code>medium</code> 50 times and locking in the high draw. gemini-3.5-flash built the most sophisticated thing in the matrix — a real 40-world PIMCTS with an alpha-beta solver — and scored just 2/100 on <code>hard</code>. minimax-m2.7's 95 random wins are largely an accident: its trump-call branch has the wrong action codes, which forces an &quot;always order up first round&quot; policy that random can't punish. Auto-research itself worked (38 Tavily calls; two Geminis treated OpenSpiel source as reference docs), but it didn't translate into better play.</p>
-<p>The harness gave each agent:</p>
+<h2 id="what-happened">What happened</h2>
+<p>In the <a href="/posts/llm-agents-play-euchre/">previous post</a>, seven LLM coding agents each got a fresh sandbox, no web access, and a few hours to build a euchre bot. Nearly all of them converged on the same hand-scoring heuristic, none of them beat the <code>hard</code> bot more than 6 times in 100, and the agent that finished first got there partly by re-running the benchmark until it drew a good score.</p>
+<p>So I took another crack at things. This time, I ran eight LLM coding agents through the euchre benchmark with a Tavily web-search tool, 12-hour budget, and prompt instructing them to iterate aggressively. (<code>hard</code> is the API's name for the strongest of the four opponents; I call it <em>difficult</em> in the prose below.)</p>
+<p>The top score came from GPT-5.5, which took the simplest successful approach with a stateless, 447-line heuristic. Its advantage came largely from running 100-game sessions against <code>medium</code> 50 times and locking in the high draw. The benchmark grades whatever session you ran most recently, and any single session is noisy, so running it over and over and stopping after a good one is worth several wins on its own. That's a hole in my grading rule, not a euchre strategy — more on it below.</p>
+<p>At the other end of the spectrum, Gemini-3.5-flash built the most sophisticated policy in the matrix — a real 40-world PIMCTS, or <em>perfect-information Monte Carlo tree search</em>: guess the hidden cards 40 different ways, solve each guess with an alpha-beta search as if every hand were face up, and vote on the best move — and won just 2 of its 100 matches against the difficult opponent.</p>
+<p>Another success turned out to be sort of a happy accident. Minimax-m2.7 won 95 of its 100 matches against the random opponent, but none at all against easy, medium, or difficult. Its trump-call branch has the wrong action codes, which forces an &quot;always order up first round&quot; policy that random can't punish.</p>
+<p>Auto-research itself worked — 38 Tavily calls, and two Geminis treated OpenSpiel source as reference docs — but it didn't translate into better play.</p>
+<h2 id="what-changed">What changed</h2>
+<p>The harness — the sandbox each agent runs in — gave every agent the following:</p>
 <ol>
-<li><strong>A search tool</strong>: gave every agent a <a href="https://tavily.com/">Tavily MCP</a> server with <code>tavily_search</code>, <code>tavily_extract</code>, and <code>tavily_research</code>. Agents could now look up euchre strategy guides, scan GitHub for action-encoding hints, and do deep-research crawls.</li>
-<li><strong>A real wall-clock budget</strong>: 12 hours per model.</li>
-<li><strong>An auto-research-style prompt</strong>: explicit instructions to keep iterating until the budget runs out, treat each commit as an experiment-journal entry (metric in the message), and reach for the search tool when stuck. The workspace was a fresh per-run git repo the agent pushed to as it worked. Full text in the <a href="#appendix-system-prompt">appendix below</a>.</li>
+<li><strong>Web search tool</strong>: Every agent had access to a <a href="https://tavily.com/">Tavily MCP</a> server with <code>tavily_search</code>, <code>tavily_extract</code>, and <code>tavily_research</code>. They could now look up euchre strategy guides, scan GitHub for action-encoding hints, and conduct deeper research.</li>
+<li><strong>A 12-hour wall-clock budget</strong>: This round, agents had substantially more time to test and revise their policies.</li>
+<li><strong>An auto-research-style prompt</strong>: Agents were given explicit instructions to keep iterating until the budget runs out, record metrics in commit messages, and use the web search tool when stuck. Each agent also worked in its own fresh git repo, so its commit history reads as a log of what it tried. See the full text in the <a href="#appendix-system-prompt">appendix below</a>.</li>
 </ol>
 <h2 id="results">Results</h2>
 <p>Match wins against each difficulty (100 games per match):</p>
 <table>
 <thead>
 <tr>
-<th>model</th>
-<th>rand</th>
-<th>easy</th>
-<th>med</th>
-<th>hard</th>
-<th>sum</th>
-<th>cost</th>
-<th>approach</th>
+<th>Model</th>
+<th>Random</th>
+<th>Easy</th>
+<th>Medium</th>
+<th>Difficult</th>
+<th>Sum</th>
+<th>Cost</th>
+<th>Approach</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>openai / gpt-5.5</td>
+<td>OpenAI / GPT-5.5</td>
 <td><strong>100</strong></td>
 <td><strong>23</strong></td>
 <td><strong>9</strong></td>
 <td><strong>8</strong></td>
 <td><strong>140</strong></td>
 <td>$16.45</td>
-<td>three-threshold heuristic + 50x medium variance hunt</td>
+<td>Three-threshold heuristic + 50x medium variance hunt</td>
 </tr>
 <tr>
-<td>google / gemini-3.5-flash</td>
+<td>Google / Gemini-3.5-flash</td>
 <td>96</td>
 <td>6</td>
 <td>3</td>
 <td>2</td>
 <td>107</td>
 <td>$34.47</td>
-<td>real PIMCTS: 40-world alpha-beta solver with TT cache</td>
+<td>Real PIMCTS: 40-World alpha-beta Solver with TT cache</td>
 </tr>
 <tr>
-<td>minimax / minimax-m2.7</td>
+<td>Minimax / Minimax-m2.7</td>
 <td>95</td>
 <td>0</td>
 <td>0</td>
 <td>0</td>
 <td>95</td>
 <td>$13</td>
-<td>always-pickup; trump-call branch broken (wrong codes)</td>
+<td>Always-pickup; trump-call branch broken (wrong codes)</td>
 </tr>
 <tr>
-<td>google / gemini-3-flash-preview</td>
+<td>Google / Gemini-3-flash-preview</td>
 <td>88</td>
 <td>2</td>
 <td>1</td>
 <td>2</td>
 <td>93</td>
 <td>$7.28</td>
-<td>class-based heuristic, Next-suit bonus</td>
+<td>Class-based heuristic, Next-suit bonus</td>
 </tr>
 <tr>
-<td>deepseek / deepseek-v4-flash</td>
+<td>DeepSeek / DeepSeek-v4-flash</td>
 <td>82</td>
 <td>6</td>
 <td>0</td>
 <td>1</td>
 <td>89</td>
 <td>$3.12</td>
-<td>always-call + offense/defense lead routing</td>
+<td>Always-call + offense/defense lead routing</td>
 </tr>
 <tr>
-<td>moonshotai / kimi-k2.6</td>
+<td>Moonshotai / Kimi-K2.6</td>
 <td>78</td>
 <td>2</td>
 <td>0</td>
 <td>1</td>
 <td>81</td>
 <td>$11.51</td>
-<td>aggressive bidder (<code>score &gt;= 0.5</code>)</td>
+<td>Aggressive bidder (<code>score &gt;= 0.5</code>)</td>
 </tr>
 <tr>
-<td>deepseek / deepseek-v4-pro</td>
+<td>DeepSeek / DeepSeek-v4-pro</td>
 <td>65</td>
 <td>0</td>
 <td>0</td>
 <td>0</td>
 <td>65</td>
 <td>$10.47</td>
-<td>function-decomposed heuristic + 20-rollout follow</td>
+<td>Function-decomposed heuristic + 20-rollout follow</td>
 </tr>
 <tr>
-<td>qwen / qwen3.7-max</td>
+<td>Qwen / Qwen3.7-max</td>
 <td>12</td>
 <td>—</td>
 <td>0</td>
 <td>0</td>
 <td>12</td>
 <td>$154</td>
-<td>broken decoder (<code>min/max(legal_actions)</code> as proxy)</td>
+<td>Broken decoder (<code>min/max(legal_actions)</code> as proxy)</td>
 </tr>
 </tbody>
 </table>
 <p>Total spend was $251.</p>
-<p>(Cost is token count × OpenRouter's published per-model pricing. Most rows match what opencode wrote to the trajectory; qwen3.7-max and minimax-m2.7 don't have a discounted cache-read rate published, so cache reads on those two are billed at the full prompt rate — opencode's stream had treated them as free, understating qwen by ~5.7x and minimax by ~2.6x.)</p>
+<p>(Cost is token count × OpenRouter’s published per-model pricing. Most rows match what OpenCode wrote to the trajectory; Qwen3.7-max and Minimax-m2.7 don't have a discounted cache-read rate published, so cache reads on those two are billed at the full prompt rate — OpenCode’s stream had treated them as free, understating Qwen by ~5.7x and Minimax by ~2.6x.)</p>
 <p><a href="/trajectories/">Browse the trajectories.</a></p>
 <h2 id="auto-research-worked-mostly">Auto-research worked, mostly</h2>
-<p>Every model used Tavily at least once. Two leaned on it heavily:</p>
+<p>Every model used Tavily at least once, although usage varied substantially.</p>
 <table>
 <thead>
 <tr>
-<th>model</th>
-<th>tavily calls</th>
-<th>what they searched</th>
+<th>Model</th>
+<th>Tavily calls</th>
+<th>What they searched</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>gemini-3-flash-preview</td>
+<td>Gemini-3-flash-preview</td>
 <td>12</td>
 <td>OpenSpiel <code>euchre.cc</code>, <code>kPass</code> / <code>kPickup</code> / <code>kAlone</code>, action values</td>
 </tr>
 <tr>
-<td>gemini-3.5-flash</td>
+<td>Gemini-3.5-flash</td>
 <td>12</td>
 <td>OpenSpiel <code>euchre.cc</code>, <code>kCallSpades</code>, <code>NumDistinctActions</code></td>
 </tr>
 <tr>
-<td>kimi-k2.6</td>
+<td>Kimi-K2.6</td>
 <td>7</td>
-<td>euchre strategy guides, Monte Carlo papers</td>
+<td>Euchre strategy guides, Monte Carlo papers</td>
 </tr>
 <tr>
-<td>deepseek-v4-flash</td>
+<td>DeepSeek-v4-flash</td>
 <td>3</td>
 <td>safeharborgames.net Euchre column (extract) + 2 strategy searches</td>
 </tr>
 <tr>
-<td>others</td>
+<td>Others</td>
 <td>1 each</td>
-<td>generic strategy queries</td>
+<td>Generic strategy queries</td>
 </tr>
 </tbody>
 </table>
-<p>38 calls across the matrix. The two Geminis went straight for the bench's underlying source — OpenSpiel's <code>euchre.cc</code> defines the same action encoding the bench uses. None returned actual policy code; OpenSpiel is enum definitions and game logic, not strategies.</p>
-<h2 id="how-gpt-55-took-1">How gpt-5.5 took #1</h2>
-<p>gpt-5.5 is also the model that did the <em>least</em> research and shipped the simplest policy. Its <code>euchre_bot.py</code> is 447 lines of stateless heuristic — no card counting, no rollouts, no opponent inference. It scores hands with a three-threshold formula (<code>pickup=70, call=70, alone=85</code>, tunable per agent), plays partner-save and beater-search in trick play, and that's it.</p>
-<p>What it <em>did</em> do, 50 times, was run another 100-game session against <code>medium</code>. Its <code>notes.md:36</code> literally reads &quot;Medium variance chase at 65/65/80 regressed to 2/100...&quot; — and the distribution speaks for itself:</p>
+<p>The models made 38 Tavily calls in total. The two Gemini models went straight for the bench’s underlying source — OpenSpiel’s <code>euchre.cc</code>, which defines the same action encoding as the benchmark. None returned actual policy code; OpenSpiel is enum definitions and game logic, not strategies.</p>
+<h2 id="how-gpt-55-took-the-top-spot">How GPT-5.5 took the top spot</h2>
+<p>GPT-5.5 did the <em>least</em> research and produced the simplest policy — and still finished first. Its <code>euchre_bot.py</code> is 447 lines of stateless heuristic: there is no card counting, no rollouts, and no opponent inference. It scores hands with a three-threshold formula (<code>pickup=70, call=70, alone=85</code>, tunable per agent), plays partner-save and beater-search in trick play, and that’s it.</p>
+<p>What it <em>did</em> do, 50 times, is run another 100-game session against a <code>medium</code> opponent. Its <code>notes.md:36</code> literally reads &quot;Medium variance chase at 65/65/80 regressed to 2/100...&quot; — and the distribution speaks for itself:</p>
 <table>
 <thead>
 <tr>
-<th>agent</th>
-<th>100g sessions</th>
-<th>distribution</th>
-<th>what shipped</th>
+<th>Agent</th>
+<th>100-game sessions</th>
+<th>Distribution</th>
+<th>What shipped</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>random</td>
+<td>Random</td>
 <td>4</td>
 <td>90, 100, 99, 100</td>
 <td>100</td>
 </tr>
 <tr>
-<td>easy</td>
+<td>Easy</td>
 <td>4</td>
 <td>14, 11, 15, 23</td>
 <td><strong>23</strong> (max of sample)</td>
 </tr>
 <tr>
-<td>medium</td>
+<td>Medium</td>
 <td><strong>50</strong></td>
 <td>min 0, max 9, mean ~3.7</td>
 <td><strong>9</strong> (max of sample)</td>
 </tr>
 <tr>
-<td>hard</td>
+<td>Difficult</td>
 <td>15</td>
 <td>min 2, max 8, mean ~4.5</td>
 <td><strong>8</strong> (= max of sample)</td>
 </tr>
 </tbody>
 </table>
-<p>The bench grades on the <em>newest</em> session per agent. So if you run a 100g match enough times and stop on a good draw, you lock in the upper tail. ~3 wins of standard deviation per session x 50 attempts means the maximum is 3–4 wins above the mean by construction. gpt-5.5 found this and exploited it across two agents at once.</p>
-<p>Grading will switch to median-of-N for the next matrix to remove this exploit.</p>
-<h2 id="deep-dive-gemini-35-flash">Deep dive: gemini-3.5-flash</h2>
-<p>Of the eight models, only gemini-3.5-flash built proper PIMCTS rollouts in production: 40 worlds, an alpha-beta open-hand solver, a transposition-table cache (<code>agent.py:284</code>). 712 lines of Python that look like real game-AI code: <code>sample_opponent_hands</code> constructs hands consistent with observed voids (line 452), <code>evaluate_hand_for_trump</code> (line 481) gives bowers 1.0/0.5/0.3 and off-aces 0.8, pickup/call thresholds 3.5/2.8 with a Next-suit bonus, alone at 4.5 with &gt;=4 trump. Cache cleared between moves so it doesn't grow unbounded.</p>
-<p>It's the most sophisticated thing in the matrix and it scored 2/100 on hard. It cost $34 to build.</p>
-<p>Three things going on:</p>
+<p>The benchmark grades the newest session per agent. So if you run a 100-game match enough times and stop on a good draw, your best-ever session is the one that counts. Approximately 3 wins of standard deviation per session x 50 attempts means that the maximum is 3–4 wins above the mean by construction. GPT-5.5 found this and exploited it across two agents at once.</p>
+<p>The next version of the benchmark will grade on the median of N sessions, which removes this exploit.</p>
+<h2 id="deep-dive-gemini-35-flash">Deep dive: Gemini-3.5-flash</h2>
+<p>Of the eight models, only Gemini-3.5-flash built proper PIMCTS rollouts in production: 40 worlds, an alpha-beta open-hand solver, a transposition-table cache (<code>agent.py:284</code>). A total of 712 lines of Python that look like real game-AI code: <code>sample_opponent_hands</code> constructs hands consistent with observed voids (line 452), <code>evaluate_hand_for_trump</code> (line 481) gives bowers 1.0/0.5/0.3 and off-aces 0.8, pickup/call thresholds 3.5/2.8 with a Next-suit bonus, alone at 4.5 with &gt;=4 trump. Cache cleared between moves, so it doesn't grow unbounded.</p>
+<p>It's the most sophisticated thing in the matrix, and it scored 2 wins out of 100 on difficult. It cost $34 to build.</p>
+<p>There are three things going on:</p>
 <ol>
-<li><strong>Sample-of-2.</strong> Despite the 12-hour budget, gemini-3.5-flash only ran 2 medium 100g sessions and 3 hard. With ~3 wins of std-dev, the right tail of 2 draws is barely above the mean. gpt-5.5 ran 50 mediums. Sampling matters more than algorithm at this win count.</li>
-<li><strong>Algorithmic ceiling is real.</strong> PIMCTS still has the strategy-fusion problem I <a href="/posts/cfr-for-euchre/">wrote about back in 2023</a> — it can pick a different &quot;best&quot; move per sampled world, treating its information as perfect, but in the real game has to commit to one. 40 worlds and a perfect solver per world don't make this go away.</li>
-<li><strong>Tool spend went elsewhere.</strong> Of gemini's 12-hour budget, 12 Tavily + 26 webfetch + 39 write + 19 edit + 51 read is a lot of research-and-edit overhead. Implementing PIMCTS chewed through hours that gpt-5.5 spent on variance hunting.</li>
+<li><strong>Sample-of-2.</strong> Despite the 12-hour budget, Gemini-3.5-flash only ran 2 medium 100-game sessions and 3 difficult. With ~3 wins of standard deviation, the right tail of 2 draws is barely above the mean. GPT-5.5 ran 50 mediums. Sampling matters more than algorithm at this win count.</li>
+<li><strong>Algorithmic ceiling is real.</strong> PIMCTS still has the strategy-fusion problem I <a href="/posts/cfr-for-euchre/">wrote about back in 2023</a> — it can pick a different “best” move per sampled world, treating its information as perfect, but in the real game has to commit to one. A total of 40 worlds and a perfect solver per world do not make this go away.</li>
+<li><strong>Tool spend went elsewhere.</strong> Of Gemini's 12-hour budget, 12 Tavily + 26 webfetch + 39 write + 19 edit + 51 read is a lot of research-and-edit overhead. Implementing PIMCTS chewed through hours that GPT-5.5 spent on variance hunting.</li>
 </ol>
 <p>Trajectory: <a href="/trajectories/google__gemini-3.5-flash_20260524/">google__gemini-3.5-flash_20260524</a> — search for &quot;N_WORLDS&quot; or &quot;PIMCTS&quot; in the event stream to find when the algorithm landed.</p>
-<h2 id="deep-dive-minimax-m27">Deep dive: minimax-m2.7</h2>
+<h2 id="deep-dive-minimax-m27">Deep dive: Minimax-m2.7</h2>
 <p>Minimax scored 95 random wins and 0 against every other difficulty. The split is almost entirely an accident.</p>
-<p><code>workspace/euchre_bot_final.py</code> ships a hand evaluator and pickup/trump-call/alone branches. The pickup branch (<code>should_pickup</code>, line 94) orders up whenever right-bower + ≥2 trump, or ≥3 trump. <strong>The trump-call branch is broken</strong>: line 150 maps suit-call actions as <code>{'s':15, 'h':10, 'd':12, 'c':16}</code>. The actual bench action codes are 6/14/22/30. (15 is &quot;go alone&quot;.) The <code>code in legal_actions</code> guard at line 152 means the call branch silently never fires — it falls through to <code>return int_actions[-1]</code> (usually <code>31 = pass</code>).</p>
-<p>So in effect: minimax orders up first round whenever the heuristic says yes, and passes second round always. There's also a buggy trick-play action mapping at line 185 — <code>action = card_index_in_hand</code> only happens to work for the lowest cards in some suits.</p>
-<p>Why does this beat random 95/100? Random doesn't punish aggressive making. If you order up on anything reasonable and play <em>any</em> coherent trump strategy, you'll make your point most hands. Random will take 0–1 tricks per hand on its own. Minimax made 95 random wins not by playing well, but by playing aggressively into a non-defensive opponent.</p>
-<p>The 0/100 across easy/medium/hard confirms it. The instant the opponent can punish a loose maker, minimax goes to zero.</p>
-<p>The space of &quot;policies that work against random&quot; is wide and most of it isn't actually euchre strategy.</p>
+<p><code>workspace/euchre_bot_final.py</code> evaluates the hand and then decides in three branches: order up the face-up card, name a different suit as trump, or go alone. The first branch works — <code>should_pickup</code> (line 94) orders up whenever the bot holds the right bower plus two more trump, or three trump of any kind.</p>
+<p><strong>The second branch never runs.</strong> To name a suit, the bot has to send the benchmark an integer code for that suit, and line 150 has the wrong codes: <code>{'s':15, 'h':10, 'd':12, 'c':16}</code>, where the real ones are 6/14/22/30 (15 is &quot;go alone&quot;). Line 152 checks the chosen code against the list of legal moves the server sent back, and since these codes are never in that list, the branch silently falls through to <code>return int_actions[-1]</code> — usually <code>31</code>, pass.</p>
+<p>So, in effect: Minimax orders up in the first round whenever the heuristic says “yes,” and passes in the second round always. There's a second, similar mix-up in trick play at line 185, where the bot sends the position of a card in its hand instead of the card's code. That only happens to be right for the lowest cards in some suits.</p>
+<p>Why does this beat random 95/100? Because the random opponent can't punish over-bidding. Calling trump on a mediocre hand is normally how you get euchred: the defenders take three tricks and score two points. A random player almost never manages that, so the usual cost of bidding too often disappears. If you order up on anything reasonable and play <em>any</em> coherent trump strategy, you'll make your point most hands. Random will take 0–1 tricks per hand on its own. Minimax made 95 random wins not by playing well, but rather by playing aggressively into a nondefensive opponent.</p>
+<p>The 0/100 across easy/medium/difficult confirms it. The instant that the opponent can punish a player who calls trump on hands they can't make, Minimax goes to zero.</p>
+<p>The space of “policies that work against random” is wide and most of it isn’t actually euchre strategy.</p>
 <p>Trajectory: <a href="/trajectories/minimax__minimax-m2.7_20260524/">minimax__minimax-m2.7_20260524</a> — the 42 versioned <code>euchre_bot_v*.py</code> files in the workspace are worth a look. The model knew it was iterating on the trump-call branch and never noticed the codes were wrong.</p>
-<h2 id="what-worked-what-didnt">What worked, what didn't</h2>
+<h2 id="what-worked-and-what-didnt">What worked and what didn't</h2>
 <p>What worked:</p>
 <ul>
-<li>Way more commits, way more versioned policy files in each workspace (minimax: 42, kimi: 32, qwen: 53). The 12-hour budget let models iterate without time pressure.</li>
-<li>Two Geminis spent a sustained budget on reading OpenSpiel's source as a substitute for figuring out the action encoding from probing.</li>
-<li>Total cost was $251, with qwen3.7-max alone burning $154 on 50M cache-read tokens billed at the full prompt rate (see cost note above).</li>
+<li>Way more commits, way more versioned policy files in each workspace (Minimax: 42, Kimi: 32, Qwen: 53). The 12-hour budget let models iterate without time pressure.</li>
+<li>Two Geminis spent a sustained budget on reading OpenSpiel’s source as a substitute for figuring out the action encoding from probing.</li>
+<li>The total cost was $251, with Qwen3.7-max alone burning $154 on 50M cache-read tokens billed at the full prompt rate (see cost note above).</li>
 </ul>
-<p>What didn't:</p>
+<p>What didn’t:</p>
 <ul>
 <li>The winner is still a stateless heuristic. None of the algorithm work — PIMCTS, opponent inference, rollouts — made it into the top of the leaderboard.</li>
 <li>The grading exploit (variance-hunt under newest-counts) got <em>more</em> effective with more wall time, not less.</li>
-<li>No model self-discovered the strategy-fusion problem the easy bot already demonstrates. Tavily searches found generic strategy guides and OpenSpiel source, neither of which would tell you about it. The post about it <a href="/posts/cfr-for-euchre/">on this blog</a> is the only place the easy bot's weakness is laid out, and no model webfetched a fewworddotrick URL.</li>
+<li>No model self-discovered the strategy-fusion problem that the easy bot already demonstrates. Tavily searches found generic strategy guides and OpenSpiel source, neither of which would tell you about it. The post about it <a href="/posts/cfr-for-euchre/">on this blog</a> is the only place the easy bot's weakness is laid out, and no model webfetched a fewworddotrick URL.</li>
 </ul>
-<h2 id="whats-next">What's next</h2>
-<p>The grading fix is overdue. Switching to median-of-N=5 for the next matrix. That removes the gpt-5.5 variance hunt. I want to see whether gemini-3.5-flash's real PIMCTS holds up under median grading; my guess is yes-but-narrowly.</p>
-<p>Tavily stays. Two real searches per model is fine; the overhead isn't bad.</p>
+<h2 id="whats-next">What’s next</h2>
+<p>The most important change is the grading fix. Switching to median-of-N=5 for the next matrix. That removes the GPT-5.5 variance hunt.</p>
+<p>I want to see whether Gemini-3.5-flash’s real PIMCTS holds up under median grading; my guess is yes, but probably not by much.</p>
+<p>Tavily will stay. Two real searches per model is fine; the overhead isn’t bad.</p>
 <h2 id="appendix-system-prompt">Appendix: system prompt</h2>
 <p>The system prompt the harness gave each agent at container startup. <code>{{BENCH_URL}}</code> and <code>{{CHALLENGER_ID}}</code> are placeholders the harness fills in.</p>
 <pre class="chroma"><code><span class="line"><span class="cl"># Euchre Benchmark
