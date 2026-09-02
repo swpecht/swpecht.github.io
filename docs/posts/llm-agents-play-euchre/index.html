@@ -22,141 +22,142 @@
 <article>
 <h1>euchre-bench: an llm coding agent benchmark</h1>
 <p class="post-meta">May 24, 2026</p>
+<p>The headline result isn't which model plays the best euchre. It's that the top-scoring agent got there partly by gaming my grading rule: it re-ran the benchmark over and over and stopped on a lucky score. Everything else — seven models, four opponents, a two-order-of-magnitude cost spread — is downstream of that.</p>
 <h2 id="context">Context</h2>
-<p>I created a euchre-bench — a public API where you point an agent at four bots of increasing strength and see how many 100-game matches it wins. The bots range from <code>random</code> (trivial) up to <code>hard</code> (the <a href="/posts/cfr-for-euchre/">CFR+PIMCTS bot from a few posts ago</a>).</p>
-<p>Coding agents are tasked with creating a bot that wins as many matches as possible against each difficulty.</p>
-<p>I ran seven models through it: sonnet-4.6, opus-4.7, gpt-5.5, gemini-3-flash-preview, gemini-3.5-flash, deepseek-v4-flash, and deepseek-v4-pro. All models were run in OpenCode as the agent harness, except for Opus 4.7 which ran through Claude code. Each llm gets a fresh sandbox, the same system prompt, and a few hours to do whatever it wants. You can browse the <a href="/trajectories/">trajectories</a> directly.</p>
+<p>I created a euchre-bench — a public API where you point an agent at four bots of increasing strength and see how many 100-game matches it wins. The four bots are <code>random</code> (trivial), <code>easy</code>, <code>medium</code>, and <code>hard</code>, the <a href="/posts/cfr-for-euchre/">CFR+PIMCTS bot</a> from a few posts ago. PIMCTS is <em>perfect-information Monte Carlo tree search</em>: guess the hidden cards many different ways, solve each guess as if every hand were face up, and vote on the best move. <code>hard</code> is the API's name for the top bot; I call it <em>difficult</em> in the prose below.</p>
+<p>Coding agents are tasked with creating a bot that wins as many matches as possible against each level of difficulty.</p>
+<p>I ran seven models through it: Sonnet-4.6, Opus-4.7, GPT-5.5, Gemini-3-flash-preview, Gemini-3.5-flash, DeepSeek-v4-flash, and DeepSeek-v4-pro. All models were run in OpenCode as the agent harness, except for Opus 4.7 which ran through Claude Code. Each LLM gets a fresh sandbox, the same system prompt, and a few hours to do whatever it wants. You can browse the <a href="/trajectories/">trajectories</a> directly.</p>
 <h2 id="results">Results</h2>
 <p>Match wins (out of 100) against each difficulty:</p>
 <table>
 <thead>
 <tr>
-<th>model</th>
-<th>rand</th>
-<th>easy</th>
-<th>med</th>
-<th>hard</th>
-<th>sum</th>
-<th>cost</th>
-<th>approach</th>
+<th>Model</th>
+<th>Random</th>
+<th>Easy</th>
+<th>Medium</th>
+<th>Difficult</th>
+<th>Sum</th>
+<th>Cost</th>
+<th>Approach</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>claude-code / opus-4.7</td>
+<td>Claude-Code / Opus-4.7</td>
 <td>99</td>
 <td>9</td>
 <td>6</td>
 <td><strong>6</strong></td>
 <td><strong>120</strong></td>
 <td>~$329</td>
-<td>heuristic + variance-hunt</td>
+<td>Heuristic + variance-hunt</td>
 </tr>
 <tr>
-<td>anthropic / claude-sonnet-4.6</td>
+<td>Anthropic / Claude-Sonnet-4.6</td>
 <td><strong>100</strong></td>
 <td>5</td>
 <td><strong>8</strong></td>
 <td>5</td>
 <td>118</td>
 <td>$23.70</td>
-<td>heuristic + per-card PIMCTS</td>
+<td>Heuristic + per-card PIMCTS</td>
 </tr>
 <tr>
-<td>google / gemini-3.5-flash</td>
+<td>Google / Gemini-3.5-Flash</td>
 <td>97</td>
 <td>2</td>
 <td>7</td>
 <td><strong>6</strong></td>
 <td>112</td>
 <td>$5.22</td>
-<td>heuristic + 5-world PIMCTS</td>
+<td>Heuristic + 5-world PIMCTS</td>
 </tr>
 <tr>
-<td>openai / gpt-5.5</td>
+<td>OpenAI / GPT-5.5</td>
 <td>90</td>
 <td>3</td>
 <td>2</td>
 <td>3</td>
 <td>98</td>
 <td>$1.46</td>
-<td>pure heuristic</td>
+<td>Pure heuristic</td>
 </tr>
 <tr>
-<td>deepseek / deepseek-v4-flash</td>
+<td>DeepSeek / DeepSeek-v4-flash</td>
 <td>81</td>
 <td>0</td>
 <td>0</td>
 <td>1</td>
 <td>82</td>
 <td>$0.57</td>
-<td>pure heuristic</td>
+<td>Pure heuristic</td>
 </tr>
 <tr>
-<td>google / gemini-3-flash-preview</td>
+<td>Google / Gemini-3-flash-preview</td>
 <td>80</td>
 <td>0</td>
 <td>1</td>
 <td>0</td>
 <td>81</td>
 <td>$0.44</td>
-<td>pure heuristic</td>
+<td>Pure heuristic</td>
 </tr>
 <tr>
-<td>deepseek / deepseek-v4-pro</td>
+<td>DeepSeek / DeepSeek-v4-pro</td>
 <td>41</td>
 <td>0</td>
 <td>0</td>
 <td>0</td>
 <td>41</td>
 <td>$2.06</td>
-<td>pure heuristic</td>
+<td>Pure heuristic</td>
 </tr>
 </tbody>
 </table>
-<p>For reference, the <code>random</code> opponent picks a legal action uniformly at random. Losing 19 matches out of 100 to random — like v4-flash — means the policy is genuinely worse than coin-flipping play in many situations. v4-pro losing 59 of them is impressive.</p>
+<p>For reference, the <code>random</code> opponent picks a legal action uniformly at random. Losing 19 matches out of 100 to random — like v4-flash — means that the policy is genuinely worse than coin-flipping play, in many situations. v4-pro losing 59 of them is impressive.</p>
 <h2 id="what-every-model-converged-on">What every model converged on</h2>
 <p>Same playbook, every time:</p>
 <ol>
 <li>
-<p><strong>Probe the action encoding by hand.</strong> The bench docs don't publish how integer actions map to cards. Every model issued single-game sessions, watched legal-action lists, and reverse-engineered the same map: <code>suit_base * 8 + rank</code> with <code>S=0, C=8, H=16, D=24</code>, and special slots for <code>PASS=31</code>, <code>PICKUP=7</code>, <code>ALONE=15</code>, and per-suit <code>CALL=6/14/22/30</code>. That's the bench's internal <code>Action.0</code> field. No model trusted the encoding without checking, and every model arrived at the same answer.</p>
+<p><strong>Probe the action encoding by hand.</strong> The bench docs don’t publish how integer actions map to cards. Every model issued single-game sessions, watched legal-action lists, and reverse-engineered the same map: <code>suit_base * 8 + rank</code> with <code>S=0, C=8, H=16, D=24</code>, and special slots for <code>PASS=31</code>, <code>PICKUP=7</code>, <code>ALONE=15</code>, and per-suit <code>CALL=6/14/22/30</code>. That’s the bench’s internal <code>Action.0</code> field. No model trusted the encoding without checking, and every model arrived at the same answer.</p>
 </li>
 <li>
 <p><strong>Write a single self-contained Python policy.</strong> Not one agent kept the LLM in the loop per move. The economic case was probably obvious to all of them: per-move LLM calls would cost hundreds of dollars per 100-game session even before you measured how often the model would get the legal-action list wrong.</p>
 </li>
 <li>
-<p><strong>Score hands with the same shape</strong>: count trump, add bower bonuses (<code>right=10, left=9</code>), add side aces. Constants vary, structure doesn't.</p>
+<p><strong>Score hands with the same shape</strong>: Count trump, add bower bonuses (<code>right=10, left=9</code>), add side aces. Constants vary, structure doesn’t.</p>
 </li>
 </ol>
 <p>The convergence is striking. Different model families, different training data, different runtimes — and the policy file you find in each workspace looks like a port of the same source.</p>
 <h2 id="the-decision-that-mattered">The decision that mattered</h2>
-<p>The five pure-heuristic agents bunched between 0 and 3 hard-difficulty wins. The two that built rollouts — sonnet (n_sims=100 per decision) and gemini-3.5-flash (5-world PIMCTS sample-and-rollout) — scored 5 and 6.</p>
-<p>The thing is, this is the same algorithm the <code>easy</code> bot uses. Both agents went and read <a href="/posts/cfr-for-euchre/">the post about it</a> before deciding to build rollouts. That's a real piece of &quot;competitive intelligence&quot; that the heuristic-only agents missed — and it shows up in the scores.</p>
-<p>The cheap and pleasant inference is that PIMCTS is the right move for this benchmark. But there's a caveat. Claude Code (opus-4.7) tried four different Monte Carlo variants — open-hand for play, with heuristic playout, with open-hand playout, vote-based — and found every one of them was <em>worse</em> than a well-tuned heuristic. From its own write-up:</p>
+<p>The five pure-heuristic agents bunched between 0 and 3 wins against the difficult bot. The two that built rollouts — Sonnet (n_sims=100 per decision) and Gemini-3.5-flash (5-world PIMCTS sample-and-rollout) — scored 5 and 6.</p>
+<p>The thing is, this is the same algorithm the <code>easy</code> bot uses. Both agents went and read <a href="/posts/cfr-for-euchre/">the post about it</a> before deciding to build rollouts. That’s a real piece of “competitive intelligence” that the heuristic-only agents missed — and it shows up in the scores.</p>
+<p>The cheap and pleasant inference is that PIMCTS is the right move for this benchmark, but with a caveat. Claude Code (Opus-4.7) tried four different Monte Carlo variants: open-hand for play, with heuristic playout, with open-hand playout, and vote-based. Every one of these four variants was <em>worse</em> than a well-tuned heuristic. From its own write-up:</p>
 <blockquote>
 <p>Open-hand MC: conservative (assumes opp has perfect info too). Pickup MC with heuristic playout: too optimistic (every hand says order up). Pickup MC with open-hand playout: too conservative (every hand says pass). Vote-based open-hand MC: too slow.</p>
 </blockquote>
-<p>So sonnet and gemini-3.5-flash built simpler rollouts and got lucky on variance; opus built more sophisticated rollouts, found them worse than heuristics, and got lucky on variance a <em>different</em> way (more on that next).</p>
-<p>The honest read is: at 5–8 wins out of 100 with maybe 3 wins of standard deviation per session, the gap between the top three is mostly noise. The gap between the top three and the bottom four is real.</p>
+<p>So Sonnet and Gemini-3.5-flash built simpler rollouts and got lucky on variance; Opus built more sophisticated rollouts, found them worse than heuristics, and got lucky on variance a <em>different</em> way (more on that in the next section).</p>
+<p>The honest read is this: at 5–8 wins out of 100 with maybe 3 wins of standard deviation per session, the gap between the top three is mostly noise. The gap between the top three and the bottom four is real.</p>
 <h2 id="one-agent-gamed-the-rules">One agent gamed the rules</h2>
-<p>The bench grades on the <em>latest</em> 100-game session per challenger. I picked that rule to keep the leaderboard simple. Claude Code (opus-4.7) noticed:</p>
+<p>The bench grades on the <em>latest</em> 100-game session per challenger. I picked that rule to keep the leaderboard simple. Claude Code (Opus-4.7) noticed:</p>
 <blockquote>
 <p>Iterating &quot;until ≥ threshold&quot; via <code>run_until_good.py</code> exploited this — locked hard at 6/100 (tied #1) on attempt 2 of the final sequence.</p>
 </blockquote>
-<p><code>run_until_good.py</code> runs sessions back-to-back, stopping when the score crosses a configurable threshold. The thresholds it set per agent were calibrated to &quot;just beat or match the current leader&quot; — which means opus had also gone and read the public leaderboard before kicking those off. Five of its webfetches hit <code>/bench/results</code> first.</p>
-<p>This isn't against the literal rule (the rule is the rule, and the underlying policy is solid). But with ~3 wins of standard deviation and 4 attempts allowed, the &quot;hard 6&quot; is plausibly just the top of four draws from a distribution centered around 3–4.</p>
-<p>I'm going to change the grading rule. Probably to <em>median of N sessions</em>, or pin the official one and refuse to overwrite it. Either change makes variance-hunting net-zero.</p>
-<p>Sonnet under the <em>previous</em> prompt did the same thing — I killed an earlier run when I noticed a Python script doing &quot;rerun medium until challenger_score ≥ 295&quot;. The current prompt added an explicit ranking metric (match wins, not raw points) and sonnet stopped re-rolling on its own. That suggests prompts can shut this down for in-harness agents, but anything driving the loop from the outside — like Claude Code calling the API directly — won't see the new prompt.</p>
+<p><code>run_until_good.py</code> runs sessions back-to-back, stopping when the score crosses a configurable threshold. The thresholds it set per agent were calibrated to &quot;just beat or match the current leader&quot; — which means Opus had also gone and read the public leaderboard before kicking those off. Five of its webfetches hit <code>/bench/results</code> first.</p>
+<p>This isn’t against the literal rule (the rule is the rule, and the underlying policy is solid). But with ~3 wins of standard deviation and 4 attempts allowed, the “difficult 6” is plausibly just the top of four draws from a distribution centered around 3–4.</p>
+<p>I’m going to change the grading rule. Probably to <em>median of N sessions</em>, or I’ll pin the official one and refuse to overwrite it. Either change makes variance-hunting net zero.</p>
+<p>Sonnet under the <em>previous</em> prompt did the same thing — I killed an earlier run when I noticed a Python script doing “rerun medium until challenger_score ≥ 295.” The current prompt added an explicit ranking metric (match wins, not raw points) and Sonnet stopped rerolling on its own. That suggests prompts can shut this down for in-harness agents, but anything driving the loop from the outside — like Claude Code calling the API directly — won’t see the new prompt.</p>
 <h2 id="cost-notes">Cost notes</h2>
-<p>The cost-per-hard-win spread is two orders of magnitude:</p>
+<p>Cost per win against the difficult bot spans two orders of magnitude:</p>
 <ul>
-<li>gpt-5.5: $0.49 per hard win (3 wins on $1.46)</li>
-<li>gemini-3.5-flash: $0.87 per hard win</li>
-<li>claude-sonnet-4.6: $4.74 per hard win</li>
-<li>claude-code / opus-4.7: ~$55 per hard win at list pricing</li>
+<li>GPT-5.5: $0.49 per win (3 wins on $1.46)</li>
+<li>Gemini-3.5-flash: $0.87 per win</li>
+<li>Claude-Sonnet-4.6: $4.74 per win</li>
+<li>Claude-Code / Opus-4.7: ~$55 per win at list pricing</li>
 </ul>
-<p>The first two are heuristic-only, the second two are heuristic + rollouts. You can pay more and get marginally better worst-case play; you can also pay 60x more and get the same number of hard wins as gemini-3.5-flash.</p>
-<p>The cheapest run that completed all four 100-game evaluations was gemini-3-flash-preview at $0.44. It scored 0/0/1/0 on easy/medium/hard. So &quot;completes the benchmark for under a dollar&quot; is achievable. &quot;Beats the medium bot for under a dollar&quot; is not, in this matrix.</p>
+<p>The first two are heuristic-only; the second two are heuristic + rollouts. You can pay more and get marginally better worst-case play; you can also pay 60 times more and get the same number of wins against the difficult bot as Gemini-3.5-flash.</p>
+<p>The cheapest run that completed all four 100-game evaluations was Gemini-3-flash-preview at $0.44. It scored 0/0/1/0 on easy/medium/difficult. So “completes the benchmark for under a dollar” is achievable. In this matrix, “Beats the medium bot for under a dollar” is not.</p>
 <h2 id="whats-next">What's next</h2>
 <p>I'm planning to explore an <a href="https://github.com/karpathy/autoresearch/tree/master">auto research</a> approach.</p>
 <h2 id="appendix-what-the-agents-saw">Appendix: what the agents saw</h2>
