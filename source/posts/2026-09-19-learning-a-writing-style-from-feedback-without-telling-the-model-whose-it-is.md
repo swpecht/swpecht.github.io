@@ -7,11 +7,13 @@ date: 2026-09-19T00:00:00Z
 
 I wanted to know whether a model can learn a person's preferences continuously, just from the feedback they'd give anyway. Writing style seemed like a good first test, and since I don't have a few hundred of my own edited drafts, I simulated the user: the simulated user writes like Matt Levine, and the model has to learn that style without ever being told his name.
 
-The short version: after 20 rounds of feedback, a style judge shown the real *Money Stuff* section next to the model's version of the same story picked the model's as the real one 47% of the time. At 50% the judge can't tell the model's version from the real one at all. The same model told outright to "write in the style of Matt Levine's Money Stuff column," and given 40 real examples to draw on, scored 17%. With no guidance it scored 0%.
+The short version: after 20 rounds of feedback, a style judge shown the real *Money Stuff* section next to the model's version of the same story picked the model's as the real one about 40% of the time. At 50% the judge can't tell the model's version from the real one at all. The same model told outright to "write in the style of Matt Levine's Money Stuff column," and given 40 real examples to draw on, scored about 20%. With no guidance it scored about 2%.
 
 That's Claude Opus 5 as the writer. Everything it learned is stored as text outside the model's weights: a 450-word style guide that it rewrites as feedback comes in, plus a small memory of texts the user approved. The system rejects any guide that contains an author or publication name, so the guide has to describe techniques — "headline is a flat topic label in sentence case," "end abruptly on one flat, deadpan line" — instead of naming a person. The real use case is a user who isn't famous, where naming an author isn't an option.
 
 Two results went against what I expected. Picking between two drafts, the cheapest feedback a person can give, taught the model nothing. And a learner that appends every lesson to an ever-longer list, with no management at all, did not get worse over 200 rounds of feedback. I had designed that experiment expecting it to degrade.
+
+*Update, September 19: the first version of this post gave those figures as 47%, 17% and 0%, from a single run of the judge. Re-running the judge showed that single runs move by ten points or more, so the post now reports averages over three runs. The ordering didn't change. Details are in the [Opus section](#opus).*
 
 All of the prompts are in the [appendix](#appendix-prompts), along with a [worked example](#appendix-a-non-finance-example): a brief about a man suing a buffet, and what the untrained model and each learner wrote from it.
 
@@ -74,16 +76,24 @@ One example of what two edits does. For the same test brief, the untrained model
 
 Same loop, Opus 5 as the writer, 20 events:
 
-| Writer | Beats untrained | Beats named-author | Fools lineup | Stylometric distance |
-|---|---|---|---|---|
-| Untrained Opus | — | 10% | 0% | 0.93 |
-| Told the name + 40 exemplars | 90% | — | 17% | 0.81 |
-| Blind learner, 20 critiques | 93% | 63% | 37% | 0.82 |
-| Blind learner, 20 edits | **100%** | **83%** | **47%** | **0.71** |
+| Writer | Beats untrained | Beats named-author | Fools lineup | Fools lineup, uniform formatting | Stylometric distance |
+|---|---|---|---|---|---|
+| Untrained Opus | — | 10% | 2% | 3% | 0.93 |
+| Told the name + 40 exemplars | 90% | — | 17% | 27% | 0.81 |
+| Blind learner, 20 critiques | 93% | 63% | 29% | 20% | 0.82 |
+| Blind learner, 20 edits | **100%** | **83%** | **43%** | **39%** | **0.71** |
 
-With Sonnet, nothing ever fooled the lineup judge more than 10% of the time, the named-author model included. With Opus the named-author model gets to 17% and the blind learner to 47%.
+Both lineup columns are averages over three runs of the judge on the same 30 drafts, 90 judgments per cell.
 
-Two caveats on that table. Only one of four proposed guide updates was accepted in each Opus run, because Opus kept writing 520-word guides against a 450-word budget and my code threw them away instead of compressing them (fixed since). So the edit learner's climb from 30% at five events to 47% at twenty came from the bank growing, not the guide improving. And the critique learner's 37% should be read as somewhere between 20% and 37%: its guide didn't change between checkpoints and its score did. With 30 test briefs, every percentage in this post has a standard error of about 9 points.
+With Sonnet, nothing ever fooled the lineup judge more than 10% of the time, the named-author model included. With Opus the named-author model gets to about 20% and the blind edit learner to about 40%.
+
+The lineup judge is noisy. Single runs for the critique learner came out at 37%, 13% and 37%; for the edit learner, 47%, 40% and 43%. The first version of this post reported the first run of each.
+
+The second lineup column exists because I found a formatting difference the judge could have been using. My reconstruction of the real text separates quoted paragraphs with a blank line; Claude writes `>` on that line. The writers that had seen real text (the edit learner through its bank, the named-author model through its exemplars) copy the real layout, and the others don't. The real text also uses curly quotes where Claude's drafts use straight ones. For the second column, typography and Markdown layout are made identical across the real sections, the reference samples and every draft before judging.
+
+What holds up in both columns: the blind edit learner fools the judge about twice as often as the model that was told the author's name, and the untrained model almost never does. What doesn't hold up is any claim that the critique learner beats the named-author model on this test. They are about level, at 20–29% against 17–27%. The critique learner's 63% pairwise win rate against the named-author model is a separate measurement, from a single run.
+
+Two caveats on that table. Only one of four proposed guide updates was accepted in each Opus run, because Opus kept writing 520-word guides against a 450-word budget and my code threw them away instead of compressing them (fixed since). So whatever the edit learner gained after event five came from the bank growing, not the guide improving. The critique learner's single-run lineup figures at 5, 10 and 20 events were 20%, 20% and 37% with an unchanged guide, which is what first suggested the judge was noisy. With 30 test briefs, every percentage in this post has a standard error of about 9 points.
 
 # Deep dive: a run that got worse
 
@@ -140,10 +150,12 @@ The loop saves a (draft, feedback, final text) triple for every event, which is 
 | Qwen 7B rewriter, no training | 0 | 0% | 0% | 1.10 |
 | Qwen 7B rewriter + LoRA | 20 | 40% | 0% | 0.96 |
 | Qwen 7B rewriter + LoRA | 80 | 33% | 7% | 0.95 |
-| Qwen 7B rewriter + LoRA | 264 | 33% | 20% | 0.82 |
+| Qwen 7B rewriter + LoRA | 264 | 33% | 23% | 0.82 |
 | Qwen 7B writing from the brief + LoRA | 264 | 67% | 13% | 1.11 |
 | *Opus, told the name + 40 exemplars* | — | 90% | 17% | 0.81 |
-| *Opus in-context learner, 20 edits* | — | 100% | 47% | 0.71 |
+| *Opus in-context learner, 20 edits* | — | 100% | 43% | 0.71 |
+
+Lineup figures for the 264-pair rewriter and the two Opus rows are three-run averages; the other rows are single runs. With formatting made uniform the 264-pair rewriter scores 21%.
 
 The results are mixed. More data steadily helps on the lineup test and the stylometric measure, and at 264 pairs a 7B model is roughly level with Opus-told-the-name on both. It also copies structural habits *better* than the in-context learner:
 
@@ -174,6 +186,7 @@ What didn't:
 - My gate, three times: too lenient (3 of 5), then not anchored, then applied to the wrong step (it should gate compression, not learning).
 - My prediction about unmanaged memory. It gets expensive, not worse.
 - The 450-word budget as a hard reject. It cost the Opus runs most of their updates.
+- Reporting one run of a noisy judge. The first version of this post had 47% in its second paragraph; the three-run average is 43%, and 39% with formatting made uniform.
 - Micro-examples in the guide. They make rules concrete and then show up verbatim as tics: the same opening line in 8 of 36 out-of-domain drafts.
 - Haiku for cleanup: slow with thinking on, sloppy with it off. Sonnet with thinking on was both more accurate and no more expensive, because its output is much shorter.
 
@@ -181,7 +194,7 @@ What didn't:
 
 - The user is simulated, and its "edits" are the real published text. A real person's edits would be partial, inconsistent and noisier.
 - The judges are Claude models, and the same family steers the gate. The stylometric measure agrees on direction everywhere but is coarse.
-- 30 test briefs. About ±9 points on everything.
+- 30 test briefs. About ±9 points on everything, before the judge's own run-to-run noise. Only the Opus lineup figures are averaged over repeated runs; every other judged number in this post is a single run.
 - One author. A distinctive one, which probably makes this easier than learning my preferences would be.
 - The lineup judge is a model. I built a six-pair "which one is real?" quiz for humans and haven't run it on anyone yet.
 
@@ -207,6 +220,8 @@ Eventually I want to run this on my own drafts and my own edits, where there is 
 4. *Split by date.* Train through April 2026, validate May–June, test July–August.
 
 **Learner settings.** Guide budget 450 words (candidates over 495 are compressed, then rejected if still over). Two exemplars retrieved per draft by TF-IDF cosine on the brief's topic and background. Default batch of 5 events per update; the speed experiment uses 1. Replay: 4 past episodes per reflection. Gate: 8 validation briefs on rotation, accept if the candidate wins ≥ 6 head-to-heads and its win count against fixed untrained drafts is at least the current guide's. Judge position is randomized on every call.
+
+**Lineup re-runs.** Three runs of the lineup judge per system, with judge position re-randomized each run. For the uniform-formatting column every text (real sections, the two reference samples, all drafts) goes through the same normalizer first: curly quotes and apostrophes to straight, ellipsis and en-dash characters to ASCII, bare `>` lines removed, every line made its own paragraph, Markdown emphasis markers stripped, and spacing around em dashes made uniform. Three-run means, original / uniform: untrained 2% / 3%, named-author 17% / 27%, critique learner 29% / 20%, edit learner 43% / 39%, Qwen LoRA 23% / 21%. One check that typography alone wasn't driving the original result: the edit learner used straight quotes in 29 of 30 drafts against curly quotes in all 30 real sections, and still fooled the judge in 14 of 30 in the first run.
 
 **Stylometric features** (17): headline length; sentence-length mean and standard deviation; share of sentences ≤ 6 words; words per paragraph; block-quote share of all words; and per-1,000-word rates of bullet lines, footnotes, question marks, parentheses, dashes, colons, inline quotations, first person, second person, hedges ("sort of," "I guess," "you know," …) and contractions. Each feature's gap is divided by that feature's standard deviation across real sections, then averaged.
 
