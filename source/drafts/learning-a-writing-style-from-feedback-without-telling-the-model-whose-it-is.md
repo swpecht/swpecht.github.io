@@ -13,7 +13,7 @@ That's Claude Opus 5 as the writer. Everything it learned lives outside the mode
 
 Some of it went the way I expected. Two things didn't. Picking between two drafts, the cheapest feedback a person can give, taught the model nothing at all. And the experiment I designed to show that an unmanaged memory falls apart over time showed the opposite.
 
-I did this with Claude Code driving: it wrote the harness, ran the experiments over about a day and a half, and caught most of the bugs described below by reading its own outputs. All of the prompts are in the [appendix](#appendix-prompts).
+All of the prompts are in the [appendix](#appendix-prompts).
 
 # The setup
 
@@ -194,7 +194,7 @@ And eventually the real version: my own drafts, my own edits, no hidden answer k
 
 # Appendix: technical details
 
-**Models.** Writer: Claude Sonnet 5 for the feedback-type, speed, stability and generalization experiments; Claude Opus 5 for the headline run. Judge, critic, brief extraction and cleanup: Sonnet 5. Reflection uses the writer model with extended thinking on. Everything ran through headless Claude Code (`claude -p`, tools off, custom system prompt, empty working directory so no project context could leak the author's name) on my subscription. 15,489 calls — 14,748 Sonnet, 736 Opus — which would have been about $437 at API prices.
+**Models.** Writer: Claude Sonnet 5 for the feedback-type, speed, stability and generalization experiments; Claude Opus 5 for the headline run. Judge, critic, brief extraction and cleanup: Sonnet 5. Reflection uses the writer model with extended thinking on. Every call is a bare model call: custom system prompt, no tools, and nothing else in context that could leak the author's name. 15,489 calls in total — 14,748 Sonnet, 736 Opus — about $437 at API prices.
 
 **Pipeline.**
 
