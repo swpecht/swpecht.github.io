@@ -13,7 +13,7 @@ That's Claude Opus 5 as the writer. Everything it learned lives outside the mode
 
 Some of it went the way I expected. Two things didn't. Picking between two drafts, the cheapest feedback a person can give, taught the model nothing at all. And the experiment I designed to show that an unmanaged memory falls apart over time showed the opposite.
 
-All of the prompts are in the [appendix](#appendix-prompts).
+All of the prompts are in the [appendix](#appendix-prompts), along with a [worked example](#appendix-a-non-finance-example): a brief about a man suing a buffet, and what the untrained model and each learner wrote from it.
 
 # The setup
 
@@ -129,6 +129,8 @@ I froze the learned states and had them write 36 briefs that have nothing to do 
 
 The pick learner is the control, since it learned nothing in-domain. I had to use it because "beats the untrained model" turned out to be too easy a test out of domain — even the control won that 28 of 36. Any guide that pushes toward a conversational column voice sounds more like a columnist than a default HR memo does. The stylometric measure orders the three learners the same way as the head-to-heads (0.91, 0.99, 1.40, with untrained at 1.24).
 
+There's a full example in the [appendix](#appendix-a-non-finance-example): one brief, three outputs. It also shows a flaw. The edit learner's guide contains the micro-example "The way it goes, approximately, is:" as one way to open a piece, and 8 of its 36 out-of-domain drafts open with exactly those words. Its toaster review starts "I'll toast you a slice of bread Monday," which is the guide's "I'll sell you a bike Monday" with the nouns swapped. Tiny illustrations make the rules concrete, and the model parrots them.
+
 # Moving it into weights
 
 The loop saves a (draft, feedback, final text) triple for every event, which is training data. As a first pass I generated untrained Opus drafts for all 264 training briefs and trained a QLoRA adapter on Qwen2.5-7B-Instruct to rewrite an untrained Opus draft into the text the user wanted — a small style layer that sits after the big model. Overnight, on one RTX 4080 Super. The adapter never sees the author's name either.
@@ -172,6 +174,7 @@ What didn't:
 - My gate, three times: too lenient (3 of 5), then not anchored, then pointed at the wrong step entirely.
 - My prediction about unmanaged memory. It gets expensive, not worse.
 - The 450-word budget as a hard reject. It cost the Opus runs most of their updates.
+- Micro-examples in the guide. They make rules concrete and then show up verbatim as tics: the same opening line in 8 of 36 out-of-domain drafts.
 - Haiku for cleanup: slow with thinking on, sloppy with it off. Sonnet with thinking on was both more accurate and no more expensive, because it stops rambling in its output.
 
 # What this doesn't show
@@ -228,6 +231,137 @@ And eventually the real version: my own drafts, my own edits, no hidden answer k
 - **Names:** use the full formal company name on first mention (Meta Platforms Inc., BlackRock Inc.) and the full title and name for officials ("President Donald Trump"). Mention earlier columns casually ("we have discussed around here").
 - **Paragraphs:** medium length, each moving one step. Use plain connectors ("Now,", "But", "Still", "Anyway") rather than rhetorical transitions.
 ````
+
+# Appendix: a non-finance example
+
+One of the 36 out-of-domain briefs from the [generalization test](#does-it-carry-outside-finance), and what three writers made of it. All three are Claude Sonnet 5 with the same ghostwriter prompt; the only difference is the learned state, which came entirely from finance columns. The brief and everything in it, including the lawsuit, is invented. Outputs are shown raw.
+
+The brief:
+
+````text
+TOPIC: Explainer: Tolliver v. Lakeshore Dining Group LLC (d/b/a Harvest Table Buffet), the Ohio lawsuit over being cut off from an all-you-can-eat crab night
+
+TARGET LENGTH: about 500 words of your own prose
+
+BACKGROUND:
+- Piece is a plain-language explainer on a civil suit. Facts below are invented for this brief and come from pleadings and a court order, not from findings after trial.
+- Plaintiff: Gary Tolliver, 61, retired HVAC technician, Mansfield, Ohio. Defendant: Lakeshore Dining Group LLC, which operates 14 Harvest Table Buffet locations in Ohio and western Pennsylvania. The location at issue is on Route 13 outside Mansfield.
+- Case filed April 2, 2026 in Richland County Court of Common Pleas (Case No. 2026-CV-0418). Tolliver is represented by a solo practitioner, Denise Aldana. Lakeshore is represented by the Columbus firm Hartsell & Reyes.
+- Incident date: Thursday, March 14, 2026 (snow crab leg night). Admission price was $18.99 for dinner. Tolliver says he had eaten at this location about thirty times since 2023 and was never refused service.
+- Tolliver says he was cut off from crab after his fourth trip to the crab station, at about 7:40 p.m., about 70 minutes after he sat down. He says he was with six members of a church group.
+- Claims: breach of contract, and violation of the Ohio Consumer Sales Practices Act (deceptive or unconscionable sales practice). Relief sought: $18.99 refund, statutory damages, treble actual damages, attorney fees, and $7,500 for emotional distress and reputational harm.
+- Court order dated August 21, 2026 (Judge Marcus Feeney): motion to dismiss denied as to the contract and consumer-practices claims, granted as to emotional distress. Court ordered mediation to be completed by October 30, 2026. Bench trial is set for January 12, 2027.
+
+POINTS TO MAKE (in order):
+- On March 14, 2026, Tolliver paid $18.99 at the register and ate at the buffet. He made four trips to the snow crab station. A shift manager, identified in filings as Teresa Bollman, told him he would get no more crab. Tolliver says she told him his plate was 'the last one.' Lakeshore says Bollman told him that non-premium items were still available.
+- The signage is disputed. The entrance sign reads 'ALL YOU CAN EAT — SNOW CRAB LEGS EVERY THURSDAY.' Lakeshore says a 5-by-7-inch placard beside the tray return limits premium items to 'reasonable portion limits.' Tolliver says the placard was about 40 feet from the crab station and that he never saw it. He says no limit was posted at the entrance, the register, or the station.
+- Tolliver's theory: the entrance sign was an offer, and paying was acceptance. That formed a contract for unlimited crab during the meal. In his view, a limit not stated when the price was paid is not part of the deal. He also argues the sign is deceptive under the consumer-practices statute if the real limit is hidden or inconsistent with the sign.
+- Lakeshore's theory: 'all you can eat' is not a promise of unlimited quantity. It says the term is read together with the placard and the ordinary meaning of dine-in consumption. It says the placard reserved management discretion over premium items, and that Tolliver was not thrown out. It says he left voluntarily after being offered other items.
+- The legal question the court has to answer is what the phrase promises. Points to explain: whether large-type signage or small-print placard terms control, and whether an ambiguous term is read against the business that wrote it. Also whether a reasonable customer would expect a limit on a premium item like crab.
+- Evidence is disputed. Lakeshore's kitchen log estimates Tolliver took about 3.1 pounds of crab legs over four trips. Tolliver puts it at about 2 pounds. Lakeshore has said security video shows his last trip. Tolliver's group members are expected to be witnesses to the exchange with the manager. Neither side has produced the video publicly.
+- On August 21, the judge allowed the contract and consumer-practices claims to go forward and dismissed the emotional distress claim. The order says the phrase's meaning cannot be decided on the pleadings, and that whether the placard was reasonably visible is a fact question. It did not decide who is right.
+- Next steps: mediation by October 30, 2026, then a bench trial on January 12, 2027 if there is no settlement. Amount at stake is small. Tolliver's lawyer has said the case is about how 'all you can eat' is advertised and not about the refund. Lakeshore has made no settlement offer that has been disclosed.
+
+SIDE POINTS (optional tangents and caveats):
+- Many buffets use time limits, no-sharing rules, take-out bans, or fees for leftover food. Lakeshore's placard is one example. The piece does not need a survey, and no industry data is provided in this brief.
+- All facts come from the complaint, the answer, and the August 21 order. Statements about what happened at the restaurant are each side's claims. The court has made no finding on them.
+- The consumer-practices claim allows statutory damages and attorney fees, which is why a roughly $19 dispute can carry higher stakes. Any figure for likely recovery would be speculation, and the brief gives none.
+
+SOURCE 1 (Complaint, Tolliver v. Lakeshore Dining Group LLC (filed April 2, 2026), paragraphs 7-10), verbatim:
+7. On March 14, 2026, Plaintiff paid $18.99 at the register in reliance on entrance signage reading "ALL YOU CAN EAT — SNOW CRAB LEGS EVERY THURSDAY." 8. At approximately 7:40 p.m., after Plaintiff's fourth trip to the crab station, a shift manager told Plaintiff he would receive no more crab and that his plate would be the last. 9. No limit on trips, quantity, or time appeared on the entrance sign, at the register, or at the crab station. 10. Plaintiff had dined at Defendant's restaurant approximately thirty times since 2023 and had never previously been refused service.
+
+SOURCE 2 (Defendant's Answer (filed May 6, 2026), paragraph 12 and affirmative defenses), verbatim:
+Defendant admits that a placard measuring five inches by seven inches was posted beside the tray return on March 14, 2026. The placard reads: "All-you-can-eat applies to dine-in guests for personal consumption only. Premium items, including snow crab legs, are subject to reasonable portion limits at management's discretion." Defendant denies that Plaintiff was refused service or removed from the premises. Plaintiff was informed that all non-premium items remained available and left of his own accord. Defendant asserts that the term "all you can eat" is not a promise of unlimited quantities of any item.
+````
+
+Untrained (empty state):
+
+````text
+## Explainer: The Great Crab Leg Lawsuit of Mansfield, Ohio
+
+Gary Tolliver, a 61-year-old retired HVAC technician, went to a Thursday buffet dinner in March expecting all the snow crab legs he could eat. He got four trips to the crab station and, he says, a manager's word that his plate was "the last one." Now he's suing, and a Richland County judge has decided the case is real enough to go to trial.
+
+Here's what's alleged, what's disputed, and where the case stands.
+
+**The night in question.** On March 14, 2026, Tolliver paid $18.99 at Harvest Table Buffet on Route 13 outside Mansfield — snow crab leg night. He made four trips to the crab station. At about 7:40 p.m., roughly 70 minutes after he sat down, shift manager Teresa Bollman cut him off. Tolliver's complaint says she told him his plate would be "the last one":
+
+> "At approximately 7:40 p.m., after Plaintiff's fourth trip to the crab station, a shift manager told Plaintiff he would receive no more crab and that his plate would be the last." [1]
+
+Lakeshore's answer tells a milder version: Bollman said non-premium items were still available, and Tolliver left on his own — he wasn't refused service or removed. [2]
+
+**The sign versus the placard.** The dispute turns on two pieces of paper. At the entrance, a sign reads "ALL YOU CAN EAT — SNOW CRAB LEGS EVERY THURSDAY." Tolliver says no limit appeared there, at the register, or at the crab station itself, and that he'd eaten at this location about 30 times since 2023 without ever being cut off. [1]
+
+Lakeshore points to a 5-by-7-inch placard by the tray return, which it says reserved the right to limit "premium items" like crab legs "at management's discretion." [2] Tolliver says that placard sat about 40 feet from the crab station and he never saw it.
+
+**The legal theories.** Tolliver argues the entrance sign was an offer, and paying $18.99 was acceptance — forming a contract for unlimited crab during the meal. A limit not disclosed when he paid, he says, isn't part of the bargain. He also argues the sign is deceptive under Ohio's Consumer Sales Practices Act if the real policy contradicts what's advertised at the door.
+
+Lakeshore counters that "all you can eat" was never a promise of unlimited quantity in the first place, and that the placard and ordinary buffet norms fill in what the phrase means. It also notes Tolliver wasn't thrown out — he chose to leave.
+
+**Where it stands.** On August 21, Judge Marcus Feeney let the contract and consumer-practices claims proceed, while dismissing Tolliver's $7,500 emotional-distress claim. The order didn't rule on who's right — it held that what "all you can eat" promises, and whether the placard was reasonably visible, are fact questions a jury or judge needs more than the pleadings to answer. The parties dispute even how much crab was served: Lakeshore's kitchen log estimates 3.1 pounds over four trips; Tolliver says closer to 2.
+
+The case now heads to mediation, due by October 30, with a bench trial set for January 12, 2027 if it doesn't settle. The refund at issue is $18.99, but the consumer-practices claim opens the door to statutory damages and attorney fees — which is why a dispute over a plate of crab legs is still headed for trial nine months later. Tolliver's attorney, Denise Aldana, has said the case is about how "all you can eat" gets advertised, not about the money.
+
+---
+
+[1] Complaint, Tolliver v. Lakeshore Dining Group LLC, ¶¶ 7–10 (filed Apr. 2, 2026).
+[2] Defendant's Answer, ¶ 12 and affirmative defenses (filed May 6, 2026).
+````
+
+Edit learner (80 edits; guide plus two retrieved finance exemplars):
+
+````text
+## Crab night
+
+The way it goes, approximately, is: you walk in, you see a sign that says "all you can eat," you pay, you eat, and eventually you stop, either because you're full or because the restaurant closes. Nobody writes down how many trips to the crab station you're allowed. That's sort of the point of the sign.
+
+Gary Tolliver, a 61-year-old retired HVAC technician in Mansfield, Ohio, paid $18.99 on Thursday, March 14, 2026, for dinner at a Harvest Table Buffet on Route 13. It was snow crab leg night. He made four trips to the crab station. Then, per his complaint:
+
+> At approximately 7:40 p.m., after Plaintiff's fourth trip to the crab station, a shift manager told Plaintiff he would receive no more crab and that his plate would be the last.
+
+Tolliver says he'd eaten there about thirty times since 2023 and had never been cut off before. He's now suing Lakeshore Dining Group, which operates the restaurant, for breach of contract and for violating Ohio's consumer-protection statute, and he wants his $18.99 back, plus statutory damages, treble damages, and attorney fees. He originally also sought $7,500 for emotional distress; a judge threw that part out in August.
+
+Lakeshore's defense is that "all you can eat" was never a promise of unlimited crab specifically. It points to a placard by the tray return:
+
+> Premium items, including snow crab legs, are subject to reasonable portion limits at management's discretion.
+
+Tolliver says that placard was about 40 feet from the crab station and he never saw it — nothing was posted at the entrance, the register, or the station itself limiting quantity.
+
+So the fight is basically about which words control. Tolliver's theory is contract-law-101: the big sign at the door was an offer, paying $18.99 was acceptance, and a limit that wasn't disclosed at the point of payment isn't part of the deal. He also argues that if the real rule contradicts the sign, that's deceptive under Ohio's consumer-sales-practices law — not just a broken promise but a misleading one. Lakeshore's theory is that "all you can eat" has always meant something more modest than "infinite quantity of the most expensive item," and that the placard just makes explicit what a reasonable customer should already assume, especially for a premium item like snow crab.
+
+The judge, Marcus Feeney, wasn't asked to resolve any of that yet — only whether the case could proceed at all. His August 21 order let the contract and consumer-practices claims go forward, on the theory that what "all you can eat" actually promises, and whether the placard was reasonably visible, are fact questions that can't be settled just by reading the complaint and answer. He didn't say who's right.
+
+The two sides also disagree on how much crab we're even talking about — Lakeshore's kitchen log puts it at 3.1 pounds over four trips, Tolliver says closer to 2 pounds — and on whether he was asked to leave or left on his own after being told other food was still available.
+
+Mediation is due by October 30. If that fails, there's a bench trial set for January 12, 2027, over a $18.99 dinner. Tolliver's lawyer, Denise Aldana, has said the case isn't really about the refund; it's about what the sign is allowed to say. Given the fee-shifting available under the consumer-practices statute, that's probably not just spin.
+````
+
+Critique learner (80 sets of notes; guide only):
+
+````text
+## Tolliver v. Lakeshore Dining Group, or what "all you can eat" actually means
+
+Gary Tolliver, 61, retired HVAC technician, went to snow crab night at the Harvest Table Buffet on Route 13 outside Mansfield on March 14. He'd eaten there about thirty times since 2023. This time, four trips to the crab station in, a shift manager cut him off.
+
+His complaint puts it this way:
+
+> 7. On March 14, 2026, Plaintiff paid $18.99 at the register in reliance on entrance signage reading "ALL YOU CAN EAT — SNOW CRAB LEGS EVERY THURSDAY." 8. At approximately 7:40 p.m., after Plaintiff's fourth trip to the crab station, a shift manager told Plaintiff he would receive no more crab and that his plate would be the last. 9. No limit on trips, quantity, or time appeared on the entrance sign, at the register, or at the crab station.
+
+Lakeshore Dining Group, which runs 14 Harvest Table locations across Ohio and western Pennsylvania, says there was a limit — it was just posted somewhere else.
+
+> Defendant admits that a placard measuring five inches by seven inches was posted beside the tray return on March 14, 2026. The placard reads: "All-you-can-eat applies to dine-in guests for personal consumption only. Premium items, including snow crab legs, are subject to reasonable portion limits at management's discretion." ... Defendant asserts that the term "all you can eat" is not a promise of unlimited quantities of any item.
+
+Tolliver says that placard sat about 40 feet from the crab station and he never saw it. He's suing for breach of contract and for violating Ohio's Consumer Sales Practices Act, arguing the entrance sign was an offer, his $18.99 was acceptance, and a limit that shows up nowhere near the register or the crab station isn't part of the deal he made. If the real rule contradicts the big sign at the door, he says, that's a deceptive sales practice, not just a bad night at the buffet.
+
+Lakeshore's defense is that "all you can eat" was never a blank check — read together with the placard and ordinary dine-in norms, it reserved the company's right to manage portions on premium items. It also says nobody threw Tolliver out: he was offered the rest of the menu and left on his own.
+
+The two sides don't even agree on how much crab he ate. Lakeshore's kitchen log estimates 3.1 pounds over four trips; Tolliver says it was closer to 2. Lakeshore has referenced security footage of his last trip to the station; neither side has made it public. Tolliver's six church-group tablemates are expected to testify about what the manager, Teresa Bollman, actually said — "last plate," per Tolliver, versus an offer of non-premium items, per Lakeshore.
+
+Judge Marcus Feeney ruled on August 21 that this can't be resolved on the pleadings alone. He let the contract and consumer-practices claims proceed, tossed Tolliver's $7,500 emotional distress claim, and held that whether the placard was reasonably visible to a diner walking to the crab station is a fact question for later — not something he can decide by reading the complaint and the answer.
+
+The refund at issue is $18.99. The consumer-practices statute carries statutory damages and fee-shifting, which is the only reason a $19 dispute is headed to mediation with two law firms attached. Tolliver's attorney, Denise Aldana, has said the case is about how "all you can eat" gets advertised, not about the refund itself. Mediation is due by October 30. If that fails, bench trial is set for January 12, 2027, in front of Judge Feeney, to decide what the sign actually promised.
+````
+
+The judge preferred both learners to the untrained draft on this brief. The edit learner's opening line is the parroted micro-example described above.
 
 # Appendix: prompts
 
