@@ -1,5 +1,5 @@
 ---
-title: learning a writing style from feedback, without telling the model whose it is
+title: Learning a writing style from feedback, without telling the model whose it is
 date: 2026-09-19T00:00:00Z
 ---
 
