@@ -156,7 +156,7 @@ Mixed. More data steadily helps on the lineup test and the stylometric measure, 
 
 The Opus in-context learner never wrote a single bullet list in 30 sections, even though the real text uses them constantly. The 7B adapter picked that up from examples without anyone writing it down as a rule.
 
-But the pairwise judge still preferred the raw untrained Opus draft two times in three. I read the outputs: the voice is right and the prose is looser and more repetitive than Opus's, with run-on sentences. The adapter learned the style. A 7B model just doesn't write as well as Opus, and the judge notices.
+But the pairwise judge still preferred the raw untrained Opus draft two times in three. I read the outputs: the voice is right and the prose is looser and more repetitive than Opus's, with run-on sentences. The adapter learned the style. A 7B model just doesn't write as well as Opus, and the judge notices. The [appendix example](#appendix-a-non-finance-example) ends with one of its rewrites, invented tweet and all.
 
 # What worked and what didn't
 
@@ -232,7 +232,7 @@ And eventually the real version: my own drafts, my own edits, no hidden answer k
 
 # Appendix: a non-finance example
 
-One of the 36 out-of-domain briefs from the [generalization test](#does-it-carry-outside-finance), and what three writers made of it. All three are Claude Sonnet 5 with the same ghostwriter prompt; the only difference is the learned state, which came entirely from finance columns. The brief and everything in it, including the lawsuit, is invented. Each output's headline is shown in bold; the nested quotes are the block quotes it chose to pull from the sources.
+One of the 36 out-of-domain briefs from the [generalization test](#does-it-carry-outside-finance), and what four writers made of it. The first three are Claude Sonnet 5 with the same ghostwriter prompt; the only difference is the learned state, which came entirely from finance columns. The fourth is the [7B LoRA rewriter](#moving-it-into-weights). The brief and everything in it, including the lawsuit, is invented. Each output's headline is shown in bold; the nested quotes are the block quotes it chose to pull from the sources.
 
 The brief:
 
@@ -352,6 +352,34 @@ Critique learner (80 sets of notes; guide only):
 > The refund at issue is $18.99. The consumer-practices statute carries statutory damages and fee-shifting, which is the only reason a $19 dispute is headed to mediation with two law firms attached. Tolliver's attorney, Denise Aldana, has said the case is about how "all you can eat" gets advertised, not about the refund itself. Mediation is due by October 30. If that fails, bench trial is set for January 12, 2027, in front of Judge Feeney, to decide what the sign actually promised.
 
 The judge preferred both learners to the untrained draft on this brief. The edit learner's opening line is the parroted micro-example described above.
+
+Qwen2.5-7B + LoRA (264 pairs), rewriting the untrained draft above. This is the first sample, not a pick of several, and it's doubly out of domain: the adapter was trained to rewrite Opus drafts of finance sections, and here it gets a Sonnet draft about crab legs.
+
+> **Crab leg lawsuit**
+>
+> Gary Tolliver, a 61-year-old retired HVAC tech, sued Lakeshore Dining Group for $7,500 of emotional distress after he went to a Thursday buffet dinner in March and got four trips to the snow crab legs station, but a manager reportedly told him “that his plate would be ‘the last one.’” Now a Richland County judge has allowed the case to move forward.
+>
+> What happened? On March 14, 2026, Tolliver paid $18.99 for a buffet dinner at Harvest Table Buffet in Mansfield, Ohio. The night was “snow crab leg night,” so Tolliver went to the crab station four times. Around 7:40 p.m., he says, a shift manager named Teresa Bollman cut him off:
+>
+> > “At approximately 7:40 p.m., after Plaintiff’s fourth trip to the crab station, a shift manager told Plaintiff he would receive no more crab and that his plate would be the last.”
+>
+> Lakeshore says Bollman did tell him he could get non-premium items, and he left on his own accord. [3]
+>
+> What caused the argument? Tolliver says there was a sign at the entrance saying “ALL YOU CAN EAT — SNOW CRAB LEGS EVERY THURSDAY,” but there was no sign at the register or the crab station saying “no more.” He had been to this restaurant many times since 2023 and never been cut off before, so he assumed he could keep eating until his heart’s content.
+>
+> Lakeshore, meanwhile, points to a placard near the crab station saying that it reserves the right to limit “premium items” like crab legs at “management’s discretion.” But Tolliver says he never saw the placard, because it was 40 feet away from the crab station.
+>
+> What are Tolliver’s legal theories? Well, he argues that the entrance sign constitutes a binding offer, and paying the buffet price of $18.99 constituted acceptance, creating a contract for unlimited crab consumption during the meal. If a limit was imposed — without disclosing it to Tolliver — then that’s not part of the deal. Tolliver also argues that the entrance sign is misleading under Ohio law, if the actual policy differs from what it says at the door.
+>
+> Meanwhile, Lakeshore argues that “all you can eat” never promised unlimited quantities, and that the placard and ordinary buffet norms fill in the meaning of that phrase. It also argues that Tolliver voluntarily left the restaurant, so he can’t complain.
+>
+> What’s going on here? Well, on Aug. 21, Judge Marcus Feeney dismissed Tolliver’s claim for $7,500 in emotional distress, but allowed his contract and consumer practices claims to proceed. The judge said that, for the purposes of deciding which claims should move forward, he had to assume that the sign is an offer, and that paying $18.99 constitutes acceptance of that offer. But the judge also ruled that “what constitutes a contract for all-you-can-eat crab legs and whether the placard was reasonably visible are factual issues that will need to be resolved at trial.” The judge also estimated that Tolliver got 3 pounds of crab during his four trips, though Tolliver says it was closer to 2 pounds.
+>
+> Now the case is set for mediation, due Oct. 30, and a bench trial set Jan. 12, 2027, unless it settles first. The issue is how much money the crab leg buffet cost Tolliver, but the consumer practices claim might allow him to recover more than that, so it’s still headed to trial nine months later. Tolliver’s lawyer, Denise Aldana, once tweeted that “this case is not about the money” and that it’s about how “all you can eat” gets advertised.
+>
+> [3] Def’s Ans. ¶ 12, Tolliver v. Lakeshore Dining Grp. LLC, Case No. 2026CV00152 (Ohio Richland Cty. Aug. 22, 2026).
+
+The voice moves the right way: a flat headline, "What happened? … Well," and shorter, plainer sentences. It also shows why the judge keeps preferring the big model's prose. Checked against the draft it was given, the rewrite invents a tweet by the lawyer, adds a footnote [3] with nothing pointing to it and a made-up case citation, attributes the restaurant's kitchen-log estimate of the crab to the judge, and opens as if the suit were about the $7,500 emotional-distress claim, which is the part that was thrown out. The in-context learners made none of those mistakes; they had the brief and a much stronger model.
 
 # Appendix: prompts
 
