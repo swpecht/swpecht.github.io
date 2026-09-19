@@ -1,0 +1,570 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>learning a writing style from feedback, without telling the model whose it is — Few word do trick</title>
+
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/code.css">
+
+<link rel="alternate" type="application/rss+xml" title="Few word do trick" href="/feed.xml">
+
+</head>
+<body>
+<header>
+<h1 class="site-title"><a href="/">Few word do trick</a></h1>
+<p class="site-tagline">A silly reminder to keep posts short. And a place to keep a diary of projects.</p>
+</header>
+<main>
+
+<article>
+<h1>learning a writing style from feedback, without telling the model whose it is</h1>
+<p class="post-meta">Sep 19, 2026</p>
+<h2 id="what-happened">What happened</h2>
+<p>I wanted to know whether a model can learn a person's preferences continuously, just from the feedback they'd give anyway. Writing style seemed like a good first test, and since I don't have a few hundred of my own edited drafts lying around, I faked the user: the &quot;user&quot; secretly writes like Matt Levine, and the model has to figure that out without ever being told his name.</p>
+<p>The short version: after 20 rounds of feedback, a style judge shown the real <em>Money Stuff</em> section next to the model's version of the same story picked the model's as the real one 47% of the time. 50% would be a coin flip. The same model told outright to &quot;write in the style of Matt Levine's Money Stuff column,&quot; and handed 40 real examples to draw on, managed 17%. With no guidance at all it got 0%.</p>
+<p>That's Claude Opus 5 as the writer. Everything it learned lives outside the model: a 450-word style guide that it rewrites as feedback comes in, plus a small memory of texts the user approved. The system rejects any guide that contains an author or publication name, so the guide has to describe techniques — &quot;headline is a flat topic label in sentence case,&quot; &quot;end abruptly on one flat, deadpan line&quot; — rather than point at a person. That matters because the real use case is a user who isn't famous. There's no name to point at.</p>
+<p>Some of it went the way I expected. Two things didn't. Picking between two drafts, the cheapest feedback a person can give, taught the model nothing at all. And the experiment I designed to show that an unmanaged memory falls apart over time showed the opposite.</p>
+<p>All of the prompts are in the <a href="#appendix-prompts">appendix</a>.</p>
+<h2 id="the-setup">The setup</h2>
+<p><strong>Data.</strong> Two years of <em>Money Stuff</em> from my inbox: 374 columns, 1,717 sections. For each section, a model writes a neutral <em>brief</em> — the facts, the argument in order, the side points, and the quoted sources word for word — in flat note form with none of the voice. The task is then &quot;write this brief up,&quot; and the real section is the hidden answer. Content is held fixed, so style is the only thing that varies. About 330 brief/original pairs ended up in use. The 30 test briefs all come from columns published after the models' training cutoff, so the model can't have seen the answers.</p>
+<p><strong>The learner</strong> is a fixed ghostwriter prompt plus a preference state with two tiers:</p>
+<ul>
+<li>a <strong>guide</strong>: plain-text style rules under a 450-word budget, rewritten (not appended to) as feedback arrives</li>
+<li>a <strong>bank</strong>: final texts the user approved, retrieved two at a time by topic similarity and shown as exemplars</li>
+</ul>
+<p><strong>Feedback</strong> comes in the three forms a real user would give, all simulated from the hidden original:</p>
+<ol>
+<li><strong>Edits.</strong> The user rewrites the draft. (The &quot;rewrite&quot; is the real section.)</li>
+<li><strong>Critiques.</strong> The user sends 3–5 sentences of notes. A critic model sees the draft and the original and writes notes in the first person, without quoting the original or naming anyone.</li>
+<li><strong>Picks.</strong> The user is shown two drafts and picks one. A judge that can see the original does the picking.</li>
+</ol>
+<p><strong>Updates.</strong> After each batch of feedback, a reflection step proposes a new guide. A gate tests it on held-out validation briefs and keeps it only if drafts written under it are better.</p>
+<p><strong>Scoring</strong>, on the 30 test briefs:</p>
+<ul>
+<li><em>Beats untrained</em>: a judge sees the real section and two drafts and says which is closer in style. Win rate against the same model with an empty state.</li>
+<li><em>Beats named-author</em>: same, against the model that was told the name and given 40 real exemplars.</li>
+<li><em>Lineup</em>: the judge gets two real samples by the author, then the real section and the draft, and has to say which is real. I report how often it's fooled.</li>
+<li><em>Stylometric distance</em>: no LLM involved. Seventeen countable habits (sentence length, footnotes, block-quote share, hedges, first person, and so on), z-scored and averaged. Lower is closer. Two different real sections score about 1.08 against each other.</li>
+</ul>
+<p>That last one exists because the same judge model steers the gate and grades the results, which is an obvious way to fool yourself. It earned its keep; more below.</p>
+<h2 id="which-feedback-teaches">Which feedback teaches</h2>
+<p>Claude Sonnet 5 as the writer, 80 feedback events each:</p>
+<table>
+<thead>
+<tr>
+<th>Feedback</th>
+<th>Beats untrained</th>
+<th>Beats named-author</th>
+<th>Fools lineup</th>
+<th>Stylometric distance</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>None (untrained)</td>
+<td>—</td>
+<td>17%</td>
+<td>0%</td>
+<td>1.15</td>
+</tr>
+<tr>
+<td>Told the name + 40 exemplars</td>
+<td>83%</td>
+<td>—</td>
+<td>0%</td>
+<td>1.02</td>
+</tr>
+<tr>
+<td>Edits</td>
+<td><strong>100%</strong></td>
+<td><strong>90%</strong></td>
+<td>3%</td>
+<td><strong>0.82</strong></td>
+</tr>
+<tr>
+<td>Critiques</td>
+<td><strong>100%</strong></td>
+<td>80%</td>
+<td>0%</td>
+<td>0.88</td>
+</tr>
+<tr>
+<td>Picks</td>
+<td>57%</td>
+<td>7%</td>
+<td>0%</td>
+<td>1.37</td>
+</tr>
+</tbody>
+</table>
+<p>Edits and critiques both blow past the model that was told the answer. Critiques getting to 80% is the result I care about most for a product: a few sentences of notes cost the user almost nothing compared with rewriting a draft, and that learner has no exemplars at all — just 450 words of rules.</p>
+<p>Picks taught nothing. 80 of them, and the learner is statistically the untrained model with a worse stylometric score. The two drafts come from the same guide, so they differ too little for the choice to carry information, and the reflection step ends up inventing lessons from noise. Pairwise preference is the standard signal for training reward models, so I assumed it would at least do <em>something</em> here. It probably needs deliberately contrasting candidates. As built, it was a control group I didn't plan on having.</p>
+<h2 id="how-fast">How fast</h2>
+<p>I reran the first ten events with a guide update after every single one. Share of test briefs where the blind learner beats the named-author model:</p>
+<table>
+<thead>
+<tr>
+<th>Feedback events</th>
+<th>0</th>
+<th>1</th>
+<th>2</th>
+<th>3</th>
+<th>5</th>
+<th>10</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Edits</td>
+<td>13%</td>
+<td>37%</td>
+<td><strong>100%</strong></td>
+<td>97%</td>
+<td>93%</td>
+<td>93%</td>
+</tr>
+<tr>
+<td>Critiques</td>
+<td>13%</td>
+<td>0%</td>
+<td>43%</td>
+<td>33%</td>
+<td>53%</td>
+<td>60%</td>
+</tr>
+</tbody>
+</table>
+<p>Two rewrites were enough. Notes are slower and noisier, but get past the named-author model within ten.</p>
+<p>One example of what two edits does. For the same test brief, the untrained model's headline was &quot;The AI Question Every Investor Has to Answer, Whether They Like It or Not.&quot; After learning, it was &quot;Korea.&quot; The real one is &quot;Emerging markets.&quot;</p>
+<h2 id="opus">Opus</h2>
+<p>Same loop, Opus 5 as the writer, 20 events:</p>
+<table>
+<thead>
+<tr>
+<th>Writer</th>
+<th>Beats untrained</th>
+<th>Beats named-author</th>
+<th>Fools lineup</th>
+<th>Stylometric distance</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Untrained Opus</td>
+<td>—</td>
+<td>10%</td>
+<td>0%</td>
+<td>0.93</td>
+</tr>
+<tr>
+<td>Told the name + 40 exemplars</td>
+<td>90%</td>
+<td>—</td>
+<td>17%</td>
+<td>0.81</td>
+</tr>
+<tr>
+<td>Blind learner, 20 critiques</td>
+<td>93%</td>
+<td>63%</td>
+<td>37%</td>
+<td>0.82</td>
+</tr>
+<tr>
+<td>Blind learner, 20 edits</td>
+<td><strong>100%</strong></td>
+<td><strong>83%</strong></td>
+<td><strong>47%</strong></td>
+<td><strong>0.71</strong></td>
+</tr>
+</tbody>
+</table>
+<p>With Sonnet, nothing ever fooled the lineup judge more than 10% of the time, the named-author model included. With Opus the named-author model gets to 17% and the blind learner to 47%.</p>
+<p>Two caveats on that table. Only one of four proposed guide updates was accepted in each Opus run, because Opus kept writing 520-word guides against a 450-word budget and my code threw them away instead of compressing them (fixed since). So the edit learner's climb from 30% at five events to 47% at twenty came from the bank growing, not the guide improving. And the critique learner's 37% is one draw from something between 20% and 37% — its guide didn't change between checkpoints and its score did. With 30 test briefs, every percentage in this post carries about ±9 points of noise.</p>
+<h2 id="deep-dive-the-run-that-unlearned">Deep dive: the run that unlearned</h2>
+<p>The per-event rerun above is the second attempt. The first one failed in an instructive way.</p>
+<p>With updates after every event, the critique learner climbed to about 75% against the untrained model by event three — then fell back to 43% at event ten. The gate had accepted that final guide with 8 wins out of 8 on validation. On the test set it was no better than having learned nothing.</p>
+<p>Two things were going on:</p>
+<ol>
+<li><strong>The reflector rewrote the whole guide around one critique at a time.</strong> A single set of notes on a single section produced rules like &quot;footnotes are rare&quot; and &quot;build the piece as bullets.&quot; The learner's drafts ended up with about five bullet lines per section against 1.7 in the real text.</li>
+<li><strong>The gate only compared each candidate with the guide before it.</strong> The judge's pairwise preferences aren't transitive, so a chain of guides can each beat its predecessor while the absolute quality drifts back to where it started. I re-judged the event-ten drafts head to head against the event-five drafts to check: roughly a tie, 13 of 30, even though the event-five guide had beaten untrained 73% of the time and the event-ten guide couldn't.</li>
+</ol>
+<p>The fixes are both old ideas from continual learning. <strong>Anchor the gate:</strong> a candidate must beat the current guide on at least 6 of 8 validation briefs <em>and</em> score at least as well as the current guide against a fixed set of untrained drafts. <strong>Replay:</strong> show the reflector four past episodes alongside the new one. With both, the curve in the previous section rises and stays up.</p>
+<p>The stylometric measure had flagged this run as worse than untrained at <em>every</em> checkpoint, including the early ones where the LLM judge was still giving it 70–77%. If I'd only had the judge I would have believed the first three checkpoints.</p>
+<p>An earlier version of the gate was worse still: accept on 3 wins out of 5. A guide that's no better than the current one passes that about half the time. The pick learner, which learned nothing, had 5 of 16 updates accepted.</p>
+<h2 id="200-events-i-predicted-this-wrong">200 events: I predicted this wrong</h2>
+<p>The stability experiment was supposed to be the payoff for all that machinery. Two critique learners, 200 events each. One is gated and budgeted as above. The other appends every lesson it thinks of to an ever-growing list, no gate, no consolidation. I expected the second one to bloat and then degrade.</p>
+<table>
+<thead>
+<tr>
+<th>After 200 events</th>
+<th>Guide size</th>
+<th>Beats untrained</th>
+<th>Beats named-author</th>
+<th>Stylometric distance</th>
+<th>Cost per draft</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Gated, budgeted</td>
+<td>489 words</td>
+<td>97%</td>
+<td>83%</td>
+<td>0.85</td>
+<td>$0.020</td>
+</tr>
+<tr>
+<td>Append everything</td>
+<td><strong>18,664 words</strong></td>
+<td>100%</td>
+<td>93%</td>
+<td>0.81</td>
+<td>$0.053, rising</td>
+</tr>
+</tbody>
+</table>
+<p>It bloated. It did not degrade. A long-context model is perfectly happy to write under an 18,000-word, highly repetitive list of lessons. What it costs is money: 2.6 times as much per draft, growing linearly forever.</p>
+<p>Meanwhile the gated learner stayed small and cheap and mostly stopped learning. It accepted 3 of 40 proposed rewrites, at events 5, 15 and 175. The rejected candidates won a median of 2–3 of 8 head-to-heads, so the gate wasn't being too strict — those rewrites really were worse than what they'd replace. Rewriting a good 450-word guide from scratch loses information.</p>
+<p>So the design I built is the wrong one. The obvious fix is to let lessons accumulate freely and put the gate on the periodic <em>compression</em> step instead: learn like the append-everything learner, cost like the gated one.</p>
+<h2 id="does-it-carry-outside-finance">Does it carry outside finance?</h2>
+<p>I froze the learned states and had them write 36 briefs that have nothing to do with finance: a roast chicken headnote, an HR memo about return-to-office tiers, a column about a city council that banned, un-banned and re-banned delivery robots. A judge sees real samples by the author and two drafts and says which sounds more like the same person.</p>
+<table>
+<thead>
+<tr>
+<th>Head to head</th>
+<th>Wins</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Edits vs picks</td>
+<td>31 of 36</td>
+</tr>
+<tr>
+<td>Critiques vs picks</td>
+<td>23 of 36</td>
+</tr>
+<tr>
+<td>Edits vs critiques</td>
+<td>29 of 36</td>
+</tr>
+</tbody>
+</table>
+<p>The pick learner is the control, since it learned nothing in-domain. I had to use it because &quot;beats the untrained model&quot; turned out to be too easy a test out of domain — even the control won that 28 of 36. Any guide that pushes toward a conversational column voice sounds more like a columnist than a default HR memo does. The stylometric measure orders the three learners the same way as the head-to-heads (0.91, 0.99, 1.40, with untrained at 1.24).</p>
+<h2 id="moving-it-into-weights">Moving it into weights</h2>
+<p>The loop saves a (draft, feedback, final text) triple for every event, which is training data. As a first pass I generated untrained Opus drafts for all 264 training briefs and trained a QLoRA adapter on Qwen2.5-7B-Instruct to rewrite an untrained Opus draft into the text the user wanted — a small style layer that sits after the big model. Overnight, on one RTX 4080 Super. The adapter never sees the author's name either.</p>
+<table>
+<thead>
+<tr>
+<th>Writer</th>
+<th>Training pairs</th>
+<th>Beats untrained Opus</th>
+<th>Fools lineup</th>
+<th>Stylometric distance</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Qwen 7B rewriter, no training</td>
+<td>0</td>
+<td>0%</td>
+<td>0%</td>
+<td>1.10</td>
+</tr>
+<tr>
+<td>Qwen 7B rewriter + LoRA</td>
+<td>20</td>
+<td>40%</td>
+<td>0%</td>
+<td>0.96</td>
+</tr>
+<tr>
+<td>Qwen 7B rewriter + LoRA</td>
+<td>80</td>
+<td>33%</td>
+<td>7%</td>
+<td>0.95</td>
+</tr>
+<tr>
+<td>Qwen 7B rewriter + LoRA</td>
+<td>264</td>
+<td>33%</td>
+<td>20%</td>
+<td>0.82</td>
+</tr>
+<tr>
+<td>Qwen 7B writing from the brief + LoRA</td>
+<td>264</td>
+<td>67%</td>
+<td>13%</td>
+<td>1.11</td>
+</tr>
+<tr>
+<td><em>Opus, told the name + 40 exemplars</em></td>
+<td>—</td>
+<td>90%</td>
+<td>17%</td>
+<td>0.81</td>
+</tr>
+<tr>
+<td><em>Opus in-context learner, 20 edits</em></td>
+<td>—</td>
+<td>100%</td>
+<td>47%</td>
+<td>0.71</td>
+</tr>
+</tbody>
+</table>
+<p>Mixed. More data steadily helps on the lineup test and the stylometric measure, and at 264 pairs a 7B model is roughly level with Opus-told-the-name on both. It also copies structural habits <em>better</em> than the in-context learner:</p>
+<table>
+<thead>
+<tr>
+<th>Habit</th>
+<th>Real text</th>
+<th>Untrained Opus</th>
+<th>Opus in-context learner</th>
+<th>Qwen 7B + LoRA</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Headline length (words)</td>
+<td>2.5</td>
+<td>5.2</td>
+<td>2.3</td>
+<td>2.0</td>
+</tr>
+<tr>
+<td>Share of text that is block quote</td>
+<td>0.37</td>
+<td>0.24</td>
+<td>0.34</td>
+<td>0.37</td>
+</tr>
+<tr>
+<td>Bullet lines per 1,000 words</td>
+<td>5.4</td>
+<td>0.0</td>
+<td>0.0</td>
+<td>4.4</td>
+</tr>
+<tr>
+<td>Footnotes per 1,000 words</td>
+<td>1.0</td>
+<td>2.9</td>
+<td>3.1</td>
+<td>0.7</td>
+</tr>
+</tbody>
+</table>
+<p>The Opus in-context learner never wrote a single bullet list in 30 sections, even though the real text uses them constantly. The 7B adapter picked that up from examples without anyone writing it down as a rule.</p>
+<p>But the pairwise judge still preferred the raw untrained Opus draft two times in three. I read the outputs: the voice is right and the prose is looser and more repetitive than Opus's, with run-on sentences. The adapter learned the style. A 7B model just doesn't write as well as Opus, and the judge notices.</p>
+<h2 id="what-worked-and-what-didnt">What worked and what didn't</h2>
+<p>What worked:</p>
+<ul>
+<li>Blind learning from edits or critiques, fast. Two rewrites or about ten sets of notes to pass a model that was told the answer.</li>
+<li>Banning names from the guide. The rules it wrote are specific and operational, and they transfer to recipes and HR memos.</li>
+<li>Holding content fixed with extracted briefs. Hundreds of tasks for about 4¢ each, and style is the only variable.</li>
+<li>A metric with no LLM in it. It's coarse, but it caught a failure the LLM judge missed.</li>
+<li>Reading outputs end to end. That's how the cleanup step's worst bug turned up: it missed a five-paragraph Bloomberg News quotation introduced only by &quot;Sure sure sure:&quot;, which would have left wire-service prose in the &quot;user's&quot; text.</li>
+</ul>
+<p>What didn't:</p>
+<ul>
+<li>Pairwise picks between similar drafts. Nothing, after 80.</li>
+<li>My gate, three times: too lenient (3 of 5), then not anchored, then pointed at the wrong step entirely.</li>
+<li>My prediction about unmanaged memory. It gets expensive, not worse.</li>
+<li>The 450-word budget as a hard reject. It cost the Opus runs most of their updates.</li>
+<li>Haiku for cleanup: slow with thinking on, sloppy with it off. Sonnet with thinking on was both more accurate and no more expensive, because it stops rambling in its output.</li>
+</ul>
+<h2 id="what-this-doesnt-show">What this doesn't show</h2>
+<ul>
+<li>The user is simulated, and its &quot;edits&quot; are the real published text. A real person's edits would be partial, inconsistent and noisier.</li>
+<li>The judges are Claude models, and the same family steers the gate. The stylometric measure agrees on direction everywhere but is coarse.</li>
+<li>30 test briefs. About ±9 points on everything.</li>
+<li>One author. A distinctive one, which probably makes this easier than learning my preferences would be.</li>
+<li>The lineup judge is a model. I built a six-pair &quot;which one is real?&quot; quiz for humans and haven't run it on anyone yet.</li>
+</ul>
+<h2 id="whats-next">What's next</h2>
+<p>The hybrid learner: append lessons freely, gate the compression. That falls straight out of the 200-event result and is the first thing I'll build.</p>
+<p>Then the human quiz, a judge from a different model family, and picks with deliberately contrasting candidates to see if that signal can be rescued.</p>
+<p>On the weights side, a bigger base model is the obvious move, and the loop already saves a draft-versus-final pair for every event, which is what DPO wants as input. The adapter-for-structure, Opus-for-prose split is also worth a try given how well the 7B model copied formatting habits.</p>
+<p>And eventually the real version: my own drafts, my own edits, no hidden answer key.</p>
+<h2 id="appendix-technical-details">Appendix: technical details</h2>
+<p><strong>Models.</strong> Writer: Claude Sonnet 5 for the feedback-type, speed, stability and generalization experiments; Claude Opus 5 for the headline run. Judge, critic, brief extraction and cleanup: Sonnet 5. Reflection uses the writer model with extended thinking on. Every call is a bare model call: custom system prompt, no tools, and nothing else in context that could leak the author's name. 15,489 calls in total — 14,748 Sonnet, 736 Opus — about $437 at API prices.</p>
+<p><strong>Pipeline.</strong></p>
+<ol>
+<li><em>Parse.</em> 465 newsletter emails → 374 columns → 1,717 sections with footnotes attached. &quot;Things happen&quot; and podcast sections dropped. 1,325 sections fall in the 300–1,500-word range used as tasks.</li>
+<li><em>Clean.</em> The export had flattened block quotes into ordinary paragraphs and fused words around links (&quot;now calledExpana&quot;). A model only <em>points at</em> problems — which paragraph ids are block quotes, which tokens are fused — and code applies and validates the fixes. No model ever paraphrases the gold text.</li>
+<li><em>Brief.</em> A model extracts topic, background, points in order, and side points (footnote content goes here without saying it was a footnote), in note form. Quoted sources are attached verbatim. Briefs mentioning the author or publication are rejected by a regex lint.</li>
+<li><em>Split by date.</em> Train through April 2026, validate May–June, test July–August.</li>
+</ol>
+<p><strong>Learner settings.</strong> Guide budget 450 words (candidates over 495 are compressed, then rejected if still over). Two exemplars retrieved per draft by TF-IDF cosine on the brief's topic and background. Default batch of 5 events per update; the speed experiment uses 1. Replay: 4 past episodes per reflection. Gate: 8 validation briefs on rotation, accept if the candidate wins ≥ 6 head-to-heads and its win count against fixed untrained drafts is at least the current guide's. Judge position is randomized on every call.</p>
+<p><strong>Stylometric features</strong> (17): headline length; sentence-length mean and standard deviation; share of sentences ≤ 6 words; words per paragraph; block-quote share of all words; and per-1,000-word rates of bullet lines, footnotes, question marks, parentheses, dashes, colons, inline quotations, first person, second person, hedges (&quot;sort of,&quot; &quot;I guess,&quot; &quot;you know,&quot; …) and contractions. Each feature's gap is divided by that feature's standard deviation across real sections, then averaged.</p>
+<p><strong>LoRA.</strong> Qwen2.5-7B-Instruct, 4-bit NF4 with double quantization, bf16 compute. LoRA r=16, α=32, dropout 0.05 on all attention and MLP projections (40M trainable parameters). 3 epochs, lr 1e-4 cosine with 5% warmup, batch 1 × 8 accumulation, max 4,096 tokens, loss on the target text only. 264 pairs trained in 32 minutes on a 16 GB RTX 4080 Super. One gotcha: Qwen's vocabulary is 152k tokens, so logits for a full 4k sequence don't fit in 16 GB. Compute the loss on target positions only, in checkpointed chunks. Generation: temperature 0.7, top-p 0.9, repetition penalty 1.05.</p>
+<p><strong>An example critique.</strong> What the simulated user sends back in the critique condition:</p>
+<blockquote>
+<p>The voice is a bit too polished/columnist-y for this — I want more of that plain, almost thinking-out-loud quality, like &quot;Will he win? I don't know&quot; instead of dressing it up with lines like &quot;nobody does, which is the entire point of the exercise.&quot; Cut the little flourishes (the &quot;not a comfortable sentence to type&quot; aside, the footnote joke about the CEO tweet) — they're fun but they're not really how I talk, and they make it feel more written-at-you than thought-through-with-you. Let the block quotes breathe more; pull in the extra Axios and DealBook lines (the Eissenstat quote, the Feldman quote) instead of trimming them down, since the sourcing is half the piece. Keep the math footnote but make it plainer — just state the two conditional probabilities cleanly rather than narrating them. And drop &quot;the good part&quot; framing — I'd rather just move to the next fact than editorialize about how interesting it is.</p>
+</blockquote>
+<p><strong>A learned guide.</strong> The Opus edit learner's guide in full. The short quoted fragments are its own micro-examples:</p>
+<pre class="chroma"><code><span class="line"><span class="cl">- **Headline is a flat topic label in sentence case:** e.g. &#34;Meal allowance&#34;, &#34;Bitcoin custody&#34;, or just a ticker. No clever titles, puns, colons or title case.
+</span></span><span class="line"><span class="cl">- **Open with the facts, not a riff:** name the source and state the basic facts, or pose the plain question, in the first sentence (&#34;Here&#39;s a weird little trade, first reported by X of Y.&#34;). Never open with a staged scene or an invented problem (&#34;Here is a thing about dollars…&#34;).
+</span></span><span class="line"><span class="cl">- **Stage the argument plainly:** give the background, then the normal expectation (&#34;Ideally you would (1)… (2)… (3)…&#34;), then the weird thing that actually happened. Ask the reader&#39;s question and answer it casually: &#34;Why would the investors do this? Well…&#34; Label approaches loosely (&#34;what you might call legal realism&#34;).
+</span></span><span class="line"><span class="cl">- **Sound like talking, not polished prose:** use hedges and admitted uncertainty (&#34;I have no idea?&#34;, &#34;I suppose&#34;, &#34;seems sort of plausible&#34;). Use ellipses for comic pauses (&#34;It … didn&#39;t work, is the short summary&#34;), plus &#34;um,&#34; &#34;like,&#34; and taking back a joke (&#34;I am just kidding. I mean, I&#39;m not…&#34;). Put made-up quotes in ordinary people&#39;s mouths (&#34;I am a simple widget importer…&#34;).
+</span></span><span class="line"><span class="cl">- **Cut literary polish:** no aphorisms, no neat groups of three, no clever inverted phrases (&#34;off-grid money, laboriously re-gridded&#34;), no &#34;Which brings us to…&#34;, no &#34;I want to be clear.&#34; Use small parenthetical asides instead, e.g. &#34;(Coinbase?)&#34;.
+</span></span><span class="line"><span class="cl">- **Quote sources at length:** use several block-quote paragraphs, keeping context the reader could have done without. Introduce them plainly (&#34;Bloomberg&#39;s X reports:&#34;, &#34;Anyway here&#39;s a Bloomberg story about…&#34;, &#34;From the prospectus:&#34;). React afterward in a short, unguarded line: &#34;Yeah the article is about…&#34;, &#34;Imagine working at headquarters and thinking this!&#34;
+</span></span><span class="line"><span class="cl">- **End abruptly on one flat, deadpan line:** often a standalone fact or an obvious-sounding verdict (&#34;Yes the highest form of crypto wealth is obviously turning it into a stock.&#34;). No wrap-up paragraph, no moral, no &#34;it is also quite funny.&#34;
+</span></span><span class="line"><span class="cl">- **Footnotes hold the numbers and asides:** conditional-probability arithmetic, checks against the data (&#34;Just for fun, I looked at…&#34;), disclaimers (&#34;Not legal advice!&#34;), side quotes and minor caveats. Keep them short, sometimes one line. Keep the main text readable as a story.
+</span></span><span class="line"><span class="cl">- **No subheadings, bold or emphasis italics in the body:** use a bulleted list for a sequence of timestamped events. Put multi-part reasons inline as &#34;(1)… (2)…&#34;.
+</span></span><span class="line"><span class="cl">- **Names:** use the full formal company name on first mention (Meta Platforms Inc., BlackRock Inc.) and the full title and name for officials (&#34;President Donald Trump&#34;). Mention earlier columns casually (&#34;we have discussed around here&#34;).
+</span></span><span class="line"><span class="cl">- **Paragraphs:** medium length, each moving one step. Use plain connectors (&#34;Now,&#34;, &#34;But&#34;, &#34;Still&#34;, &#34;Anyway&#34;) rather than rhetorical transitions.
+</span></span></code></pre><h2 id="appendix-prompts">Appendix: prompts</h2>
+<p>The ghostwriter's fixed system prompt. The learned guide and retrieved exemplars are appended under the two headers that follow it.</p>
+<pre class="chroma"><code><span class="line"><span class="cl">You are a ghostwriter. You will be given a BRIEF for one section of a client&#39;s
+</span></span><span class="line"><span class="cl">newsletter column, and you write the section for them.
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">Format: Markdown. Begin with a `## ` heading. You have verbatim SOURCE passages in hand;
+</span></span><span class="line"><span class="cl">quote from them as block quotes (lines starting with `&gt; `) where useful, trimming with
+</span></span><span class="line"><span class="cl">ellipses if you like. Footnotes are allowed: put markers like [1] in the text and list the
+</span></span><span class="line"><span class="cl">notes at the very end, one per paragraph, each starting with its marker. Cover the substance
+</span></span><span class="line"><span class="cl">of the brief. Output only the section itself.
+</span></span><span class="line"><span class="cl">The client&#39;s style preferences, learned from their past feedback. Follow them closely:
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">&lt;guide&gt;
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">Final versions the client approved for earlier briefs. They show the voice to match; do not reuse their content:
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">&lt;exemplar 1&gt;
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">---
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">&lt;exemplar 2&gt;
+</span></span></code></pre><p>The named-author baseline appends one more line to the same prompt, and gets 40 real sections in its bank from the start:</p>
+<pre class="chroma"><code><span class="line"><span class="cl">Write in the style of Matt Levine&#39;s Money Stuff column.
+</span></span></code></pre><p>Reflection — turns a batch of episodes into a new guide:</p>
+<pre class="chroma"><code><span class="line"><span class="cl">You maintain a STYLE GUIDE that a ghostwriter follows when drafting for one particular
+</span></span><span class="line"><span class="cl">client. You are given the current guide and a batch of recent episodes: what the ghostwriter
+</span></span><span class="line"><span class="cl">drafted, and how the client responded (their own rewrite, their choice between two drafts, or
+</span></span><span class="line"><span class="cl">their notes). Work out what the client&#39;s responses reveal about their style preferences and
+</span></span><span class="line"><span class="cl">produce an improved guide.
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">Requirements for the guide:
+</span></span><span class="line"><span class="cl">- Only durable STYLE preferences: voice and persona, tone, humor, sentence rhythm, openings and
+</span></span><span class="line"><span class="cl">  endings, how arguments are staged, how sources are introduced and reacted to, paragraphing,
+</span></span><span class="line"><span class="cl">  headings, lists, footnotes, formatting. Nothing about the subject matter of particular briefs.
+</span></span><span class="line"><span class="cl">- Concrete and operational. &#34;Be conversational&#34; is useless; say what to do and what to avoid, with
+</span></span><span class="line"><span class="cl">  a tiny invented illustration when it helps. Prefer rules that would have fixed several episodes
+</span></span><span class="line"><span class="cl">  over rules that explain one.
+</span></span><span class="line"><span class="cl">- Keep what the evidence still supports, fix or delete what it contradicts, merge overlaps. Put
+</span></span><span class="line"><span class="cl">  the highest-impact rules first.
+</span></span><span class="line"><span class="cl">- At most 450 words. Plain Markdown bullets.
+</span></span><span class="line"><span class="cl">- Never name or guess who the client is, never name their publication, and never describe the
+</span></span><span class="line"><span class="cl">  style by comparison to any named writer. Describe techniques only.
+</span></span></code></pre><p>Guide compression, when a candidate runs over budget:</p>
+<pre class="chroma"><code><span class="line"><span class="cl">Shorten this style guide to at most 450 words. Keep every distinct rule
+</span></span><span class="line"><span class="cl">that matters, keep the most useful micro-examples, merge overlaps, cut the least important rules
+</span></span><span class="line"><span class="cl">last-first. Same Markdown bullet format. Output only the guide.
+</span></span></code></pre><p>The simulated user's critic:</p>
+<pre class="chroma"><code><span class="line"><span class="cl">You are role-playing a busy newsletter writer reviewing a ghostwriter&#39;s DRAFT. You are
+</span></span><span class="line"><span class="cl">given HOW YOU WOULD HAVE WRITTEN IT yourself. Write the notes you would send back: 3 to 5
+</span></span><span class="line"><span class="cl">sentences, first person, informal, about STYLE only (voice, tone, humor, structure, rhythm,
+</span></span><span class="line"><span class="cl">formatting, how sources are handled), focusing on the biggest gaps between the draft and your
+</span></span><span class="line"><span class="cl">version. Be specific about what you want, as a person would (&#34;I&#39;d never open like that; just
+</span></span><span class="line"><span class="cl">start with the thing that happened&#34;), but:
+</span></span><span class="line"><span class="cl">- do not quote more than a few words from your own version, and never paste passages from it;
+</span></span><span class="line"><span class="cl">- do not mention that a reference version exists;
+</span></span><span class="line"><span class="cl">- never name yourself, your publication, or compare yourself to any writer.
+</span></span><span class="line"><span class="cl">Output only the notes.
+</span></span></code></pre><p>Pairwise style judge (used for the gate, for simulated picks, and for &quot;beats untrained&quot; / &quot;beats named-author&quot;):</p>
+<pre class="chroma"><code><span class="line"><span class="cl">You compare WRITING STYLE. You get a REFERENCE text and two candidates, A and B,
+</span></span><span class="line"><span class="cl">all written from the same brief. Decide which candidate is closer to the reference in style:
+</span></span><span class="line"><span class="cl">voice and persona, tone and humor, sentence rhythm, how the argument is staged, how sources are
+</span></span><span class="line"><span class="cl">introduced and reacted to, paragraphing, formatting habits such as headings, lists and footnotes.
+</span></span><span class="line"><span class="cl">Ignore which facts each covers, factual accuracy, and length unless wildly different. You must
+</span></span><span class="line"><span class="cl">pick one.
+</span></span></code></pre><p>Lineup judge:</p>
+<pre class="chroma"><code><span class="line"><span class="cl">You are an authorship attribution expert. You get REFERENCE samples by one author,
+</span></span><span class="line"><span class="cl">then two texts, A and B, on the same subject. Exactly one of A and B was written by the author of
+</span></span><span class="line"><span class="cl">the references; the other is an imitation. Decide which is the real one, judging by style (voice,
+</span></span><span class="line"><span class="cl">humor, rhythm, structure, habits), not by subject matter. You must pick one.
+</span></span></code></pre><p>Out-of-domain judge:</p>
+<pre class="chroma"><code><span class="line"><span class="cl">You are an authorship attribution expert. You get REFERENCE samples by one author, who
+</span></span><span class="line"><span class="cl">writes about finance. Then two texts, A and B, on some unrelated subject. Decide which of A and B
+</span></span><span class="line"><span class="cl">sounds more like it was written by the author of the references, judging by transferable style
+</span></span><span class="line"><span class="cl">(voice, humor, rhythm, how arguments are staged, how sources are handled, formatting habits), not
+</span></span><span class="line"><span class="cl">by subject matter. You must pick one.
+</span></span></code></pre><p>The append-everything learner's reflection prompt:</p>
+<pre class="chroma"><code><span class="line"><span class="cl">You maintain a list of STYLE lessons a ghostwriter follows when drafting for one client.
+</span></span><span class="line"><span class="cl">Given recent episodes (the ghostwriter&#39;s draft and the client&#39;s response), output new lessons
+</span></span><span class="line"><span class="cl">about the client&#39;s style preferences to add to the list. Each lesson is one concrete sentence.
+</span></span><span class="line"><span class="cl">Never name or guess who the client is or compare them to a named writer.
+</span></span></code></pre><p>Brief extraction:</p>
+<pre class="chroma"><code><span class="line"><span class="cl">You turn a finished opinion-column section into a neutral WRITING BRIEF: the
+</span></span><span class="line"><span class="cl">material a writer would be handed before writing it. Another writer will draft a new
+</span></span><span class="line"><span class="cl">piece from your brief alone, and their draft will be compared with the original to study
+</span></span><span class="line"><span class="cl">writing style. So the brief must carry ALL of the substance and NONE of the voice.
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">Rules:
+</span></span><span class="line"><span class="cl">- Plain, flat, declarative language. No jokes, irony, rhetorical questions, hedges,
+</span></span><span class="line"><span class="cl">  catchphrases, or distinctive wording from the original. Paraphrase everything;
+</span></span><span class="line"><span class="cl">  never reuse a memorable phrase, coinage, or the section&#39;s headline.
+</span></span><span class="line"><span class="cl">- Keep every fact, number, name, mechanism and every analytical claim or opinion the
+</span></span><span class="line"><span class="cl">  author advances, including the ones delivered as jokes (state the underlying claim
+</span></span><span class="line"><span class="cl">  flatly). Preserve the order in which the argument unfolds.
+</span></span><span class="line"><span class="cl">- `side_points`: tangents, caveats, and asides (including everything from footnotes),
+</span></span><span class="line"><span class="cl">  stated flatly. Do not say they were footnotes.
+</span></span><span class="line"><span class="cl">- Passages marked [SOURCE n] are verbatim quotations the writer will have in hand. NEVER
+</span></span><span class="line"><span class="cl">  restate or summarize what a SOURCE says (the writer can read it); a point that rests on
+</span></span><span class="line"><span class="cl">  one should just say what it is used for, e.g. &#34;SOURCE 2: example of the coordination&#34;.
+</span></span><span class="line"><span class="cl">  `source_labels` must have exactly one entry per SOURCE number, in order, each a short
+</span></span><span class="line"><span class="cl">  description of what it is (e.g. &#34;DOJ press release&#34;, &#34;Bloomberg News report&#34;,
+</span></span><span class="line"><span class="cl">  &#34;excerpt from the complaint&#34;).
+</span></span><span class="line"><span class="cl">- When the author refers to their own earlier writing (&#34;we talked yesterday about X&#34;,
+</span></span><span class="line"><span class="cl">  &#34;I once wrote...&#34;), convert it to background: just state X. Never mention the author,
+</span></span><span class="line"><span class="cl">  the newsletter, or its publisher by name.
+</span></span><span class="line"><span class="cl">- The author&#39;s first-person experience (e.g. former jobs) may be kept only when the
+</span></span><span class="line"><span class="cl">  argument depends on it, phrased as &#34;the writer has worked as ...&#34;.
+</span></span><span class="line"><span class="cl">- Do not describe tone, structure, or style anywhere, and do not narrate the author&#39;s
+</span></span><span class="line"><span class="cl">  rhetorical moves or reactions (&#34;the author could stop here&#34;, &#34;the author finds this
+</span></span><span class="line"><span class="cl">  delightful&#34;, &#34;the author notes&#34;). State the underlying claim as a claim; if a remark
+</span></span><span class="line"><span class="cl">  has no substantive claim under it, drop it.
+</span></span><span class="line"><span class="cl">- Write in terse note form (fragments, no connective prose), not polished sentences.
+</span></span><span class="line"><span class="cl">  The input begins with a WORD BUDGET for the whole brief; stay under it. Merge related
+</span></span><span class="line"><span class="cl">  facts into one item rather than listing each separately.
+</span></span></code></pre><p>Block-quote and spacing cleanup:</p>
+<pre class="chroma"><code><span class="line"><span class="cl">You repair a newsletter section that was badly exported to plain text.
+</span></span><span class="line"><span class="cl">You are given paragraphs with ids (P1.. for body, F1.. for footnotes). Report two things:
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">1. quoted: ids of paragraphs that are BLOCK QUOTES, i.e. the whole paragraph is text
+</span></span><span class="line"><span class="cl">   copied from somewhere else (a news article, court filing, press release, paper,
+</span></span><span class="line"><span class="cl">   reader email, chat transcript), not the columnist&#39;s own words. Typical cues: the
+</span></span><span class="line"><span class="cl">   previous paragraph ends with a colon or introduces a source; legal/journalistic
+</span></span><span class="line"><span class="cl">   register; ellipses or [bracketed] editorial insertions; third-person attribution
+</span></span><span class="line"><span class="cl">   like &#34;said in a statement&#34;. A block quote often runs for several consecutive
+</span></span><span class="line"><span class="cl">   paragraphs, and may be introduced by nothing more than a short remark. A paragraph in the columnist&#39;s own voice that merely
+</span></span><span class="line"><span class="cl">   contains a short inline quotation in quotation marks is NOT a block quote, and
+</span></span><span class="line"><span class="cl">   neither is a paragraph that mixes a quotation with the columnist&#39;s own sentences:
+</span></span><span class="line"><span class="cl">   when in doubt, it is not a block quote.
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">2. spacing_fixes: tokens where a space went missing and two words are fused, e.g.
+</span></span><span class="line"><span class="cl">   {&#34;wrong&#34;: &#34;calledExpana&#34;, &#34;right&#34;: &#34;called Expana&#34;}, {&#34;wrong&#34;: &#34;bysuing&#34;, &#34;right&#34;: &#34;by suing&#34;}.
+</span></span><span class="line"><span class="cl">   `wrong` must be copied exactly from the text and contain no spaces; `right` must be
+</span></span><span class="line"><span class="cl">   the same characters with only space(s) inserted. Do not report anything else
+</span></span><span class="line"><span class="cl">   (no typo fixes, no hyphenation opinions, no legitimate compounds or brand names).
+</span></span></code></pre><p>LoRA rewriter system prompt:</p>
+<pre class="chroma"><code><span class="line"><span class="cl">You are the client&#39;s editor. Rewrite the ghostwriter&#39;s DRAFT of a newsletter section the way the client would have written it themselves. Keep the substance and the quoted sources. Markdown: a `## ` heading, `&gt; ` block quotes, footnotes as [n] markers listed at the end. Output only the rewritten section.
+</span></span></code></pre>
+</article>
+<p class="post-nav"><a href="/">← all posts</a></p>
+
+</main>
+<footer>
+<p><a href="/feed.xml">RSS</a> · <a href="/trajectories/">trajectories</a> · &copy; 2026</p>
+</footer>
+
+</body>
+</html>
+
