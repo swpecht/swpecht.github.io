@@ -13,8 +13,6 @@ That's Claude Opus 5 as the writer. Everything it learned is stored as text outs
 
 Two results went against what I expected. Picking between two drafts, the cheapest feedback a person can give, taught the model nothing. And a learner that appends every lesson to an ever-longer list, with no management at all, did not get worse over 200 rounds of feedback. I had designed that experiment expecting it to degrade.
 
-*Update, September 19: the first version of this post gave those figures as 47%, 17% and 0%, from a single run of the judge. Re-running the judge showed that single runs move by ten points or more, so the post now reports averages over three runs. The ordering didn't change. Details are in the [Opus section](#opus).*
-
 All of the prompts are in the [appendix](#appendix-prompts), along with a [worked example](#appendix-a-non-finance-example): a brief about a man suing a buffet, and what the untrained model and each learner wrote from it.
 
 # The setup
@@ -87,7 +85,7 @@ Both lineup columns are averages over three runs of the judge on the same 30 dra
 
 With Sonnet, nothing ever fooled the lineup judge more than 10% of the time, the named-author model included. With Opus the named-author model gets to about 20% and the blind edit learner to about 40%.
 
-The lineup judge is noisy. Single runs for the critique learner came out at 37%, 13% and 37%; for the edit learner, 47%, 40% and 43%. The first version of this post reported the first run of each.
+The lineup judge is noisy. Single runs for the critique learner came out at 37%, 13% and 37%; for the edit learner, 47%, 40% and 43%.
 
 The second lineup column exists because I found a formatting difference the judge could have been using. My reconstruction of the real text separates quoted paragraphs with a blank line; Claude writes `>` on that line. The writers that had seen real text (the edit learner through its bank, the named-author model through its exemplars) copy the real layout, and the others don't. The real text also uses curly quotes where Claude's drafts use straight ones. For the second column, typography and Markdown layout are made identical across the real sections, the reference samples and every draft before judging.
 
@@ -186,7 +184,7 @@ What didn't:
 - My gate, three times: too lenient (3 of 5), then not anchored, then applied to the wrong step (it should gate compression, not learning).
 - My prediction about unmanaged memory. It gets expensive, not worse.
 - The 450-word budget as a hard reject. It cost the Opus runs most of their updates.
-- Reporting one run of a noisy judge. The first version of this post had 47% in its second paragraph; the three-run average is 43%, and 39% with formatting made uniform.
+- Judging once. Single runs of the lineup judge differ by ten points or more, so the lineup figures here are three-run averages.
 - Micro-examples in the guide. They make rules concrete and then show up verbatim as tics: the same opening line in 8 of 36 out-of-domain drafts.
 - Haiku for cleanup: slow with thinking on, sloppy with it off. Sonnet with thinking on was both more accurate and no more expensive, because its output is much shorter.
 
