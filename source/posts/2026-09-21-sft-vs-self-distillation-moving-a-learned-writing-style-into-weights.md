@@ -15,7 +15,7 @@ I compared two ways of doing it on [Tinker](https://thinkingmachines.ai/tinker/)
 The results, in the order they matter:
 
 - **SFT learns the style much better.** Head to head, a judge preferred the SFT model's text to the SDFT model's in 174 of 180 comparisons on Qwen3-8B and 175 of 180 on Inkling-Small. After 264 examples the SFT models are about as close to the real text, by a stylometric measure, as the best in-context learner from the last post.
-- **SFT also damages the model, and SDFT doesn't.** On 20 harder general prompts (arithmetic, counting letters, reversing a word), Inkling-Small went from 100% to 70% after SFT and stayed at 100% after every SDFT variant. SFT also produced a few broken outputs with raw chat-template tokens in them; SDFT produced none. My first retention check was too easy to see any of this, and I initially concluded the opposite.
+- **SFT also damages the model, and SDFT doesn't.** On 20 harder general prompts (arithmetic, counting letters, reversing a word), Inkling-Small went from 100% to 70% after SFT and stayed at 100% after every SDFT variant. SFT also produced a few broken outputs with raw chat-template tokens in them; SDFT produced none.
 - **SDFT is limited by its teacher, and a better teacher helps.** Showing the teacher one real section is a weak signal. Showing it the learned style guide and two more real sections as well moved SDFT from 22 wins in 30 against the untrained model to 28 in 30 on Inkling-Small. It still loses to SFT.
 - **Training in rounds works.** I split the data into three chunks by date and trained on one at a time, each round starting from the last. Both methods kept improving, SFT ended where training on everything at once ends, and the damage from SFT did not grow from round to round.
 
@@ -38,7 +38,7 @@ The whole thing cost about $40 on Tinker. Prompts and settings are in the [appen
 - *Retention.* 40 short prompts that have nothing to do with the style task, each with a code check. 20 easy ones (three bullet points, valid JSON, 17 × 23, translate "good morning") and 20 harder ones (a two-step word problem, count the r's in "strawberry refrigerator", write "consolidation" backwards, an acrostic, a sentence with no letter e). I also checked whether the newsletter format leaked into these answers. It never did.
 - *Faithfulness.* A judge lists factual claims in the draft that the brief doesn't support.
 
-# First pass: SFT wins, and I draw the wrong conclusion
+# Style: SFT wins
 
 | Model | Variant | Stylometric distance | Judged closer than untrained | Easy retention |
 |---|---|---|---|---|
@@ -55,13 +55,11 @@ For one test brief the real headline is "Emerging markets". The untrained Qwen w
 
 SDFT did move the style. It just moved it much less. The reason is the teacher: SDFT can only teach what the model already does when it's shown the demonstration, and one real section in the context of an 8B model does not make it write like the author. The in-context learners in the last post needed a distilled guide, several exemplars and a much stronger model to get there.
 
-On retention, SFT looked fine. Qwen passed all 20 prompts after SFT. Inkling-Small failed two (it said 91 is prime, and wrote two Spanish sentences where one was asked). I wrote this up as: SFT wins, and the forgetting SDFT is meant to prevent barely shows up at this scale.
+On the easy retention prompts every model scores 90–100%, so they don't separate the methods. Inkling-Small after SFT failed two: it said 91 is prime, and wrote two Spanish sentences where one was asked.
 
-That was wrong, and the reason is that every model passed 90–100% of my retention prompts, so they couldn't show much of anything.
+# Retention: SDFT wins
 
-# A harder retention check
-
-I added the 20 harder prompts and ran every model again.
+The 20 harder prompts do separate the methods.
 
 | Inkling-Small | Easy 20 | Hard 20 | Broken outputs, of 30 test drafts |
 |---|---|---|---|
@@ -76,7 +74,7 @@ The SFT model fails the character-level and arithmetic items: the average of fiv
 
 The broken outputs are drafts that contain raw chat-template tokens or run on for thousands of words. They only appeared in SFT models. SDFT trains on the model's own samples, which keeps it inside its normal output distribution.
 
-Qwen3-8B doesn't show this cleanly, because with thinking disabled the untrained model only passes 35% of the harder prompts, and everything else lands between 20% and 45% with no pattern. On the easy prompts there is a small effect in the same direction: the three-round SFT models pass 80–85%, against 95% untrained and 100% for every SDFT model. The harder set is the right difficulty for Inkling-Small and too hard for a non-thinking 8B. If I ran this again I'd calibrate the retention set to each base model first.
+Qwen3-8B doesn't show this cleanly, because with thinking disabled the untrained model only passes 35% of the harder prompts, and everything else lands between 20% and 45% with no pattern. On the easy prompts there is a small effect in the same direction: the three-round SFT models pass 80–85%, against 95% untrained and 100% for every SDFT model. The harder set is the right difficulty for Inkling-Small and too hard for a non-thinking 8B.
 
 # A better teacher
 
@@ -117,10 +115,8 @@ What worked:
 
 What didn't:
 
-- My first retention check. Twenty prompts that every model passes measure nothing, and I drew a conclusion from them anyway.
-- The harder retention set on Qwen3-8B. Too hard for the base model, so it shows nothing there either. One set does not fit two models.
+- The harder retention set on Qwen3-8B. Too hard for the base model, so it shows nothing there. One set does not fit two models.
 - SDFT as a way to get the style. Even with the rich teacher it gets a bit more than half the stylometric movement of SFT and loses almost every direct comparison.
-- The recipe on Inkling out of the box. It needed a one-line patch.
 
 # What this doesn't show
 
