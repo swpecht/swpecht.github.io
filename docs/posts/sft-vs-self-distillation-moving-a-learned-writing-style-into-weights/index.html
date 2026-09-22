@@ -32,11 +32,11 @@
 <p>The results, in the order they matter:</p>
 <ul>
 <li><strong>SFT learns the style much better.</strong> Head to head, a judge preferred the SFT model's text to the SDFT model's in 174 of 180 comparisons on Qwen3-8B and 175 of 180 on Inkling-Small. After 264 examples the SFT models are about as close to the real text, by a stylometric measure, as the best in-context learner from the last post.</li>
-<li><strong>SFT also damages the model, and SDFT doesn't.</strong> On 20 harder general prompts (arithmetic, counting letters, reversing a word), Inkling-Small went from 100% to 70% after SFT and stayed at 100% after every SDFT variant. SFT also produced a few broken outputs with raw chat-template tokens in them; SDFT produced none.</li>
+<li><strong>SFT also damages the model, and SDFT doesn't.</strong> On 20 general prompts (arithmetic, counting letters, reversing a word), Inkling-Small went from 100% to 70% after SFT and stayed at 100% after every SDFT variant. SFT also produced a few broken outputs with raw chat-template tokens in them; SDFT produced none.</li>
 <li><strong>SDFT is limited by its teacher, and a better teacher helps.</strong> Showing the teacher one real section is a weak signal. Showing it the learned style guide and two more real sections as well moved SDFT from 22 wins in 30 against the untrained model to 28 in 30 on Inkling-Small. It still loses to SFT.</li>
 <li><strong>Training in rounds works.</strong> I split the data into three chunks by date and trained on one at a time, each round starting from the last. Both methods kept improving, SFT ended where training on everything at once ends, and the damage from SFT did not grow from round to round.</li>
 </ul>
-<p>So it is a trade-off, and now I have numbers for it. SFT gives the full style and costs 20–30 points on harder general prompts. SDFT with a rich teacher gives a bit more than half of the stylistic movement and costs nothing I could measure.</p>
+<p>So it is a trade-off, and now I have numbers for it. SFT gives the full style and costs 20–30 points on general prompts. SDFT with a rich teacher gives a bit more than half of the stylistic movement and costs nothing I could measure.</p>
 <p>The whole thing cost about $40 on Tinker. Prompts and settings are in the <a href="#appendix-technical-details">appendix</a>.</p>
 <h2 id="setup">Setup</h2>
 <p><strong>Data.</strong> The same as last time. Two years of a finance columnist's newsletter, split into sections. For each section a model wrote a neutral brief (facts, argument in order, quoted sources verbatim), so the task is &quot;write this brief up&quot; and the real section is the target. 264 training pairs, and the same 30 test briefs from columns published after the models' training cutoff. The prompt never names the author.</p>
@@ -46,7 +46,7 @@
 <ul>
 <li><em>Style, judged.</em> A judge (Claude Sonnet) sees the real section and two drafts and says which is closer in style. Every comparison was run twice; I report both.</li>
 <li><em>Style, measured.</em> Distance to the real section over 17 countable habits: sentence length, footnotes, how much is block quote, hedges, first person, and so on. No LLM involved. Lower is closer. Two different real sections score about 1.08 against each other.</li>
-<li><em>Retention.</em> 40 short prompts that have nothing to do with the style task, each with a code check. 20 easy ones (three bullet points, valid JSON, 17 × 23, translate &quot;good morning&quot;) and 20 harder ones (a two-step word problem, count the r's in &quot;strawberry refrigerator&quot;, write &quot;consolidation&quot; backwards, an acrostic, a sentence with no letter e). I also checked whether the newsletter format leaked into these answers. It never did.</li>
+<li><em>Retention.</em> 20 short prompts that have nothing to do with the style task, each with a code check: a two-step word problem, count the r's in &quot;strawberry refrigerator&quot;, write &quot;consolidation&quot; backwards, an acrostic, a sentence with no letter e, and so on. I also checked whether the newsletter format leaked into these answers. It never did.</li>
 <li><em>Faithfulness.</em> A judge lists factual claims in the draft that the brief doesn't support.</li>
 </ul>
 <h2 id="style-sft-wins">Style: SFT wins</h2>
@@ -57,7 +57,6 @@
 <th>Variant</th>
 <th>Stylometric distance</th>
 <th>Judged closer than untrained</th>
-<th>Easy retention</th>
 </tr>
 </thead>
 <tbody>
@@ -66,57 +65,48 @@
 <td>untrained</td>
 <td>1.40</td>
 <td></td>
-<td>95%</td>
 </tr>
 <tr>
 <td>Qwen3-8B</td>
 <td>SFT</td>
 <td><strong>0.70</strong></td>
 <td>30/30, 30/30</td>
-<td>100%</td>
 </tr>
 <tr>
 <td>Qwen3-8B</td>
 <td>SDFT</td>
 <td>1.15</td>
 <td>29/30, 30/30</td>
-<td>100%</td>
 </tr>
 <tr>
 <td>Inkling-Small</td>
 <td>untrained</td>
 <td>1.16</td>
 <td></td>
-<td>100%</td>
 </tr>
 <tr>
 <td>Inkling-Small</td>
 <td>SFT</td>
 <td><strong>0.77</strong></td>
 <td>30/30, 30/30</td>
-<td>90%</td>
 </tr>
 <tr>
 <td>Inkling-Small</td>
 <td>SDFT</td>
 <td>1.10</td>
 <td>21/30, 22/30</td>
-<td>100%</td>
 </tr>
 </tbody>
 </table>
 <p>SDFT against SFT directly: 0 of 30, in both judge runs, on both models.</p>
 <p>For one test brief the real headline is &quot;Emerging markets&quot;. The untrained Qwen wrote &quot;The Hidden AI Factor in Passive Investing&quot;. After SFT it wrote &quot;AI&quot;. After SDFT it wrote &quot;AI Exposure and the Hidden Choices in Index Construction&quot;. Inkling-Small did the same thing: &quot;AI factor&quot; after SFT, &quot;Passive Emerging-Market Investors Are Making an Active AI Bet&quot; after SDFT.</p>
 <p>SDFT did move the style. It just moved it much less. The reason is the teacher: SDFT can only teach what the model already does when it's shown the demonstration, and one real section in the context of an 8B model does not make it write like the author. The in-context learners in the last post needed a distilled guide, several exemplars and a much stronger model to get there.</p>
-<p>On the easy retention prompts every model scores 90–100%, so they don't separate the methods. Inkling-Small after SFT failed two: it said 91 is prime, and wrote two Spanish sentences where one was asked.</p>
 <h2 id="retention-sdft-wins">Retention: SDFT wins</h2>
-<p>The 20 harder prompts do separate the methods.</p>
 <table>
 <thead>
 <tr>
 <th>Inkling-Small</th>
-<th>Easy 20</th>
-<th>Hard 20</th>
+<th>Retention, 20 prompts</th>
 <th>Broken outputs, of 30 test drafts</th>
 </tr>
 </thead>
@@ -124,36 +114,30 @@
 <tr>
 <td>untrained</td>
 <td>100%</td>
-<td>100%</td>
 <td>0</td>
 </tr>
 <tr>
 <td>SFT</td>
-<td>90%</td>
 <td><strong>70%</strong></td>
 <td>0</td>
 </tr>
 <tr>
 <td>SDFT</td>
 <td>100%</td>
-<td>100%</td>
 <td>0</td>
 </tr>
 <tr>
 <td>SDFT, rich teacher</td>
 <td>100%</td>
-<td>100%</td>
 <td>0</td>
 </tr>
 <tr>
 <td>SFT in three rounds, after each</td>
-<td>95 / 95 / 95%</td>
 <td><strong>85 / 80 / 80%</strong></td>
 <td>6 / 0 / 2</td>
 </tr>
 <tr>
 <td>SDFT in three rounds, after each</td>
-<td>100 / 95 / 100%</td>
 <td>100 / 100 / 100%</td>
 <td>0 / 0 / 0</td>
 </tr>
@@ -161,7 +145,7 @@
 </table>
 <p>The SFT model fails the character-level and arithmetic items: the average of five numbers, reversing a word, counting letters and vowels, the acrostic, the sentence without an e. The untrained model gets all of these right at low thinking effort. My guess, which I haven't verified, is that the SFT targets contain no reasoning, so the tuned model stops deliberating before it answers.</p>
 <p>The broken outputs are drafts that contain raw chat-template tokens or run on for thousands of words. They only appeared in SFT models. SDFT trains on the model's own samples, which keeps it inside its normal output distribution.</p>
-<p>Qwen3-8B doesn't show this cleanly, because with thinking disabled the untrained model only passes 35% of the harder prompts, and everything else lands between 20% and 45% with no pattern. On the easy prompts there is a small effect in the same direction: the three-round SFT models pass 80–85%, against 95% untrained and 100% for every SDFT model. The harder set is the right difficulty for Inkling-Small and too hard for a non-thinking 8B.</p>
+<p>Qwen3-8B doesn't show this, because with thinking disabled the untrained model only passes 35% of these prompts, and everything else lands between 20% and 45% with no pattern. The set is the right difficulty for Inkling-Small and too hard for a non-thinking 8B.</p>
 <h2 id="a-better-teacher">A better teacher</h2>
 <p>If the teacher is the limit, give it more to read. The rich teacher's context has the style guide the in-context learner wrote in the last post (it names no one), two other real sections chosen by topic from earlier dates, and the real section for this brief. About 3,400 words where the plain teacher had one section. The student still sees only the brief.</p>
 <table>
@@ -226,25 +210,25 @@
 </tbody>
 </table>
 <p>Both methods improve from round to round. Three rounds of SFT end level with SFT on everything at once on Inkling-Small (judged closer 12 and 15 of 30) and slightly ahead on Qwen3-8B (20 and 22 of 30). After round three SFT still beats SDFT head to head: 27–29 of 30 on Inkling-Small, 28–29 of 30 on Qwen3-8B.</p>
-<p>The damage from SFT did not accumulate. On Inkling-Small the harder-prompt score was 85% after the first round and 80% after the second and third. Three rounds is too short a sequence to conclude much from that.</p>
+<p>The damage from SFT did not accumulate. On Inkling-Small the retention score was 85% after the first round and 80% after the second and third. Three rounds is too short a sequence to conclude much from that.</p>
 <p>Fine-tuning did not make either model invent more. The untrained models averaged 2.5 (Inkling-Small) and 3.6 (Qwen3-8B) unsupported claims per draft by a strict judge; every tuned model I checked was at or below its base.</p>
 <h2 id="what-worked-and-what-didnt">What worked and what didn't</h2>
 <p>What worked:</p>
 <ul>
 <li>SFT for style. 264 examples, a few minutes, about 50 cents on the 8B model. Stylometric distance 0.70–0.77, level with the best in-context learner from the last post (0.71) and with nothing in the prompt.</li>
-<li>SDFT for not breaking the model. On Inkling-Small every SDFT model passed all 20 harder prompts and produced no broken outputs. Across both models and ten SDFT training runs, retention stayed within one or two prompts of the untrained model.</li>
+<li>SDFT for not breaking the model. On Inkling-Small every SDFT model passed all 20 retention prompts and produced no broken outputs.</li>
 <li>The rich teacher. The guide written by the in-context learner turned out to be useful a second time, as teaching material.</li>
 <li>Training in rounds, for both methods.</li>
 </ul>
 <p>What didn't:</p>
 <ul>
-<li>The harder retention set on Qwen3-8B. Too hard for the base model, so it shows nothing there. One set does not fit two models.</li>
+<li>The retention set on Qwen3-8B. Too hard for the base model, so it shows nothing there. One set does not fit two models.</li>
 <li>SDFT as a way to get the style. Even with the rich teacher it gets a bit more than half the stylometric movement of SFT and loses almost every direct comparison.</li>
 </ul>
 <h2 id="what-this-doesnt-show">What this doesn't show</h2>
 <ul>
 <li>One training recipe per method. No learning-rate sweep, no longer SDFT training.</li>
-<li>40 retention prompts is still a small check, and it isn't a benchmark anyone else uses.</li>
+<li>20 retention prompts is still a small check, and it isn't a benchmark anyone else uses.</li>
 <li>30 test briefs, one training seed per run. Differences of a few points between neighbouring cells in these tables mean nothing; the SFT-against-SDFT gaps are large enough to survive that.</li>
 <li>The judge compares style, with the real section as the reference. It doesn't grade writing quality in general.</li>
 <li>Three rounds of training. The paper's forgetting results come from longer sequences of more different tasks.</li>
@@ -286,34 +270,7 @@
 </span></span><span class="line"><span class="cl">hypothetical, and general background knowledge that is not specific to this story do not count.
 </span></span><span class="line"><span class="cl">   Be strict about
 </span></span><span class="line"><span class="cl">invented specifics and lenient about commentary.
-</span></span></code></pre><p><strong>Retention prompts, easy:</strong></p>
-<pre class="chroma"><code><span class="line"><span class="cl">1. Reply with exactly three bullet points (each line starting with &#39;- &#39;) on why sleep matters.
-</span></span><span class="line"><span class="cl">   No other text.
-</span></span><span class="line"><span class="cl">2. Answer in valid JSON only, with exactly the keys &#34;city&#34; and &#34;country&#34;, for the capital of
-</span></span><span class="line"><span class="cl">   Japan.
-</span></span><span class="line"><span class="cl">3. Write one sentence of at most 12 words about rain.
-</span></span><span class="line"><span class="cl">4. What is 17 * 23? Reply with the number only.
-</span></span><span class="line"><span class="cl">5. Translate &#39;good morning&#39; to French. Reply with the translation only.
-</span></span><span class="line"><span class="cl">6. Write a formal two-sentence notice that the office is closed on Friday. Do not use
-</span></span><span class="line"><span class="cl">   contractions or the first person.
-</span></span><span class="line"><span class="cl">7. List the first five prime numbers separated by commas, nothing else.
-</span></span><span class="line"><span class="cl">8. Write a haiku about autumn: three lines, nothing else.
-</span></span><span class="line"><span class="cl">9. Respond with the single word YES or NO: is 91 a prime number?
-</span></span><span class="line"><span class="cl">10. Write a Python function named add that returns the sum of its two arguments. Code only, no
-</span></span><span class="line"><span class="cl">   explanation.
-</span></span><span class="line"><span class="cl">11. Give a title in ALL CAPS, at most five words, for an article about remote work. Title only.
-</span></span><span class="line"><span class="cl">12. Summarize in exactly one sentence: &#39;The council voted 6-1 to ban sidewalk robots after a
-</span></span><span class="line"><span class="cl">   lawyer warned the prior rule was unenforceable.&#39;
-</span></span><span class="line"><span class="cl">13. Sort these words alphabetically, comma separated, nothing else: pear, apple, mango, fig
-</span></span><span class="line"><span class="cl">14. What is the chemical symbol for gold? Reply with the symbol only.
-</span></span><span class="line"><span class="cl">15. Write an email subject line of no more than eight words asking to reschedule a meeting.
-</span></span><span class="line"><span class="cl">   Subject line only.
-</span></span><span class="line"><span class="cl">16. Output the numbers 1 to 5, one per line, nothing else.
-</span></span><span class="line"><span class="cl">17. Reply in Spanish with one short sentence saying you are happy to help.
-</span></span><span class="line"><span class="cl">18. Convert 2.5 hours to minutes. Reply with the number only.
-</span></span><span class="line"><span class="cl">19. Write a numbered list of exactly two fruits, in the form &#39;1. x&#39; and &#39;2. y&#39;, nothing else.
-</span></span><span class="line"><span class="cl">20. Does the word &#39;bookkeeper&#39; contain the letter z? Answer yes or no only.
-</span></span></code></pre><p><strong>Retention prompts, harder:</strong></p>
+</span></span></code></pre><p><strong>Retention prompts:</strong></p>
 <pre class="chroma"><code><span class="line"><span class="cl">1. A shop sells apples at 3 for $2. How many dollars do 27 apples cost? Reply with the number
 </span></span><span class="line"><span class="cl">   only.
 </span></span><span class="line"><span class="cl">2. A train leaves at 09:40 and the trip takes 2 hours 35 minutes. What time does it arrive?
