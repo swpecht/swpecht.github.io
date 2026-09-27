@@ -1,0 +1,15 @@
+# hermit manifest for beaver, the Catan server (see ../../../scripts/hermit-deploy.sh).
+port: 4002
+# Public, as catan.fewworddotrick.com was: no accounts. Waits for Steven's
+# approval of the deploy (or his "keep approval across deploys" switch).
+access: [public]
+health: /
+# ~10 MB in use on misc (pure PIMCTS; libtorch is only linked, not loaded).
+memory: 256m
+reserve: 64m
+env:
+  TZ: America/Denver
+  RUST_LOG: info
+  RUST_BACKTRACE: "1"
+  # stdout only: /tmp is a 64 MB tmpfs here, and stdout goes to Loki.
+  LOG_FILE: "-"

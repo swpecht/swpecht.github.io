@@ -1,0 +1,21 @@
+# hermit manifest for heron, the Oh Hell server (see ../../../scripts/hermit-deploy.sh).
+port: 4001
+# Public, as ohh.fewworddotrick.com was: no accounts. Waits for Steven's
+# approval of the deploy (or his "keep approval across deploys" switch).
+access: [public]
+health: /
+# ~200 MB in use on misc: the R-NaD transformer agents.
+memory: 768m
+reserve: 256m
+# The weights are big, rebuildable and not worth backing up: bulk storage.
+bulk: true
+env:
+  TZ: America/Denver
+  RUST_LOG: info
+  RUST_BACKTRACE: "1"
+  # stdout only: /tmp is a 64 MB tmpfs here, and stdout goes to Loki.
+  LOG_FILE: "-"
+  # Missing files demote those configurations to PIMCTS; startup never fails.
+  OH_RNAD_WEIGHTS: /bulk/oh_hell/rnad_best.safetensors
+  OH_RNAD4_WEIGHTS: /bulk/oh_hell/rnad4_best.safetensors
+  OH_CFR_DIR: /bulk

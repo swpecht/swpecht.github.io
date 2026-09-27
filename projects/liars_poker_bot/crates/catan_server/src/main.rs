@@ -14,7 +14,7 @@ use games::{actions, gamestates::catan::CatanGameState, Action, GameState};
 use log::{info, set_max_level, LevelFilter};
 use rand::{rng, rngs::StdRng, seq::IndexedRandom, SeedableRng};
 use simplelog::{
-    ColorChoice, CombinedLogger, ConfigBuilder, TermLogger, TerminalMode, WriteLogger,
+    ColorChoice, CombinedLogger, ConfigBuilder, SharedLogger, TermLogger, TerminalMode, WriteLogger,
 };
 use uuid::Uuid;
 
@@ -219,24 +219,27 @@ async fn main() -> std::io::Result<()> {
     set_max_level(LevelFilter::Trace);
     let config = ConfigBuilder::new().set_time_format_rfc3339().build();
 
-    CombinedLogger::init(vec![
-        TermLogger::new(
-            LevelFilter::Debug,
-            config.clone(),
-            TerminalMode::Mixed,
-            ColorChoice::Auto,
-        ),
-        WriteLogger::new(
+    // LOG_FILE overrides the log file's path; "-" writes stdout only (on
+    // hermit, whose /tmp is a small tmpfs and whose stdout goes to Loki).
+    let log_file = std::env::var("LOG_FILE").unwrap_or_else(|_| LOG_FILE.to_string());
+    let mut loggers: Vec<Box<dyn SharedLogger>> = vec![TermLogger::new(
+        LevelFilter::Debug,
+        config.clone(),
+        TerminalMode::Mixed,
+        ColorChoice::Auto,
+    )];
+    if log_file != "-" {
+        loggers.push(WriteLogger::new(
             LevelFilter::Info,
             config,
             OpenOptions::new()
                 .append(true)
                 .create(true)
-                .open(LOG_FILE)
+                .open(&log_file)
                 .expect("failed to open log file for writing"),
-        ),
-    ])
-    .expect("failed to initialize logger");
+        ));
+    }
+    CombinedLogger::init(loggers).expect("failed to initialize logger");
 
     info!("starting catan_server on {}:{}", SERVER_HOST, SERVER_PORT);
     let app_state = web::Data::new(AppState::default());

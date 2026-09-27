@@ -41,3 +41,15 @@ xtask/                  # Build/deploy automation
 - Release builds include debug symbols (`debug = true` in profile)
 - `cargo xtask` alias defined in `.cargo/config.toml`
 - Verbosity flag `-v` (0=error, 1=warn, 2=info, 3=debug, 4=trace)
+
+## Game servers on hermit
+
+`oh_hell_server` (hermit app **heron**) and `catan_server` (**beaver**) are
+packaged for hermit (https://hermit.fewworddotrick.com/help, needs a gander
+deploy token) but NOT deployed yet: they still run on the misc VM, built by
+emu-nest's `ansible/misc.yml` from the crates' own `Dockerfile`s. Each crate's
+`hermit/` holds its hermit Dockerfile, `hermit.yaml` and a README with the
+cut-over steps; `scripts/hermit-deploy.sh <crate> <app>` builds on this
+machine and ships the stripped binary (`HERMIT_DRY_RUN=1` stops before
+uploading). `LOG_FILE=-` turns off the servers' log file (stdout only).
+heron's weights go in its hermit bulk storage (`/bulk`, not backed up).
