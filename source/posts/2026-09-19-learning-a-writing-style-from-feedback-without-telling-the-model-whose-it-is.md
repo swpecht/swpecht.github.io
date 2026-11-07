@@ -1,51 +1,69 @@
 ---
-title: Learning a writing style from feedback, without telling the model whose it is
+title: Learning a writing style from feedback, without telling the model whose writing style it is
 date: 2026-09-19T00:00:00Z
 ---
 
 # What happened
 
-I wanted to know whether a model can learn a person's preferences continuously, just from the feedback they'd give anyway. Writing style seemed like a good first test, and since I don't have a few hundred of my own edited drafts, I simulated the user: the simulated user writes like Matt Levine, and the model has to learn that style without ever being told his name.
+Could a large language model (LLM) learn someone's preferences continuously, using only feedback they would provide anyway? Writing style seemed like a good first test. I did not have hundreds of my own edited drafts, so I simulated a user who writes like Matt Levine, the *Bloomberg News* finance writer behind *Money Stuff*. The model had to learn the style without ever being told his name.
 
-The short version: after 20 rounds of feedback, a style judge shown the real *Money Stuff* section next to the model's version of the same story picked the model's as the real one about 40% of the time. At 50% the judge can't tell the model's version from the real one at all. The same model told outright to "write in the style of Matt Levine's Money Stuff column," and given 40 real examples to draw on, scored about 20%. With no guidance it scored about 2%.
+The process starts with a neutral brief. The LLM drafts a piece, and the simulated user either rewrites it or sends a few sentences explaining what sounds wrong. One critique asked for plainer, more tentative prose, longer source quotations, and fewer polished asides. The system turns that feedback into instructions for the next draft — not a name to imitate.
 
-That's Claude Opus 5 as the writer, with no fine-tuning. Everything it learned is stored as text outside the model's weights: a 450-word style guide that it rewrites as feedback comes in, plus a small memory of texts the user approved. The system rejects any guide that contains an author or publication name, so the guide has to describe techniques — "headline is a flat topic label in sentence case," "end abruptly on one flat, deadpan line" — instead of naming a person. The real use case is a user who isn't famous, where naming an author isn't an option.
+## The headline result
 
-I also fine-tuned a model. The loop saves the draft and the user's final text for every piece, so I used 264 of those pairs to train a LoRA adapter on Qwen2.5-7B, overnight on one consumer GPU, to rewrite an untrained Opus draft into the user's text. It never sees the author's name either. It fooled the same judge 23% of the time, about level with Opus told the name, and it copied structural habits (short flat headlines, bullet lists, how much is quoted) more faithfully than the in-context learner did. But the judge still preferred the raw Opus draft two times in three: a 7B model's prose is looser, and it invents details. That part is in [Moving it into weights](#moving-it-into-weights).
+After 20 rounds of feedback, a style judge shown a real *Money Stuff* section alongside the model's version of the same story mistook the model's version for the original about 40% of the time. A 50% score would mean the judge was choosing at chance level. The same model, explicitly told to write in Matt Levine's style and given 40 real examples, scored about 20%. With no guidance, it scored about 2%.
 
-Two results went against what I expected. Picking between two drafts, the cheapest feedback a person can give, taught the model nothing. And a learner that appends every lesson to an ever-longer list, with no management at all, did not get worse over 200 rounds of feedback. I had designed that experiment expecting it to degrade.
+The writer was Claude Opus 5, with no fine-tuning. Its learning lived outside the model's weights: a 450-word style guide, rewritten as feedback arrived, plus a small bank of user-approved texts. The system rejects guides containing an author or publication name. Rules therefore have to describe techniques — "headline is a flat topic label in sentence case" or "end abruptly on one flat, deadpan line" — rather than identify a person. That matters for the intended use case: learning the preferences of someone who is not famous.
 
-All of the prompts are in the [appendix](#appendix-prompts), along with a [worked example](#appendix-a-non-finance-example): a brief about a man suing a buffet, and what the untrained model and each learner wrote from it.
+## A smaller model, and two surprises
+
+I also used 264 draft/final-text pairs to train a LoRA adapter on Qwen2.5-7B to restyle untrained Opus drafts. This experiment used one consumer GPU, and the adapter never saw the author's name. It fooled the same judge 23% of the time, roughly matching Opus when told the name, and copied structural habits — short, flat headlines, bulleted lists, and the share of quoted text — more faithfully than the in-context learner. But the judge still preferred the raw Opus draft two times out of three: the smaller model's prose was looser, and it invented details. I discuss this in [Moving it into weights](#moving-it-into-weights).
+
+Two results went against what I expected. Picking between two drafts — the least effort a person can put into feedback — taught the model nothing. And a learner that appends every lesson to an ever-longer list, with no management at all, did not get worse over 200 rounds of feedback. I had designed that experiment expecting it to degrade.
+
+All the prompts are in the [appendix](#appendix-prompts), along with a [worked example](#appendix-a-non-finance-example): a brief about a man suing a restaurant group that cut him off on all-you-can-eat crab night, and what the untrained model and each learner wrote from it.
 
 # The setup
 
-**Data.** Two years of *Money Stuff* from my inbox: 374 columns, 1,717 sections. For each section, a model writes a neutral *brief* — the facts, the argument in order, the side points, and the quoted sources word for word — in flat note form with none of the voice. The task is then "write this brief up," and the real section is the hidden answer. Content is held fixed, so style is the only thing that varies. About 330 brief/original pairs ended up in use. The 30 test briefs all come from columns published after the models' training cutoff, so the model can't have seen the answers.
+## Data and task
 
-**The learner** is a fixed ghostwriter prompt plus a preference state with two tiers:
+The dataset came from two years of *Money Stuff* in my inbox: 374 columns containing 1,717 sections. For each section, a model produced a neutral *brief*: the facts, the argument in order, the side points, and verbatim source quotations, all in flat note form without the original voice. The writer's task was to turn that brief into a section; the published section served as the hidden answer. The design held content fixed to isolate style. About 330 brief/original pairs were used. All 30 test briefs came from columns published after the models' training cutoffs, so the models could not have seen those answers during training.
 
-- a **guide**: plain-text style rules under a 450-word budget, rewritten (not appended to) as feedback arrives
-- a **bank**: final texts the user approved, retrieved two at a time by topic similarity and shown as exemplars
+## What the learner stores
 
-**Feedback** comes in the three forms a real user would give, all simulated from the hidden original:
+The learner combines a fixed ghostwriter prompt with two kinds of preference memory:
 
-1. **Edits.** The user rewrites the draft. (The "rewrite" is the real section.)
-2. **Critiques.** The user sends 3–5 sentences of notes. A critic model sees the draft and the original and writes notes in the first person, without quoting the original or naming anyone.
-3. **Picks.** The user is shown two drafts and picks one. A judge that can see the original does the picking.
+- **A guide:** plain-text style rules within a 450-word budget, rewritten rather than appended to as feedback arrives.
+- **A bank:** user-approved final texts, retrieved two at a time by topic similarity and shown as examples.
 
-**Updates.** After each batch of feedback, a reflection step proposes a new guide. A gate tests it on held-out validation briefs and keeps it only if drafts written under it are better.
+The guide describes how to write, not whom to imitate: use a brief, matter-of-fact headline; open with the facts rather than a staged introduction; quote at length when sourcing matters; and avoid a tidy conclusion. These instructions can carry over to unrelated assignments.
 
-**Scoring**, on the 30 test briefs:
+## Three feedback signals
 
-- *Beats untrained*: a judge sees the real section and two drafts and says which is closer in style. Win rate against the same model with an empty state.
-- *Beats named-author*: same, against the model that was told the name and given 40 real exemplars.
-- *Lineup*: the judge gets two real samples by the author, then the real section and the draft, and has to say which is real. I report how often it's fooled.
-- *Stylometric distance*: no LLM involved. Seventeen countable habits (sentence length, footnotes, block-quote share, hedges, first person, and so on), z-scored and averaged. Lower is closer. Two different real sections score about 1.08 against each other.
+Feedback takes three forms a real user might provide, each simulated from the hidden original:
 
-That last one exists because the same judge model steers the gate and grades the results, which could inflate the scores. It caught one failure that the judge missed, described below.
+1. **Edits.** The user rewrites the draft. In this simulation, the published section is the rewrite.
+2. **Critiques.** A critic model sees the draft and original, then writes 3–5 sentences of first-person notes without quoting the original or naming anyone.
+3. **Picks.** The user chooses between two drafts. A judge with access to the original makes the choice.
+
+Each signal carries different information. An edit supplies the complete desired text. A critique identifies changes — less polish, longer source quotations, simpler asides — but leaves the writer to apply them. A pick says only that draft A is preferable to draft B. The experiments test how much reusable style information each signal conveys.
+
+## Updates and evaluation
+
+After each batch of feedback, a reflection step proposes a revised guide. A gate tests it on held-out validation briefs and keeps it only if the resulting drafts improve.
+
+I evaluate the learner on 30 test briefs using four measures:
+
+- *Beats untrained*: the win rate against the same writer with an empty preference state. A judge sees the real section and both drafts, then chooses the closer stylistic match.
+- *Beats named-author*: the same comparison against a writer told the author's name and given 40 real examples.
+- *Lineup*: the judge sees two real reference samples, then the real section and the draft, and chooses which is authentic. I report how often the draft fools it.
+- *Stylometric distance*: an LLM-free measure of 17 countable habits, including sentence length, footnotes, block-quote share, hedges, and first-person usage. Feature gaps are standardized and averaged; lower is closer. Two different real sections score about 1.08 against each other.
+
+The stylometric measure provides an independent check because the same judge model both steers the gate and grades the results, potentially inflating scores. It caught a failure the judge missed, discussed in [Deep dive: a run that got worse](#deep-dive-a-run-that-got-worse).
 
 # Which feedback teaches
 
-Claude Sonnet 5 as the writer, 80 feedback events each:
+I tested Claude Sonnet 5 as the writer, with 80 feedback events for each learner:
 
 | Feedback | Beats untrained | Beats named-author | Fools lineup | Stylometric distance |
 |---|---|---|---|---|
@@ -55,26 +73,28 @@ Claude Sonnet 5 as the writer, 80 feedback events each:
 | Critiques | **100%** | 80% | 0% | 0.88 |
 | Picks | 57% | 7% | 0% | 1.37 |
 
-Edits and critiques both beat the model that was told the author's name, by a wide margin. Critiques getting to 80% is the result I care about most for a product: a few sentences of notes cost the user almost nothing compared with rewriting a draft, and that learner has no exemplars at all — just 450 words of rules.
+Edits and critiques both beat the named-author model by a wide margin. The critique learner's 80% win rate is especially relevant to a product: a few sentences of notes demand far less effort than rewriting a draft. That learner had no examples to draw on — only 450 words of rules.
 
-Picks taught nothing. After 80 of them the learner's win rates are within noise of the untrained model's, and its stylometric score is worse. The two drafts come from the same guide, so they differ too little for the choice to carry information, and the reflection step writes rules the evidence doesn't support. Pairwise preference is the standard signal for training reward models, so I assumed it would at least do *something* here. It probably needs deliberately contrasting candidates. In the later experiments I use the pick learner as a control: it goes through the whole loop and learns nothing.
+Picks between these relatively similar drafts produced no measurable improvement. After 80 picks, win rates remained within noise of the untrained model, and stylometric distance was worse.
+
+The candidates came from the same guide and may have differed too little for the choice to reveal useful preferences. The reflection step then wrote rules the evidence did not support. I had expected pairwise preferences, a standard signal for training reward models, to teach at least something. Deliberately contrasting candidates may work better. In later experiments, the pick learner serves as a control: it passes through the full loop without measurable learning.
 
 # How fast
 
-I reran the first ten events with a guide update after every single one. Share of test briefs where the blind learner beats the named-author model:
+To measure learning speed, I reran the first 10 events with a guide update after each one. The table shows the share of test briefs on which the blind learner beat the named-author model:
 
 | Feedback events | 0 | 1 | 2 | 3 | 5 | 10 |
 |---|---|---|---|---|---|---|
 | Edits | 13% | 37% | **100%** | 97% | 93% | 93% |
 | Critiques | 13% | 0% | 43% | 33% | 53% | 60% |
 
-Two edits were enough to pass the named-author model. Critiques are slower and noisier, and pass it within ten.
+Two edits were enough to outperform the named-author model. Critiques worked more slowly and noisily, passing it within 10 events.
 
-One example of what two edits does. For the same test brief, the untrained model's headline was "The AI Question Every Investor Has to Answer, Whether They Like It or Not." After learning, it was "Korea." The real one is "Emerging markets."
+A headline illustrates what changed after two edits. For the same test brief, the untrained model wrote "The AI Question Every Investor Has to Answer, Whether They Like It or Not." After learning, it wrote "Korea." The real headline was "Emerging markets." This does not prove that the model captured the whole voice. It does show a mechanism: a reusable preference for restrained, matter-of-fact headlines displaced the model's tendency to oversell.
 
 # Opus
 
-Same loop, Opus 5 as the writer, 20 events:
+I then ran the same loop with Opus 5 as the writer and 20 feedback events:
 
 | Writer | Beats untrained | Beats named-author | Fools lineup | Fools lineup, uniform formatting | Stylometric distance |
 |---|---|---|---|---|---|
@@ -83,53 +103,71 @@ Same loop, Opus 5 as the writer, 20 events:
 | Blind learner, 20 critiques | 93% | 63% | 29% | 20% | 0.82 |
 | Blind learner, 20 edits | **100%** | **83%** | **43%** | **39%** | **0.71** |
 
-Both lineup columns are averages over three runs of the judge on the same 30 drafts, 90 judgments per cell.
+Both lineup columns average three judge runs on the same 30 drafts, for 90 judgments per cell.
 
-With Sonnet, nothing ever fooled the lineup judge more than 10% of the time, the named-author model included. With Opus the named-author model gets to about 20% and the blind edit learner to about 40%.
+## What improved
 
-The lineup judge is noisy. Single runs for the critique learner came out at 37%, 13% and 37%; for the edit learner, 47%, 40% and 43%.
+With Sonnet, no system — including the named-author model — fooled the lineup judge more than 10% of the time. With Opus, the named-author model reached about 20%, and the blind edit learner reached about 40%.
 
-The second lineup column exists because I found a formatting difference the judge could have been using. My reconstruction of the real text separates quoted paragraphs with a blank line; Claude writes `>` on that line. The writers that had seen real text (the edit learner through its bank, the named-author model through its exemplars) copy the real layout, and the others don't. The real text also uses curly quotes where Claude's drafts use straight ones. For the second column, typography and Markdown layout are made identical across the real sections, the reference samples and every draft before judging.
+The judge was noisy across runs. The critique learner scored 37%, 13%, and 37%; the edit learner scored 47%, 40%, and 43%.
 
-What holds up in both columns: the blind edit learner fools the judge about twice as often as the model that was told the author's name, and the untrained model almost never does. What doesn't hold up is any claim that the critique learner beats the named-author model on this test. They are about level, at 20–29% against 17–27%. The critique learner's 63% pairwise win rate against the named-author model is a separate measurement, from a single run.
+## Checking for formatting shortcuts
 
-Two caveats on that table. Only one of four proposed guide updates was accepted in each Opus run, because Opus kept writing 520-word guides against a 450-word budget and my code threw them away instead of compressing them (fixed since). So whatever the edit learner gained after event five came from the bank growing, not the guide improving. The critique learner's single-run lineup figures at 5, 10 and 20 events were 20%, 20% and 37% with an unchanged guide, which is what first suggested the judge was noisy. With 30 test briefs, every percentage in this post has a standard error of about 9 points.
+The second lineup column controls for formatting clues. My reconstruction of the real text separates quoted paragraphs with blank lines; Claude puts a `>` on those lines. Writers exposed to real texts — the edit learner through its bank and the named-author model through its examples — copied the real layout. Other writers did not. Real texts also used curly quotation marks, while Claude's drafts used straight ones. For the second column, I normalized typography and Markdown layout across the real sections, reference samples, and drafts before judging.
+
+The main result survives normalization: the blind edit learner fools the judge about twice as often as the named-author model, while the untrained model almost never does. The critique learner does not clearly outperform the named-author model on this test: their lineup scores are broadly comparable, at 20–29% and 17–27%, respectively. Its 63% pairwise win rate against that model is a separate, single-run measurement.
+
+## Limits of this run
+
+Only one of four proposed guide updates was accepted in each Opus run. Opus repeatedly produced 520-word guides against a 450-word budget, and my code discarded them rather than compressing them. That bug has since been fixed. Any gains by the edit learner after event five therefore came from its growing bank, not a better guide.
+
+The critique learner's guide also stayed unchanged, yet its single-run lineup scores at 5, 10, and 20 events were 20%, 20%, and 37%. That first alerted me to the judge's variability. With 30 test briefs, the reported percentages also carry sampling uncertainty of about 9 points, before run-to-run judge noise.
 
 # Deep dive: a run that got worse
 
-The per-event rerun above is the second attempt. The first one failed, and the failure exposed two problems in the design.
+The per-event results in [How fast](#how-fast) came from a second attempt. The first attempt failed and exposed two design problems.
 
-With updates after every event, the critique learner climbed to about 75% against the untrained model by event three — then fell back to 43% at event ten. The gate had accepted that final guide with 8 wins out of 8 on validation. On the test set it was no better than having learned nothing.
+With an update after every event, the critique learner rose to about 75% against the untrained model by event three, then fell to 43% at event 10. The gate had accepted the final guide after eight wins out of eight on validation. On the test set, it was no better than learning nothing.
 
-Two things were going on:
+Two design choices explained the failure:
 
-1. **The reflector rewrote the whole guide around one critique at a time.** A single set of notes on a single section produced rules like "footnotes are rare" and "build the piece as bullets." The learner's drafts ended up with about five bullet lines per section against 1.7 in the real text.
-2. **The gate only compared each candidate with the guide before it.** The judge's pairwise preferences aren't transitive, so a chain of guides can each beat its predecessor while the absolute quality falls back to the untrained level. I re-judged the event-ten drafts head to head against the event-five drafts to check: roughly a tie, 13 of 30, even though the event-five guide had beaten untrained 73% of the time and the event-ten guide couldn't.
+1. **The reflector rebuilt the guide around one critique.** Notes on a single section became general rules such as "footnotes are rare" and "build the piece as bullets." The learner ended up producing about five bulleted lines per section, compared with 1.7 in the real text.
+2. **The gate compared each guide only with its predecessor.** The judge's pairwise preferences were not transitive: successive guides could each beat the previous one while overall quality fell to the untrained level. A direct comparison of event-10 and event-five drafts was roughly a tie, at 13 of 30, even though the event-five guide beat the untrained model 73% of the time and the event-10 guide did not.
 
-The fixes are both old ideas from continual learning. **Anchor the gate:** a candidate must beat the current guide on at least 6 of 8 validation briefs *and* score at least as well as the current guide against a fixed set of untrained drafts. **Replay:** show the reflector four past episodes alongside the new one. With both, the curve in the previous section rises and stays up.
+I applied two familiar continual-learning fixes:
 
-The stylometric measure had flagged this run as worse than untrained at *every* checkpoint, including the early ones where the LLM judge was still giving it 70–77%. If I'd only had the judge I would have believed the first three checkpoints.
+- **Anchor the gate.** A candidate must beat the current guide on at least 6 of 8 validation briefs *and* match or exceed its score against a fixed set of untrained drafts.
+- **Replay past feedback.** Show the reflector four past episodes alongside the new one.
 
-An earlier version of the gate was worse still: accept on 3 wins out of 5. A guide that's no better than the current one passes that about half the time. The pick learner, which learned nothing, had 5 of 16 updates accepted.
+With both changes, the learning curve in [How fast](#how-fast) rises and stays up.
+
+The stylometric measure flagged the failed run as worse than untrained at *every* checkpoint, including early checkpoints where the LLM judge gave it 70–77%. Relying on the judge alone would have made the first three checkpoints look successful.
+
+An even earlier gate accepted candidates with just 3 wins out of 5. A guide no better than its predecessor would pass about half the time. The pick learner, despite learning nothing, had 5 of 16 updates accepted under that rule.
 
 # 200 events: I predicted this wrong
 
-The stability experiment was meant to show why the gate and the word budget are needed. Two critique learners, 200 events each. One is gated and budgeted as above. The other appends every lesson it thinks of to a list that only grows, with no gate and no consolidation. I expected the second one's guide to grow very large and its output to degrade.
+I expected the stability experiment to show why gating and a word budget were necessary. I ran two critique learners for 200 events each:
+
+- **Gated and budgeted:** the learner described above, with guide rewrites subject to validation.
+- **Append everything:** a learner that adds every inferred lesson to a growing list, with no gate or consolidation.
+
+I expected the second guide to become unwieldy and its output to degrade.
 
 | After 200 events | Guide size | Beats untrained | Beats named-author | Stylometric distance | Cost per draft |
 |---|---|---|---|---|---|
 | Gated, budgeted | 489 words | 97% | 83% | 0.85 | $0.020 |
 | Append everything | **18,664 words** | 100% | 93% | 0.81 | $0.053, rising |
 
-The guide grew to about 40 times the size of the gated one, and quality did not drop. Sonnet writes as well under an 18,000-word, highly repetitive list of lessons as under a 450-word guide. The cost is money: 2.6 times as much per draft after 200 events, and it keeps growing linearly.
+The guide grew to about 40 times the size of the gated guide without a drop in quality. Sonnet wrote as well under a highly repetitive list of roughly 18,000 words as under the compact guide. The penalty was cost: about 2.6 times as much per draft after 200 events, with costs continuing to grow linearly.
 
-Meanwhile the gated learner stayed small and cheap and mostly stopped learning. It accepted 3 of 40 proposed rewrites, at events 5, 15 and 175. The rejected candidates won a median of 2–3 of 8 head-to-heads, so the gate wasn't being too strict — those rewrites really were worse than what they'd replace. Rewriting a good 450-word guide from scratch loses information.
+The gated learner stayed small and inexpensive but mostly stopped learning. It accepted only 3 of 40 proposed rewrites, at events 5, 15, and 175. Rejected candidates won a median of 2–3 of 8 head-to-head comparisons, suggesting that the gate was not simply too strict: those replacements really were worse. Rewriting a good 450-word guide from scratch appeared to lose information.
 
-So the design I built is the wrong one. The obvious fix is to let lessons accumulate freely and put the gate on the periodic *compression* step instead. That should keep the append-everything learner's continued improvement at the gated learner's constant cost.
+The result changed where I think the gate belongs: on compression, not on whether to learn from each new lesson. A hybrid learner would let lessons accumulate freely, then validate periodic *compression*. My hypothesis is that this could preserve the append-everything learner's continued improvement while keeping costs closer to those of the compact guide.
 
 # Does it carry outside finance?
 
-I froze the learned states and had them write 36 briefs that have nothing to do with finance: a roast chicken headnote, an HR memo about return-to-office tiers, a column about a city council that banned, un-banned and re-banned delivery robots. A judge sees real samples by the author and two drafts and says which sounds more like the same person.
+I froze the learned states and tested them on 36 non-finance briefs, including a roast chicken headnote, an HR memo about return-to-office tiers, and a column about a city council that banned, un-banned, and re-banned delivery robots. A judge saw real samples by the author and two drafts, then chose which draft sounded more like the same person.
 
 | Head to head | Wins |
 |---|---|
@@ -137,13 +175,17 @@ I froze the learned states and had them write 36 briefs that have nothing to do 
 | Critiques vs picks | 23 of 36 |
 | Edits vs critiques | 29 of 36 |
 
-The pick learner is the control, since it learned nothing in-domain. I had to use it because "beats the untrained model" turned out to be too easy a test out of domain — even the control won that 28 of 36. Any guide that pushes toward a conversational column voice sounds more like a columnist than a default HR memo does. The stylometric measure orders the three learners the same way as the head-to-heads (0.91, 0.99, 1.40, with untrained at 1.24).
+The pick learner served as the control because it had shown no in-domain learning. Comparing against the untrained writer was too easy out of domain: even the control won 28 of 36 comparisons. A guide that encourages a conversational column voice can sound more like a columnist than a default HR memo does. Stylometric distance ranked the learners in the same order as the head-to-head results: edits at 0.91, critiques at 0.99, and picks at 1.40, with the untrained writer at 1.24.
 
-There's a full example in the [appendix](#appendix-a-non-finance-example): one brief and what each writer produced from it. It also shows a flaw. The edit learner's guide contains the micro-example "The way it goes, approximately, is:" as one way to open a piece, and 8 of its 36 out-of-domain drafts open with exactly those words. Its toaster review starts "I'll toast you a slice of bread Monday," which is the guide's "I'll sell you a bike Monday" with the nouns swapped. Short illustrations make the rules concrete, and the model copies them word for word.
+## Transfer, with a risk of copying
+
+The fictional crab-buffet lawsuit in the appendix illustrates both transfer and a failure mode. The question was whether the learners could tell an unfamiliar story in the learned voice, not whether they knew finance. They generally could, but a sample opening in the guide also hardened into a repeated phrase.
+
+The [full example](#appendix-a-non-finance-example) shows one brief and each writer's response. The edit learner's guide offers "The way it goes, approximately, is:" as an opening, and eight of the 36 drafts it wrote for the non-finance briefs start with those exact words. Its toaster review opens "I'll toast you a slice of bread Monday," swapping nouns into the guide's "I'll sell you a bike Monday." Short illustrations make rules concrete, but the model can copy them rather than generalize from them.
 
 # Moving it into weights
 
-The loop saves a (draft, feedback, final text) triple for every event, which is training data. As a first pass I generated untrained Opus drafts for all 264 training briefs and trained a QLoRA adapter on Qwen2.5-7B-Instruct to rewrite an untrained Opus draft into the text the user wanted . The idea is a small model that restyles the large model's output. Training ran overnight on one RTX 4080 Super. The adapter never sees the author's name either.
+Each feedback event leaves behind a draft, the feedback on it, and the final text, and those three together are training data. As a first test, I generated untrained Opus drafts for all 264 training briefs, then trained a QLoRA adapter on Qwen2.5-7B-Instruct to rewrite those drafts into the desired final texts. The aim was to use a small model to restyle a larger model's output. The experiment ran on one RTX 4080 Super, and the adapter never saw the author's name.
 
 | Writer | Training pairs | Beats untrained Opus | Fools lineup | Stylometric distance |
 |---|---|---|---|---|
@@ -155,9 +197,11 @@ The loop saves a (draft, feedback, final text) triple for every event, which is 
 | *Opus, told the name + 40 exemplars* | — | 90% | 17% | 0.81 |
 | *Opus in-context learner, 20 edits* | — | 100% | 43% | 0.71 |
 
-Lineup figures for the 264-pair rewriter and the two Opus rows are three-run averages; the other rows are single runs. With formatting made uniform the 264-pair rewriter scores 21%.
+The lineup scores for the 264-pair rewriter and both Opus systems average three evaluation runs; the other systems' scores come from single runs. With uniform formatting, the 264-pair rewriter fooled the judge 21% of the time.
 
-The results are mixed. More data steadily helps on the lineup test and the stylometric measure, and at 264 pairs a 7B model is roughly level with Opus-told-the-name on both. It also copies structural habits *better* than the in-context learner:
+## What the adapter learned
+
+The results were mixed. More data steadily improved the lineup score and stylometric distance. At 264 pairs, the 7B rewriter was roughly level with the named-author Opus system on both measures. It also reproduced some structural habits *more* faithfully than the in-context learner:
 
 | Habit | Real text | Untrained Opus | Opus in-context learner | Qwen 7B + LoRA |
 |---|---|---|---|---|
@@ -166,66 +210,115 @@ The results are mixed. More data steadily helps on the lineup test and the stylo
 | Bullet lines per 1,000 words | 5.4 | 0.0 | 0.0 | 4.4 |
 | Footnotes per 1,000 words | 1.0 | 2.9 | 3.1 | 0.7 |
 
-The Opus in-context learner never wrote a single bullet list in 30 sections, even though the real text uses them constantly. The 7B adapter picked that up from examples without anyone writing it down as a rule.
+The fine-tuned model recovered patterns the guide had missed. Real sections used bulleted lists regularly; the in-context learner used none in the test set, while the adapter began using them. The adapter also matched the original share of block quotations more closely. Training on examples can recover recurring layout and pacing habits that prose instructions fail to name.
 
-But the pairwise judge still preferred the raw untrained Opus draft two times in three. I read the outputs: the voice is right and the prose is looser and more repetitive than Opus's, with run-on sentences. So the adapter learned the style, and what limits it is the 7B model's writing quality. The [appendix example](#appendix-a-non-finance-example) ends with one of its rewrites, which includes an invented tweet and a made-up citation.
+## What still limited it
+
+The pairwise judge nevertheless preferred raw, untrained Opus drafts two times out of three. I read the outputs myself: the voice sounded right, but the prose was looser, more repetitive, and more prone to run-on sentences than Opus's. My interpretation is that the adapter learned useful stylistic patterns but remained limited by the 7B model's writing quality. It also invented details: the [appendix example](#appendix-a-non-finance-example) includes an invented tweet and a made-up citation.
 
 # What worked and what didn't
 
-What worked:
+## What worked
 
-- Blind learning from edits or critiques, fast. Two rewrites or about ten sets of notes to pass a model that was told the answer.
-- Banning names from the guide. The rules it wrote are specific and operational, and they transfer to recipes and HR memos.
-- Holding content fixed with extracted briefs. Hundreds of tasks for about 4¢ each, and style is the only variable.
-- A metric with no LLM in it. It's coarse, but it caught a failure the LLM judge missed.
-- Reading outputs end to end. That's how the cleanup step's worst bug turned up: it missed a five-paragraph Bloomberg News quotation introduced only by "Sure sure sure:", which would have left wire-service prose in the "user's" text.
+- **Fast learning from edits and critiques.** Two rewrites or about 10 sets of notes were enough to pass the named-author model.
+- **Name-free guides.** Banning author and publication names encouraged specific, actionable rules that transferred to recipes and HR memos.
+- **Neutral briefs.** Extracting briefs held content fixed to isolate style, producing hundreds of tasks for about 4¢ each.
+- **An LLM-free check.** Stylometric distance was coarse but caught a failure the model judge missed.
+- **Reading complete outputs.** This exposed the cleanup step's worst bug: a missed five-paragraph *Bloomberg News* quotation introduced only by "Sure sure sure:" Without that check, wire-service prose would have remained in the simulated user's text.
 
-What didn't:
+## What did not work
 
-- Pairwise picks between similar drafts. No measurable learning after 80 picks.
-- My gate, three times: too lenient (3 of 5), then not anchored, then applied to the wrong step (it should gate compression, not learning).
-- My prediction about unmanaged memory. It gets expensive, not worse.
-- The 450-word budget as a hard reject. It cost the Opus runs most of their updates.
-- Judging once. Single runs of the lineup judge differ by ten points or more, so the lineup figures here are three-run averages.
-- Micro-examples in the guide. They make rules concrete and then show up verbatim as tics: the same opening line in 8 of 36 out-of-domain drafts.
-- Haiku for cleanup: slow with thinking on, sloppy with it off. Sonnet with thinking on was both more accurate and no more expensive, because its output is much shorter.
+- **Picks between similar drafts.** There was no measurable learning after 80 choices.
+- **Three gate designs.** The gate was first too lenient (3 wins out of 5), then unanchored, then applied to the wrong step. The 200-event result suggests gating compression rather than learning.
+- **The prediction about unmanaged memory.** The growing guide became more expensive, not worse.
+- **A hard guide-length cutoff.** Rejecting over-budget guides cost the Opus runs most of their updates.
+- **Single-run judging.** Lineup scores varied by ten points or more between runs. The Opus lineup scores and the 264-pair Qwen rewriter score therefore use three-run averages.
+- **Micro-examples in guides.** Concrete illustrations became verbal tics, including the same opening in 8 of 36 out-of-domain drafts.
+- **Haiku for cleanup.** It was slow with thinking enabled and sloppy without it. Sonnet with thinking enabled was more accurate and no more expensive because its output was much shorter.
 
 # What this doesn't show
 
-- The user is simulated, and its "edits" are the real published text. A real person's edits would be partial, inconsistent and noisier.
-- The judges are Claude models, and the same family steers the gate. The stylometric measure agrees on direction everywhere but is coarse.
-- 30 test briefs. About ±9 points on everything, before the judge's own run-to-run noise. Only the Opus lineup figures are averaged over repeated runs; every other judged number in this post is a single run.
-- One author. A distinctive one, which probably makes this easier than learning my preferences would be.
-- The lineup judge is a model. I built a six-pair "which one is real?" quiz for humans and haven't run it on anyone yet.
+This experiment tests whether a model can infer preferences from unusually clean feedback. It does not show that an assistant can learn any real person's voice in everyday use. The intended revisions were known, the source was consistent, and evaluation relied heavily on model judges. Several limits matter:
+
+- **Simulated feedback.** The "edits" were published texts. Real edits would be partial, inconsistent, noisier, and often about substance as well as style.
+- **Related judges and writers.** Claude models judged the outputs, and the same model family steered the gate. Stylometric checks agreed on the overall direction but remained coarse.
+- **A small test set and noisy judging.** There were 30 test briefs, with uncertainty of about ±9 points before run-to-run judge noise. The Opus lineup results and the 264-pair Qwen rewriter lineup result average repeated runs; other judged results are single runs.
+- **One distinctive author.** Learning this voice may be easier than learning my own preferences.
+- **No human validation yet.** I built a six-pair "Which one is real?" quiz but have not run it on people.
 
 # What's next
 
-The hybrid learner: append lessons freely, gate the compression. That follows directly from the 200-event result and is the first thing I'll build.
+**First: build the hybrid learner.** Let lessons accumulate freely and gate compression. This follows directly from the 200-event result.
 
-Then the human quiz, a judge from a different model family, and picks with deliberately contrasting candidates to see whether picks can carry any signal.
+**Then: strengthen evaluation and test picks again.** Run the human quiz, use a judge from a different model family, and compare deliberately contrasting candidates to see whether picks can carry a useful signal.
 
-On the weights side, a bigger base model is the obvious next step, and the loop already saves a draft-versus-final pair for every event, which is the input DPO needs. The adapter-for-structure, Opus-for-prose split is also worth a try given how well the 7B model copied formatting habits.
+**On the weights side:** try a larger base model and explore DPO using the draft/final-text pairs the loop already saves. Splitting the work, with the adapter handling structure and Opus handling prose, is also worth testing, given how faithfully the 7B model copied formatting habits.
 
-Eventually I want to run this on my own drafts and my own edits, where there is no hidden original to score against.
+**Eventually: test real preferences.** Run the loop on my own drafts and edits, without a hidden original to score against.
 
 # Appendix: technical details
 
-**Models.** Writer: Claude Sonnet 5 for the feedback-type, speed, stability and generalization experiments; Claude Opus 5 for the headline run. Judge, critic, brief extraction and cleanup: Sonnet 5. Reflection uses the writer model with extended thinking on. Every call is a bare model call: custom system prompt, no tools, and nothing else in context that could leak the author's name. 15,489 calls in total — 14,748 Sonnet, 736 Opus — about $437 at API prices.
+## Models and call setup
 
-**Pipeline.**
+**Writers:** Claude Sonnet 5 for the feedback-type, speed, stability, and generalization experiments; Claude Opus 5 for the headline run. **Supporting tasks:** Sonnet 5 handled judging, critiques, brief extraction, and cleanup. Reflection used the writer model with extended thinking enabled.
 
-1. *Parse.* 465 newsletter emails → 374 columns → 1,717 sections with footnotes attached. "Things happen" and podcast sections dropped. 1,325 sections fall in the 300–1,500-word range used as tasks.
-2. *Clean.* The export had flattened block quotes into ordinary paragraphs and fused words around links ("now calledExpana"). A model only *points at* problems — which paragraph ids are block quotes, which tokens are fused — and code applies and validates the fixes. No model ever paraphrases the gold text.
-3. *Brief.* A model extracts topic, background, points in order, and side points (footnote content goes here without saying it was a footnote), in note form. Quoted sources are attached verbatim. Briefs mentioning the author or publication are rejected by a regex lint.
-4. *Split by date.* Train through April 2026, validate May–June, test July–August.
+Every call used a custom system prompt, no tools, and no other context that could reveal the author's name. The experiments made 15,489 calls in total — 14,748 Sonnet, 736 Opus, and 5 Haiku from the cleanup trial — at about $437 in API costs.
 
-**Learner settings.** Guide budget 450 words (candidates over 495 are compressed, then rejected if still over). Two exemplars retrieved per draft by TF-IDF cosine on the brief's topic and background. Default batch of 5 events per update; the speed experiment uses 1. Replay: 4 past episodes per reflection. Gate: 8 validation briefs on rotation, accept if the candidate wins ≥ 6 head-to-heads and its win count against fixed untrained drafts is at least the current guide's. Judge position is randomized on every call.
+## Data pipeline
 
-**Lineup re-runs.** Three runs of the lineup judge per system, with judge position re-randomized each run. For the uniform-formatting column every text (real sections, the two reference samples, all drafts) goes through the same normalizer first: curly quotes and apostrophes to straight, ellipsis and en-dash characters to ASCII, bare `>` lines removed, every line made its own paragraph, Markdown emphasis markers stripped, and spacing around em dashes made uniform. Three-run means, original / uniform: untrained 2% / 3%, named-author 17% / 27%, critique learner 29% / 20%, edit learner 43% / 39%, Qwen LoRA 23% / 21%. One check that typography alone wasn't driving the original result: the edit learner used straight quotes in 29 of 30 drafts against curly quotes in all 30 real sections, and still fooled the judge in 14 of 30 in the first run.
+1. *Parse.* Start with 465 newsletter emails, yielding 374 columns and 1,717 sections with footnotes attached. Drop "Things happen" and podcast sections. Of the remaining material, 1,325 sections fall within the 300–1,500-word task range.
+2. *Clean.* The export flattened block quotations into ordinary paragraphs and fused words around links, as in "now calledExpana." A model identifies the affected paragraph IDs and fused tokens; code applies and validates the fixes. The model never paraphrases the gold text.
+3. *Brief.* Extract the topic, background, ordered points, and side points into neutral notes. Include footnote content as side points without identifying it as footnote material. Attach source quotations verbatim. Reject briefs mentioning the author or publication using a regular-expression check.
+4. *Split by date.* Train through April 2026; validate on May–June; test on July–August.
 
-**Stylometric features** (17): headline length; sentence-length mean and standard deviation; share of sentences ≤ 6 words; words per paragraph; block-quote share of all words; and per-1,000-word rates of bullet lines, footnotes, question marks, parentheses, dashes, colons, inline quotations, first person, second person, hedges ("sort of," "I guess," "you know," …) and contractions. Each feature's gap is divided by that feature's standard deviation across real sections, then averaged.
+## Learner settings
 
-**LoRA.** Qwen2.5-7B-Instruct, 4-bit NF4 with double quantization, bf16 compute. LoRA r=16, α=32, dropout 0.05 on all attention and MLP projections (40M trainable parameters). 3 epochs, lr 1e-4 cosine with 5% warmup, batch 1 × 8 accumulation, max 4,096 tokens, loss on the target text only. 264 pairs trained in 32 minutes on a 16 GB RTX 4080 Super. One gotcha: Qwen's vocabulary is 152k tokens, so logits for a full 4k sequence don't fit in 16 GB. Compute the loss on target positions only, in checkpointed chunks. Generation: temperature 0.7, top-p 0.9, repetition penalty 1.05.
+- **Guide budget:** 450 words. Candidates over 495 words are compressed, then rejected if still over the limit.
+- **Examples:** retrieve two per draft using TF-IDF cosine similarity on the brief's topic and background.
+- **Update frequency:** five feedback events per batch by default; one in the speed experiment.
+- **Replay:** four past episodes per reflection.
+- **Gate:** rotate through eight validation briefs. Accept a candidate if it wins at least six head-to-head comparisons and matches or exceeds the current guide's win count against fixed untrained drafts.
+- **Judging:** randomize candidate position on every call.
+
+## Lineup reruns and formatting controls
+
+Run the lineup judge three times per system, randomizing candidate position again for each run. For the uniform-formatting condition, apply the same normalization to real sections, both reference samples, and every draft:
+
+- Convert curly quotes and apostrophes to straight characters, and ellipses and en dashes to ASCII.
+- Remove bare `>` lines and make each line its own paragraph.
+- Strip Markdown emphasis markers and normalize spacing around em dashes.
+
+Three-run means, original / uniform formatting:
+
+- Untrained: 2% / 3%.
+- Named-author: 17% / 27%.
+- Critique learner: 29% / 20%.
+- Edit learner: 43% / 39%.
+- Qwen LoRA: 23% / 21%.
+
+Typography alone did not appear to explain the original result: the edit learner used straight quotes in 29 of 30 drafts, while all 30 real sections used curly quotes, yet it still fooled the judge in 14 of 30 comparisons in the first run.
+
+## Stylometric features
+
+The measure uses 17 features, grouped as follows:
+
+- **Headlines and sentence rhythm:** headline length; mean and standard deviation of sentence length; share of sentences with six words or fewer.
+- **Paragraphs and quotations:** words per paragraph; block-quote share of all words.
+- **Rates per 1,000 words:** bullet lines, footnotes, question marks, parentheses, dashes, colons, inline quotations, first person, second person, hedges ("sort of," "I guess," "you know," and similar expressions), and contractions.
+
+For each feature, divide the gap by that feature's standard deviation across real sections, then average the standardized gaps.
+
+## LoRA training and generation
+
+- **Base model and precision:** Qwen2.5-7B-Instruct; 4-bit NF4 with double quantization and bf16 compute.
+- **Adapter:** rank 16, α = 32, dropout 0.05, applied to all attention and MLP projections; 40M trainable parameters.
+- **Training:** three epochs; learning rate 1e-4 with a cosine schedule and 5% warmup; batch size one with eight accumulation steps; maximum sequence length 4,096 tokens. Compute loss on target text only.
+- **Hardware and duration:** 264 pairs trained in 32 minutes on a 16 GB RTX 4080 Super.
+- **Generation:** temperature 0.7, top-p 0.9, repetition penalty 1.05.
+
+**Memory constraint:** Qwen's vocabulary contains 152k tokens, so logits for a full 4k-token sequence do not fit in 16 GB. Compute loss only at target positions, in checkpointed chunks.
+
+## Example feedback and learned guide
 
 **An example critique.** What the simulated user sends back in the critique condition:
 
@@ -247,9 +340,9 @@ Eventually I want to run this on my own drafts and my own edits, where there is 
 
 # Appendix: a non-finance example
 
-One of the 36 out-of-domain briefs from the [generalization test](#does-it-carry-outside-finance), and what four writers made of it. The first three are Claude Sonnet 5 with the same ghostwriter prompt; the only difference is the learned state, which came entirely from finance columns. The fourth is the [7B LoRA rewriter](#moving-it-into-weights). The brief and everything in it, including the lawsuit, is invented. Each output's headline is shown in bold; the nested quotes are the block quotes it chose to pull from the sources.
+This appendix presents one of the 36 out-of-domain briefs from the [generalization test](#does-it-carry-outside-finance) and four writers' responses. The first three use Claude Sonnet 5 with the same ghostwriter prompt; only their learned states differ, and all learning came from finance columns. The fourth is the [7B LoRA rewriter](#moving-it-into-weights). The brief and all its details, including the lawsuit, are invented. Output headlines appear in bold, and nested quotations show the source passages each writer chose to quote.
 
-The brief:
+## The fictional brief
 
 > TOPIC: Explainer: Tolliver v. Lakeshore Dining Group LLC (d/b/a Harvest Table Buffet), the Ohio lawsuit over being cut off from an all-you-can-eat crab night
 >
@@ -285,7 +378,7 @@ The brief:
 > SOURCE 2 (Defendant's Answer (filed May 6, 2026), paragraph 12 and affirmative defenses), verbatim:
 > Defendant admits that a placard measuring five inches by seven inches was posted beside the tray return on March 14, 2026. The placard reads: "All-you-can-eat applies to dine-in guests for personal consumption only. Premium items, including snow crab legs, are subject to reasonable portion limits at management's discretion." Defendant denies that Plaintiff was refused service or removed from the premises. Plaintiff was informed that all non-premium items remained available and left of his own accord. Defendant asserts that the term "all you can eat" is not a promise of unlimited quantities of any item.
 
-Untrained (empty state):
+## Untrained writer: empty state
 
 > **Explainer: The Great Crab Leg Lawsuit of Mansfield, Ohio**
 >
@@ -316,7 +409,7 @@ Untrained (empty state):
 > [1] Complaint, Tolliver v. Lakeshore Dining Group LLC, ¶¶ 7–10 (filed Apr. 2, 2026).
 > [2] Defendant's Answer, ¶ 12 and affirmative defenses (filed May 6, 2026).
 
-Edit learner (80 edits; guide plus two retrieved finance exemplars):
+## Edit learner: 80 edits and two retrieved examples
 
 > **Crab night**
 >
@@ -342,7 +435,7 @@ Edit learner (80 edits; guide plus two retrieved finance exemplars):
 >
 > Mediation is due by October 30. If that fails, there's a bench trial set for January 12, 2027, over a $18.99 dinner. Tolliver's lawyer, Denise Aldana, has said the case isn't really about the refund; it's about what the sign is allowed to say. Given the fee-shifting available under the consumer-practices statute, that's probably not just spin.
 
-Critique learner (80 sets of notes; guide only):
+## Critique learner: 80 sets of notes, guide only
 
 > **Tolliver v. Lakeshore Dining Group, or what "all you can eat" actually means**
 >
@@ -368,7 +461,9 @@ Critique learner (80 sets of notes; guide only):
 
 The judge preferred both learners to the untrained draft on this brief. The edit learner's opening line is the copied micro-example described above.
 
-Qwen2.5-7B + LoRA (264 pairs), rewriting the untrained draft above. This is the first sample, not a pick of several, and it's doubly out of domain: the adapter was trained to rewrite Opus drafts of finance sections, and here it gets a Sonnet draft about crab legs.
+## LoRA rewriter: 264 training pairs
+
+Qwen2.5-7B + LoRA rewrites the untrained draft above. This is the first sample, not a selection from several. It is doubly out of domain: the adapter learned to rewrite Opus finance drafts but receives a Sonnet draft about crab legs here.
 
 > **Crab leg lawsuit**
 >
@@ -394,9 +489,18 @@ Qwen2.5-7B + LoRA (264 pairs), rewriting the untrained draft above. This is the 
 >
 > [3] Def’s Ans. ¶ 12, Tolliver v. Lakeshore Dining Grp. LLC, Case No. 2026CV00152 (Ohio Richland Cty. Aug. 22, 2026).
 
-The voice is closer to the target: a flat headline, "What happened? … Well," and shorter, plainer sentences. It also shows why the judge prefers the larger model's prose. Checked against the draft it was given, the rewrite invents a tweet by the lawyer, adds a footnote [3] with nothing pointing to it and a made-up case citation, attributes the restaurant's kitchen-log estimate of the crab to the judge, and opens as if the suit were about the $7,500 emotional-distress claim, which is the part that was thrown out. The in-context learners made none of those mistakes; they had the brief and a much stronger model.
+The rewrite is closer to the target voice in its flat headline, "What happened? … Well" phrasing, and shorter, plainer sentences. It also illustrates why the judge preferred the larger model's prose. Compared with the input draft, it introduces several errors:
+
+- It invents a tweet by the lawyer.
+- It adds a footnote [3] that nothing in the text points to, with a made-up case citation.
+- It attributes the restaurant's kitchen-log estimate of crab consumption to the judge.
+- It opens as though the suit centered on the $7,500 emotional-distress claim, even though that claim had been dismissed.
+
+The in-context learners made none of these mistakes; they had access to the brief and used a much stronger model.
 
 # Appendix: prompts
+
+## Drafting and the named-author baseline
 
 The ghostwriter's fixed system prompt. The learned guide and retrieved exemplars are appended under the two headers that follow it.
 
@@ -426,6 +530,8 @@ The named-author baseline appends one more line to the same prompt, and gets 40 
 ````text
 Write in the style of Matt Levine's Money Stuff column.
 ````
+
+## Guide reflection and compression
 
 Reflection — turns a batch of episodes into a new guide:
 
@@ -460,6 +566,8 @@ that matters, keep the most useful micro-examples, merge overlaps, cut the least
 last-first. Same Markdown bullet format. Output only the guide.
 ````
 
+## Simulated critiques
+
 The simulated user's critic:
 
 ````text
@@ -474,6 +582,8 @@ start with the thing that happened"), but:
 - never name yourself, your publication, or compare yourself to any writer.
 Output only the notes.
 ````
+
+## Evaluation judges
 
 Pairwise style judge (used for the gate, for simulated picks, and for "beats untrained" / "beats named-author"):
 
@@ -509,6 +619,8 @@ sounds more like it was written by the author of the references, judging by tran
 not
 by subject matter. You must pick one.
 ````
+
+## Other prompts
 
 The append-everything learner's reflection prompt:
 
