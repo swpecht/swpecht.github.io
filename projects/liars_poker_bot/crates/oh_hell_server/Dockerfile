@@ -1,4 +1,7 @@
-FROM debian:bookworm-slim
+# trixie, not bookworm: the binary is built on the deploy host (GCC 15 since the
+# 2026-09 reinstall) and needs CXXABI_1.3.15 (__cxa_call_terminate), which
+# bookworm's libstdc++ (GCC 12) lacks. glibc needs only 2.34.
+FROM debian:trixie-slim
 RUN apt-get update && apt-get install -y ca-certificates libstdc++6 && rm -rf /var/lib/apt/lists/*
 # CPU libtorch runtime for the R-NaD transformer agent. The binary links
 # tch dynamically; the deploy stages the three needed .so files from the
