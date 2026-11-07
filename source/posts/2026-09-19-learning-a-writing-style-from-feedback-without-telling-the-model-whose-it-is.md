@@ -7,7 +7,7 @@ date: 2026-09-19T00:00:00Z
 
 Could a large language model (LLM) learn someone's preferences continuously, using only feedback they would provide anyway? Writing style seemed like a good first test. I did not have hundreds of my own edited drafts, so I simulated a user who writes like Matt Levine, the *Bloomberg News* finance writer behind *Money Stuff*. The model had to learn the style without ever being told his name.
 
-The process starts with a neutral brief. The LLM drafts a piece, and the simulated user either rewrites it or sends a few sentences explaining what sounds wrong. One critique asked for plainer, more tentative prose, longer source quotations, and fewer polished asides. The system turns that feedback into instructions for the next draft — not a name to imitate.
+The process starts with a neutral brief. The LLM drafts a piece, and the simulated user either rewrites it or sends a few sentences explaining what sounds wrong. One critique asked for plainer, more tentative prose, longer source quotations, and fewer polished asides. The system turns that feedback into instructions for the next draft.
 
 ## The headline result
 
